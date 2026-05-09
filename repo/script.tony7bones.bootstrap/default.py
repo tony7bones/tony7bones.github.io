@@ -1,3 +1,4 @@
+import json
 import os
 import urllib.request
 import zipfile
@@ -10,10 +11,10 @@ import xbmcvfs
 REPO_BASE = "https://tony7bones.github.io/repo/repositories/"
 
 REPOS = [
-    "repository.kodinerds-7.0.1.7.zip",
-    "repository.kodifitzwell-0.0.1.zip",
-    "repository.bugatsinho-2.8.zip",
-    "repository.loop-3.0.4.zip",
+    ("repository.kodinerds-7.0.1.7.zip", "repository.kodinerds"),
+    ("repository.kodifitzwell-0.0.1.zip", "repository.kodifitzwell"),
+    ("repository.bugatsinho-2.8.zip", "repository.bugatsinho"),
+    ("repository.loop-3.0.4.zip", "repository.loop"),
 ]
 
 ADDONS = [
@@ -134,6 +135,22 @@ def _install_repo(zip_name, dialog, pct):
             os.remove(temp_path)
 
 
+def _enable_repo(addon_id, dialog, pct):
+    dialog.update(pct, f"Enabling repository: {addon_id}")
+    result = xbmc.executeJSONRPC(
+        json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "method": "Addons.SetAddonEnabled",
+                "params": {"addonid": addon_id, "enabled": True},
+                "id": 1,
+            }
+        )
+    )
+    xbmc.log(f"[tony7bones.bootstrap] Enable {addon_id}: {result}")
+    xbmc.sleep(500)
+
+
 def _install_addon(addon_id, name, dialog, pct):
     dialog.update(pct, f"Installing: {name}")
     if _is_installed(addon_id):
@@ -169,7 +186,7 @@ def run():
     )  # repos + repo-update + addons + iptv-config
     step = 0
 
-    for zip_name in REPOS:
+    for zip_name, _repo_id in REPOS:
         step += 1
         _install_repo(zip_name, dialog, int(step / total * 100))
         xbmc.sleep(500)
@@ -181,6 +198,11 @@ def run():
     dialog.update(int(step / total * 100), "Registering repositories...")
     xbmc.executebuiltin("UpdateLocalAddons()")
     xbmc.sleep(5000)
+
+    dialog.update(int(step / total * 100), "Enabling repositories...")
+    for _zip_name, repo_id in REPOS:
+        _enable_repo(repo_id, dialog, int(step / total * 100))
+
     dialog.update(int(step / total * 100), "Fetching repository add-on lists...")
     xbmc.executebuiltin("UpdateAddonRepos()", True)
     xbmc.sleep(20000)
