@@ -113,11 +113,11 @@ def generate() -> None:
         addons_xml_path, encoding="UTF-8", xml_declaration=True
     )
 
-    # Write MD5
+    # Write SHA256 (required by Kodi 21 Omega <checksum verify="sha256">)
     with open(addons_xml_path, "rb") as fh:
-        md5 = hashlib.md5(fh.read()).hexdigest()
-    with open(os.path.join(REPO_DIR, "addons.xml.md5"), "w") as fh:
-        fh.write(md5)
+        sha256 = hashlib.sha256(fh.read()).hexdigest()
+    with open(os.path.join(REPO_DIR, "addons.xml.sha256"), "w") as fh:
+        fh.write(sha256)
 
     # Generate index.html for each addon directory, then for the repo root
     for addon_dir, addon_id in addon_dirs:
@@ -128,7 +128,7 @@ def generate() -> None:
     print("  index  repo/index.html")
 
     print(f"\nWrote addons.xml  ({len(addon_roots)} addon(s))")
-    print(f"Wrote addons.xml.md5  ({md5})")
+    print(f"Wrote addons.xml.sha256  ({sha256})")
 
 
 if __name__ == "__main__":
