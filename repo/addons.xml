@@ -33,7 +33,7 @@
             <news>v1.0.5: Remove Network 24 credentials from public repo.</news>
         </extension>
     </addon>
-    <addon id="script.tony7bones.modv2.patch" name="Estuary MOD V2 — tony7bones Patches" version="1.0.1" provider-name="tony7bones">
+    <addon id="script.tony7bones.modv2.patch" name="Estuary MOD V2 — tony7bones Patches" version="1.0.2" provider-name="tony7bones">
         <requires>
             <import addon="xbmc.python" version="3.0.0" />
         </requires>

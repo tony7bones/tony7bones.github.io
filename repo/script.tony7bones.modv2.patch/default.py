@@ -47,6 +47,13 @@ def apply_patches(skin_xml):
 
 
 def run():
+    if xbmc.getSkinDir() != SKIN_ID:
+        xbmcgui.Dialog().ok(
+            "Wrong Skin",
+            "This patch only runs on Estuary MOD V2.[CR]Switch skins and run again.",
+        )
+        return
+
     skin_xml = translatePath("special://home/addons/{}/xml".format(SKIN_ID))
 
     if not os.path.isdir(skin_xml):
@@ -56,45 +63,21 @@ def run():
         )
         return
 
-    is_active = xbmc.getSkinDir() == SKIN_ID
-
-    if not is_active:
-        choice = xbmcgui.Dialog().select(
-            "Estuary MOD V2 is not your active skin",
-            [
-                "Switch to MOD V2 and patch",
-                "Patch anyway (switch later to see changes)",
-            ],
-        )
-        if choice == -1:
-            return
-        if choice == 0:
-            xbmc.executebuiltin("ActivateSkin({})".format(SKIN_ID))
-            xbmc.sleep(2000)
-
     applied, failed = apply_patches(skin_xml)
 
-    if failed == 0:
-        if is_active or choice == 0:
-            xbmcgui.Dialog().ok(
-                "Patches Applied",
-                "{} files patched.[CR]Reloading skin...".format(applied),
-            )
-            xbmc.executebuiltin("ReloadSkin()")
-        else:
-            xbmcgui.Dialog().ok(
-                "Patches Applied",
-                "{} files patched.[CR]Switch to Estuary MOD V2 to see the changes.".format(
-                    applied
-                ),
-            )
-    else:
+    if failed > 0:
         xbmcgui.Dialog().ok(
             "Patches Partial",
             "{} applied, {} failed.[CR]Check the Kodi log for details.".format(
                 applied, failed
             ),
         )
+        return
+
+    xbmcgui.Dialog().ok(
+        "Patches Applied", "{} files patched.[CR]Reloading skin...".format(applied)
+    )
+    xbmc.executebuiltin("ReloadSkin()")
 
 
 run()
