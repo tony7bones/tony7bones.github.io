@@ -167,13 +167,46 @@ def _install_addon(addon_id, name, dialog, pct):
         xbmc.sleep(5000)
 
 
+IPTV_INSTANCE_2_XML = """\
+<settings version="2">
+    <setting id="kodi_addon_instance_name">Network 24</setting>
+    <setting id="kodi_addon_instance_enabled" default="true">true</setting>
+    <setting id="m3uPathType" default="true">1</setting>
+    <setting id="m3uPath" default="true" />
+    <setting id="m3uUrl">http://op.web24.live:8080/get.php?username=tonybones&amp;password=tonybones123&amp;type=m3u_plus&amp;output=ts</setting>
+    <setting id="m3uCache" default="true">true</setting>
+    <setting id="startNum" default="true">1</setting>
+    <setting id="numberByOrder" default="true">false</setting>
+    <setting id="m3uRefreshMode" default="true">2</setting>
+    <setting id="m3uRefreshIntervalMins" default="true">60</setting>
+    <setting id="m3uRefreshHour" default="true">10</setting>
+    <setting id="connectioncheckinterval" default="true">10</setting>
+    <setting id="connectionchecktimeout" default="true">20</setting>
+    <setting id="epgPathType" default="true">1</setting>
+    <setting id="epgPath" default="true" />
+    <setting id="epgUrl">http://op.web24.live:8080/xmltv.php?username=tonybones&amp;password=tonybones123</setting>
+    <setting id="epgCache" default="true">true</setting>
+    <setting id="epgTimeShift" default="true">0</setting>
+    <setting id="epgTSOverride" default="true">false</setting>
+    <setting id="epgIgnoreCaseForChannelIds" default="true">true</setting>
+    <setting id="useFFmpegReconnect" default="true">true</setting>
+    <setting id="useInputstreamAdaptiveforHls" default="true">false</setting>
+    <setting id="defaultUserAgent" default="true" />
+    <setting id="defaultInputstream" default="true" />
+    <setting id="defaultMimeType" default="true" />
+</settings>"""
+
+
 def _configure_iptv(dialog, pct):
     dialog.update(pct, "Configuring IPTV Simple Client...")
     data_dir = xbmcvfs.translatePath("special://userdata/addon_data/pvr.iptvsimple/")
     xbmcvfs.mkdirs(data_dir)
-    settings_path = os.path.join(data_dir, "instance-settings-1.xml")
-    with open(settings_path, "w", encoding="utf-8") as f:
-        f.write(IPTV_INSTANCE_XML)
+    for filename, xml in [
+        ("instance-settings-1.xml", IPTV_INSTANCE_XML),
+        ("instance-settings-2.xml", IPTV_INSTANCE_2_XML),
+    ]:
+        with open(os.path.join(data_dir, filename), "w", encoding="utf-8") as f:
+            f.write(xml)
     xbmc.sleep(500)
 
 
