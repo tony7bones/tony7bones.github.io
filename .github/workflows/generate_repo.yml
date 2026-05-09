@@ -28,7 +28,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add repo/addons.xml repo/addons.xml.sha256 "repo/**/*.zip" "repo/**/index.html"
+          git add repo/addons.xml repo/addons.xml.sha256 repo/addons.xml.md5 "repo/**/*.zip" "repo/**/index.html"
           git rm --cached repo/addons.xml.md5 2>/dev/null || true
           git diff --staged --quiet && echo "Nothing to commit" && exit 0
           git commit -m "Update repository files"

@@ -138,9 +138,13 @@ def generate() -> None:
     )
 
     with open(addons_xml_path, "rb") as fh:
-        sha256 = hashlib.sha256(fh.read()).hexdigest()
+        data = fh.read()
+    sha256 = hashlib.sha256(data).hexdigest()
+    md5 = hashlib.md5(data).hexdigest()
     with open(os.path.join(REPO_DIR, "addons.xml.sha256"), "w") as fh:
         fh.write(sha256)
+    with open(os.path.join(REPO_DIR, "addons.xml.md5"), "w") as fh:
+        fh.write(md5)
 
     os.makedirs(REPOS_DIR, exist_ok=True)
     zip_entries = sorted(
@@ -158,6 +162,7 @@ def generate() -> None:
 
     print(f"\naddons.xml: {len(plugin_roots)} plugin(s)")
     print(f"addons.xml.sha256: {sha256}")
+    print(f"addons.xml.md5:    {md5}")
 
 
 if __name__ == "__main__":
