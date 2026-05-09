@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="script.tony7bones.bootstrap"
        name="Tony 7 Bones Setup"
-       version="1.0.1"
+       version="1.0.2"
        provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
@@ -16,6 +16,6 @@
     <license>GPL-2.0-or-later</license>
     <summary lang="en_GB">Tony 7 Bones Kodi Setup</summary>
     <description lang="en_GB">Installs repositories and add-ons for a personal Kodi build.</description>
-    <news>v1.0.1: Install skin last, extend repo index wait to 15s.</news>
+    <news>v1.0.2: Register repos before fetching, retry failed installs.</news>
   </extension>
 </addon>

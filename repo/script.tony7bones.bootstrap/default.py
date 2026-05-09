@@ -139,8 +139,15 @@ def _install_addon(addon_id, name, dialog, pct):
     if _is_installed(addon_id):
         xbmc.log(f"[tony7bones.bootstrap] {addon_id} already installed, skipping")
         return
-    xbmc.executebuiltin(f"InstallAddon({addon_id})", True)
-    xbmc.sleep(2000)
+    for attempt in range(3):
+        xbmc.executebuiltin(f"InstallAddon({addon_id})", True)
+        xbmc.sleep(3000)
+        if _is_installed(addon_id):
+            return
+        xbmc.log(
+            f"[tony7bones.bootstrap] {addon_id} attempt {attempt + 1} failed, retrying..."
+        )
+        xbmc.sleep(5000)
 
 
 def _configure_iptv(dialog, pct):
@@ -171,9 +178,12 @@ def run():
             return
 
     step += 1
-    dialog.update(int(step / total * 100), "Updating repository index...")
+    dialog.update(int(step / total * 100), "Registering repositories...")
+    xbmc.executebuiltin("UpdateLocalAddons()")
+    xbmc.sleep(5000)
+    dialog.update(int(step / total * 100), "Fetching repository add-on lists...")
     xbmc.executebuiltin("UpdateAddonRepos()", True)
-    xbmc.sleep(15000)
+    xbmc.sleep(20000)
     if dialog.iscanceled():
         dialog.close()
         return
