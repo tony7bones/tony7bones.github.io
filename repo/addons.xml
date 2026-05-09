@@ -33,4 +33,15 @@
             <news>v1.0.5: Remove Network 24 credentials from public repo.</news>
         </extension>
     </addon>
+    <addon id="script.tony7bones.modv2.patch" name="Estuary MOD V2 — tony7bones Patches" version="1.0.0" provider-name="tony7bones">
+        <requires>
+            <import addon="xbmc.python" version="3.0.0" />
+        </requires>
+        <extension point="xbmc.python.script" library="default.py" />
+        <extension point="xbmc.addon.metadata">
+            <summary lang="en_GB">Apply tony7bones logo and breadcrumb fixes to Estuary MOD V2</summary>
+            <description lang="en_GB">Replaces the MOD V2 logo with the standard Estuary wordmark (vendor_logo.png) and restores section labels in the top bar. Run this after installing or updating skin.estuary.modv2. Safe to re-run — original files are backed up once and never overwritten.</description>
+            <platform>all</platform>
+        </extension>
+    </addon>
 </addons>
