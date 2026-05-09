@@ -41,7 +41,7 @@ All HTML generation (repositories index, media index, per-addon indexes) lives h
 
 ### CI — `.github/workflows/generate_repo.yml`
 
-Triggers on push to `repo/**/addon.xml` or `repo/media/**`. Runs `generate_repo.py` (which handles all index generation including media), then commits the generated artifacts back to `main`.
+Triggers on push to `repo/**/addon.xml`, `repo/media/**`, or `repo/repositories/**`. Runs `generate_repo.py` (which handles all index generation), then commits the generated artifacts back to `main`.
 
 ### Adding a new Kodi add-on
 
