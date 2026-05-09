@@ -11,6 +11,7 @@ except ImportError:
 
 ADDON = xbmcaddon.Addon()
 ADDON_PATH = translatePath(ADDON.getAddonInfo("path"))
+SKIN_ID = "skin.estuary.modv2"
 
 FILES = [
     "Home.xml",
@@ -23,16 +24,7 @@ FILES = [
 ]
 
 
-def run():
-    skin_xml = translatePath("special://home/addons/skin.estuary.modv2/xml")
-
-    if not os.path.isdir(skin_xml):
-        xbmcgui.Dialog().ok(
-            "Patch Failed",
-            "skin.estuary.modv2 not found.[CR]Install it first, then run this script.",
-        )
-        return
-
+def apply_patches(skin_xml):
     applied = 0
     failed = 0
 
@@ -51,11 +43,51 @@ def run():
             xbmc.log("[tony7bones patch] failed {}: {}".format(fname, e), xbmc.LOGERROR)
             failed += 1
 
-    if failed == 0:
+    return applied, failed
+
+
+def run():
+    skin_xml = translatePath("special://home/addons/{}/xml".format(SKIN_ID))
+
+    if not os.path.isdir(skin_xml):
         xbmcgui.Dialog().ok(
-            "Patches Applied", "{} files patched.[CR]Reloading skin...".format(applied)
+            "Patch Failed",
+            "{} not found.[CR]Install it first, then run this script.".format(SKIN_ID),
         )
-        xbmc.executebuiltin("ReloadSkin()")
+        return
+
+    is_active = xbmc.getSkinDir() == SKIN_ID
+
+    if not is_active:
+        choice = xbmcgui.Dialog().select(
+            "Estuary MOD V2 is not your active skin",
+            [
+                "Switch to MOD V2 and patch",
+                "Patch anyway (switch later to see changes)",
+            ],
+        )
+        if choice == -1:
+            return
+        if choice == 0:
+            xbmc.executebuiltin("ActivateSkin({})".format(SKIN_ID))
+            xbmc.sleep(2000)
+
+    applied, failed = apply_patches(skin_xml)
+
+    if failed == 0:
+        if is_active or choice == 0:
+            xbmcgui.Dialog().ok(
+                "Patches Applied",
+                "{} files patched.[CR]Reloading skin...".format(applied),
+            )
+            xbmc.executebuiltin("ReloadSkin()")
+        else:
+            xbmcgui.Dialog().ok(
+                "Patches Applied",
+                "{} files patched.[CR]Switch to Estuary MOD V2 to see the changes.".format(
+                    applied
+                ),
+            )
     else:
         xbmcgui.Dialog().ok(
             "Patches Partial",
