@@ -91,11 +91,7 @@ def generate() -> None:
     # Plugins at repo root → go into addons.xml
     plugin_roots, plugin_ids = process_addons(REPO_DIR)
 
-    # Repo installers in repositories/ → zipped but NOT in addons.xml
-    os.makedirs(REPOS_DIR, exist_ok=True)
-    _, repo_ids = process_addons(REPOS_DIR)
-
-    # addons.xml (plugins only — datadir at repo/ root resolves them correctly)
+    # addons.xml (plugins only)
     addons_el = ET.Element("addons")
     for r in plugin_roots:
         addons_el.append(r)
@@ -110,14 +106,18 @@ def generate() -> None:
     with open(os.path.join(REPO_DIR, "addons.xml.sha256"), "w") as fh:
         fh.write(sha256)
 
-    # repositories/ index — flat list of subdirs (direct children only)
-    repo_subdir_rows = ['<a href="../">Parent Directory</a>']
+    # repositories/ index — flat zip list (direct children only, no subdirs)
+    os.makedirs(REPOS_DIR, exist_ok=True)
+    repo_rows = ['<a href="../">Parent Directory</a>']
     for entry in sorted(os.listdir(REPOS_DIR)):
-        if os.path.isdir(os.path.join(REPOS_DIR, entry)):
-            repo_subdir_rows.append(f'<a href="{entry}/">{entry}/</a>')
-    _make_index(REPOS_DIR, "Index of /repo/repositories/", repo_subdir_rows)
+        full = os.path.join(REPOS_DIR, entry)
+        if os.path.isfile(full) and entry.endswith(".zip"):
+            repo_rows.append(
+                f'<a href="{entry}">{entry}</a>  {_fmt_date(full)}  {_fmt_size(os.path.getsize(full))}'
+            )
+    _make_index(REPOS_DIR, "Index of /repo/repositories/", repo_rows)
 
-    # repo/ root index — repositories/ folder + plugin dirs only
+    # repo/ root index — repositories/ folder + plugin dirs
     root_rows = [
         '<a href="../">Parent Directory</a>',
         '<a href="repositories/">repositories/</a>',
@@ -132,9 +132,7 @@ def generate() -> None:
             root_rows.append(f'<a href="{entry}/">{entry}/</a>')
     _make_index(REPO_DIR, "Index of /repo/", root_rows)
 
-    print(
-        f"\naddons.xml: {len(plugin_roots)} plugin(s), {len(repo_ids)} repo installer(s)"
-    )
+    print(f"\naddons.xml: {len(plugin_roots)} plugin(s)")
     print(f"addons.xml.sha256: {sha256}")
 
 
