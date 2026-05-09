@@ -117,20 +117,7 @@ def generate() -> None:
             )
     _make_index(REPOS_DIR, "Index of /repo/repositories/", repo_rows)
 
-    # repo/ root index — repositories/ folder + plugin dirs
-    root_rows = [
-        '<a href="../">Parent Directory</a>',
-        '<a href="repositories/">repositories/</a>',
-    ]
-    for entry in sorted(os.listdir(REPO_DIR)):
-        full = os.path.join(REPO_DIR, entry)
-        if (
-            os.path.isdir(full)
-            and entry not in ("repositories",)
-            and not entry.startswith("repository.")
-        ):
-            root_rows.append(f'<a href="{entry}/">{entry}/</a>')
-    _make_index(REPO_DIR, "Index of /repo/", root_rows)
+    # repo/index.html is a custom hand-crafted page — never overwrite it
 
     print(f"\naddons.xml: {len(plugin_roots)} plugin(s)")
     print(f"addons.xml.sha256: {sha256}")
