@@ -1,12 +1,6 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="repository.tony7bones"
-       name="Tony7Bones Repository"
-       version="1.0.1"
-       provider-name="tony7bones">
-  <requires>
-    <import addon="xbmc.addon" version="12.0.0"/>
-  </requires>
-  <extension point="xbmc.addon.repository">
+<addon id="repository.tony7bones" name="Tony7Bones Repository" version="1.0.2" provider-name="tony7bones">
+  <extension point="xbmc.addon.repository" name="Tony7Bones Repository">
     <dir>
       <info compressed="false">https://tony7bones.github.io/repo/addons.xml</info>
       <checksum verify="sha256">https://tony7bones.github.io/repo/addons.xml.sha256</checksum>
@@ -17,6 +11,6 @@
     <platform>all</platform>
     <summary lang="en_GB">Tony7Bones Kodi Repository</summary>
     <description lang="en_GB">Official repository for Tony7Bones Kodi addons.</description>
-    <news>Fix: correct addon.xml structure for Kodi 21 Omega.</news>
+    <news>v1.0.2: Add name attribute to repository extension point.</news>
   </extension>
 </addon>
