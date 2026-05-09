@@ -5,6 +5,7 @@ on:
     paths:
       - "repo/**/addon.xml"
       - "repo/media/**"
+      - "repo/repositories/**"
   workflow_dispatch:
 
 jobs:
