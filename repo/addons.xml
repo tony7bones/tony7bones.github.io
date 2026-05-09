@@ -1,17 +1,2 @@
 <?xml version='1.0' encoding='UTF-8'?>
-<addons>
-    <addon id="plugin.video.tony7bones" name="Tony7Bones Video" version="1.0.0" provider-name="tony7bones">
-        <requires>
-            <import addon="xbmc.python" version="3.0.0" />
-        </requires>
-        <extension point="xbmc.python.pluginsource" library="default.py">
-            <provides>video</provides>
-        </extension>
-        <extension point="xbmc.addon.metadata">
-            <platform>all</platform>
-            <summary lang="en">Tony7Bones Video Plugin</summary>
-            <description lang="en">Starter video plugin for the Tony7Bones repository.</description>
-            <news>Initial release.</news>
-        </extension>
-    </addon>
-</addons>
+<addons />
