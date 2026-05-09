@@ -17,11 +17,11 @@ REPOS = [
 ]
 
 ADDONS = [
-    ("skin.estuary.modv2", "Estuary MOD V2 Omega"),
     ("plugin.video.pov", "POV"),
     ("plugin.video.sporthdme", "SportsHD"),
     ("plugin.video.the-loop", "The Loop"),
     ("pvr.iptvsimple", "IPTV Simple Client"),
+    ("skin.estuary.modv2", "Estuary MOD V2 Omega"),
 ]
 
 IPTV_INSTANCE_XML = """\
@@ -173,7 +173,7 @@ def run():
     step += 1
     dialog.update(int(step / total * 100), "Updating repository index...")
     xbmc.executebuiltin("UpdateAddonRepos()", True)
-    xbmc.sleep(3000)
+    xbmc.sleep(15000)
     if dialog.iscanceled():
         dialog.close()
         return
