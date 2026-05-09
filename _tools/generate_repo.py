@@ -39,10 +39,10 @@ def _apache_index(directory: str, title: str, parent: str) -> str:
         if os.path.isdir(full) and name not in (".", ".."):
             rows.append(f'<a href="{name}/">{name}/</a>')
 
-    # Then files (skip index.html itself)
+    # Then zip files only — xml/sha256/md5/html are internal, not user-facing
     for name in entries:
         full = os.path.join(directory, name)
-        if os.path.isfile(full) and name != "index.html":
+        if os.path.isfile(full) and name.endswith(".zip"):
             date = _fmt_date(full)
             size = _fmt_size(os.path.getsize(full))
             rows.append(f'<a href="{name}">{name}</a>  {date}  {size}')
