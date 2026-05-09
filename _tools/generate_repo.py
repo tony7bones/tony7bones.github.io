@@ -119,12 +119,55 @@ def generate() -> None:
     with open(os.path.join(REPO_DIR, "addons.xml.sha256"), "w") as fh:
         fh.write(sha256)
 
-    # Generate index.html for each addon directory, then for the repo root
+    # Generate index.html for each addon directory
+    repo_zips: list[tuple[str, str, str]] = []  # (rel_path_to_zip, zip_name, addon_id)
     for addon_dir, addon_id in addon_dirs:
         write_index(addon_dir, f"/repo/{addon_id}/")
         print(f"  index  {addon_id}/index.html")
+        if addon_id.startswith("repository."):
+            zip_name = f"{addon_id}-{ET.parse(os.path.join(addon_dir, 'addon.xml')).getroot().get('version')}.zip"
+            repo_zips.append((f"../{addon_id}/{zip_name}", zip_name, addon_id))
 
-    write_index(REPO_DIR, "/repo/")
+    # Generate virtual repositories/ index listing repo zips directly
+    repos_dir = os.path.join(REPO_DIR, "repositories")
+    os.makedirs(repos_dir, exist_ok=True)
+    rows = ['<a href="../">Parent Directory</a>']
+    for rel_path, zip_name, _ in sorted(repo_zips):
+        zip_abs = os.path.normpath(os.path.join(repos_dir, rel_path))
+        date = _fmt_date(zip_abs) if os.path.exists(zip_abs) else ""
+        size = _fmt_size(os.path.getsize(zip_abs)) if os.path.exists(zip_abs) else ""
+        rows.append(f'<a href="{rel_path}">{zip_name}</a>  {date}  {size}')
+    html = (
+        '<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">\n'
+        "<html>\n<head><title>Index of /repo/repositories/</title></head>\n"
+        "<body>\n<h1>Index of /repo/repositories/</h1>\n<pre>\n"
+        + "\n".join(rows)
+        + "\n</pre>\n</body>\n</html>\n"
+    )
+    with open(os.path.join(repos_dir, "index.html"), "w", encoding="utf-8") as fh:
+        fh.write(html)
+    print("  index  repositories/index.html")
+
+    # Root index: show plugins + repositories/ virtual folder; hide individual repository.* dirs
+    root_rows = ['<a href="../">Parent Directory</a>']
+    root_rows.append('<a href="repositories/">repositories/</a>')
+    for entry in sorted(os.listdir(REPO_DIR)):
+        full = os.path.join(REPO_DIR, entry)
+        if (
+            os.path.isdir(full)
+            and not entry.startswith("repository.")
+            and entry != "repositories"
+        ):
+            root_rows.append(f'<a href="{entry}/">{entry}/</a>')
+    root_html = (
+        '<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">\n'
+        "<html>\n<head><title>Index of /repo/</title></head>\n"
+        "<body>\n<h1>Index of /repo/</h1>\n<pre>\n"
+        + "\n".join(root_rows)
+        + "\n</pre>\n</body>\n</html>\n"
+    )
+    with open(os.path.join(REPO_DIR, "index.html"), "w", encoding="utf-8") as fh:
+        fh.write(root_html)
     print("  index  repo/index.html")
 
     print(f"\nWrote addons.xml  ({len(addon_roots)} addon(s))")
