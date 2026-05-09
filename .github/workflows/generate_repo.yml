@@ -23,33 +23,11 @@ jobs:
       - name: Generate repository files
         run: python3 _tools/generate_repo.py
 
-      - name: Generate media index
-        run: |
-          python3 - <<'EOF'
-          import pathlib
-          media_dir = pathlib.Path("repo/media")
-          exts = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"}
-          images = sorted(p.name for p in media_dir.iterdir() if p.suffix.lower() in exts)
-          links = "\n    ".join(f'<a href="{img}">{img}</a><br>' for img in images)
-          html = f"""<!DOCTYPE html>
-          <html>
-            <head>
-              <title>Tony 7 Bones – Media</title>
-            </head>
-            <body>
-              <h1>Media</h1>
-              {links}
-            </body>
-          </html>"""
-          (media_dir / "index.html").write_text(html)
-          print(f"Media index written with {len(images)} image(s).")
-          EOF
-
       - name: Commit generated files
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add repo/addons.xml repo/addons.xml.sha256 "repo/**/*.zip" repo/**/index.html repo/index.html repo/media/index.html
+          git add repo/addons.xml repo/addons.xml.sha256 "repo/**/*.zip" "repo/**/index.html"
           git rm --cached repo/addons.xml.md5 2>/dev/null || true
           git diff --staged --quiet && echo "Nothing to commit" && exit 0
           git commit -m "Update repository files"
