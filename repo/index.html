@@ -1,25 +1,81 @@
 <!doctype html>
 <html>
   <head>
+    <title>Tony 7 Bones Repository</title>
     <style>
-      body {
-        background-image: url("../images/tony7bones.jpg");
-        background-repeat: no-repeat;
-        background-attachment: fixed;
-        background-position: center;
-        text-align: center;
-        font-family: Verdana, sans-serif;
-        font-size: 1em;
-        width: 100px;
-        height: 600px
-        margin: 1em 12% 1em 12%;
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
       }
-      .repo {
-        font-size: 1.25em;
+
+      body {
+        background: #0a0a0a;
+        color: #e0e0e0;
+        font-family: Verdana, sans-serif;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 2rem;
+      }
+
+      .avatar {
+        width: 140px;
+        height: 140px;
+        border-radius: 50%;
+        object-fit: cover;
+        border: 3px solid #444;
+        box-shadow: 0 0 30px rgba(255, 255, 255, 0.08);
+      }
+
+      h1 {
+        font-size: 1.5rem;
+        font-weight: normal;
+        letter-spacing: 0.1em;
+        color: #ccc;
+        text-transform: uppercase;
+      }
+
+      .links {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        width: 240px;
+      }
+
+      .links a {
+        display: block;
+        padding: 0.65rem 1.25rem;
+        background: #1a1a1a;
+        border: 1px solid #333;
+        border-radius: 6px;
+        color: #bbb;
+        text-decoration: none;
+        font-size: 0.85rem;
+        letter-spacing: 0.05em;
+        text-align: center;
+        transition:
+          background 0.2s,
+          border-color 0.2s,
+          color 0.2s;
+      }
+
+      .links a:hover {
+        background: #252525;
+        border-color: #555;
+        color: #fff;
       }
     </style>
   </head>
   <body>
-    <a href="repositories/">repositories/</a>
+    <img src="../images/tony7bones.jpg" alt="Tony 7 Bones" class="avatar" />
+    <h1>Tony 7 Bones</h1>
+    <nav class="links">
+      <a href="repositories/">repositories/</a>
+    </nav>
   </body>
 </html>

@@ -106,16 +106,55 @@ def generate() -> None:
     with open(os.path.join(REPO_DIR, "addons.xml.sha256"), "w") as fh:
         fh.write(sha256)
 
-    # repositories/ index — flat zip list (direct children only, no subdirs)
+    # repositories/ index — styled page (Kodi still parses <a href=name>name</a>)
     os.makedirs(REPOS_DIR, exist_ok=True)
-    repo_rows = ['<a href="../">Parent Directory</a>']
-    for entry in sorted(os.listdir(REPOS_DIR)):
-        full = os.path.join(REPOS_DIR, entry)
-        if os.path.isfile(full) and entry.endswith(".zip"):
-            repo_rows.append(
-                f'<a href="{entry}">{entry}</a>  {_fmt_date(full)}  {_fmt_size(os.path.getsize(full))}'
-            )
-    _make_index(REPOS_DIR, "Index of /repo/repositories/", repo_rows)
+    zip_entries = sorted(
+        e
+        for e in os.listdir(REPOS_DIR)
+        if os.path.isfile(os.path.join(REPOS_DIR, e)) and e.endswith(".zip")
+    )
+    link_tags = "\n      ".join(f'<a href="{e}">{e}</a>' for e in zip_entries)
+    styled_html = (
+        "<!doctype html>\n<html>\n  <head>\n"
+        "    <title>Tony 7 Bones — Repositories</title>\n"
+        "    <style>\n"
+        "      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }\n"
+        "      body {\n"
+        "        background: #0a0a0a; color: #e0e0e0;\n"
+        "        font-family: Verdana, sans-serif; min-height: 100vh;\n"
+        "        display: flex; flex-direction: column;\n"
+        "        align-items: center; justify-content: center;\n"
+        "        gap: 2rem; padding: 2rem;\n"
+        "      }\n"
+        "      .avatar {\n"
+        "        width: 140px; height: 140px; border-radius: 50%;\n"
+        "        object-fit: cover; border: 3px solid #444;\n"
+        "        box-shadow: 0 0 30px rgba(255,255,255,0.08);\n"
+        "      }\n"
+        "      h1 {\n"
+        "        font-size: 1.5rem; font-weight: normal;\n"
+        "        letter-spacing: 0.1em; color: #ccc; text-transform: uppercase;\n"
+        "      }\n"
+        "      .links { display: flex; flex-direction: column; gap: 0.75rem; width: 340px; }\n"
+        "      .links a {\n"
+        "        display: block; padding: 0.65rem 1.25rem;\n"
+        "        background: #1a1a1a; border: 1px solid #333; border-radius: 6px;\n"
+        "        color: #bbb; text-decoration: none; font-size: 0.8rem;\n"
+        "        letter-spacing: 0.03em; text-align: center;\n"
+        "        transition: background 0.2s, border-color 0.2s, color 0.2s;\n"
+        "      }\n"
+        "      .links a:hover { background: #252525; border-color: #555; color: #fff; }\n"
+        "    </style>\n"
+        "  </head>\n  <body>\n"
+        '    <img src="../../images/tony7bones.jpg" alt="Tony 7 Bones" class="avatar" />\n'
+        "    <h1>Repositories</h1>\n"
+        '    <nav class="links">\n'
+        f"      {link_tags}\n"
+        "    </nav>\n"
+        "  </body>\n</html>\n"
+    )
+    with open(os.path.join(REPOS_DIR, "index.html"), "w", encoding="utf-8") as fh:
+        fh.write(styled_html)
 
     # repo/index.html is a custom hand-crafted page — never overwrite it
 
