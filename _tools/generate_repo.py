@@ -147,11 +147,15 @@ def generate() -> None:
         fh.write(md5)
 
     os.makedirs(REPOS_DIR, exist_ok=True)
-    zip_entries = sorted(
-        e
-        for e in os.listdir(REPOS_DIR)
-        if os.path.isfile(os.path.join(REPOS_DIR, e)) and e.endswith(".zip")
-    )
+    zip_entries = []
+    for e in sorted(os.listdir(REPOS_DIR)):
+        full = os.path.join(REPOS_DIR, e)
+        if os.path.isfile(full) and e.endswith(".zip"):
+            zip_entries.append(e)
+        elif os.path.isdir(full):
+            for sub in sorted(os.listdir(full)):
+                if sub.endswith(".zip"):
+                    zip_entries.append(f"{e}/{sub}")
     html = _styled_page("Tony 7 Bones — Repositories", "Repositories", zip_entries)
     with open(os.path.join(REPOS_DIR, "index.html"), "w", encoding="utf-8") as fh:
         fh.write(html)
