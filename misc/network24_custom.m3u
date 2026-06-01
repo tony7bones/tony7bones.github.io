@@ -1,0 +1,466 @@
+#EXTM3U
+#
+# ============================================================
+#  US ENTERTAINMENT  (158 channels)
+# ============================================================
+#
+#EXTINF:-1 tvg-id="AandENetwork.us" tvg-name="A&E" tvg-logo="https://i.ibb.co/0YWZpbp/a-and-e-us.png" group-title="US Entertainment",A&E
+http://185.134.22.150:8080/live/tonybones/tonybones123/39200.m3u8
+#EXTINF:-1 tvg-id="ABCWABC.us" tvg-name="ABC" tvg-logo="https://i.ibb.co/BzSfgLJ/abc-7-kabc-us.png" group-title="US Entertainment",ABC
+http://185.134.22.150:8080/live/tonybones/tonybones123/1116.m3u8
+#EXTINF:-1 tvg-id="CartoonNetwork.us" tvg-name="Adult Swim (8PM to 6AM)" tvg-logo="https://i.ibb.co/9gm4408/cartoon-network-us.png" group-title="US Entertainment",Adult Swim (8PM to 6AM)
+http://185.134.22.150:8080/live/tonybones/tonybones123/7251.m3u8
+#EXTINF:-1 tvg-id="US: AMC EAST" tvg-name="AMC" tvg-logo="https://i.ibb.co/pPSSGMS/amc-us.png" group-title="US Entertainment",AMC
+http://185.134.22.150:8080/live/tonybones/tonybones123/1114.m3u8
+#EXTINF:-1 tvg-id="amcpresents.us" tvg-name="AMC Presents" tvg-logo="https://i.ibb.co/2FP00VT/amc-presents.png" group-title="US Entertainment",AMC Presents
+http://185.134.22.150:8080/live/tonybones/tonybones123/46494.m3u8
+#EXTINF:-1 tvg-id="AMCPlus.us" tvg-name="AMC+" tvg-logo="https://i.ibb.co/2FPm4GJ/amc-plus.png" group-title="US Entertainment",AMC+
+http://185.134.22.150:8080/live/tonybones/tonybones123/45137.m3u8
+#EXTINF:-1 tvg-id="AmericanHeroesChannel.us" tvg-name="American Heroes" tvg-logo="https://i.ibb.co/K9vTm2D/american-heroes-channel-us.png" group-title="US Entertainment",American Heroes
+http://185.134.22.150:8080/live/tonybones/tonybones123/1113.m3u8
+#EXTINF:-1 tvg-id="amgtv.us" tvg-name="AMG TV" tvg-logo="https://static.epg.best/us/AMGTV.us.png" group-title="US Entertainment",AMG TV
+http://185.134.22.150:8080/live/tonybones/tonybones123/70881.m3u8
+#EXTINF:-1 tvg-id="AnimalPlanet.us" tvg-name="Animal Planet" tvg-logo="https://i.ibb.co/7VNVyTs/animal-planet.png" group-title="US Entertainment",Animal Planet
+http://185.134.22.150:8080/live/tonybones/tonybones123/1111.m3u8
+#EXTINF:-1 tvg-id="AnimalPlanetPacific.us" tvg-name="Animal Planet (West)" tvg-logo="https://i.ibb.co/7VNVyTs/animal-planet.png" group-title="US Entertainment",Animal Planet (West)
+http://185.134.22.150:8080/live/tonybones/tonybones123/54736.m3u8
+#EXTINF:-1 tvg-id="US: ANTENNA TV" tvg-name="Antenna TV" tvg-logo="https://i.ibb.co/ZWZ8GVz/antenna-tv.png" group-title="US Entertainment",Antenna TV
+http://185.134.22.150:8080/live/tonybones/tonybones123/1110.m3u8
+#EXTINF:-1 tvg-id="ASPiRE.us" tvg-name="Aspire TV" tvg-logo="https://i.ibb.co/p4j1rG9/aspire.png" group-title="US Entertainment",Aspire TV
+http://185.134.22.150:8080/live/tonybones/tonybones123/6495.m3u8
+#EXTINF:-1 tvg-id="AWE.us" tvg-name="AWE" tvg-logo="https://i.ibb.co/nkMn5Q9/awe-us.png" group-title="US Entertainment",AWE
+http://185.134.22.150:8080/live/tonybones/tonybones123/1109.m3u8
+#EXTINF:-1 tvg-id="" tvg-name="AWE Plus" tvg-logo="https://www.awe.plus/images/logos/plus/AWE-Plus.png" group-title="US Entertainment",AWE Plus
+https://stream-us-east-1.getpublica.com/playlist.m3u8?network_id=6221&live=1&avod=1&hls_marker=1&content_cat=IAB20%2CIAB20%2D1%2CIAB20%2D3%2CIAB20%2D6%2CIAB20%2D9%2CIAB20%2D22&content_channel=AWE%20Plus&content_context=1&content_genre=lifestyle&content_language=eng&content_network=AWE%20Plus&content_prodqual=1&content_producer=AWE%20Plus&us_privacy=1---&consent=&coppa=&gdpr=1&position=midroll&ssai_enabled=1&ssai_vendor=publica&ip=92.119.177.24&ua=Mozilla%2F5.0%20(Windows%20NT%2010.0%3B%20Win64%3B%20x64)%20AppleWebKit%2F537.36%20(KHTML%2C%20like%20Gecko)%20Chrome%2F131.0.0.0%20Safari%2F537.36&player_height=1080&player_width=1920&site_page=http%3A%2F%2Fwww.awe.plus&site_name=AWE%20Plus&ifa_type=sessionid&is_lat=1&session_id=475f42cd-3fad-4eee-8aed-dd8f228f06bd&min_ad_duration=15&max_ad_duration=60
+#EXTINF:-1 tvg-id="AXSTV.us" tvg-name="AXS TV" tvg-logo="https://i.ibb.co/0tnstTq/axs-tv.png" group-title="US Entertainment",AXS TV
+http://185.134.22.150:8080/live/tonybones/tonybones123/6494.m3u8
+#EXTINF:-1 tvg-id="BBCAmerica.us" tvg-name="BBC America" tvg-logo="https://i.ibb.co/PGPwQ5j/bbc-america-us.png" group-title="US Entertainment",BBC America
+http://185.134.22.150:8080/live/tonybones/tonybones123/1106.m3u8
+#EXTINF:-1 tvg-id="US: BET EAST" tvg-name="BET" tvg-logo="https://i.ibb.co/6Yc9zyF/bet.png" group-title="US Entertainment",BET
+http://185.134.22.150:8080/live/tonybones/tonybones123/1101.m3u8
+#EXTINF:-1 tvg-id="BETHer.us" tvg-name="BET Her" tvg-logo="https://i.ibb.co/9nFVBTR/bet-her.png" group-title="US Entertainment",BET Her
+http://185.134.22.150:8080/live/tonybones/tonybones123/1103.m3u8
+#EXTINF:-1 tvg-id="BETJams.us" tvg-name="BET Jams" tvg-logo="https://i.ibb.co/LSFMPSW/bet-jams.png" group-title="US Entertainment",BET Jams
+http://185.134.22.150:8080/live/tonybones/tonybones123/1102.m3u8
+#EXTINF:-1 tvg-id="BETSOUL.us" tvg-name="BET Soul" tvg-logo="https://i.ibb.co/0YdcXKC/bet-soul-us.png" group-title="US Entertainment",BET Soul
+http://185.134.22.150:8080/live/tonybones/tonybones123/6663.m3u8
+#EXTINF:-1 tvg-id="BounceTV.us" tvg-name="Bounce TV" tvg-logo="https://i.ibb.co/Zx5GRrr/bounce.png" group-title="US Entertainment",Bounce TV
+http://185.134.22.150:8080/live/tonybones/tonybones123/6496.m3u8
+#EXTINF:-1 tvg-id="Bravo.us" tvg-name="Bravo (East)" tvg-logo="https://i.ibb.co/zJzdjfz/bravo.png" group-title="US Entertainment",Bravo (East)
+http://185.134.22.150:8080/live/tonybones/tonybones123/1091.m3u8
+#EXTINF:-1 tvg-id="BravoPacific.us" tvg-name="Bravo (West)" tvg-logo="https://i.ibb.co/zJzdjfz/bravo.png" group-title="US Entertainment",Bravo (West)
+http://185.134.22.150:8080/live/tonybones/tonybones123/1090.m3u8
+#EXTINF:-1 tvg-id="BUZZR.us" tvg-name="Buzzr" tvg-logo="https://i.ibb.co/zR77ftz/buzzr.png" group-title="US Entertainment",Buzzr
+http://185.134.22.150:8080/live/tonybones/tonybones123/1087.m3u8
+#EXTINF:-1 tvg-id="CatchyComedy.us" tvg-name="Catchy Comedy (Formerly Decades)" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/2/25/Catchy_Comedy_logo.svg/240px-Catchy_Comedy_logo.svg.png" group-title="US Entertainment",Catchy Comedy (Formerly Decades)
+http://185.134.22.150:8080/live/tonybones/tonybones123/56862.m3u8
+#EXTINF:-1 tvg-id="CBSWCBS.us" tvg-name="CBS" tvg-logo="https://i.ibb.co/60vqLFd/cbs-2-kcbs-us.png" group-title="US Entertainment",CBS
+http://185.134.22.150:8080/live/tonybones/tonybones123/1045.m3u8
+#EXTINF:-1 tvg-id="Charge!.us" tvg-name="Charge!" tvg-logo="https://i.ibb.co/0n0rbhM/charge.png" group-title="US Entertainment",Charge!
+http://185.134.22.150:8080/live/tonybones/tonybones123/41816.m3u8
+#EXTINF:-1 tvg-id="CircleTV.us" tvg-name="Circle" tvg-logo="https://wsmradio.com/wp-content/uploads/sites/10/2019/12/Circle_Web_600x600.jpg" group-title="US Entertainment",Circle
+https://cdn-ue1-prod.tsv2.amagi.tv/linear/samsungus-circle-samsungus/playlist.m3u8?ads.did%3D%7BPSID%7D%26ads.dnt%3D%7BTARGETOPT%7D%26ads.us_privacy%3D1YNY%26ads.app_domain%3D%7BAPP_DOMAIN%7D%26ads.app_name%3D%7BAPP_NAME%7D/dhttps://airwild2.xyz:2086/live/n24/SUZsBNHv12/82281.ts
+#EXTINF:-1 tvg-id="CleoTV.us" tvg-name="Cleo TV" tvg-logo="https://i.imgur.com/7MEKqmv.gif" group-title="US Entertainment",Cleo TV
+http://185.134.22.150:8080/live/tonybones/tonybones123/41233.m3u8
+#EXTINF:-1 tvg-id="CMT.us" tvg-name="CMT" tvg-logo="https://i.ibb.co/WFZTwNT/cmt-us.png" group-title="US Entertainment",CMT
+http://185.134.22.150:8080/live/tonybones/tonybones123/1036.m3u8
+#EXTINF:-1 tvg-id="CMTPacific.us" tvg-name="CMT (West)" tvg-logo="https://i.ibb.co/WFZTwNT/cmt-us.png" group-title="US Entertainment",CMT (West)
+http://185.134.22.150:8080/live/tonybones/tonybones123/54738.m3u8
+#EXTINF:-1 tvg-id="ComedyCentral.us" tvg-name="Comedy Central" tvg-logo="https://i.ibb.co/LrvwJpz/comedy-central-c.png" group-title="US Entertainment",Comedy Central
+http://185.134.22.150:8080/live/tonybones/tonybones123/40658.m3u8
+#EXTINF:-1 tvg-id="ComedyCentralPacific.us" tvg-name="Comedy Central (West)" tvg-logo="https://i.ibb.co/LrvwJpz/comedy-central-c.png" group-title="US Entertainment",Comedy Central (West)
+http://185.134.22.150:8080/live/tonybones/tonybones123/54737.m3u8
+#EXTINF:-1 tvg-id="Comet.us" tvg-name="Comet TV" tvg-logo="https://i.ibb.co/N9GVDr7/comet.png" group-title="US Entertainment",Comet TV
+http://185.134.22.150:8080/live/tonybones/tonybones123/1031.m3u8
+#EXTINF:-1 tvg-id="CookingChannel.us" tvg-name="Cooking Channel" tvg-logo="https://i.ibb.co/Kwby95K/cooking-channel.png" group-title="US Entertainment",Cooking Channel
+http://185.134.22.150:8080/live/tonybones/tonybones123/1030.m3u8
+#EXTINF:-1 tvg-id="CourtTV.us" tvg-name="Court TV" tvg-logo="https://i.ibb.co/vYcm7Hf/court-tv.png" group-title="US Entertainment",Court TV
+http://185.134.22.150:8080/live/tonybones/tonybones123/40771.m3u8
+#EXTINF:-1 tvg-id="TheCowboyChannel.us" tvg-name="Cowboy Channel" tvg-logo="https://i.ibb.co/0YwN3W7/cowboy-channel.png" group-title="US Entertainment",Cowboy Channel
+http://185.134.22.150:8080/live/tonybones/tonybones123/6510.m3u8
+#EXTINF:-1 tvg-id="COZI CHICAGO IL WMAQ" tvg-name="Cozi TV" tvg-logo="https://i.ibb.co/j5kk5W2/cozi-tv.png" group-title="US Entertainment",Cozi TV
+http://185.134.22.150:8080/live/tonybones/tonybones123/1029.m3u8
+#EXTINF:-1 tvg-id="" tvg-name="Create TV (KLCS)" tvg-logo="https://static.wikia.nocookie.net/logopedia/images/a/a3/CreateLogoFooterLogo.png/revision/latest/scale-to-width-down/250?cb=20150505173247" group-title="US Entertainment",Create TV (KLCS)
+http://185.134.22.150:8080/live/tonybones/tonybones123/62241.m3u8
+#EXTINF:-1 tvg-id="CrimeandInvestigationNetwork.us" tvg-name="Crime & Investigation" tvg-logo="https://i.ibb.co/gd8hCPt/crime-and-investigation.png" group-title="US Entertainment",Crime & Investigation
+http://185.134.22.150:8080/live/tonybones/tonybones123/1028.m3u8
+#EXTINF:-1 tvg-id="CuriousityStream.us" tvg-name="Curiosity Stream" tvg-logo="https://cdn.realscreen.com/wp/wp-content/uploads/2020/12/CuriosityStream-Logo.wine_.jpg?7ae179" group-title="US Entertainment",Curiosity Stream
+http://185.134.22.150:8080/live/tonybones/tonybones123/54268.m3u8
+#EXTINF:-1 tvg-id="CW NEW YORK NY WPIX" tvg-name="CW Pix 11" tvg-logo="https://i.ibb.co/SJzhM31/cw-11-wpix-us.png" group-title="US Entertainment",CW Pix 11
+http://185.134.22.150:8080/live/tonybones/tonybones123/10433.m3u8
+#EXTINF:-1 tvg-id="DestinationAmerica.us" tvg-name="Destination America" tvg-logo="https://i.ibb.co/b5G5C4r/destination-america.png" group-title="US Entertainment",Destination America
+http://185.134.22.150:8080/live/tonybones/tonybones123/1025.m3u8
+#EXTINF:-1 tvg-id="US: DISCOVERY CHANNEL EAST" tvg-name="Discovery Channel" tvg-logo="https://i.ibb.co/30nTC1p/discovery.png" group-title="US Entertainment",Discovery Channel
+http://185.134.22.150:8080/live/tonybones/tonybones123/1024.m3u8
+#EXTINF:-1 tvg-id="DiscoveryFamilyChannel.us" tvg-name="Discovery Family" tvg-logo="https://i.ibb.co/CttwNBq/discovery-family.png" group-title="US Entertainment",Discovery Family
+http://185.134.22.150:8080/live/tonybones/tonybones123/1023.m3u8
+#EXTINF:-1 tvg-id="DiscoveryLifeChannel.us" tvg-name="Discovery Life" tvg-logo="https://i.ibb.co/VLGX2Ks/discovery-life.png" group-title="US Entertainment",Discovery Life
+http://185.134.22.150:8080/live/tonybones/tonybones123/1022.m3u8
+#EXTINF:-1 tvg-id="ScienceChannel.us" tvg-name="Discovery Science" tvg-logo="https://i.ibb.co/G7sDCbP/discovery-science-us.png" group-title="US Entertainment",Discovery Science
+http://185.134.22.150:8080/live/tonybones/tonybones123/1021.m3u8
+#EXTINF:-1 tvg-id="DogTV.us" tvg-name="Dog TV" tvg-logo="https://i.ibb.co/yPhnmz1/dog-tv-us.png" group-title="US Entertainment",Dog TV
+http://185.134.22.150:8080/live/tonybones/tonybones123/40145.m3u8
+#EXTINF:-1 tvg-id="MERITKAAHDT2.us" tvg-name="Dr Phils Merit TV" tvg-logo="https://image.roku.com/developer_channels/prod/5221b3888e9437d6a086e1be590960d7073ab39bd06448964b15baaa00719b20.png" group-title="US Entertainment",Dr Phils Merit TV
+http://185.134.22.150:8080/live/tonybones/tonybones123/77847.m3u8
+#EXTINF:-1 tvg-id="EEntertainmentTelevision.us" tvg-name="E!" tvg-logo="https://i.ibb.co/JjfxCd8/e-channel.png" group-title="US Entertainment",E!
+http://185.134.22.150:8080/live/tonybones/tonybones123/1008.m3u8
+#EXTINF:-1 tvg-id="EEntertainmentTelevisionPacific.us" tvg-name="E! (West)" tvg-logo="https://i.ibb.co/JjfxCd8/e-channel.png" group-title="US Entertainment",E! (West)
+http://185.134.22.150:8080/live/tonybones/tonybones123/1009.m3u8
+#EXTINF:-1 tvg-id="FEENTTV" tvg-name="FE TV" tvg-logo="https://fetv.tv/wp-content/uploads/2017/07/fetv-banner-5-mobile-350x203.jpg" group-title="US Entertainment",FE TV
+http://185.134.22.150:8080/live/tonybones/tonybones123/56080.m3u8
+#EXTINF:-1 tvg-id="FoodNetwork.us" tvg-name="Food Network" tvg-logo="https://i.ibb.co/jzVWtwP/food-network.png" group-title="US Entertainment",Food Network
+http://185.134.22.150:8080/live/tonybones/tonybones123/986.m3u8
+#EXTINF:-1 tvg-id="FoodNetworkPacific.us" tvg-name="Food Network (West)" tvg-logo="https://i.ibb.co/jzVWtwP/food-network.png" group-title="US Entertainment",Food Network (West)
+http://185.134.22.150:8080/live/tonybones/tonybones123/54739.m3u8
+#EXTINF:-1 tvg-id="FOXWNYW.us" tvg-name="FOX" tvg-logo="https://i.ibb.co/HD31YjZ/fox-5-wnyw-us.png" group-title="US Entertainment",FOX
+http://185.134.22.150:8080/live/tonybones/tonybones123/884.m3u8
+#EXTINF:-1 tvg-id="Freeform.us" tvg-name="Freeform" tvg-logo="https://i.ibb.co/VvrFDYt/freeform.png" group-title="US Entertainment",Freeform
+http://185.134.22.150:8080/live/tonybones/tonybones123/882.m3u8
+#EXTINF:-1 tvg-id="FreeformPacific.us" tvg-name="Freeform West" tvg-logo="https://i.ibb.co/VvrFDYt/freeform.png" group-title="US Entertainment",Freeform West
+http://185.134.22.150:8080/live/tonybones/tonybones123/62287.m3u8
+#EXTINF:-1 tvg-id="Fuse.us" tvg-name="Fuse" tvg-logo="https://i.ibb.co/xX89L8L/fuse.png" group-title="US Entertainment",Fuse
+http://185.134.22.150:8080/live/tonybones/tonybones123/881.m3u8
+#EXTINF:-1 tvg-id="FX.us" tvg-name="FX" tvg-logo="https://i.ibb.co/c3Hhwxr/fx.png" group-title="US Entertainment",FX
+http://185.134.22.150:8080/live/tonybones/tonybones123/878.m3u8
+#EXTINF:-1 tvg-id="FXMovies.us" tvg-name="FXM" tvg-logo="https://i.ibb.co/7k6ssR1/fxm.png" group-title="US Entertainment",FXM
+http://185.134.22.150:8080/live/tonybones/tonybones123/877.m3u8
+#EXTINF:-1 tvg-id="FXX.us" tvg-name="FXX" tvg-logo="https://i.ibb.co/Btt21GV/fxx.png" group-title="US Entertainment",FXX
+http://185.134.22.150:8080/live/tonybones/tonybones123/875.m3u8
+#EXTINF:-1 tvg-id="FXXPacific.us" tvg-name="FXX (West)" tvg-logo="https://i.ibb.co/Btt21GV/fxx.png" group-title="US Entertainment",FXX (West)
+http://185.134.22.150:8080/live/tonybones/tonybones123/70812.m3u8
+#EXTINF:-1 tvg-id="FYIChannel.us" tvg-name="FYI Network" tvg-logo="https://i.ibb.co/cbYnrZp/fyi.png" group-title="US Entertainment",FYI Network
+http://185.134.22.150:8080/live/tonybones/tonybones123/9877.m3u8
+#EXTINF:-1 tvg-id="GreatAmericanFamily.us" tvg-name="GAC Family (Great American Country)" tvg-logo="https://i.ibb.co/8chnxpw/gac-family.png" group-title="US Entertainment",GAC Family (Great American Country)
+http://185.134.22.150:8080/live/tonybones/tonybones123/41811.m3u8
+#EXTINF:-1 tvg-id="GameShowNetwork.us" tvg-name="Game Show Network" tvg-logo="https://i.ibb.co/n8bjM1x/game-show-network.png" group-title="US Entertainment",Game Show Network
+http://185.134.22.150:8080/live/tonybones/tonybones123/873.m3u8
+#EXTINF:-1 tvg-id="getTV.us" tvg-name="Get TV" tvg-logo="https://i.ibb.co/bvj4MxQ/gettv-us.png" group-title="US Entertainment",Get TV
+http://185.134.22.150:8080/live/tonybones/tonybones123/10314.m3u8
+#EXTINF:-1 tvg-id="Grit.us" tvg-name="Grit" tvg-logo="https://i.ibb.co/XDC82NW/grit.png" group-title="US Entertainment",Grit
+http://185.134.22.150:8080/live/tonybones/tonybones123/6414.m3u8
+#EXTINF:-1 tvg-id="HallmarkChannel.us" tvg-name="Hallmark Channel" tvg-logo="https://i.ibb.co/F621kdw/hallmark-channel-us.png" group-title="US Entertainment",Hallmark Channel
+http://185.134.22.150:8080/live/tonybones/tonybones123/870.m3u8
+#EXTINF:-1 tvg-id="US: HALLMARK FAMILY" tvg-name="Hallmark Family" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/0/06/Hallmark_Family_2024.webp/320px-Hallmark_Family_2024.webp.png" group-title="US Entertainment",Hallmark Family
+http://185.134.22.150:8080/live/tonybones/tonybones123/869.m3u8
+#EXTINF:-1 tvg-id="HallmarkMoviesAndMysteries.us" tvg-name="Hallmark Mystery" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/3/32/Hallmark_Mystery_2024.svg/330px-Hallmark_Mystery_2024.svg.png" group-title="US Entertainment",Hallmark Mystery
+http://185.134.22.150:8080/live/tonybones/tonybones123/868.m3u8
+#EXTINF:-1 tvg-id="heroesandiconstv.us" tvg-name="Heroes and Icons" tvg-logo="https://i.imgur.com/LQz1gal.gif" group-title="US Entertainment",Heroes and Icons
+http://185.134.22.150:8080/live/tonybones/tonybones123/42029.m3u8
+#EXTINF:-1 tvg-id="HGTV.us" tvg-name="HGTV" tvg-logo="https://i.ibb.co/yNsx1d7/hgtv.png" group-title="US Entertainment",HGTV
+http://185.134.22.150:8080/live/tonybones/tonybones123/862.m3u8
+#EXTINF:-1 tvg-id="US: HISTORY CHANNEL EAST" tvg-name="History" tvg-logo="https://i.ibb.co/r23YL8D/history.png" group-title="US Entertainment",History
+http://185.134.22.150:8080/live/tonybones/tonybones123/860.m3u8
+#EXTINF:-1 tvg-id="history2.ca" tvg-name="History 2" tvg-logo="https://i.ibb.co/T26ZNVL/history-channel-2-ca.png" group-title="US Entertainment",History 2
+http://185.134.22.150:8080/live/tonybones/tonybones123/13107.m3u8
+#EXTINF:-1 tvg-id="HSN.us" tvg-name="HSN" tvg-logo="https://tvpmlogopus.samsungcloud.tv/platform/image/sourcelogo/vc/70/00/36/USAJ3504700A_20210525T051704.png" group-title="US Entertainment",HSN
+http://185.134.22.150:8080/live/tonybones/tonybones123/9291.m3u8
+#EXTINF:-1 tvg-id="HSN2.us" tvg-name="HSN 2" tvg-logo="https://static.wikia.nocookie.net/logopedia/images/f/f2/HSN2_logo_new.png/revision/latest/scale-to-width-down/250?cb=20220104031744" group-title="US Entertainment",HSN 2
+http://185.134.22.150:8080/live/tonybones/tonybones123/62283.m3u8
+#EXTINF:-1 tvg-id="SportsmanChannel.us" tvg-name="Hunt Channel" tvg-logo="https://image.roku.com/developer_channels/prod/fd7432e5c8bd6ecc41ce279e009393baa2515bcb4e5d819c6e9770a16b4dce6b.png" group-title="US Entertainment",Hunt Channel
+http://185.134.22.150:8080/live/tonybones/tonybones123/62242.m3u8
+#EXTINF:-1 tvg-id="IFC.us" tvg-name="IFC" tvg-logo="https://i.ibb.co/Mh42Y0s/ifc-us.png" group-title="US Entertainment",IFC
+http://185.134.22.150:8080/live/tonybones/tonybones123/858.m3u8
+#EXTINF:-1 tvg-id="INSP.us" tvg-name="INSP" tvg-logo="https://upload.wikimedia.org/wikipedia/en/thumb/3/34/INSP_logo_2022.png/220px-INSP_logo_2022.png" group-title="US Entertainment",INSP
+http://185.134.22.150:8080/live/tonybones/tonybones123/7249.m3u8
+#EXTINF:-1 tvg-id="InvestigationDiscovery.us" tvg-name="Investigation Discovery" tvg-logo="https://i.ibb.co/MhZ367m/investigation-discovery.png" group-title="US Entertainment",Investigation Discovery
+http://185.134.22.150:8080/live/tonybones/tonybones123/21016.m3u8
+#EXTINF:-1 tvg-id="InvestigationDiscoveryPacific.us" tvg-name="Investigation Discovery (West)" tvg-logo="https://i.ibb.co/MhZ367m/investigation-discovery.png" group-title="US Entertainment",Investigation Discovery (West)
+http://185.134.22.150:8080/live/tonybones/tonybones123/76171.m3u8
+#EXTINF:-1 tvg-id="IonMystery.us" tvg-name="ION Mystery" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/f/fb/ION_Mystery_logo.svg/220px-ION_Mystery_logo.svg.png" group-title="US Entertainment",ION Mystery
+http://185.134.22.150:8080/live/tonybones/tonybones123/62250.m3u8
+#EXTINF:-1 tvg-id="USAJ2214K9" tvg-name="ION Plus" tvg-logo="https://tvpmlogopus.samsungcloud.tv/platform/image/sourcelogo/vc/70/01/68/USAJ2200014K9_20201208T081550.png" group-title="US Entertainment",ION Plus
+http://185.134.22.150:8080/live/tonybones/tonybones123/62240.m3u8
+#EXTINF:-1 tvg-id="IonTV.us" tvg-name="ION TV" tvg-logo="https://i.ibb.co/PwZqCpV/ion.png" group-title="US Entertainment",ION TV
+http://185.134.22.150:8080/live/tonybones/tonybones123/39202.m3u8
+#EXTINF:-1 tvg-id="JewelryTelevision.us" tvg-name="Jewelry TV" tvg-logo="https://i.imgur.com/1HJraea.png" group-title="US Entertainment",Jewelry TV
+http://185.134.22.150:8080/live/tonybones/tonybones123/62282.m3u8
+#EXTINF:-1 tvg-id="JusticeCentral.us" tvg-name="Justice Central" tvg-logo="https://i.ibb.co/QbMJfRZ/justice-central.png" group-title="US Entertainment",Justice Central
+http://185.134.22.150:8080/live/tonybones/tonybones123/7604.m3u8
+#EXTINF:-1 tvg-id="Laff.us" tvg-name="Laff" tvg-logo="https://i.ibb.co/hgfg04S/laff-tv.png" group-title="US Entertainment",Laff
+http://185.134.22.150:8080/live/tonybones/tonybones123/6498.m3u8
+#EXTINF:-1 tvg-id="LawAndCrime.us" tvg-name="Law and Crime" tvg-logo="https://i.ibb.co/Br7WdmG/law-and-crime-network-us.png" group-title="US Entertainment",Law and Crime
+http://185.134.22.150:8080/live/tonybones/tonybones123/854.m3u8
+#EXTINF:-1 tvg-id="Lifetime.us" tvg-name="Lifetime" tvg-logo="https://i.ibb.co/BsHQcqY/lifetime-us.png" group-title="US Entertainment",Lifetime
+http://185.134.22.150:8080/live/tonybones/tonybones123/852.m3u8
+#EXTINF:-1 tvg-id="LifetimeMoviesNetwork.us" tvg-name="Lifetime Movies" tvg-logo="https://i.ibb.co/T1wGcrM/lifetime-movie-network-us.png" group-title="US Entertainment",Lifetime Movies
+http://185.134.22.150:8080/live/tonybones/tonybones123/853.m3u8
+#EXTINF:-1 tvg-id="Logo.us" tvg-name="Logo" tvg-logo="https://i.ibb.co/BT06YrT/logo-tv.png" group-title="US Entertainment",Logo
+http://185.134.22.150:8080/live/tonybones/tonybones123/851.m3u8
+#EXTINF:-1 tvg-id="lonestarclassics.us" tvg-name="Lone Star" tvg-logo="https://static.wixstatic.com/media/2d47fc_32a9c728993d45cc856ef018fa39a014~mv2.png" group-title="US Entertainment",Lone Star
+http://185.134.22.150:8080/live/tonybones/tonybones123/76039.m3u8
+#EXTINF:-1 tvg-id="MagnoliaNetwork.us" tvg-name="Magnolia Network ( Formerly DIY)" tvg-logo="https://static.wikia.nocookie.net/logopedia/images/e/e3/Magnolia_Network_%28Stacked%29.svg/revision/latest/scale-to-width-down/1000?cb=20200805205726" group-title="US Entertainment",Magnolia Network ( Formerly DIY)
+http://185.134.22.150:8080/live/tonybones/tonybones123/1013.m3u8
+#EXTINF:-1 tvg-id="MeTV.us" tvg-name="Me TV" tvg-logo="https://i.ibb.co/KFY3P68/me-tv.png" group-title="US Entertainment",Me TV
+http://185.134.22.150:8080/live/tonybones/tonybones123/6446.m3u8
+#EXTINF:-1 tvg-id="MeTV+.us" tvg-name="Me TV+" tvg-logo="https://cdnmetv.metv.com/2sP5J-1620921942-73-page-metvplus.png" group-title="US Entertainment",Me TV+
+http://185.134.22.150:8080/live/tonybones/tonybones123/76149.m3u8
+#EXTINF:-1 tvg-id="militaryhistory.us" tvg-name="Military History" tvg-logo="https://i.imgur.com/t9tB5Vq.gif" group-title="US Entertainment",Military History
+http://185.134.22.150:8080/live/tonybones/tonybones123/62285.m3u8
+#EXTINF:-1 tvg-id="MOTORTREND.us" tvg-name="Motortrend" tvg-logo="https://i.ibb.co/bPHZvB9/motortrend.png" group-title="US Entertainment",Motortrend
+http://185.134.22.150:8080/live/tonybones/tonybones123/842.m3u8
+#EXTINF:-1 tvg-id="" tvg-name="Movies!" tvg-logo="https://moviestvnetwork.com/images/movies_tv_network.jpg" group-title="US Entertainment",Movies!
+http://185.134.22.150:8080/live/tonybones/tonybones123/62253.m3u8
+#EXTINF:-1 tvg-id="US: MTV EAST" tvg-name="MTV" tvg-logo="https://i.ibb.co/wCNzbqQ/mtv.png" group-title="US Entertainment",MTV
+http://185.134.22.150:8080/live/tonybones/tonybones123/7244.m3u8
+#EXTINF:-1 tvg-id="MTV2.us" tvg-name="MTV 2" tvg-logo="https://i.ibb.co/ssRmMB5/mtv-2-us.png" group-title="US Entertainment",MTV 2
+http://185.134.22.150:8080/live/tonybones/tonybones123/840.m3u8
+#EXTINF:-1 tvg-id="MTVClassic.us" tvg-name="MTV Classic" tvg-logo="https://i.ibb.co/vYc1pYt/mtv-classic-us.png" group-title="US Entertainment",MTV Classic
+http://185.134.22.150:8080/live/tonybones/tonybones123/7717.m3u8
+#EXTINF:-1 tvg-id="MTVLive.us" tvg-name="MTV Live" tvg-logo="https://i.ibb.co/WFDn7C8/mtv-live.png" group-title="US Entertainment",MTV Live
+http://185.134.22.150:8080/live/tonybones/tonybones123/6509.m3u8
+#EXTINF:-1 tvg-id="mtvU.us" tvg-name="MTV U" tvg-logo="https://i.ibb.co/qDsjzZM/mtv-u.png" group-title="US Entertainment",MTV U
+http://185.134.22.150:8080/live/tonybones/tonybones123/41812.m3u8
+#EXTINF:-1 tvg-id="MYWWOR.us" tvg-name="My 9 WWOR" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/0/0d/WWOR_NewJersey.svg" group-title="US Entertainment",My 9 WWOR
+http://185.134.22.150:8080/live/tonybones/tonybones123/834.m3u8
+#EXTINF:-1 tvg-id="MYWPWR.us" tvg-name="MY50  WPWR" tvg-logo="https://i.ibb.co/7rywpxG/WPWR.png" group-title="US Entertainment",MY50  WPWR
+http://185.134.22.150:8080/live/tonybones/tonybones123/828.m3u8
+#EXTINF:-1 tvg-id="NASA.us" tvg-name="NASA TV" tvg-logo="https://i.ibb.co/vDQWWDC/nasa-tv.png" group-title="US Entertainment",NASA TV
+http://185.134.22.150:8080/live/tonybones/tonybones123/25275.m3u8
+#EXTINF:-1 tvg-id="NationalGeographicWild.us" tvg-name="NAT GEO Wild" tvg-logo="https://i.ibb.co/1svbf3k/nat-geo-wild.png" group-title="US Entertainment",NAT GEO Wild
+http://185.134.22.150:8080/live/tonybones/tonybones123/825.m3u8
+#EXTINF:-1 tvg-id="NationalGeographic.us" tvg-name="National Geographic" tvg-logo="https://i.ibb.co/x6W9Mcs/nat-geo.png" group-title="US Entertainment",National Geographic
+http://185.134.22.150:8080/live/tonybones/tonybones123/824.m3u8
+#EXTINF:-1 tvg-id="NBCWNBC.us" tvg-name="NBC" tvg-logo="https://i.ibb.co/j6Cp5HB/nbc.png" group-title="US Entertainment",NBC
+http://185.134.22.150:8080/live/tonybones/tonybones123/778.m3u8
+#EXTINF:-1 tvg-id="US: NEWSNATION" tvg-name="Newsnation (Formerly WGN America)" tvg-logo="https://s3.amazonaws.com/abn-prod/wp-content/uploads/sites/3/2020/08/News-Nation-800x487-1.jpg" group-title="US Entertainment",Newsnation (Formerly WGN America)
+http://185.134.22.150:8080/live/tonybones/tonybones123/688.m3u8
+#EXTINF:-1 tvg-id="" tvg-name="Nostalgia Network" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/f/f9/Classic_Reruns_TV.png" group-title="US Entertainment",Nostalgia Network
+https://dai.google.com/linear/hls/event/wnQPvAN9QBODw9hP-H0rZA/master.m3u8
+#EXTINF:-1 tvg-id="OutdoorChannel.us" tvg-name="Outdoor Channel" tvg-logo="https://i.ibb.co/d73Thkh/outdoor-channel-us.png" group-title="US Entertainment",Outdoor Channel
+http://185.134.22.150:8080/live/tonybones/tonybones123/6646.m3u8
+#EXTINF:-1 tvg-id="OutsideTelevision.us" tvg-name="Outside TV" tvg-logo="https://i.ibb.co/cNs9Stg/outside-tv-us.png" group-title="US Entertainment",Outside TV
+http://185.134.22.150:8080/live/tonybones/tonybones123/757.m3u8
+#EXTINF:-1 tvg-id="US: OVATION" tvg-name="Ovation" tvg-logo="https://i.ibb.co/vPxHnHq/ovation.png" group-title="US Entertainment",Ovation
+http://185.134.22.150:8080/live/tonybones/tonybones123/42025.m3u8
+#EXTINF:-1 tvg-id="OWN.us" tvg-name="OWN" tvg-logo="https://i.ibb.co/7pVj3RQ/opra-winfrey-network-us.png" group-title="US Entertainment",OWN
+http://185.134.22.150:8080/live/tonybones/tonybones123/756.m3u8
+#EXTINF:-1 tvg-id="Oxygen.us" tvg-name="Oxygen" tvg-logo="https://i.ibb.co/5FcFDcy/oxygen-us.png" group-title="US Entertainment",Oxygen
+http://185.134.22.150:8080/live/tonybones/tonybones123/754.m3u8
+#EXTINF:-1 tvg-id="US: PARAMOUNT NETWORK EAST" tvg-name="Paramount Network" tvg-logo="https://i.ibb.co/BVqjMMc/paramount-network-white-us.png" group-title="US Entertainment",Paramount Network
+http://185.134.22.150:8080/live/tonybones/tonybones123/751.m3u8
+#EXTINF:-1 tvg-id="PBSWNET.us" tvg-name="PBS" tvg-logo="https://i.ibb.co/fCBSvvv/wned-pbs-buffalo-toronto.png" group-title="US Entertainment",PBS
+http://185.134.22.150:8080/live/tonybones/tonybones123/6851.m3u8
+#EXTINF:-1 tvg-id="59c2c3ae40e64939daad8b76" tvg-name="People TV" tvg-logo="https://tvpmlogopus.samsungcloud.tv/platform/image/sourcelogo/vc/70/01/46/USAJ2200022RM20200730102745.png" group-title="US Entertainment",People TV
+http://185.134.22.150:8080/live/tonybones/tonybones123/6643.m3u8
+#EXTINF:-1 tvg-id="PixL.us" tvg-name="Pixl" tvg-logo="https://i.ibb.co/4W76pN0/pixl.png" group-title="US Entertainment",Pixl
+http://185.134.22.150:8080/live/tonybones/tonybones123/6501.m3u8
+#EXTINF:-1 tvg-id="" tvg-name="Poker Go  (Unstable)" tvg-logo="https://www.poker-king.com/images/articles/pokergo-logo-dark-purple-400.jpg" group-title="US Entertainment",Poker Go  (Unstable)
+http://185.134.22.150:8080/live/tonybones/tonybones123/62288.m3u8
+#EXTINF:-1 tvg-id="POP.us" tvg-name="Pop" tvg-logo="https://i.ibb.co/QvsPFqc/pop.png" group-title="US Entertainment",Pop
+http://185.134.22.150:8080/live/tonybones/tonybones123/749.m3u8
+#EXTINF:-1 tvg-id="PursuitChannel.us" tvg-name="Pursuit Channel" tvg-logo="https://i.ibb.co/BGgTpFw/pursuit.png" group-title="US Entertainment",Pursuit Channel
+http://185.134.22.150:8080/live/tonybones/tonybones123/62276.m3u8
+#EXTINF:-1 tvg-id="QVC.us" tvg-name="QVC" tvg-logo="https://www.qurateretailgroup.com/wp-content/uploads/qvc-newco/2019/02/VVZaRFgx-550x206.jpg" group-title="US Entertainment",QVC
+http://185.134.22.150:8080/live/tonybones/tonybones123/748.m3u8
+#EXTINF:-1 tvg-id="" tvg-name="QVC 2" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/7/7a/QVC2_logo_2019.svg/640px-QVC2_logo_2019.svg.png" group-title="US Entertainment",QVC 2
+http://185.134.22.150:8080/live/tonybones/tonybones123/75581.m3u8
+#EXTINF:-1 tvg-id="" tvg-name="QVC 3" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/e/ec/QVC3_logo%2C_1_April_2019.png?20190401065058" group-title="US Entertainment",QVC 3
+http://185.134.22.150:8080/live/tonybones/tonybones123/75582.m3u8
+#EXTINF:-1 tvg-id="RecipeTV.us" tvg-name="Recipe TV" tvg-logo="https://m.media-amazon.com/images/M/MV5BYmY0NGFiZjYtOGZiNC00ZDhmLTk2ZDEtYjU1MzdmZjk1YzY3XkEyXkFqcGc@._V1_QL75_UX223_.jpg" group-title="US Entertainment",Recipe TV
+http://185.134.22.150:8080/live/tonybones/tonybones123/78432.m3u8
+#EXTINF:-1 tvg-id="ReelzChannel.us" tvg-name="Reelz*" tvg-logo="https://i.ibb.co/xg75jVg/reelz-us.png" group-title="US Entertainment",Reelz*
+http://185.134.22.150:8080/live/tonybones/tonybones123/62376.m3u8
+#EXTINF:-1 tvg-id="Revolt.us" tvg-name="Revolt" tvg-logo="https://i.ibb.co/d02CMmD/revolt.png" group-title="US Entertainment",Revolt
+http://185.134.22.150:8080/live/tonybones/tonybones123/747.m3u8
+#EXTINF:-1 tvg-id="RFDTV.us" tvg-name="RFD TV" tvg-logo="https://i.ibb.co/1LDYdSm/rfd-tv-us.png" group-title="US Entertainment",RFD TV
+http://185.134.22.150:8080/live/tonybones/tonybones123/6500.m3u8
+#EXTINF:-1 tvg-id="SmithsonianNetwork.us" tvg-name="Smithsonian Channel" tvg-logo="https://i.ibb.co/Jrhwz2K/smithsonian-channel-us.png" group-title="US Entertainment",Smithsonian Channel
+http://185.134.22.150:8080/live/tonybones/tonybones123/742.m3u8
+#EXTINF:-1 tvg-id="SportsmanChannel.us" tvg-name="Sportsman Channel" tvg-logo="https://i.ibb.co/6ncvHKp/hunt-channel-logo.png" group-title="US Entertainment",Sportsman Channel
+http://185.134.22.150:8080/live/tonybones/tonybones123/6647.m3u8
+#EXTINF:-1 tvg-id="StartTV.us" tvg-name="Start TV" tvg-logo="https://i.ibb.co/6W9dtBL/start-tv.png" group-title="US Entertainment",Start TV
+http://185.134.22.150:8080/live/tonybones/tonybones123/736.m3u8
+#EXTINF:-1 tvg-id="SundanceTV.us" tvg-name="Sundance" tvg-logo="https://i.ibb.co/68xZhbb/sundance-tv-us.png" group-title="US Entertainment",Sundance
+http://185.134.22.150:8080/live/tonybones/tonybones123/733.m3u8
+#EXTINF:-1 tvg-id="Syfy.us" tvg-name="SYFY" tvg-logo="https://i.ibb.co/QccY2pW/syfy.png" group-title="US Entertainment",SYFY
+http://185.134.22.150:8080/live/tonybones/tonybones123/731.m3u8
+#EXTINF:-1 tvg-id="Tastemade.us" tvg-name="Tastemade" tvg-logo="https://tvpmlogopus.samsungcloud.tv/platform/image/sourcelogo/vc/70/01/02/USAK3508707A_20210525T051649.png" group-title="US Entertainment",Tastemade
+http://185.134.22.150:8080/live/tonybones/tonybones123/40837.m3u8
+#EXTINF:-1 tvg-id="tbdtv.us" tvg-name="TBD" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/0/0b/TBD_Logo_2019.svg/330px-TBD_Logo_2019.svg.png" group-title="US Entertainment",TBD
+http://185.134.22.150:8080/live/tonybones/tonybones123/78252.m3u8
+#EXTINF:-1 tvg-id="TBS.us" tvg-name="TBS (East)" tvg-logo="https://i.ibb.co/VLZ28qM/tbs-us.png" group-title="US Entertainment",TBS (East)
+http://185.134.22.150:8080/live/tonybones/tonybones123/728.m3u8
+#EXTINF:-1 tvg-id="US: TBS West" tvg-name="TBS (West)" tvg-logo="https://i.ibb.co/VLZ28qM/tbs-us.png" group-title="US Entertainment",TBS (West)
+http://185.134.22.150:8080/live/tonybones/tonybones123/727.m3u8
+#EXTINF:-1 tvg-id="turnerclassicmovies.us" tvg-name="TCM" tvg-logo="https://i.ibb.co/GFtf0jk/TCM.png" group-title="US Entertainment",TCM
+http://185.134.22.150:8080/live/tonybones/tonybones123/726.m3u8
+#EXTINF:-1 tvg-id="TheGrio.us" tvg-name="The Grio" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/7/78/The_Grio.svg/220px-The_Grio.svg.png" group-title="US Entertainment",The Grio
+http://185.134.22.150:8080/live/tonybones/tonybones123/53591.m3u8
+#EXTINF:-1 tvg-id="TLC.us" tvg-name="TLC" tvg-logo="https://i.ibb.co/mC0Gf5h/tlc.png" group-title="US Entertainment",TLC
+http://185.134.22.150:8080/live/tonybones/tonybones123/704.m3u8
+#EXTINF:-1 tvg-id="" tvg-name="TMZ Live" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/5/54/TMZLogo.svg/300px-TMZLogo.svg.png" group-title="US Entertainment",TMZ Live
+https://lnc-tmz.tubi.video/index.m3u8
+#EXTINF:-1 tvg-id="TNT.us" tvg-name="TNT" tvg-logo="https://i.ibb.co/4ssqxDN/tnt.png" group-title="US Entertainment",TNT
+http://185.134.22.150:8080/live/tonybones/tonybones123/703.m3u8
+#EXTINF:-1 tvg-id="US: TNT West" tvg-name="TNT (West)" tvg-logo="https://i.ibb.co/4ssqxDN/tnt.png" group-title="US Entertainment",TNT (West)
+http://185.134.22.150:8080/live/tonybones/tonybones123/702.m3u8
+#EXTINF:-1 tvg-id="TravelChannel.us" tvg-name="Travel Channel" tvg-logo="https://i.ibb.co/RvC5GnZ/trvl.png" group-title="US Entertainment",Travel Channel
+http://185.134.22.150:8080/live/tonybones/tonybones123/701.m3u8
+#EXTINF:-1 tvg-id="truTV.us" tvg-name="Tru TV" tvg-logo="https://i.ibb.co/87xZpqT/trutv.png" group-title="US Entertainment",Tru TV
+http://185.134.22.150:8080/live/tonybones/tonybones123/699.m3u8
+#EXTINF:-1 tvg-id="TVLand.us" tvg-name="TV Land" tvg-logo="https://i.ibb.co/HFFPMYh/tvland.png" group-title="US Entertainment",TV Land
+http://185.134.22.150:8080/live/tonybones/tonybones123/698.m3u8
+#EXTINF:-1 tvg-id="TVOne.us" tvg-name="TV One" tvg-logo="https://i.ibb.co/PCK9Mms/tvone.png" group-title="US Entertainment",TV One
+http://185.134.22.150:8080/live/tonybones/tonybones123/6437.m3u8
+#EXTINF:-1 tvg-id="UP.us" tvg-name="UP TV" tvg-logo="https://i.ibb.co/YPbbvNM/up-tv-us.png" group-title="US Entertainment",UP TV
+http://185.134.22.150:8080/live/tonybones/tonybones123/41426.m3u8
+#EXTINF:-1 tvg-id="USANetwork.us" tvg-name="USA Network" tvg-logo="https://i.ibb.co/0YWwd2B/usa.png" group-title="US Entertainment",USA Network
+http://185.134.22.150:8080/live/tonybones/tonybones123/693.m3u8
+#EXTINF:-1 tvg-id="USANetworkPacific.us" tvg-name="USA Network (West)" tvg-logo="https://i.ibb.co/0YWwd2B/usa.png" group-title="US Entertainment",USA Network (West)
+http://185.134.22.150:8080/live/tonybones/tonybones123/694.m3u8
+#EXTINF:-1 tvg-id="VH1.us" tvg-name="VH1" tvg-logo="https://i.ibb.co/8Dg3swQ/vh1.png" group-title="US Entertainment",VH1
+http://185.134.22.150:8080/live/tonybones/tonybones123/691.m3u8
+#EXTINF:-1 tvg-id="Vice.us" tvg-name="Vice" tvg-logo="https://i.ibb.co/BLzFkjD/vice-us.png" group-title="US Entertainment",Vice
+http://185.134.22.150:8080/live/tonybones/tonybones123/690.m3u8
+#EXTINF:-1 tvg-id="WeTV.us" tvg-name="We TV" tvg-logo="https://i.ibb.co/rQmN1NT/we-tv.png" group-title="US Entertainment",We TV
+http://185.134.22.150:8080/live/tonybones/tonybones123/689.m3u8
+#EXTINF:-1 tvg-id="US: ABSOLUTE REALITY BY WETV" tvg-name="We TV+" tvg-logo="http://my.dish.com/cms-files/svod/wetvplus/logo-color-sm.png" group-title="US Entertainment",We TV+
+http://185.134.22.150:8080/live/tonybones/tonybones123/46287.m3u8
+#EXTINF:-1 tvg-id="WGNWGN9.us" tvg-name="WGN 9 Chicago" tvg-logo="https://i.ibb.co/z7mrVVq/wgn9.png" group-title="US Entertainment",WGN 9 Chicago
+http://185.134.22.150:8080/live/tonybones/tonybones123/70499.m3u8
+#EXTINF:-1 tvg-id="US: WILLOW CRICKET" tvg-name="Willow TV" tvg-logo="https://i.ibb.co/DrX2fM1/willow-us.png" group-title="US Entertainment",Willow TV
+http://185.134.22.150:8080/live/tonybones/tonybones123/62307.m3u8
+#
+# ============================================================
+#  US NEWS/WEATHER  (47 channels)
+# ============================================================
+#
+#EXTINF:-1 tvg-id="" tvg-name=" *X* Event -  Elon Interviews Donald Trump Condensed Replay" tvg-logo="https://img.freepik.com/free-vector/twitter-app-new-logo-x-black-background_1017-45425.jpg" group-title="US News/Weather", *X* Event -  Elon Interviews Donald Trump Condensed Replay
+https://video.twimg.com/amplify_video/1823221842091421696/pl/6CZu1152QhyevWAj.m3u8?variant_version=1&tag=14
+#EXTINF:-1 tvg-id="accuweather.us" tvg-name="Accuweather" tvg-logo="https://i.ibb.co/zhgZykb/accuweather-us.png" group-title="US News/Weather",Accuweather
+http://185.134.22.150:8080/live/tonybones/tonybones123/41819.m3u8
+#EXTINF:-1 tvg-id="aljazeera.uk" tvg-name="Al Jazeera ENG" tvg-logo="https://logo.iptveditor.com/aljazerranews.png" group-title="US News/Weather",Al Jazeera ENG
+http://185.134.22.150:8080/live/tonybones/tonybones123/6459.m3u8
+#EXTINF:-1 tvg-id="bbcworld.ca" tvg-name="BBC World News" tvg-logo="https://i.ibb.co/C1SVgJj/bbc-world-news.png" group-title="US News/Weather",BBC World News
+http://185.134.22.150:8080/live/tonybones/tonybones123/5129.m3u8
+#EXTINF:-1 tvg-id="bloomberg.uk" tvg-name="Bloomberg" tvg-logo="https://raw.githubusercontent.com/Fourqui/tv/master/countries/united-states/bloomberg-television-us.png" group-title="US News/Weather",Bloomberg
+http://185.134.22.150:8080/live/tonybones/tonybones123/6635.m3u8
+#EXTINF:-1 tvg-id="CSPAN.us" tvg-name="C Span" tvg-logo="https://i.ibb.co/df2j6st/c-span-us.png" group-title="US News/Weather",C Span
+http://185.134.22.150:8080/live/tonybones/tonybones123/42030.m3u8
+#EXTINF:-1 tvg-id="cspan2.us" tvg-name="C Span 2" tvg-logo="https://raw.githubusercontent.com/Fourqui/tv/master/countries/united-states/c-span-2-us.png" group-title="US News/Weather",C Span 2
+http://185.134.22.150:8080/live/tonybones/tonybones123/42031.m3u8
+#EXTINF:-1 tvg-id="cspan3.us" tvg-name="C Span 3" tvg-logo="http://stopthecap.com/wp-content/uploads/2010/02/cspan3.png" group-title="US News/Weather",C Span 3
+http://185.134.22.150:8080/live/tonybones/tonybones123/53147.m3u8
+#EXTINF:-1 tvg-id="cheddarbusiness.us" tvg-name="Cheddar Business" tvg-logo="https://pbs.twimg.com/media/EI4bxIPXUAAV2Hc.jpg" group-title="US News/Weather",Cheddar Business
+http://185.134.22.150:8080/live/tonybones/tonybones123/1044.m3u8
+#EXTINF:-1 tvg-id="US: Cheddar News" tvg-name="Cheddar News" tvg-logo="https://provider-static.plex.tv/epg/images/ott_channels/logos/cheddarnews_logo_dark.png" group-title="US News/Weather",Cheddar News
+http://185.134.22.150:8080/live/tonybones/tonybones123/1043.m3u8
+#EXTINF:-1 tvg-id="CNBC.us" tvg-name="CNBC" tvg-logo="https://i.ibb.co/KGRYzXJ/CNBC.png" group-title="US News/Weather",CNBC
+http://185.134.22.150:8080/live/tonybones/tonybones123/1034.m3u8
+#EXTINF:-1 tvg-id="CNBCWorld.us" tvg-name="CNBC World" tvg-logo="https://i.ibb.co/2KBB4Dh/CNBC-World.png" group-title="US News/Weather",CNBC World
+http://185.134.22.150:8080/live/tonybones/tonybones123/1035.m3u8
+#EXTINF:-1 tvg-id="CNN.us" tvg-name="CNN" tvg-logo="https://i.ibb.co/0f4VRQk/cnn.png" group-title="US News/Weather",CNN
+http://185.134.22.150:8080/live/tonybones/tonybones123/1033.m3u8
+#EXTINF:-1 tvg-id="CNN.us" tvg-name="CNN (Backup)" tvg-logo="https://i.ibb.co/0f4VRQk/cnn.png" group-title="US News/Weather",CNN (Backup)
+http://185.134.22.150:8080/live/tonybones/tonybones123/39204.m3u8
+#EXTINF:-1 tvg-id="cnninternationalna.ca" tvg-name="CNN International" tvg-logo="http://epg4you.com/logos/cnninternational.png" group-title="US News/Weather",CNN International
+http://185.134.22.150:8080/live/tonybones/tonybones123/5090.m3u8
+#EXTINF:-1 tvg-id="" tvg-name="Dan Bongino We Must Excise This Cancer (Ep. 2462) - 02/27" tvg-logo="https://1a-1791.com/video/z8/U/K/d/b/UKdba.caa.9-bongino-t8rqq9.jpeg" group-title="US News/Weather",Dan Bongino We Must Excise This Cancer (Ep. 2462) - 02/27
+https://rumble.com/live-hls-dvr/7465us/playlist.m3u8?
+#EXTINF:-1 tvg-id="FoxBusiness.us" tvg-name="FOX Business" tvg-logo="https://i.ibb.co/tm1Jrpw/fox-business.png" group-title="US News/Weather",FOX Business
+http://185.134.22.150:8080/live/tonybones/tonybones123/928.m3u8
+#EXTINF:-1 tvg-id="" tvg-name="FOX Live Now" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/2/2d/LiveNOW_from_FOX.png/250px-LiveNOW_from_FOX.png" group-title="US News/Weather",FOX Live Now
+https://fox-foxnewsnow-vizio.amagi.tv/playlist.m3u8
+#EXTINF:-1 tvg-id="FoxNewsChannel.us" tvg-name="FOX News" tvg-logo="https://i.ibb.co/DLkK99x/fox-news-framed-us.png" group-title="US News/Weather",FOX News
+http://185.134.22.150:8080/live/tonybones/tonybones123/922.m3u8
+#EXTINF:-1 tvg-id="FoxNewsChannel.us" tvg-name="FOX News (Backup)" tvg-logo="https://i.ibb.co/DLkK99x/fox-news-framed-us.png" group-title="US News/Weather",FOX News (Backup)
+http://185.134.22.150:8080/live/tonybones/tonybones123/19432.m3u8
+#EXTINF:-1 tvg-id="foxweather.us" tvg-name="FOX Weather Channel" tvg-logo="https://s.yimg.com/ny/api/res/1.2/ZGsmCmG73ojueESHKBYj2A--/YXBwaWQ9aGlnaGxhbmRlcjt3PTk2MDtoPTk2MDtjZj13ZWJw/https://s.yimg.com/uu/api/res/1.2/9rcvhQ8ZSHX0rFV0WudnHA--~B/aD00ODA7dz00ODA7YXBwaWQ9eXRhY2h5b24-/https://media.zenfs.com/en/business-wire.com/48011cc4c99d15194d3ac758def4cdef" group-title="US News/Weather",FOX Weather Channel
+http://185.134.22.150:8080/live/tonybones/tonybones123/61041.m3u8
+#EXTINF:-1 tvg-id="" tvg-name="Free Speech TV" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/4/44/Logo_of_Free_Speech_TV.png" group-title="US News/Weather",Free Speech TV
+https://edge.fstv-live-linear-channel.top.comcast.net/Content/HLS_HLSv3/Live/channel(b168a609-19c1-2203-ae1d-6b9726f05e67)/index.m3u8
+#EXTINF:-1 tvg-id="HLN.us" tvg-name="HLN" tvg-logo="https://i.ibb.co/7gtVNGs/hln.png" group-title="US News/Weather",HLN
+http://185.134.22.150:8080/live/tonybones/tonybones123/859.m3u8
+#EXTINF:-1 tvg-id="" tvg-name="Lindell TV" tvg-logo="https://qph.cf2.quoracdn.net/main-qimg-24a68847bf3f172164768806d0f51185" group-title="US News/Weather",Lindell TV
+http://185.134.22.150:8080/live/tonybones/tonybones123/63088.m3u8
+#EXTINF:-1 tvg-id="MSNBC.HD.us2" tvg-name="MSNOW (Formerly MSNBC)" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/c/c2/MS_NOW_logo.svg" group-title="US News/Weather",MSNOW (Formerly MSNBC)
+http://185.134.22.150:8080/live/tonybones/tonybones123/841.m3u8
+#EXTINF:-1 tvg-id="MSNBC.HD.us2" tvg-name="MSNOW (Formerly MSNBC) (Backup)" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/c/c2/MS_NOW_logo.svg" group-title="US News/Weather",MSNOW (Formerly MSNBC) (Backup)
+http://185.134.22.150:8080/live/tonybones/tonybones123/77854.m3u8
+#EXTINF:-1 tvg-id="newenglandcablenews.us" tvg-name="NECN (New England Cable News)" tvg-logo="https://media.necn.com/2019/09/NECN_On_Dark@3x-3.png?fit=420%2C120&quality=85&strip=all&w=140&h=40" group-title="US News/Weather",NECN (New England Cable News)
+http://185.134.22.150:8080/live/tonybones/tonybones123/76151.m3u8
+#EXTINF:-1 tvg-id="news12brooklyn.us" tvg-name="News 12 Brooklyn" tvg-logo="https://tinyurl.com/y5phtb2n" group-title="US News/Weather",News 12 Brooklyn
+http://185.134.22.150:8080/live/tonybones/tonybones123/6454.m3u8
+#EXTINF:-1 tvg-id="news12connecticut.us" tvg-name="News 12 Connecticut" tvg-logo="https://tinyurl.com/yxmppgh7" group-title="US News/Weather",News 12 Connecticut
+http://185.134.22.150:8080/live/tonybones/tonybones123/6453.m3u8
+#EXTINF:-1 tvg-id="news12longisland.us" tvg-name="News 12 Long Island" tvg-logo="https://tinyurl.com/y4vxgdhv" group-title="US News/Weather",News 12 Long Island
+http://185.134.22.150:8080/live/tonybones/tonybones123/33567.m3u8
+#EXTINF:-1 tvg-id="news12newjersey.us" tvg-name="News 12 New Jersey" tvg-logo="https://tinyurl.com/y4oga5mv" group-title="US News/Weather",News 12 New Jersey
+http://185.134.22.150:8080/live/tonybones/tonybones123/40164.m3u8
+#EXTINF:-1 tvg-id="my12wmyt.us" tvg-name="News 12 the Bronx" tvg-logo="https://tinyurl.com/y62g4o5n" group-title="US News/Weather",News 12 the Bronx
+http://185.134.22.150:8080/live/tonybones/tonybones123/6455.m3u8
+#EXTINF:-1 tvg-id="news12westchester.us" tvg-name="News 12 Westchester" tvg-logo="https://tinyurl.com/y4vxgdhv" group-title="US News/Weather",News 12 Westchester
+http://185.134.22.150:8080/live/tonybones/tonybones123/13909.m3u8
+#EXTINF:-1 tvg-id="" tvg-name="Newsmax 2" tvg-logo="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSmR2okDNdoYx0EbuQ34moAcy4W_VLrHjeKt7NYftk7ycOt864DfVNV8ksynWYA9iRr3q4&usqp=CAU" group-title="US News/Weather",Newsmax 2
+http://185.134.22.150:8080/live/tonybones/tonybones123/78215.m3u8
+#EXTINF:-1 tvg-id="NewsmaxTV.us" tvg-name="Newsmax TV*" tvg-logo="https://m.media-amazon.com/images/I/41bFwLpbChL.png" group-title="US News/Weather",Newsmax TV*
+http://185.134.22.150:8080/live/tonybones/tonybones123/10513.m3u8
+#EXTINF:-1 tvg-id="US: NEWSNATION" tvg-name="Newsnation* (Formerly WGN America)" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/4/42/NewsNation_logo.svg/200px-NewsNation_logo.svg.png" group-title="US News/Weather",Newsnation* (Formerly WGN America)
+http://185.134.22.150:8080/live/tonybones/tonybones123/78427.m3u8
+#EXTINF:-1 tvg-id="newsy.us" tvg-name="Newsy" tvg-logo="https://i.ibb.co/cFHTmCP/newsy-us.png" group-title="US News/Weather",Newsy
+http://185.134.22.150:8080/live/tonybones/tonybones123/10512.m3u8
+#EXTINF:-1 tvg-id="OAN.us" tvg-name="One America News Network" tvg-logo="https://i.ibb.co/8bXwddT/one-america-news-network-us.png" group-title="US News/Weather",One America News Network
+http://185.134.22.150:8080/live/tonybones/tonybones123/6415.m3u8
+#EXTINF:-1 tvg-id="" tvg-name="RSBN - Right Side Broadcasting Network" tvg-logo="https://rsbnetwork.com/wp-content/uploads/2021/12/site-logo-rrwdsfc2.png" group-title="US News/Weather",RSBN - Right Side Broadcasting Network
+https://1a-1791.com/live/qt9k24wa/slot-74/dajb-6soi_720p/chunklist_DVR.m3u8
+#EXTINF:-1 tvg-id="[407] Russia Today" tvg-name="RT News" tvg-logo="http://apk.eternaltv.net/icons/rt-news.jpg" group-title="US News/Weather",RT News
+http://185.134.22.150:8080/live/tonybones/tonybones123/6447.m3u8
+#EXTINF:-1 tvg-id="spectrumnews1.us" tvg-name="Spectrum News NY1" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/thumb/5/57/Spectrum_News_NY1.svg/320px-Spectrum_News_NY1.svg.png" group-title="US News/Weather",Spectrum News NY1
+http://185.134.22.150:8080/live/tonybones/tonybones123/76088.m3u8
+#EXTINF:-1 tvg-id="" tvg-name="The Ben Shapiro Show No, America Was Not Evil for Dropping the Bomb on Hiroshima 4/22" tvg-logo="https://upload.wikimedia.org/wikipedia/commons/c/cd/The_Ben_Shapiro_Show_logo.png" group-title="US News/Weather",The Ben Shapiro Show No, America Was Not Evil for Dropping the Bomb on Hiroshima 4/22
+https://video.twimg.com/amplify_video/1782438800230055936/pl/sKrwy_aukP-DVHDe.m3u8?variant_version=1&tag=14&container=cmaf
+#EXTINF:-1 tvg-id="blazetv.us" tvg-name="The Blaze" tvg-logo="http://apk.eternaltv.net/icons/blazetv.jpg" group-title="US News/Weather",The Blaze
+http://185.134.22.150:8080/live/tonybones/tonybones123/6449.m3u8
+#EXTINF:-1 tvg-id="TheFirst.us" tvg-name="The First*" tvg-logo="http://upload.wikimedia.org/wikipedia/commons/thumb/a/ab/The_First_TV_logo.png/500px-The_First_TV_logo.png" group-title="US News/Weather",The First*
+http://185.134.22.150:8080/live/tonybones/tonybones123/78258.m3u8
+#EXTINF:-1 tvg-id="" tvg-name="Tucker Shroud of Turin 8/8/25" tvg-logo="https://shedtheblock.com/wp-content/uploads/2023/08/new-tucker-carlson-logo.png" group-title="US News/Weather",Tucker Shroud of Turin 8/8/25
+https://video.twimg.com/amplify_video/1953849417137557504/pl/6aO8MvkfIakJVDQ7.m3u8?variant_version=1&tag=21&v=a03
+#EXTINF:-1 tvg-id="TheWeatherChannel.us" tvg-name="Weather Channel" tvg-logo="https://i.ibb.co/mGr5y2D/weather-channel.png" group-title="US News/Weather",Weather Channel
+http://185.134.22.150:8080/live/tonybones/tonybones123/6225.m3u8
+#EXTINF:-1 tvg-id="weathernation.us" tvg-name="Weather Nation" tvg-logo="https://i.ibb.co/J2Y8G2n/weather-nation.png" group-title="US News/Weather",Weather Nation
+http://185.134.22.150:8080/live/tonybones/tonybones123/6636.m3u8
+#
+# ============================================================
+#  PPV EVENTS  (20 channels)
+# ============================================================
+#
+#EXTINF:-1 tvg-id="" tvg-name="PPV  UFC  Fight Pass" tvg-logo="https://d3ciwvs59ifrt8.cloudfront.net/014fd384-d12b-4c2e-a7b2-8b248dad7dd3/eaa64db8-33bd-4374-8728-94e4dd654e79.png" group-title="PPV Events",PPV  UFC  Fight Pass
+http://185.134.22.150:8080/live/tonybones/tonybones123/40370.m3u8
+#EXTINF:-1 tvg-id="ESPN+ 036" tvg-name="PPV  Xtra 01 | The Roast of Kevin Hart (5.10 8:00 PM ET)" tvg-logo="https://lirp.cdn-website.com/c5a09bd2/dms3rep/multi/opt/Screen+Shot+2019-03-10+at+9.55.12+PM-1920w.png" group-title="PPV Events",PPV  Xtra 01 | The Roast of Kevin Hart (5.10 8:00 PM ET)
+http://185.134.22.150:8080/live/tonybones/tonybones123/54269.m3u8
+#EXTINF:-1 tvg-id="" tvg-name="PPV  Xtra 02 | 8PM WWE Monday Night Raw" tvg-logo="https://lirp.cdn-website.com/c5a09bd2/dms3rep/multi/opt/Screen+Shot+2019-03-10+at+9.55.12+PM-1920w.png" group-title="PPV Events",PPV  Xtra 02 | 8PM WWE Monday Night Raw
+http://185.134.22.150:8080/live/tonybones/tonybones123/54270.m3u8
+#EXTINF:-1 tvg-id="EVENT 01:" tvg-name="PPV 01 | 08:00PM WWE Monday Night Raw (May 11)" tvg-logo="https://d3ciwvs59ifrt8.cloudfront.net/014fd384-d12b-4c2e-a7b2-8b248dad7dd3/eaa64db8-33bd-4374-8728-94e4dd654e79.png" group-title="PPV Events",PPV 01 | 08:00PM WWE Monday Night Raw (May 11)
+http://185.134.22.150:8080/live/tonybones/tonybones123/40376.m3u8
+#EXTINF:-1 tvg-id="0" tvg-name="PPV01 | MMA Bushido | Phuket, Thailand May 9 7:00 AM" tvg-logo="https://d3ciwvs59ifrt8.cloudfront.net/014fd384-d12b-4c2e-a7b2-8b248dad7dd3/eaa64db8-33bd-4374-8728-94e4dd654e79.png" group-title="PPV Events",PPV01 | MMA Bushido | Phuket, Thailand May 9 7:00 AM
+http://185.134.22.150:8080/live/tonybones/tonybones123/40419.m3u8
+#EXTINF:-1 tvg-id="EVENT 02:" tvg-name="PPV02 | RWS Bantamweight World Championship | Jaroensook VS. Puenyai May 9 8:10 AM" tvg-logo="https://d3ciwvs59ifrt8.cloudfront.net/014fd384-d12b-4c2e-a7b2-8b248dad7dd3/eaa64db8-33bd-4374-8728-94e4dd654e79.png" group-title="PPV Events",PPV02 | RWS Bantamweight World Championship | Jaroensook VS. Puenyai May 9 8:10 AM
+http://185.134.22.150:8080/live/tonybones/tonybones123/40420.m3u8
+#EXTINF:-1 tvg-id="0" tvg-name="PPV03 | Queensberry Promotions | Wardley VS. Dubois | Prelims May 9 11:25" tvg-logo="https://d3ciwvs59ifrt8.cloudfront.net/014fd384-d12b-4c2e-a7b2-8b248dad7dd3/eaa64db8-33bd-4374-8728-94e4dd654e79.png" group-title="PPV Events",PPV03 | Queensberry Promotions | Wardley VS. Dubois | Prelims May 9 11:25
+http://185.134.22.150:8080/live/tonybones/tonybones123/40421.m3u8
+#EXTINF:-1 tvg-id="0" tvg-name="PPV04 | Queensberry Promotions | Wardley VS. Dubois May 9 1:30 PM" tvg-logo="https://d3ciwvs59ifrt8.cloudfront.net/014fd384-d12b-4c2e-a7b2-8b248dad7dd3/eaa64db8-33bd-4374-8728-94e4dd654e79.png" group-title="PPV Events",PPV04 | Queensberry Promotions | Wardley VS. Dubois May 9 1:30 PM
+http://185.134.22.150:8080/live/tonybones/tonybones123/40422.m3u8
+#EXTINF:-1 tvg-id="0" tvg-name="PPV05 | Salita Promotions | Oberlton VS. Gongora May 9 8:00 PM" tvg-logo="https://d3ciwvs59ifrt8.cloudfront.net/014fd384-d12b-4c2e-a7b2-8b248dad7dd3/eaa64db8-33bd-4374-8728-94e4dd654e79.png" group-title="PPV Events",PPV05 | Salita Promotions | Oberlton VS. Gongora May 9 8:00 PM
+http://185.134.22.150:8080/live/tonybones/tonybones123/40423.m3u8
+#EXTINF:-1 tvg-id="0" tvg-name="PPV06 | UFC 328 | English May 9 4:00 PM" tvg-logo="https://d3ciwvs59ifrt8.cloudfront.net/014fd384-d12b-4c2e-a7b2-8b248dad7dd3/eaa64db8-33bd-4374-8728-94e4dd654e79.png" group-title="PPV Events",PPV06 | UFC 328 | English May 9 4:00 PM
+http://185.134.22.150:8080/live/tonybones/tonybones123/40424.m3u8
+#EXTINF:-1 tvg-id="0" tvg-name="PPV07 | Wardley VS. Dubois Main Card (Backup)" tvg-logo="https://d3ciwvs59ifrt8.cloudfront.net/014fd384-d12b-4c2e-a7b2-8b248dad7dd3/eaa64db8-33bd-4374-8728-94e4dd654e79.png" group-title="PPV Events",PPV07 | Wardley VS. Dubois Main Card (Backup)
+http://185.134.22.150:8080/live/tonybones/tonybones123/40425.m3u8
+#EXTINF:-1 tvg-id="0" tvg-name="PPV08 | UFC 328 | Chimaev VS Strickland (Main Card) Backup" tvg-logo="https://d3ciwvs59ifrt8.cloudfront.net/014fd384-d12b-4c2e-a7b2-8b248dad7dd3/eaa64db8-33bd-4374-8728-94e4dd654e79.png" group-title="PPV Events",PPV08 | UFC 328 | Chimaev VS Strickland (Main Card) Backup
+http://185.134.22.150:8080/live/tonybones/tonybones123/40426.m3u8
+#EXTINF:-1 tvg-id="0" tvg-name="PPV09 | " tvg-logo="https://d3ciwvs59ifrt8.cloudfront.net/014fd384-d12b-4c2e-a7b2-8b248dad7dd3/eaa64db8-33bd-4374-8728-94e4dd654e79.png" group-title="PPV Events",PPV09 |
+http://185.134.22.150:8080/live/tonybones/tonybones123/40427.m3u8
+#EXTINF:-1 tvg-id="0" tvg-name="PPV10 | " tvg-logo="https://d3ciwvs59ifrt8.cloudfront.net/014fd384-d12b-4c2e-a7b2-8b248dad7dd3/eaa64db8-33bd-4374-8728-94e4dd654e79.png" group-title="PPV Events",PPV10 |
+http://185.134.22.150:8080/live/tonybones/tonybones123/40428.m3u8
+#EXTINF:-1 tvg-id="0" tvg-name="PPV11 | " tvg-logo="https://d3ciwvs59ifrt8.cloudfront.net/014fd384-d12b-4c2e-a7b2-8b248dad7dd3/eaa64db8-33bd-4374-8728-94e4dd654e79.png" group-title="PPV Events",PPV11 |
+http://185.134.22.150:8080/live/tonybones/tonybones123/40429.m3u8
+#EXTINF:-1 tvg-id="0" tvg-name="PPV12 | " tvg-logo="https://d3ciwvs59ifrt8.cloudfront.net/014fd384-d12b-4c2e-a7b2-8b248dad7dd3/eaa64db8-33bd-4374-8728-94e4dd654e79.png" group-title="PPV Events",PPV12 |
+http://185.134.22.150:8080/live/tonybones/tonybones123/40430.m3u8
+#EXTINF:-1 tvg-id="0" tvg-name="PPV13 | " tvg-logo="https://d3ciwvs59ifrt8.cloudfront.net/014fd384-d12b-4c2e-a7b2-8b248dad7dd3/eaa64db8-33bd-4374-8728-94e4dd654e79.png" group-title="PPV Events",PPV13 |
+http://185.134.22.150:8080/live/tonybones/tonybones123/40431.m3u8
+#EXTINF:-1 tvg-id="0" tvg-name="PPV14 | " tvg-logo="https://d3ciwvs59ifrt8.cloudfront.net/014fd384-d12b-4c2e-a7b2-8b248dad7dd3/eaa64db8-33bd-4374-8728-94e4dd654e79.png" group-title="PPV Events",PPV14 |
+http://185.134.22.150:8080/live/tonybones/tonybones123/40432.m3u8
+#EXTINF:-1 tvg-id="0" tvg-name="PPV15 | " tvg-logo="https://d3ciwvs59ifrt8.cloudfront.net/014fd384-d12b-4c2e-a7b2-8b248dad7dd3/eaa64db8-33bd-4374-8728-94e4dd654e79.png" group-title="PPV Events",PPV15 |
+http://185.134.22.150:8080/live/tonybones/tonybones123/40433.m3u8
+#EXTINF:-1 tvg-id="0" tvg-name="PPV16 | " tvg-logo="https://d3ciwvs59ifrt8.cloudfront.net/014fd384-d12b-4c2e-a7b2-8b248dad7dd3/eaa64db8-33bd-4374-8728-94e4dd654e79.png" group-title="PPV Events",PPV16 |
+http://185.134.22.150:8080/live/tonybones/tonybones123/40434.m3u8
