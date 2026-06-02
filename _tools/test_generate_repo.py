@@ -407,3 +407,106 @@ def test_generate_integration(tmp_path, monkeypatch):
     # per-addon zip and index created
     assert (repo / "plugin.hello" / "plugin.hello-2.0.0.zip").exists()
     assert (repo / "plugin.hello" / "index.html").exists()
+
+
+# ---------------------------------------------------------------------------
+# generate_asset_indexes
+# ---------------------------------------------------------------------------
+
+
+def test_generate_asset_indexes_empty_repo(tmp_path, monkeypatch):
+    """No asset dirs — runs silently without error."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    monkeypatch.setattr(gr, "REPO_DIR", str(repo))
+    gr.generate_asset_indexes()  # should not raise
+
+
+def test_generate_asset_indexes_flat(tmp_path, monkeypatch):
+    """Single level: files appear, index.html itself is excluded."""
+    repo = tmp_path / "repo"
+    asset = repo / "files"
+    asset.mkdir(parents=True)
+    (asset / "settings.xml").write_text("<settings/>")
+    (asset / "readme.txt").write_text("hello")
+    monkeypatch.setattr(gr, "REPO_DIR", str(repo))
+
+    gr.generate_asset_indexes()
+
+    content = (asset / "index.html").read_text()
+    assert "HTML 3.2" in content
+    assert "settings.xml" in content
+    assert "readme.txt" in content
+    assert content.count("index.html") == 0  # excluded from listing
+
+
+def test_generate_asset_indexes_nested(tmp_path, monkeypatch):
+    """Nested subfolders each get their own index.html."""
+    repo = tmp_path / "repo"
+    sub = repo / "iptv" / "channels"
+    sub.mkdir(parents=True)
+    (sub / "channels.m3u").write_text("#EXTM3U")
+    monkeypatch.setattr(gr, "REPO_DIR", str(repo))
+
+    gr.generate_asset_indexes()
+
+    # parent lists the subfolder
+    parent = (repo / "iptv" / "index.html").read_text()
+    assert "channels/" in parent
+
+    # subfolder lists the file
+    child = (sub / "index.html").read_text()
+    assert "channels.m3u" in child
+    assert "Parent Directory" in child
+
+
+def test_generate_asset_indexes_title_uses_relative_path(tmp_path, monkeypatch):
+    """Title must never contain an absolute filesystem path."""
+    repo = tmp_path / "repo"
+    asset = repo / "iptv"
+    asset.mkdir(parents=True)
+    (asset / "file.txt").write_text("x")
+    monkeypatch.setattr(gr, "REPO_DIR", str(repo))
+
+    gr.generate_asset_indexes()
+
+    content = (asset / "index.html").read_text()
+    assert str(tmp_path) not in content  # no absolute path leaked
+    assert "Index of" in content
+
+
+def test_generate_asset_indexes_dirs_before_files(tmp_path, monkeypatch):
+    """Subdirectories are listed before files."""
+    repo = tmp_path / "repo"
+    sub = repo / "assets" / "aaa_subdir"
+    sub.mkdir(parents=True)
+    (repo / "assets" / "zzz_file.txt").write_text("z")
+    monkeypatch.setattr(gr, "REPO_DIR", str(repo))
+
+    gr.generate_asset_indexes()
+
+    content = (repo / "assets" / "index.html").read_text()
+    assert content.index("aaa_subdir") < content.index("zzz_file.txt")
+
+
+def test_generate_asset_indexes_skips_special_and_addon_dirs(tmp_path, monkeypatch):
+    """repositories/, scripts/, media/ and addon dirs are not asset-indexed."""
+    repo = tmp_path / "repo"
+    (repo / "repositories").mkdir(parents=True)
+    (repo / "scripts").mkdir()
+    (repo / "media").mkdir()
+    addon = repo / "plugin.test"
+    addon.mkdir()
+    (addon / "addon.xml").write_text("<addon/>")
+    asset = repo / "iptv"
+    asset.mkdir()
+    (asset / "file.txt").write_text("x")
+    monkeypatch.setattr(gr, "REPO_DIR", str(repo))
+
+    gr.generate_asset_indexes()
+
+    assert not (repo / "repositories" / "index.html").exists()
+    assert not (repo / "scripts" / "index.html").exists()
+    assert not (repo / "media" / "index.html").exists()
+    assert not (repo / "plugin.test" / "index.html").exists()
+    assert (repo / "iptv" / "index.html").exists()

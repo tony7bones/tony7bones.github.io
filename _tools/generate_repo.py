@@ -3,10 +3,11 @@
 so Kodi can browse the repo over HTTP.
 
 Structure:
-  repo/                          → plugins (included in addons.xml)
-  repo/repositories/             → repo installer zips (manual install only)
-  repo/scripts/                  → script zips (manual install only)
-  repo/media/                    → images browsable from Kodi file manager
+  repo/                → Kodi plugin add-ons (have addon.xml, go in addons.xml)
+  repo/repositories/   → repo installer zips (manual install only)
+  repo/scripts/        → script zips (manual install only)
+  repo/media/          → images browsable from Kodi file manager
+  repo/<anything>/     → any other directory is auto-indexed for Kodi file manager
 
 Run from anywhere:
     python3 _tools/generate_repo.py
@@ -18,12 +19,16 @@ import zipfile
 from datetime import datetime, timezone
 from xml.etree import ElementTree as ET
 
-REPO_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "repo"))
+REPO_DIR = os.path.normpath(
+    os.path.join(os.path.abspath(os.path.dirname(__file__)), "..", "repo")
+)
 REPOS_DIR = os.path.join(REPO_DIR, "repositories")
 SCRIPTS_DIR = os.path.join(REPO_DIR, "scripts")
 MEDIA_DIR = os.path.join(REPO_DIR, "media")
-MISC_DIR = os.path.join(REPO_DIR, "misc")
 MEDIA_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"}
+
+# Top-level dirs handled by dedicated generators — skip in asset discovery
+_SPECIAL_DIRS = {"repositories", "scripts", "media"}
 
 
 def _fmt_size(n: int) -> str:
@@ -40,7 +45,7 @@ def _fmt_date(path: str) -> str:
 
 
 def _make_index(directory: str, title: str, rows: list[str]) -> None:
-    """Write an Apache-style directory listing Kodi can parse for per-addon dirs."""
+    """Write an Apache-style directory listing Kodi can parse."""
     html = (
         '<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">\n'
         f"<html>\n<head><title>{title}</title></head>\n"
@@ -77,9 +82,9 @@ def _styled_page(title: str, heading: str, links: list[str]) -> str:
 def _zip_is_stale(addon_dir: str, zip_path: str) -> bool:
     """Return True if any source file in addon_dir is newer than zip_path."""
     zip_mtime = os.path.getmtime(zip_path)
+    root_index = os.path.join(addon_dir, "index.html")
     for dirpath, _dirs, files in os.walk(addon_dir):
         for fname in files:
-            root_index = os.path.join(addon_dir, "index.html")
             if fname.endswith(".zip") or os.path.join(dirpath, fname) == root_index:
                 continue
             if os.path.getmtime(os.path.join(dirpath, fname)) > zip_mtime:
@@ -110,7 +115,6 @@ def process_addons(scan_dir: str) -> tuple[list[ET.Element], list[str]]:
             with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
                 for dirpath, _dirs, files in os.walk(addon_dir):
                     for fname in files:
-                        # exclude existing zips and the generated root index
                         if fname.endswith(".zip") or (
                             fname == "index.html" and dirpath == addon_dir
                         ):
@@ -144,30 +148,6 @@ def generate_scripts_index() -> None:
     print(f"scripts/index.html: {len(zips)} zip(s)")
 
 
-def generate_misc_indexes() -> None:
-    """Recursively generate index.html at every level of repo/misc/ so Kodi
-    can browse arbitrary subfolders and files via its file manager."""
-    if not os.path.isdir(MISC_DIR):
-        return
-    count = 0
-    for dirpath, dirnames, filenames in os.walk(MISC_DIR):
-        dirnames.sort()
-        rel = os.path.relpath(dirpath, os.path.dirname(REPO_DIR))
-        rows = ['<a href="../">Parent Directory</a>']
-        for d in dirnames:
-            rows.append(f'<a href="{d}/">{d}/</a>')
-        for f in sorted(filenames):
-            if f == "index.html":
-                continue
-            fpath = os.path.join(dirpath, f)
-            rows.append(
-                f'<a href="{f}">{f}</a>  {_fmt_date(fpath)}  {_fmt_size(os.path.getsize(fpath))}'
-            )
-        _make_index(dirpath, f"Index of /{rel}/", rows)
-        count += 1
-    print(f"misc/: {count} index(es) generated")
-
-
 def generate_media_index() -> None:
     """Regenerate repo/media/index.html from the images currently in that directory."""
     if not os.path.isdir(MEDIA_DIR):
@@ -179,6 +159,46 @@ def generate_media_index() -> None:
     with open(os.path.join(MEDIA_DIR, "index.html"), "w", encoding="utf-8") as fh:
         fh.write(html)
     print(f"media/index.html: {len(images)} image(s)")
+
+
+def generate_asset_indexes() -> None:
+    """Recursively index every top-level asset directory in repo/.
+
+    An asset directory is any subdirectory that:
+      - is not a known special dir (repositories, scripts, media)
+      - does not contain an addon.xml (those are Kodi add-ons, handled separately)
+
+    Just drop a folder under repo/, run this script, commit — Kodi's file
+    manager can browse the full tree.
+    """
+    total = 0
+    for entry in sorted(os.listdir(REPO_DIR)):
+        asset_dir = os.path.join(REPO_DIR, entry)
+        if not os.path.isdir(asset_dir):
+            continue
+        if entry in _SPECIAL_DIRS:
+            continue
+        if os.path.exists(os.path.join(asset_dir, "addon.xml")):
+            continue
+        count = 0
+        for dirpath, dirnames, filenames in os.walk(asset_dir):
+            dirnames.sort()
+            rel = os.path.relpath(dirpath, os.path.dirname(REPO_DIR))
+            rows = ['<a href="../">Parent Directory</a>']
+            for d in dirnames:
+                rows.append(f'<a href="{d}/">{d}/</a>')
+            for f in sorted(filenames):
+                if f == "index.html":
+                    continue
+                fpath = os.path.join(dirpath, f)
+                rows.append(
+                    f'<a href="{f}">{f}</a>  {_fmt_date(fpath)}  {_fmt_size(os.path.getsize(fpath))}'
+                )
+            _make_index(dirpath, f"Index of /{rel}/", rows)
+            count += 1
+        print(f"{entry}/: {count} index(es) generated")
+        total += count
+    return total
 
 
 def generate() -> None:
@@ -213,7 +233,7 @@ def generate() -> None:
 
     generate_scripts_index()
     generate_media_index()
-    generate_misc_indexes()
+    generate_asset_indexes()
 
     # repo/index.html is hand-crafted — never overwrite it
 
