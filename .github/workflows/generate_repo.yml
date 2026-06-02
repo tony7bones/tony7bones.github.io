@@ -6,6 +6,7 @@ on:
       - "repo/**/addon.xml"
       - "repo/media/**"
       - "repo/repositories/**"
+      - "repo/scripts/**"
   workflow_dispatch:
 
 jobs:

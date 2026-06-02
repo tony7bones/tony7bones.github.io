@@ -19,6 +19,7 @@ from xml.etree import ElementTree as ET
 
 REPO_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "repo"))
 REPOS_DIR = os.path.join(REPO_DIR, "repositories")
+SCRIPTS_DIR = os.path.join(REPO_DIR, "scripts")
 MEDIA_DIR = os.path.join(REPO_DIR, "media")
 MEDIA_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"}
 
@@ -110,6 +111,17 @@ def process_addons(scan_dir: str) -> tuple[list[ET.Element], list[str]]:
     return roots, ids
 
 
+def generate_scripts_index() -> None:
+    """Regenerate repo/scripts/index.html from the zip files currently in that directory."""
+    if not os.path.isdir(SCRIPTS_DIR):
+        return
+    zips = sorted(e for e in os.listdir(SCRIPTS_DIR) if e.endswith(".zip"))
+    html = _styled_page("Tony 7 Bones — Scripts", "Scripts", zips)
+    with open(os.path.join(SCRIPTS_DIR, "index.html"), "w", encoding="utf-8") as fh:
+        fh.write(html)
+    print(f"scripts/index.html: {len(zips)} zip(s)")
+
+
 def generate_media_index() -> None:
     """Regenerate repo/media/index.html from the images currently in that directory."""
     if not os.path.isdir(MEDIA_DIR):
@@ -160,6 +172,7 @@ def generate() -> None:
     with open(os.path.join(REPOS_DIR, "index.html"), "w", encoding="utf-8") as fh:
         fh.write(html)
 
+    generate_scripts_index()
     generate_media_index()
 
     # repo/index.html is hand-crafted — never overwrite it
