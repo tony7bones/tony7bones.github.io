@@ -22,6 +22,7 @@ REPO_DIR = os.path.normpath(os.path.join(os.path.dirname(__file__), "..", "repo"
 REPOS_DIR = os.path.join(REPO_DIR, "repositories")
 SCRIPTS_DIR = os.path.join(REPO_DIR, "scripts")
 MEDIA_DIR = os.path.join(REPO_DIR, "media")
+MISC_DIR = os.path.join(REPO_DIR, "misc")
 MEDIA_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"}
 
 
@@ -143,6 +144,30 @@ def generate_scripts_index() -> None:
     print(f"scripts/index.html: {len(zips)} zip(s)")
 
 
+def generate_misc_indexes() -> None:
+    """Recursively generate index.html at every level of repo/misc/ so Kodi
+    can browse arbitrary subfolders and files via its file manager."""
+    if not os.path.isdir(MISC_DIR):
+        return
+    count = 0
+    for dirpath, dirnames, filenames in os.walk(MISC_DIR):
+        dirnames.sort()
+        rel = os.path.relpath(dirpath, os.path.dirname(REPO_DIR))
+        rows = ['<a href="../">Parent Directory</a>']
+        for d in dirnames:
+            rows.append(f'<a href="{d}/">{d}/</a>')
+        for f in sorted(filenames):
+            if f == "index.html":
+                continue
+            fpath = os.path.join(dirpath, f)
+            rows.append(
+                f'<a href="{f}">{f}</a>  {_fmt_date(fpath)}  {_fmt_size(os.path.getsize(fpath))}'
+            )
+        _make_index(dirpath, f"Index of /{rel}/", rows)
+        count += 1
+    print(f"misc/: {count} index(es) generated")
+
+
 def generate_media_index() -> None:
     """Regenerate repo/media/index.html from the images currently in that directory."""
     if not os.path.isdir(MEDIA_DIR):
@@ -188,6 +213,7 @@ def generate() -> None:
 
     generate_scripts_index()
     generate_media_index()
+    generate_misc_indexes()
 
     # repo/index.html is hand-crafted — never overwrite it
 

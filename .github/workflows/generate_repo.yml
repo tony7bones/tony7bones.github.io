@@ -7,6 +7,7 @@ on:
       - "repo/media/**"
       - "repo/repositories/**"
       - "repo/scripts/**"
+      - "repo/misc/**"
       - "_tools/generate_repo.py"
       - "_tools/test_generate_repo.py"
   workflow_dispatch:
