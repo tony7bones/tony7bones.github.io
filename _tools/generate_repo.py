@@ -78,7 +78,8 @@ def _zip_is_stale(addon_dir: str, zip_path: str) -> bool:
     zip_mtime = os.path.getmtime(zip_path)
     for dirpath, _dirs, files in os.walk(addon_dir):
         for fname in files:
-            if fname.endswith(".zip") or fname == "index.html":
+            root_index = os.path.join(addon_dir, "index.html")
+            if fname.endswith(".zip") or os.path.join(dirpath, fname) == root_index:
                 continue
             if os.path.getmtime(os.path.join(dirpath, fname)) > zip_mtime:
                 return True
@@ -179,7 +180,7 @@ def generate() -> None:
     zip_entries = sorted(
         e
         for e in os.listdir(REPOS_DIR)
-        if os.path.isfile(os.path.join(REPOS_DIR, e)) and e.endswith(".zip")
+        if os.path.isfile(os.path.join(REPOS_DIR, e)) and e.lower().endswith(".zip")
     )
     html = _styled_page("Tony 7 Bones — Repositories", "Repositories", zip_entries)
     with open(os.path.join(REPOS_DIR, "index.html"), "w", encoding="utf-8") as fh:

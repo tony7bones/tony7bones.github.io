@@ -166,7 +166,7 @@ def test_process_addons_zip_excludes_zip_and_root_index(tmp_path, monkeypatch):
     with zipfile.ZipFile(zip_path) as zf:
         names = zf.namelist()
     assert not any(n.endswith(".zip") for n in names)
-    assert not any(n.endswith("index.html") for n in names)
+    assert "plugin.test/index.html" not in names  # only root index.html excluded
     # non-root .html files ARE included
     assert any("changelog.html" in n for n in names)
     assert any("page.html" in n for n in names)
