@@ -1,4 +1,4 @@
-name: Generate Kodi Repository
+name: Validate Kodi Repository
 
 on:
   push:
@@ -7,13 +7,12 @@ on:
       - "repo/media/**"
       - "repo/repositories/**"
       - "repo/scripts/**"
+      - "_tools/generate_repo.py"
   workflow_dispatch:
 
 jobs:
-  generate:
+  validate:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -22,14 +21,10 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Generate repository files
-        run: python3 _tools/generate_repo.py
+      - name: Run tests
+        run: python3 -m pytest _tools/test_generate_repo.py -q
 
-      - name: Commit generated files
+      - name: Verify generated files are up to date
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add repo/addons.xml repo/addons.xml.sha256 repo/addons.xml.md5 "repo/**/*.zip" "repo/**/index.html"
-          git diff --staged --quiet && echo "Nothing to commit" && exit 0
-          git commit -m "Update repository files"
-          git push
+          python3 _tools/generate_repo.py
+          git diff --exit-code || (echo "Generated files are out of date — run generate_repo.py locally before committing." && exit 1)
