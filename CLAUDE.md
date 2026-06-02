@@ -10,21 +10,51 @@ A GitHub Pages–hosted Kodi add-on repository served at `https://tony7bones.git
 
 ```bash
 # Regenerate addons.xml, addons.xml.sha256, per-addon zips, and all index pages
+# Run this locally before committing whenever you change addon sources or add zips
 python3 _tools/generate_repo.py
+
+# Run tests
+python3 -m pytest _tools/test_generate_repo.py -q
 
 # Lint the Python tooling
 ruff check _tools/
 ```
 
+## Pre-commit hook
+
+`.pre-commit-config.yaml` runs `pytest` automatically before every commit. Set it up once after cloning:
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+If you skip this, CI will catch any failing tests on push.
+
 ## Architecture
 
-### Two distinct content areas under `repo/`
+### Content areas under `repo/`
 
 | Path                 | Purpose                                                                                                                          |
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | `repo/`              | Kodi plugin add-ons. Each subdirectory with an `addon.xml` becomes a zip and is listed in `addons.xml`.                          |
 | `repo/repositories/` | Stand-alone repository installer zips (e.g. `repository.bugatsinho-2.8.zip`). Not in `addons.xml` — Kodi installs them manually. |
+| `repo/scripts/`      | One-shot script zips (e.g. bootstrap, patch). Not in `addons.xml` — Kodi installs them manually via file manager.                |
 | `repo/media/`        | Images browsable from Kodi's file manager. `index.html` is auto-generated.                                                       |
+
+### Source files — `_tools/repo-sources/`
+
+Holds the source `addon.xml` and scripts for the self-hosted installer and scripts. These are **not** processed by the generator — they are reference copies used when rebuilding a zip manually. The canonical Kodi source URL (`https://tony7bones.github.io/repo`) is configured in `_tools/repo-sources/repository.tony7bones/addon.xml`.
+
+### Generated files
+
+The following files are **generated** by `generate_repo.py` and must be committed:
+
+- `repo/addons.xml`, `repo/addons.xml.sha256`, `repo/addons.xml.md5`
+- `repo/repositories/index.html`, `repo/scripts/index.html`, `repo/media/index.html`
+- Per-addon `index.html` and zip files under `repo/<addon-id>/`
+
+Always run `python3 _tools/generate_repo.py` locally and commit the output before pushing. CI validates that generated files are up to date and will fail if they are stale.
 
 ### Shared stylesheet
 
@@ -32,29 +62,42 @@ ruff check _tools/
 
 ### Generator — `_tools/generate_repo.py`
 
-All HTML generation (repositories index, media index, per-addon indexes) lives here. Key functions:
+All HTML generation (repositories index, scripts index, media index, per-addon indexes) lives here. Key functions:
 
-- `process_addons()` — zips each addon dir, generates per-addon `index.html` (HTML 3.2, Kodi-compatible)
+- `process_addons()` — zips each addon dir (only if source is newer than existing zip), generates per-addon `index.html` (HTML 3.2, Kodi-compatible)
 - `_styled_page()` — shared helper that returns a dark-themed HTML page using `/style.css`
+- `generate_scripts_index()` — scans `repo/scripts/` for zips and writes its `index.html`
 - `generate_media_index()` — scans `repo/media/` for images and writes its `index.html`
 - `generate()` — orchestrates everything; `repo/index.html` is hand-crafted and never touched
 
 ### CI — `.github/workflows/generate_repo.yml`
 
-Triggers on push to `repo/**/addon.xml`, `repo/media/**`, or `repo/repositories/**`. Runs `generate_repo.py` (which handles all index generation), then commits the generated artifacts back to `main`.
+Triggers on push to `repo/**/addon.xml`, `repo/media/**`, `repo/repositories/**`, `repo/scripts/**`, or `_tools/*.py`. Runs the test suite then runs `generate_repo.py` and checks `git status --porcelain` — fails if any generated files are missing or stale. **CI never commits anything back to main.**
 
 ### Adding a new Kodi add-on
 
-1. Create `repo/<addon-id>/addon.xml` following the Kodi addon.xml schema
-2. Push — CI zips it and updates `addons.xml`
+1. Create `repo/<addon-id>/addon.xml` following the Kodi addon.xml schema and add any source files
+2. Run `python3 _tools/generate_repo.py` — this zips the addon and updates `addons.xml`
+3. `git add repo/<addon-id>/ repo/addons.xml repo/addons.xml.sha256 repo/addons.xml.md5`
+4. Commit and push
 
 ### Adding a new repository installer zip
 
-Drop the `.zip` into `repo/repositories/` and push — CI regenerates `repo/repositories/index.html`.
+1. Drop the `.zip` into `repo/repositories/`
+2. Run `python3 _tools/generate_repo.py`
+3. Commit both the zip and the regenerated `repo/repositories/index.html`
+
+### Adding a new script zip
+
+1. Drop the `.zip` into `repo/scripts/`
+2. Run `python3 _tools/generate_repo.py`
+3. Commit both the zip and the regenerated `repo/scripts/index.html`
 
 ### Adding images to media
 
-Drop the image into `repo/media/` and push — CI regenerates `repo/media/index.html` automatically.
+1. Drop the image into `repo/media/`
+2. Run `python3 _tools/generate_repo.py`
+3. Commit both the image and the regenerated `repo/media/index.html`
 
 ### Kodi source URL
 

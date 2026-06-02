@@ -8,6 +8,7 @@ on:
       - "repo/repositories/**"
       - "repo/scripts/**"
       - "_tools/generate_repo.py"
+      - "_tools/test_generate_repo.py"
   workflow_dispatch:
 
 jobs:
@@ -21,10 +22,17 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install dependencies
+        run: pip install pytest
+
       - name: Run tests
         run: python3 -m pytest _tools/test_generate_repo.py -q
 
       - name: Verify generated files are up to date
         run: |
           python3 _tools/generate_repo.py
-          git diff --exit-code || (echo "Generated files are out of date — run generate_repo.py locally before committing." && exit 1)
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Generated files are out of date — run generate_repo.py locally before committing."
+            git status --short
+            exit 1
+          fi

@@ -142,18 +142,23 @@ def test_process_addons_happy_path(tmp_path, monkeypatch):
     assert "plugin.test-1.0.0.zip" in index_path.read_text()
 
 
-def test_process_addons_zip_excludes_zip_and_html(tmp_path, monkeypatch):
+def test_process_addons_zip_excludes_zip_and_root_index(tmp_path, monkeypatch):
+    """Only .zip files and the root index.html are excluded; other .html files are kept."""
     monkeypatch.setattr(gr, "REPO_DIR", str(tmp_path))
-    _make_addon(
+    addon_dir = _make_addon(
         tmp_path,
         "plugin.test",
         "1.0.0",
         {
             "old.zip": b"old zip data",
-            "page.html": b"<html/>",
+            "changelog.html": b"<html>changelog</html>",
             "data.json": b'{"key": "value"}',
         },
     )
+    # also put an html file in a subdir
+    sub = addon_dir / "resources"
+    sub.mkdir()
+    (sub / "page.html").write_bytes(b"<html/>")
 
     gr.process_addons(str(tmp_path))
 
@@ -161,8 +166,53 @@ def test_process_addons_zip_excludes_zip_and_html(tmp_path, monkeypatch):
     with zipfile.ZipFile(zip_path) as zf:
         names = zf.namelist()
     assert not any(n.endswith(".zip") for n in names)
-    assert not any(n.endswith(".html") for n in names)
-    assert any(n.endswith("data.json") for n in names)
+    assert not any(n.endswith("index.html") for n in names)
+    # non-root .html files ARE included
+    assert any("changelog.html" in n for n in names)
+    assert any("page.html" in n for n in names)
+    assert any("data.json" in n for n in names)
+
+
+def test_process_addons_skips_malformed_xml(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(gr, "REPO_DIR", str(tmp_path))
+    addon_dir = tmp_path / "bad_addon"
+    addon_dir.mkdir()
+    (addon_dir / "addon.xml").write_text("<unclosed>")
+
+    roots, ids = gr.process_addons(str(tmp_path))
+    assert ids == []
+    assert "skipping" in capsys.readouterr().out
+
+
+def test_process_addons_zip_not_rebuilt_when_fresh(tmp_path, monkeypatch):
+    """Zip is not recreated when source files are older than the existing zip."""
+    monkeypatch.setattr(gr, "REPO_DIR", str(tmp_path))
+    _make_addon(tmp_path, "plugin.test", "1.0.0")
+
+    gr.process_addons(str(tmp_path))
+    zip_path = tmp_path / "plugin.test" / "plugin.test-1.0.0.zip"
+    mtime_after_first = zip_path.stat().st_mtime
+
+    gr.process_addons(str(tmp_path))
+    assert zip_path.stat().st_mtime == mtime_after_first
+
+
+def test_process_addons_zip_rebuilt_when_stale(tmp_path, monkeypatch):
+    """Zip is recreated when a source file is newer than the existing zip."""
+    import time
+
+    monkeypatch.setattr(gr, "REPO_DIR", str(tmp_path))
+    _make_addon(tmp_path, "plugin.test", "1.0.0")
+
+    gr.process_addons(str(tmp_path))
+    zip_path = tmp_path / "plugin.test" / "plugin.test-1.0.0.zip"
+    mtime_after_first = zip_path.stat().st_mtime
+
+    time.sleep(0.05)
+    (tmp_path / "plugin.test" / "default.py").write_text("# updated")
+
+    gr.process_addons(str(tmp_path))
+    assert zip_path.stat().st_mtime > mtime_after_first
 
 
 def test_process_addons_skips_no_addon_xml(tmp_path, monkeypatch):
@@ -240,6 +290,17 @@ def test_generate_scripts_index_empty_dir(tmp_path, monkeypatch):
 
     gr.generate_scripts_index()
     assert (scripts_dir / "index.html").exists()
+
+
+def test_generate_scripts_index_uppercase_zip(tmp_path, monkeypatch):
+    """Uppercase .ZIP extension must be included, consistent with media index."""
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir()
+    (scripts_dir / "script-1.0.ZIP").write_bytes(b"zip")
+    monkeypatch.setattr(gr, "SCRIPTS_DIR", str(scripts_dir))
+
+    gr.generate_scripts_index()
+    assert "script-1.0.ZIP" in (scripts_dir / "index.html").read_text()
 
 
 # ---------------------------------------------------------------------------

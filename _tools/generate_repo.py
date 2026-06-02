@@ -5,6 +5,7 @@ so Kodi can browse the repo over HTTP.
 Structure:
   repo/                          → plugins (included in addons.xml)
   repo/repositories/             → repo installer zips (manual install only)
+  repo/scripts/                  → script zips (manual install only)
   repo/media/                    → images browsable from Kodi file manager
 
 Run from anywhere:
@@ -72,6 +73,18 @@ def _styled_page(title: str, heading: str, links: list[str]) -> str:
     )
 
 
+def _zip_is_stale(addon_dir: str, zip_path: str) -> bool:
+    """Return True if any source file in addon_dir is newer than zip_path."""
+    zip_mtime = os.path.getmtime(zip_path)
+    for dirpath, _dirs, files in os.walk(addon_dir):
+        for fname in files:
+            if fname.endswith(".zip") or fname == "index.html":
+                continue
+            if os.path.getmtime(os.path.join(dirpath, fname)) > zip_mtime:
+                return True
+    return False
+
+
 def process_addons(scan_dir: str) -> tuple[list[ET.Element], list[str]]:
     """Zip every addon subdir that has an addon.xml. Returns (roots, addon_ids)."""
     roots, ids = [], []
@@ -80,25 +93,32 @@ def process_addons(scan_dir: str) -> tuple[list[ET.Element], list[str]]:
         xml_path = os.path.join(addon_dir, "addon.xml")
         if not os.path.isdir(addon_dir) or not os.path.exists(xml_path):
             continue
-        root = ET.parse(xml_path).getroot()
+        try:
+            root = ET.parse(xml_path).getroot()
+        except ET.ParseError as exc:
+            print(f"  ! skipping {entry}: malformed addon.xml ({exc})")
+            continue
         addon_id, version = root.get("id"), root.get("version")
         if not (addon_id and version):
             print(f"  ! skipping {entry}: missing id or version")
             continue
         zip_name = f"{addon_id}-{version}.zip"
         zip_path = os.path.join(addon_dir, zip_name)
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-            for dirpath, _dirs, files in os.walk(addon_dir):
-                for fname in files:
-                    if fname.endswith((".zip", ".html")):
-                        continue
-                    fpath = os.path.join(dirpath, fname)
-                    arcname = os.path.relpath(fpath, os.path.dirname(addon_dir))
-                    zf.write(fpath, arcname)
-        zip_full = os.path.join(addon_dir, zip_name)
+        if not os.path.exists(zip_path) or _zip_is_stale(addon_dir, zip_path):
+            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+                for dirpath, _dirs, files in os.walk(addon_dir):
+                    for fname in files:
+                        # exclude existing zips and the generated root index
+                        if fname.endswith(".zip") or (
+                            fname == "index.html" and dirpath == addon_dir
+                        ):
+                            continue
+                        fpath = os.path.join(dirpath, fname)
+                        arcname = os.path.relpath(fpath, os.path.dirname(addon_dir))
+                        zf.write(fpath, arcname)
         addon_rows = [
             '<a href="../">Parent Directory</a>',
-            f'<a href="{zip_name}">{zip_name}</a>  {_fmt_date(zip_full)}  {_fmt_size(os.path.getsize(zip_full))}',
+            f'<a href="{zip_name}">{zip_name}</a>  {_fmt_date(zip_path)}  {_fmt_size(os.path.getsize(zip_path))}',
         ]
         _make_index(
             addon_dir,
@@ -115,7 +135,7 @@ def generate_scripts_index() -> None:
     """Regenerate repo/scripts/index.html from the zip files currently in that directory."""
     if not os.path.isdir(SCRIPTS_DIR):
         return
-    zips = sorted(e for e in os.listdir(SCRIPTS_DIR) if e.endswith(".zip"))
+    zips = sorted(e for e in os.listdir(SCRIPTS_DIR) if e.lower().endswith(".zip"))
     html = _styled_page("Tony 7 Bones — Scripts", "Scripts", zips)
     with open(os.path.join(SCRIPTS_DIR, "index.html"), "w", encoding="utf-8") as fh:
         fh.write(html)
@@ -136,13 +156,10 @@ def generate_media_index() -> None:
 
 
 def generate() -> None:
-    ET.register_namespace("", "")
-
     plugin_roots, _plugin_ids = process_addons(REPO_DIR)
 
     addons_el = ET.Element("addons")
-    for r in plugin_roots:
-        addons_el.append(r)
+    addons_el.extend(plugin_roots)
     ET.indent(addons_el, space="    ")
     addons_xml_path = os.path.join(REPO_DIR, "addons.xml")
     ET.ElementTree(addons_el).write(
@@ -159,15 +176,11 @@ def generate() -> None:
         fh.write(md5)
 
     os.makedirs(REPOS_DIR, exist_ok=True)
-    zip_entries = []
-    for e in sorted(os.listdir(REPOS_DIR)):
-        full = os.path.join(REPOS_DIR, e)
-        if os.path.isfile(full) and e.endswith(".zip"):
-            zip_entries.append(e)
-        elif os.path.isdir(full):
-            for sub in sorted(os.listdir(full)):
-                if sub.endswith(".zip"):
-                    zip_entries.append(f"{e}/{sub}")
+    zip_entries = sorted(
+        e
+        for e in os.listdir(REPOS_DIR)
+        if os.path.isfile(os.path.join(REPOS_DIR, e)) and e.endswith(".zip")
+    )
     html = _styled_page("Tony 7 Bones — Repositories", "Repositories", zip_entries)
     with open(os.path.join(REPOS_DIR, "index.html"), "w", encoding="utf-8") as fh:
         fh.write(html)
