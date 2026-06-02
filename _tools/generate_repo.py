@@ -15,6 +15,7 @@ Run from anywhere:
 
 import hashlib
 import os
+import subprocess
 import zipfile
 from datetime import datetime, timezone
 from xml.etree import ElementTree as ET
@@ -39,7 +40,35 @@ def _fmt_size(n: int) -> str:
     return f"{n}G"
 
 
+def _git_date(path: str) -> str | None:
+    """Return the last-commit date for path as 'YYYY-MM-DD HH:MM', or None if unknown."""
+    try:
+        out = (
+            subprocess.check_output(
+                ["git", "log", "-1", "--format=%cI", "--", path],
+                stderr=subprocess.DEVNULL,
+            )
+            .decode()
+            .strip()
+        )
+        if not out:
+            return None
+        dt = datetime.fromisoformat(out)
+        return dt.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M")
+    except (subprocess.CalledProcessError, ValueError, OSError):
+        return None
+
+
 def _fmt_date(path: str) -> str:
+    """Return a stable date string for path.
+
+    Prefers the git last-commit date so the output is identical on every
+    checkout (including CI runners that reset all file mtimes).  Falls back
+    to the filesystem mtime for untracked files.
+    """
+    git_date = _git_date(path)
+    if git_date is not None:
+        return git_date
     ts = os.path.getmtime(path)
     return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M")
 
