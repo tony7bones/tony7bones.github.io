@@ -141,19 +141,33 @@ def process_addons(scan_dir: str) -> tuple[list[ET.Element], list[str]]:
         zip_name = f"{addon_id}-{version}.zip"
         zip_path = os.path.join(addon_dir, zip_name)
         if not os.path.exists(zip_path) or _zip_is_stale(addon_dir, zip_path):
+            # Collect members in a stable, path-sorted order and write them with
+            # fixed timestamps/permissions so the zip is byte-for-byte
+            # reproducible on every machine and CI run. Without this, rebuilds
+            # embed local mtimes and produce churn at the same version — which
+            # breaks Kodi's version-based auto-upgrade and forces CI to commit.
+            members = []
+            for dirpath, dirs, files in os.walk(addon_dir):
+                dirs.sort()
+                for fname in sorted(files):
+                    if fname.endswith(".zip") or (
+                        fname == "index.html" and dirpath == addon_dir
+                    ):
+                        continue
+                    fpath = os.path.join(dirpath, fname)
+                    arcname = os.path.relpath(fpath, os.path.dirname(addon_dir))
+                    members.append((fpath, arcname))
+            members.sort(key=lambda m: m[1])
             with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-                for dirpath, _dirs, files in os.walk(addon_dir):
-                    for fname in files:
-                        if fname.endswith(".zip") or (
-                            fname == "index.html" and dirpath == addon_dir
-                        ):
-                            continue
-                        fpath = os.path.join(dirpath, fname)
-                        arcname = os.path.relpath(fpath, os.path.dirname(addon_dir))
-                        zf.write(fpath, arcname)
+                for fpath, arcname in members:
+                    info = zipfile.ZipInfo(arcname, date_time=(1980, 1, 1, 0, 0, 0))
+                    info.compress_type = zipfile.ZIP_DEFLATED
+                    info.external_attr = 0o644 << 16
+                    with open(fpath, "rb") as fh:
+                        zf.writestr(info, fh.read())
         addon_rows = [
             '<a href="../">Parent Directory</a>',
-            f'<a href="{zip_name}">{zip_name}</a>  {_fmt_date(zip_path)}  {_fmt_size(os.path.getsize(zip_path))}',
+            f'<a href="{zip_name}">{zip_name}</a>  {_fmt_size(os.path.getsize(zip_path))}',
         ]
         _make_index(
             addon_dir,
@@ -221,7 +235,7 @@ def generate_asset_indexes() -> None:
                     continue
                 fpath = os.path.join(dirpath, f)
                 rows.append(
-                    f'<a href="{f}">{f}</a>  {_fmt_date(fpath)}  {_fmt_size(os.path.getsize(fpath))}'
+                    f'<a href="{f}">{f}</a>  {_fmt_size(os.path.getsize(fpath))}'
                 )
             _make_index(dirpath, f"Index of /{rel}/", rows)
             count += 1
