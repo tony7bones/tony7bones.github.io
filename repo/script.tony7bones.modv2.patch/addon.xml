@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="script.tony7bones.modv2.patch"
-       name="Estuary MOD V2 — tony7bones Patches"
-       version="1.0.2"
+       name="Estuary MOD V2 Patch"
+       version="1.0.3"
        provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
