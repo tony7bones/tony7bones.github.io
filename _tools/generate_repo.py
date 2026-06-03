@@ -59,6 +59,27 @@ def _git_date(path: str) -> str | None:
         return None
 
 
+def _git_ignored(path: str) -> bool:
+    """True if `path` is git-ignored, so it is kept locally but never published.
+
+    Lets a secret-bearing file (e.g. IPTV settings) live in the working tree for
+    local use without appearing in any generated listing or being served by
+    Pages. Outside a git repo (tests) this returns False, so behaviour is
+    unchanged.
+    """
+    try:
+        return (
+            subprocess.run(
+                ["git", "check-ignore", "-q", path],
+                cwd=os.path.dirname(path) or ".",
+                capture_output=True,
+            ).returncode
+            == 0
+        )
+    except OSError:
+        return False
+
+
 def _fmt_date(path: str) -> str:
     """Return a stable date string for path.
 
@@ -234,6 +255,8 @@ def generate_asset_indexes() -> None:
                 if f == "index.html":
                     continue
                 fpath = os.path.join(dirpath, f)
+                if _git_ignored(fpath):
+                    continue  # kept locally, never published
                 rows.append(
                     f'<a href="{f}">{f}</a>  {_fmt_size(os.path.getsize(fpath))}'
                 )
