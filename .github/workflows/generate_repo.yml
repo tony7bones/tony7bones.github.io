@@ -3,12 +3,9 @@ name: Validate Kodi Repository
 on:
   push:
     paths:
-      - "repo/**/addon.xml"
-      - "repo/media/**"
-      - "repo/repositories/**"
       - "repo/**"
-      - "_tools/generate_repo.py"
-      - "_tools/test_generate_repo.py"
+      - "_tools/**"
+      - "index.html"
   workflow_dispatch:
 
 jobs:
@@ -19,16 +16,21 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install pytest
+        run: pip install pytest ruff
 
       - name: Run tests
-        run: python3 -m pytest _tools/test_generate_repo.py -q
+        run: python3 -m pytest _tools/ -q
+
+      - name: Lint
+        run: ruff check _tools/
 
       - name: Verify generated files are up to date
         # CI NEVER commits to main. It only validates. If anything is stale the
@@ -43,3 +45,11 @@ jobs:
             git --no-pager diff
             exit 1
           fi
+
+      - name: Version-consistency gate
+        # Backstop for the local pre-push hook: every version-bearing location
+        # across main + virtual-repo must agree and be tagged.
+        run: |
+          git fetch --quiet --tags origin
+          git fetch --quiet origin virtual-repo:virtual-repo || true
+          python3 _tools/check_consistency.py

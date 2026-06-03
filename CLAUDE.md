@@ -14,22 +14,44 @@ A GitHub Pages–hosted Kodi add-on repository served at `https://tony7bones.git
 python3 _tools/generate_repo.py
 
 # Run tests
-python3 -m pytest _tools/test_generate_repo.py -q
+python3 -m pytest _tools/ -q
 
 # Lint the Python tooling
 ruff check _tools/
 ```
 
-## Pre-commit hook
+## Releasing the repository add-on (`repository.tony7bones`)
 
-`.pre-commit-config.yaml` runs `pytest` automatically before every commit. Set it up once after cloning:
+**Never hand-edit the version in multiple places.** Use the one-command release tool.
+Every release MUST bump the version — Kodi keys auto-upgrade off the version number,
+so same-version byte changes are forbidden (they silently break upgrades).
 
 ```bash
-pip install pre-commit
-pre-commit install
+python3 _tools/deploy.py --news "What changed"     # patch bump (default)
+python3 _tools/deploy.py --minor --news "..."      # or --major / --version X.Y.Z
+python3 _tools/deploy.py --news "..." --dry-run     # preview the plan, change nothing
+python3 _tools/deploy.py check                      # version-consistency gate only
 ```
 
-If you skip this, CI will catch any failing tests on push.
+`deploy.py` runs the whole pipeline atomically: bump → build deterministically →
+sync all five version-bearing locations (main `addon.xml`, root zip filename, root
+`index.html` link, virtual-repo `hosted/.../addon.xml`, git tag) → commit main +
+virtual-repo → `git push --atomic` → verify live on Pages. Any failure before the
+push rolls every ref back. It refuses to run on a dirty tree, when behind origin, or
+when the new version is not greater than the current one.
+
+## Gates (pre-push hook)
+
+`.githooks/pre-push` blocks a push unless tests pass, lint is clean, generated files
+are up to date, and all five version locations agree and are tagged. Install once
+after cloning:
+
+```bash
+git config core.hooksPath .githooks
+```
+
+CI (`generate_repo.yml`) re-runs the same checks as a backstop and **never commits to
+main**. The old `.pre-commit-config.yaml` (pytest on commit) still works if installed.
 
 ## Architecture
 
