@@ -21,3 +21,4 @@ node_modules/
 
 # Private IPTV settings — kept locally, never published
 repo/iptv/instance-settings*.xml
+.coverage
