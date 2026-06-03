@@ -233,6 +233,19 @@ def generate_asset_indexes() -> None:
 def generate() -> None:
     plugin_roots, _plugin_ids = process_addons(REPO_DIR)
 
+    # Opt-in hybrid path: declarative, GitHub-sourced add-ons resolved at
+    # generate time (see external_addons.py). With no manifest file present this
+    # is a no-op and never touches the network, so output stays byte-identical.
+    try:
+        from external_addons import process_external_addons
+
+        ext_roots, _ext_ids = process_external_addons(write=True)
+        plugin_roots.extend(ext_roots)
+    except ImportError:
+        pass
+    except Exception as exc:  # manifest/network problems must not break the build
+        print(f"  ! external add-ons skipped: {exc}")
+
     addons_el = ET.Element("addons")
     addons_el.extend(plugin_roots)
     ET.indent(addons_el, space="    ")

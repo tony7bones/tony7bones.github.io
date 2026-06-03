@@ -7,8 +7,7 @@ on:
       - "repo/media/**"
       - "repo/repositories/**"
       - "repo/**"
-      - "_tools/generate_repo.py"
-      - "_tools/test_generate_repo.py"
+      - "_tools/**.py"
   workflow_dispatch:
 
 jobs:
@@ -31,7 +30,7 @@ jobs:
         run: pip install pytest
 
       - name: Run tests
-        run: python3 -m pytest _tools/test_generate_repo.py -q
+        run: python3 -m pytest _tools/ -q
 
       - name: Regenerate and commit if stale
         run: |
