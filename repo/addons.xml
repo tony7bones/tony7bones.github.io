@@ -11,8 +11,12 @@
         </extension>
         <extension point="xbmc.addon.metadata">
             <platform>all</platform>
+            <assets>
+                <icon>icon.png</icon>
+            </assets>
             <summary lang="en_GB">Tony7Bones Kodi Repository</summary>
             <description lang="en_GB">Official repository for Tony7Bones Kodi addons.</description>
+            <disclaimer />
             <news>v1.0.5: Self-list in addons.xml, raw.githubusercontent.com URLs, disable hash checks.</news>
         </extension>
     </addon>
