@@ -29,4 +29,7 @@ fi
 echo "[pre-push] checking version consistency across branches..."
 python3 _tools/check_consistency.py
 
+echo "[pre-push] validating every changed add-on bumped its version..."
+python3 _tools/check_versions.py
+
 echo "[pre-push] OK — push allowed."

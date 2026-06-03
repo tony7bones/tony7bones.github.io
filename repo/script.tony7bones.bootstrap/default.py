@@ -4,17 +4,19 @@ run() installs, in one pass:
   * the 12 third-party repos from the Tony.7.Bones repositories/ folder
     (repository.tony7bones, the virtual repo, is already installed — that's how
     this script got here — giving 13 repos total)
-  * the EZ Maintenance+ repo, then the apps it provides (Easy Maintenance +,
-    RealDebrid)
-  * the video apps: POV, Sports HD, The Loop
-  * the Estuary MOD V2 patch, so it appears under Add-ons -> Program add-ons
-    (this script does NOT run/apply it — the user runs it themselves)
+  * first-party add-ons hosted on our own Pages (the Estuary MOD V2 patch),
+    installed PROMPT-FREE by direct download + extract — never via InstallAddon
+    (which pops a blocking confirm dialog and routes through the in-Kodi proxy)
+  * the video apps POV / Sports HD / The Loop, from their repos (these still use
+    InstallAddon and may prompt — making them silent needs per-app dependency
+    resolution, tracked separately)
 
 No secrets are embedded in this script.
 """
 
 import json
 import os
+import re
 import urllib.request
 import zipfile
 
@@ -24,6 +26,7 @@ import xbmcgui
 import xbmcvfs
 
 REPO_BASE = "https://tony7bones.github.io/repo/repositories/"
+STATIC_BASE = "https://tony7bones.github.io/repo"
 
 # 1. Repos installed directly by zip (the 12 in the Tony.7.Bones repositories/ folder).
 REPO_ZIPS = [
@@ -41,12 +44,19 @@ REPO_ZIPS = [
     ("repository.umbrella-2.2.6.zip", "repository.umbrella"),
 ]
 
-# 2. EZ Maintenance+ repo — provides "Easy Maintenance +" and the RealDebrid app.
+# 2. First-party add-ons on our own Pages — installed by direct extract, prompt-free.
+#    The version is resolved live from the static addon.xml, so this never goes stale.
+FIRST_PARTY = [
+    ("script.tony7bones.modv2.patch", "Estuary MOD V2 Patch"),
+]
+
+# 3. EZ Maintenance+ repo — provides "Easy Maintenance +" and the RealDebrid app.
 #    TODO confirm: a full https URL to the repo zip (or "" to skip), and its addon id.
 EZ_MAINT_REPO_ZIP_URL = ""  # e.g. "https://.../repository.ezmaintenance-x.y.z.zip"
 EZ_MAINT_REPO_ID = ""  # e.g. "repository.ezmaintenance"
 
-# 3. Apps installed from the repos above (id, display name). Empty id = skip (not yet confirmed).
+# 4. Third-party apps installed from their repos via InstallAddon (id, display name).
+#    Empty id = skip (not yet confirmed).
 ADDONS = [
     ("plugin.video.pov", "POV"),
     ("plugin.video.sporthdme", "Sports HD"),
@@ -54,9 +64,6 @@ ADDONS = [
     ("", "Easy Maintenance +"),  # TODO confirm id (from EZ Maintenance+ repo)
     ("", "RealDebrid"),  # TODO confirm id (from EZ Maintenance+ repo)
 ]
-
-# 4. Made available under Programs (installed, not run) — from repository.tony7bones.
-PATCH_ADDON = ("script.tony7bones.modv2.patch", "Estuary MOD V2 patches")
 
 
 def _is_installed(addon_id):
@@ -67,9 +74,23 @@ def _is_installed(addon_id):
         return False
 
 
-def _extract_repo(url, label, dialog, pct):
-    """Download a repository zip and extract it. Returns True on success."""
-    dialog.update(pct, f"Installing repository: {label}")
+def _set_unknown_sources():
+    """Allow zip installs without the per-install security warning (no dialog)."""
+    xbmc.executeJSONRPC(
+        json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "method": "Settings.SetSettingValue",
+                "params": {"setting": "addons.unknownsources", "value": True},
+                "id": 1,
+            }
+        )
+    )
+
+
+def _extract_zip(url, label, dialog, pct):
+    """Download a zip and extract it into addons/. Returns True on success."""
+    dialog.update(pct, f"Installing: {label}")
     name = url.rsplit("/", 1)[-1]
     temp_path = xbmcvfs.translatePath("special://temp/" + name)
     addons_path = xbmcvfs.translatePath("special://home/addons/")
@@ -87,6 +108,22 @@ def _extract_repo(url, label, dialog, pct):
     return ok
 
 
+def _latest_zip_url(addon_id):
+    """Resolve a first-party add-on's current zip URL from its static addon.xml."""
+    base = f"{STATIC_BASE}/{addon_id}"
+    try:
+        with urllib.request.urlopen(f"{base}/addon.xml", timeout=15) as r:
+            xml = r.read().decode("utf-8", "replace")
+        m = re.search(r'<addon\b[^>]*\bversion="([^"]+)"', xml)
+        if m:
+            return f"{base}/{addon_id}-{m.group(1)}.zip"
+    except Exception as e:
+        xbmc.log(
+            f"[tony7bones.bootstrap] cannot resolve {addon_id}: {e}", xbmc.LOGERROR
+        )
+    return None
+
+
 def _enable(addon_id):
     xbmc.executeJSONRPC(
         json.dumps(
@@ -102,7 +139,7 @@ def _enable(addon_id):
 
 
 def _install(addon_id, name, dialog, pct):
-    """Install an add-on from a registered repo. Returns True if present after."""
+    """Install a third-party add-on from a registered repo. Returns True if present."""
     dialog.update(pct, f"Installing: {name}")
     if _is_installed(addon_id):
         return True
@@ -120,38 +157,46 @@ def run():
     dialog = xbmcgui.DialogProgress()
     dialog.create("Tony.7.Bones Bootstrap", "Starting setup...")
 
+    _set_unknown_sources()
+
     repo_jobs = list(REPO_ZIPS)
     if EZ_MAINT_REPO_ZIP_URL:
         repo_jobs.append((EZ_MAINT_REPO_ZIP_URL, EZ_MAINT_REPO_ID))
-    addon_jobs = [a for a in ADDONS if a[0]] + [PATCH_ADDON]
-    total = len(repo_jobs) + 2 + len(addon_jobs)  # repos + register/enable + addons
+    app_jobs = [a for a in ADDONS if a[0]]
+    total = len(repo_jobs) + len(FIRST_PARTY) + 2 + len(app_jobs)
     step = 0
+    repo_ok = fp_ok = app_ok = 0
 
-    repo_ok = 0
-    app_ok = 0
-
-    # 1. install repos by zip
+    # 1. repos by direct extract
     for entry, _rid in repo_jobs:
         step += 1
         url = entry if entry.startswith("http") else REPO_BASE + entry
-        if _extract_repo(
-            url, entry.rsplit("/", 1)[-1], dialog, int(step / total * 100)
-        ):
+        if _extract_zip(url, entry.rsplit("/", 1)[-1], dialog, int(step / total * 100)):
             repo_ok += 1
         if dialog.iscanceled():
             return dialog.close()
 
-    # 2. register + enable the freshly extracted repos
+    # 2. first-party add-ons by direct extract (prompt-free, version resolved live)
+    for addon_id, name in FIRST_PARTY:
+        step += 1
+        url = _latest_zip_url(addon_id)
+        if url and _extract_zip(url, name, dialog, int(step / total * 100)):
+            fp_ok += 1
+        if dialog.iscanceled():
+            return dialog.close()
+
+    # 3. register + enable everything extracted (no prompts)
     step += 1
-    dialog.update(int(step / total * 100), "Registering repositories...")
+    dialog.update(int(step / total * 100), "Registering add-ons...")
     xbmc.executebuiltin("UpdateLocalAddons()")
     xbmc.sleep(5000)
     for _entry, rid in repo_jobs:
         if rid:
-            dialog.update(int(step / total * 100), f"Enabling: {rid}")
             _enable(rid)
+    for addon_id, _name in FIRST_PARTY:
+        _enable(addon_id)
 
-    # 3. fetch each repo's add-on list
+    # 4. fetch each repo's add-on list
     step += 1
     dialog.update(int(step / total * 100), "Fetching repository add-on lists...")
     xbmc.executebuiltin("UpdateAddonRepos()", True)
@@ -159,8 +204,8 @@ def run():
     if dialog.iscanceled():
         return dialog.close()
 
-    # 4. install the apps (+ make the MOD V2 patch available)
-    for addon_id, name in addon_jobs:
+    # 5. third-party apps via InstallAddon (may prompt)
+    for addon_id, name in app_jobs:
         step += 1
         if _install(addon_id, name, dialog, int(step / total * 100)):
             app_ok += 1
@@ -170,10 +215,12 @@ def run():
     dialog.close()
     xbmcgui.Dialog().ok(
         "Tony.7.Bones Bootstrap",
-        f"Repos: {repo_ok}/{len(repo_jobs)} installed.\n"
-        f"Apps: {app_ok}/{len(addon_jobs)} installed.\n"
+        f"Repos: {repo_ok}/{len(repo_jobs)}\n"
+        f"Patches: {fp_ok}/{len(FIRST_PARTY)}\n"
+        f"Apps: {app_ok}/{len(app_jobs)}\n"
         "Open Add-ons to finish any remaining setup.",
     )
 
 
-run()
+if __name__ == "__main__":
+    run()
