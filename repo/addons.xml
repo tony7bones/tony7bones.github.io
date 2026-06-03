@@ -1,23 +1,30 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <addons>
-    <addon id="repository.tony7bones" name="Tony7Bones Repository" version="1.0.5" provider-name="tony7bones">
-        <extension point="xbmc.addon.repository" name="Tony7Bones Repository">
+    <addon id="repository.tony7bones" name="Tony.7.Bones Repository" provider-name="Tony.7.Bones" version="1.0.6">
+        <requires>
+            <import addon="xbmc.python" version="3.0.0" />
+        </requires>
+        <extension point="xbmc.addon.repository">
             <dir>
-                <info compressed="false">https://raw.githubusercontent.com/tony7bones/tony7bones.github.io/main/repo/addons.xml</info>
-                <checksum>https://raw.githubusercontent.com/tony7bones/tony7bones.github.io/main/repo/addons.xml.md5</checksum>
-                <datadir zip="true">https://raw.githubusercontent.com/tony7bones/tony7bones.github.io/main/repo/</datadir>
-                <hashes>false</hashes>
+                <info>http://127.0.0.1:61234/addons.xml</info>
+                <checksum>http://127.0.0.1:61234/addons.xml.md5</checksum>
+                <datadir>http://127.0.0.1:61234/</datadir>
             </dir>
         </extension>
+        <extension point="xbmc.python.script" library="default.py" />
+        <extension point="xbmc.service" library="service.py" />
         <extension point="xbmc.addon.metadata">
             <platform>all</platform>
+            <license>See https://github.com/i96751414/repository.github/blob/master/LICENSE</license>
+            <source>https://github.com/i96751414/repository.github</source>
+            <summary lang="en">Welcome to Tony.7.Bones repository. Enjoy!</summary>
+            <description lang="en">Welcome to Tony.7.Bones repository. Enjoy!</description>
+            <news>
+v1.0.6: Unify lineage — virtual repo now supersedes the old static 1.0.5. One repo, version always climbing.
+        </news>
             <assets>
                 <icon>icon.png</icon>
             </assets>
-            <summary lang="en_GB">Tony7Bones Kodi Repository</summary>
-            <description lang="en_GB">Official repository for Tony7Bones Kodi addons.</description>
-            <disclaimer />
-            <news>v1.0.5: Self-list in addons.xml, raw.githubusercontent.com URLs, disable hash checks.</news>
         </extension>
     </addon>
     <addon id="script.tony7bones.bootstrap" name="Tony 7 Bones Setup" version="1.0.5" provider-name="tony7bones">
