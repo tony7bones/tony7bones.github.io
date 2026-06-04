@@ -63,8 +63,14 @@ def test_addon_name():
     assert _addon_root().get("name") == "Video Add-ons Setup"
 
 
-def test_addon_version_is_initial():
-    assert _addon_root().get("version") == "1.0.0"
+def test_addon_version_bumped():
+    import sys as _sys
+
+    _sys.path.insert(0, str(HERE))
+    import release_lib as rl  # noqa: PLC0415
+
+    v = _addon_root().get("version")
+    assert rl.is_greater(v, "1.0.0"), f"version {v} must exceed the initial 1.0.0"
 
 
 def test_addon_provider_and_license():
@@ -445,6 +451,63 @@ def test_resolve_closure_walks_deps_order(vid):
     assert "script.module.six" in ids  # transitive dep of dateutil
     assert not any(i.startswith(("xbmc.", "kodi.")) for i in ids)
     assert ids.index("script.module.requests") < ids.index("plugin.video.sporthdme")
+    assert not missing
+
+
+def test_parse_index_skips_optional_imports(vid):
+    """An import flagged optional="true" must NOT enter the dependency list:
+    Kodi's own installer fetches optional deps on-demand, so resolving them into
+    the install closure over-installs add-ons nothing requires (the
+    plugin.googledrive-via-resolveurl bug)."""
+    xml = (
+        '<?xml version="1.0"?><addons>'
+        '<addon id="script.module.resolveurl" version="5.1.0"><requires>'
+        '<import addon="script.module.required.dep" version="1.0.0"/>'
+        '<import addon="plugin.googledrive" version="1.0.0" optional="true"/>'
+        "</requires></addon></addons>"
+    ).encode("utf-8")
+    idx = vid.mod._parse_index(xml, "https://fake.repo/zips")
+    _ver, deps, _url = idx["script.module.resolveurl"]
+    assert "script.module.required.dep" in deps, "required import must be kept"
+    assert "plugin.googledrive" not in deps, "optional import must be skipped"
+
+
+def test_resolve_closure_skips_optional_dep(vid):
+    """End-to-end: a target with one required + one optional dep resolves only
+    the required one. plugin.googledrive (optional) must never be pulled."""
+    vid.state["index"] = {
+        "plugin.video.the-loop": (
+            "7.9",
+            ["script.module.resolveurl"],
+            None,
+        ),
+        "script.module.resolveurl": ("5.1.0", ["script.module.requests"], None),
+        "script.module.requests": ("2.31.0", [], None),
+        # present in the repo but only reachable as an optional dep → must stay out
+        "plugin.googledrive": ("3.0.0", [], None),
+    }
+    # Re-point resolveurl's optional dep by injecting raw XML through the fixture's
+    # index builder: mark plugin.googledrive optional on resolveurl.
+    raw = (
+        '<?xml version="1.0"?><addons>'
+        '<addon id="plugin.video.the-loop" version="7.9"><requires>'
+        '<import addon="script.module.resolveurl" version="1.0.0"/>'
+        "</requires></addon>"
+        '<addon id="script.module.resolveurl" version="5.1.0"><requires>'
+        '<import addon="script.module.requests" version="1.0.0"/>'
+        '<import addon="plugin.googledrive" version="1.0.0" optional="true"/>'
+        "</requires></addon>"
+        '<addon id="script.module.requests" version="2.31.0"><requires/></addon>'
+        '<addon id="plugin.googledrive" version="3.0.0"><requires/></addon>'
+        "</addons>"
+    ).encode("utf-8")
+    idx = vid.mod._parse_index(raw, "https://fake.repo/zips")
+    closure, missing = vid.mod._resolve_closure(["plugin.video.the-loop"], idx)
+    ids = [aid for aid, _url in closure]
+    assert "plugin.video.the-loop" in ids
+    assert "script.module.resolveurl" in ids
+    assert "script.module.requests" in ids  # required transitive dep present
+    assert "plugin.googledrive" not in ids, "optional dep must NOT be installed"
     assert not missing
 
 

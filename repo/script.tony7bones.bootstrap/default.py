@@ -172,8 +172,18 @@ def _load_index(base, platform_tag=None):
             out = {}
             for a in root.findall("addon"):
                 aid = a.get("id")
-                deps = [imp.get("addon") for imp in a.findall("requires/import")]
-                deps = [d for d in deps if d]
+                # Skip imports flagged optional="true": Kodi's own installer
+                # treats those as on-demand (fetched only when actually needed
+                # at runtime), so resolving them into the install closure
+                # over-installs add-ons nothing actually requires (e.g.
+                # plugin.googledrive pulled via resolveurl). Match Kodi's
+                # behaviour and keep only required imports.
+                deps = [
+                    imp.get("addon")
+                    for imp in a.findall("requires/import")
+                    if (imp.get("optional") or "").lower() != "true"
+                    and imp.get("addon")
+                ]
                 meta = a.find("extension[@point='xbmc.addon.metadata']")
                 path = plat = None
                 if meta is not None:

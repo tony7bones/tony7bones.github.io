@@ -62,7 +62,7 @@ def test_addon_name_is_branded():
 
 def test_version_bumped_past_old():
     v = _addon_root().get("version")
-    assert rl.is_greater(v, "1.0.19"), f"version {v} must exceed the old 1.0.19"
+    assert rl.is_greater(v, "1.0.20"), f"version {v} must exceed the old 1.0.20"
 
 
 # --------------------------------------------------------------------------- #
@@ -535,6 +535,58 @@ def test_resolve_closure_walks_dependencies(boot):
     # dependency must come before the add-on that imports it
     assert ids.index("script.module.requests") < ids.index("script.ezmaintenanceplus")
     assert ids.index("script.module.urllib3") < ids.index("script.module.requests")
+
+
+def test_load_index_skips_optional_imports(boot, monkeypatch):
+    """_load_index must drop imports flagged optional="true": Kodi installs
+    optional deps on-demand, so resolving them into the closure over-installs
+    add-ons nothing requires (the plugin.googledrive-via-resolveurl bug)."""
+    xml = (
+        '<?xml version="1.0"?><addons>'
+        '<addon id="script.module.resolveurl" version="5.1.0"><requires>'
+        '<import addon="script.module.required.dep" version="1.0.0"/>'
+        '<import addon="plugin.googledrive" version="1.0.0" optional="true"/>'
+        "</requires></addon></addons>"
+    ).encode("utf-8")
+    monkeypatch.setattr(
+        urllib.request,
+        "urlopen",
+        lambda req, timeout=None: _FakeResp(_gzip.compress(xml)),
+    )
+    idx = boot.mod._load_index("https://official", None)
+    _ver, deps, _path = idx["script.module.resolveurl"]
+    assert "script.module.required.dep" in deps, "required import must be kept"
+    assert "plugin.googledrive" not in deps, "optional import must be skipped"
+
+
+def test_resolve_closure_skips_optional_dep(boot, monkeypatch):
+    """End-to-end: a target with one required + one optional dep resolves only
+    the required one. plugin.googledrive (optional) must never be pulled in."""
+    xml = (
+        '<?xml version="1.0"?><addons>'
+        '<addon id="plugin.video.the-loop" version="7.9"><requires>'
+        '<import addon="script.module.resolveurl" version="1.0.0"/>'
+        "</requires></addon>"
+        '<addon id="script.module.resolveurl" version="5.1.0"><requires>'
+        '<import addon="script.module.requests" version="1.0.0"/>'
+        '<import addon="plugin.googledrive" version="1.0.0" optional="true"/>'
+        "</requires></addon>"
+        '<addon id="script.module.requests" version="2.31.0"><requires/></addon>'
+        '<addon id="plugin.googledrive" version="3.0.0"><requires/></addon>'
+        "</addons>"
+    ).encode("utf-8")
+    monkeypatch.setattr(
+        urllib.request,
+        "urlopen",
+        lambda req, timeout=None: _FakeResp(_gzip.compress(xml)),
+    )
+    idx = boot.mod._load_index("https://official", None)
+    closure = boot.mod._resolve_closure(["plugin.video.the-loop"], [("https://x", idx)])
+    ids = [aid for aid, _url in closure]
+    assert "plugin.video.the-loop" in ids
+    assert "script.module.resolveurl" in ids
+    assert "script.module.requests" in ids  # required transitive dep present
+    assert "plugin.googledrive" not in ids, "optional dep must NOT be installed"
 
 
 def test_resolve_closure_skips_unresolvable(boot):

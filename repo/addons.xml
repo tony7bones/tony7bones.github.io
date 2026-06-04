@@ -27,7 +27,7 @@ v1.0.10: Repo now serves Video Add-ons Setup (script.tony7bones.video)
             </assets>
         </extension>
     </addon>
-    <addon id="script.tony7bones.bootstrap" name="Tony.7.Bones Setup" version="1.0.20" provider-name="tony7bones">
+    <addon id="script.tony7bones.bootstrap" name="Tony.7.Bones Setup" version="1.0.21" provider-name="tony7bones">
         <requires>
             <import addon="xbmc.python" version="3.0.0" />
             <import addon="xbmc.addon" version="12.0.0" />
@@ -41,7 +41,7 @@ v1.0.10: Repo now serves Video Add-ons Setup (script.tony7bones.video)
             <license>GPL-2.0-or-later</license>
             <summary lang="en_GB">Tony.7.Bones Kodi Setup</summary>
             <description lang="en_GB">Installs repositories and add-ons for a personal Kodi build.</description>
-            <news>Setup now removes itself after a successful run — no leftover home tile; reinstall from the repo anytime. (v1.0.19 stopped pinning Setup to the home screen and made the MOD V2 patch manual-only. v1.0.18 added the end-of-setup restart prompt fixing the Fire Stick end-of-setup freeze. v1.0.17 added Multi Weather and IPTV Simple Client and removed the unknown-sources toggle so no security prompt appears.)</news>
+            <news>Skip optional dependencies — no more pulling Google Drive / cloud resolvers you didn't ask for. The installer now matches Kodi's own behaviour and resolves only required dependencies; optional imports stay on-demand. (v1.0.20 made Setup remove itself after a successful run. v1.0.19 stopped pinning Setup to the home screen and made the MOD V2 patch manual-only. v1.0.18 added the end-of-setup restart prompt.)</news>
         </extension>
     </addon>
     <addon id="script.tony7bones.modv2.patch" name="Estuary MOD V2 Patch" version="1.0.3" provider-name="tony7bones">
@@ -55,7 +55,7 @@ v1.0.10: Repo now serves Video Add-ons Setup (script.tony7bones.video)
             <platform>all</platform>
         </extension>
     </addon>
-    <addon id="script.tony7bones.video" name="Video Add-ons Setup" version="1.0.0" provider-name="tony7bones">
+    <addon id="script.tony7bones.video" name="Video Add-ons Setup" version="1.0.1" provider-name="tony7bones">
         <requires>
             <import addon="xbmc.python" version="3.0.0" />
             <import addon="xbmc.addon" version="12.0.0" />
@@ -72,7 +72,7 @@ v1.0.10: Repo now serves Video Add-ons Setup (script.tony7bones.video)
             </assets>
             <summary lang="en_GB">Install video add-ons from the Tony.7.Bones repos</summary>
             <description lang="en_GB">Pick which video add-ons to install (POV, The Loop, Sports HD, Umbrella). Each is installed with its full dependency closure, resolved live from the repositories already on this box, then enabled so it works straight away. Run the main Tony.7.Bones Setup first so the source repositories are present.</description>
-            <news>Initial release: multiselect picker for POV, The Loop, Sports HD and Umbrella. Dependencies are resolved from the installed repositories and the official Kodi repo, installed prompt-free, and enabled. The picker self-removes after a successful run and can be reinstalled from the repo.</news>
+            <news>Skip optional dependencies — no more pulling Google Drive / cloud resolvers you didn't ask for. The installer now matches Kodi's own behaviour and resolves only required dependencies; optional imports stay on-demand. (Initial release: multiselect picker for POV, The Loop, Sports HD and Umbrella with prompt-free closure install and self-removal.)</news>
         </extension>
     </addon>
 </addons>
