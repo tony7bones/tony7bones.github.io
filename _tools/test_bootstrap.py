@@ -6,10 +6,10 @@ Two layers:
   compiles, every repo zip it references exists in the published repositories/
   folder (so installs won't 404), and no IPTV secret is embedded.
 * Runtime behavior — default.py is imported under mocked Kodi modules (run() is
-  __main__-guarded, so import is side-effect-free) and the prompt-free resolver
-  is exercised directly: dependency ordering, system-prefix skip, already-
-  installed skip, cyclic-dep termination, unresolved/extract-failure recording,
-  and a full run() that asserts zero InstallAddon prompts.
+  __main__-guarded, so import is side-effect-free) and the install flow is
+  exercised directly: repos extract, the first-party patch resolves live, and
+  the requested apps install through Kodi's own repo installer (InstallAddon)
+  one at a time so they register and actually run.
 """
 
 from __future__ import annotations
@@ -61,7 +61,7 @@ def test_addon_name_is_original():
 
 def test_version_bumped_past_old():
     v = _addon_root().get("version")
-    assert rl.is_greater(v, "1.0.5"), f"version {v} must exceed the old 1.0.5"
+    assert rl.is_greater(v, "1.0.11"), f"version {v} must exceed the old 1.0.11"
 
 
 # --------------------------------------------------------------------------- #
@@ -90,19 +90,26 @@ def test_addons_are_plain_id_strings_no_labels():
         assert isinstance(item, str), f"FIRST_PARTY entry is not a bare id: {item!r}"
 
 
-def test_known_video_addons_present():
-    ids = set(_assign("ADDONS"))
-    assert {
-        "plugin.video.pov",
-        "plugin.video.sporthdme",
-        "plugin.video.the-loop",
-    } <= ids
+def test_addons_is_exactly_the_two_peno64_apps():
+    """Scope is narrowed to EZ Maintenance+ and RealDebrid from peno64."""
+    assert _assign("ADDONS") == ["script.ezmaintenanceplus", "script.realdebrid"]
+
+
+def test_peno64_repo_is_installed_so_apps_resolve():
+    """The apps live in peno64 — its repo zip must be in the install list."""
+    repo_ids = {rid for _zip, rid in _assign("REPO_ZIPS")}
+    assert "repository.peno64" in repo_ids
 
 
 def test_patch_is_first_party_direct_extract():
     """The MOD V2 patch is installed by direct extract, NOT via InstallAddon."""
     assert "script.tony7bones.modv2.patch" in _assign("FIRST_PARTY")
     assert "script.tony7bones.modv2.patch" not in _assign("ADDONS")
+
+
+def test_apps_install_via_repo_installer():
+    """Apps must go through Kodi's InstallAddon, not direct extract."""
+    assert "InstallAddon(" in DEFAULT_PY.read_text()
 
 
 def test_sets_unknown_sources():
@@ -136,19 +143,9 @@ def test_repo_zip_inner_id_matches_declared():
         )
 
 
-def test_documented_gaps_are_empty():
-    """EZ Maintenance+ repo + Real-Debrid stay unset until their ids are provided."""
-    assert _assign("EZ_MAINT_REPO_ZIP_URL") == ""
-    assert _assign("EZ_MAINT_REPO_ID") == ""
+def test_no_empty_addon_ids():
     assert all(_assign("ADDONS")), "ADDONS must contain no empty ids"
-
-
-def test_addons_is_exactly_the_three_video_apps():
-    assert _assign("ADDONS") == [
-        "plugin.video.pov",
-        "plugin.video.sporthdme",
-        "plugin.video.the-loop",
-    ]
+    assert all(_assign("FIRST_PARTY")), "FIRST_PARTY must contain no empty ids"
 
 
 def test_success_dialog_does_not_overclaim():
@@ -167,7 +164,7 @@ def test_modv2_patch_is_host_provided():
 # --------------------------------------------------------------------------- #
 # Runtime coverage — import default.py under mocked Kodi APIs and run it
 # --------------------------------------------------------------------------- #
-import gzip  # noqa: E402
+import gzip  # noqa: E402, F401
 import importlib.util  # noqa: E402
 import json as _json  # noqa: E402
 import re as _re  # noqa: E402
@@ -321,212 +318,41 @@ def test_extract_zip_failure(boot, monkeypatch):
     assert boot.mod._extract_zip("https://x/y.zip", dp, 50) is False
 
 
-# --- resolver units --------------------------------------------------------- #
-def test_zip_url_standard_layout(boot):
-    assert boot.mod._zip_url("https://r/x/dir", "plugin.video.pov", "1.2.3") == (
-        "https://r/x/dir/plugin.video.pov/plugin.video.pov-1.2.3.zip"
-    )
-
-
-def test_download_text_gunzips(boot, monkeypatch):
-    payload = gzip.compress(b"<addons/>")
-
-    class _R:
-        def read(self):
-            return payload
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            return False
-
-    monkeypatch.setattr(urllib.request, "urlopen", lambda url, timeout=None: _R())
-    assert boot.mod._download_text("https://x/addons.xml.gz") == "<addons/>"
-
-
-def test_build_index_merges_repo_addonsxml(boot, monkeypatch):
-    monkeypatch.setattr(
-        boot.mod, "_repo_dirs", lambda rid: [("https://i/addons.xml", "https://d")]
-    )
-    monkeypatch.setattr(
-        boot.mod,
-        "_download_text",
-        lambda url: (
-            '<addons><addon id="plugin.video.pov" version="1.0">'
-            '<requires><import addon="script.module.x" version="1"/></requires>'
-            "</addon></addons>"
-        ),
-    )
-    index = boot.mod._build_index(["repository.foo"])
-    assert index["plugin.video.pov"] == ("1.0", "https://d", ["script.module.x"])
-
-
-def test_install_tree_extracts_deps_then_app_skips_system_and_installed(
-    boot, monkeypatch
-):
-    pulled = []
-    monkeypatch.setattr(
-        boot.mod, "_extract_zip", lambda url, dialog, pct: pulled.append(url) or True
-    )
-    index = {
-        "plugin.video.pov": ("1.0", "https://d", ["script.module.dep", "xbmc.python"]),
-        "script.module.dep": ("2.0", "https://d", []),
-    }
-    done, failed = set(), set()
+# --- interactive installer units ------------------------------------------- #
+def test_install_interactive_uses_installaddon_builtin(boot):
     dp = boot.mod.xbmcgui.DialogProgress()
-    assert boot.mod._install_tree("plugin.video.pov", index, done, failed, dp, 0)
-    # dependency extracted before the app; system dep (xbmc.python) skipped
-    assert pulled == [
-        "https://d/script.module.dep/script.module.dep-2.0.zip",
-        "https://d/plugin.video.pov/plugin.video.pov-1.0.zip",
-    ]
-    assert done == {"plugin.video.pov", "script.module.dep"}
-    assert failed == set()
+    assert boot.mod._install_interactive("script.ezmaintenanceplus", dp, 50)
+    assert "InstallAddon(script.ezmaintenanceplus)" in boot.state["builtins"]
+    assert "script.ezmaintenanceplus" in boot.state["installed"]
 
 
-def test_install_tree_handles_cyclic_deps_without_crashing(boot, monkeypatch):
-    """A <-> B dependency cycle must terminate, not RecursionError."""
-    pulled = []
-    monkeypatch.setattr(
-        boot.mod, "_extract_zip", lambda url, dialog, pct: pulled.append(url) or True
-    )
-    index = {
-        "plugin.video.a": ("1.0", "https://d", ["plugin.video.b"]),
-        "plugin.video.b": ("1.0", "https://d", ["plugin.video.a"]),
-    }
-    done, failed = set(), set()
+def test_install_interactive_skips_already_installed(boot):
+    boot.state["installed"].add("script.realdebrid")
     dp = boot.mod.xbmcgui.DialogProgress()
-    assert boot.mod._install_tree("plugin.video.a", index, done, failed, dp, 0)
-    assert done == {"plugin.video.a", "plugin.video.b"}
-    assert failed == set()
-    assert len(pulled) == 2  # each extracted exactly once despite the cycle
+    assert boot.mod._install_interactive("script.realdebrid", dp, 50)
+    # already present → no InstallAddon prompt fired
+    assert not any(b.startswith("InstallAddon(") for b in boot.state["builtins"])
 
 
-def test_install_tree_skips_already_installed_dep(boot, monkeypatch):
-    """An indexed dep that is already installed is recorded done, not re-extracted."""
-    pulled = []
-    monkeypatch.setattr(
-        boot.mod, "_extract_zip", lambda url, dialog, pct: pulled.append(url) or True
-    )
-    boot.state["installed"].add("script.module.dep")  # pre-installed
-    index = {
-        "plugin.video.pov": ("1.0", "https://d", ["script.module.dep"]),
-        "script.module.dep": ("2.0", "https://d", []),
-    }
-    done, failed = set(), set()
+def test_install_interactive_reports_failure_when_absent(boot, monkeypatch):
+    # builtin that does NOT register the add-on → install never completes
+    monkeypatch.setattr(boot.mod.xbmc, "executebuiltin", lambda *a, **k: None)
     dp = boot.mod.xbmcgui.DialogProgress()
-    assert boot.mod._install_tree("plugin.video.pov", index, done, failed, dp, 0)
-    # only the app is extracted; the installed dep is skipped
-    assert pulled == ["https://d/plugin.video.pov/plugin.video.pov-1.0.zip"]
-    assert "script.module.dep" in done
-    assert failed == set()
+    assert boot.mod._install_interactive("script.does.not.exist", dp, 50) is False
 
 
-def test_install_tree_records_app_in_failed_when_extract_fails(boot, monkeypatch):
-    """If a resolved app's zip 404s, it lands in failed — no silent success."""
-    monkeypatch.setattr(boot.mod, "_extract_zip", lambda url, dialog, pct: False)
-    index = {"plugin.video.pov": ("1.0", "https://d", [])}
-    done, failed = set(), set()
-    dp = boot.mod.xbmcgui.DialogProgress()
-    assert (
-        boot.mod._install_tree("plugin.video.pov", index, done, failed, dp, 0) is False
-    )
-    assert "plugin.video.pov" in failed
-    assert "plugin.video.pov" not in done
-
-
-def test_repo_dirs_parses_multiple_dir_blocks(boot):
-    """Repos like umbrella ship matrix/nexus/omega <dir> blocks — index them all."""
-    rd = boot.addons / "repository.multi"
-    rd.mkdir()
-    (rd / "addon.xml").write_text(
-        '<addon id="repository.multi">'
-        '<extension point="xbmc.addon.repository">'
-        "<dir><info>https://i/matrix/addons.xml</info>"
-        "<datadir>https://d/matrix/</datadir></dir>"
-        "<dir><info>https://i/omega/addons.xml</info>"
-        "<datadir>https://d/omega/</datadir></dir>"
-        "</extension></addon>"
-    )
-    assert list(boot.mod._repo_dirs("repository.multi")) == [
-        ("https://i/matrix/addons.xml", "https://d/matrix"),
-        ("https://i/omega/addons.xml", "https://d/omega"),
-    ]
-
-
-def test_repo_dirs_malformed_xml_yields_nothing(boot):
-    """A corrupt repo addon.xml must not crash the index build."""
-    rd = boot.addons / "repository.broken"
-    rd.mkdir()
-    (rd / "addon.xml").write_text("<addon><not-closed>")
-    assert list(boot.mod._repo_dirs("repository.broken")) == []
-
-
-def test_repo_dirs_parses_installed_repo(boot):
-    rd = boot.addons / "repository.test"
-    rd.mkdir()
-    (rd / "addon.xml").write_text(
-        '<addon id="repository.test">'
-        '<extension point="xbmc.addon.repository">'
-        '<dir><info compressed="false">https://i/addons.xml</info>'
-        '<datadir zip="true">https://d/</datadir></dir>'
-        "</extension></addon>"
-    )
-    assert list(boot.mod._repo_dirs("repository.test")) == [
-        ("https://i/addons.xml", "https://d")
-    ]
-
-
-def test_repo_dirs_missing_repo_yields_nothing(boot):
-    assert list(boot.mod._repo_dirs("repository.absent")) == []
-
-
-def test_download_text_error_returns_empty(boot, monkeypatch):
-    def boom(url, timeout=None):
-        raise OSError("net")
-
-    monkeypatch.setattr(urllib.request, "urlopen", boom)
-    assert boot.mod._download_text("https://x/addons.xml") == ""
-
-
-def test_build_index_first_repo_wins_on_duplicate(boot, monkeypatch):
-    """Official repo (passed first) must win for a shared id like requests."""
-    feeds = {
-        "https://official": '<addons><addon id="script.module.requests" version="2.31.0"/></addons>',
-        "https://stale": '<addons><addon id="script.module.requests" version="1.0.0"/></addons>',
-    }
-    monkeypatch.setattr(boot.mod, "_repo_dirs", lambda rid: [(rid, rid)])
-    monkeypatch.setattr(boot.mod, "_download_text", lambda url: feeds[url])
-    index = boot.mod._build_index(["https://official", "https://stale"])
-    assert index["script.module.requests"] == ("2.31.0", "https://official", [])
-
-
-def test_install_tree_reports_unresolved(boot, monkeypatch):
-    monkeypatch.setattr(boot.mod, "_extract_zip", lambda *a: True)
-    done, failed = set(), set()
-    dp = boot.mod.xbmcgui.DialogProgress()
-    assert (
-        boot.mod._install_tree("plugin.video.missing", {}, done, failed, dp, 0) is False
-    )
-    assert "plugin.video.missing" in failed
-
-
-def test_run_is_fully_prompt_free(boot, monkeypatch):
-    # apps resolve from a known index; nothing should hit InstallAddon
-    monkeypatch.setattr(
-        boot.mod,
-        "_build_index",
-        lambda repo_ids: {aid: ("1.0", "https://d", []) for aid in boot.mod.ADDONS},
-    )
+def test_run_installs_apps_via_repo_installer(boot):
     boot.mod.run()
     s = boot.state
     assert any("addons.unknownsources" in j for j in s["jsonrpc"])
-    # NOTHING goes through InstallAddon — zero prompts
-    assert not any(b.startswith("InstallAddon(") for b in s["builtins"])
-    # patch + apps all extracted and enabled
+    # repos refreshed so the installer can resolve apps
+    assert "UpdateAddonRepos()" in s["builtins"]
+    # each app went through Kodi's interactive installer
+    for aid in boot.mod.ADDONS:
+        assert f"InstallAddon({aid})" in s["builtins"]
+        assert aid in s["installed"]
+    # first-party patch still direct-extracted + enabled
     assert "script.tony7bones.modv2.patch" in s["installed"]
-    assert "plugin.video.pov" in s["installed"]
     assert s["ok"], "no completion dialog shown"
     _title, msg = s["ok"][-1]
     assert "Repos:" in msg and "Patches:" in msg and "Apps:" in msg
