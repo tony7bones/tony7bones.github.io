@@ -1,12 +1,19 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="script.tony7bones.bootstrap"
        name="Tony.7.Bones Setup"
-       version="1.0.18"
+       version="1.0.20"
        provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
     <import addon="xbmc.addon" version="12.0.0"/>
   </requires>
+  <!--
+    A normal runnable Program add-on. It does not linger on the home screen
+    because it removes ITSELF at the end of a successful run (see default.py:
+    _self_uninstall) — run once from the repo, then it deletes its own add-on
+    directory and the end-of-setup restart de-registers it from Kodi's add-on
+    database. Reinstall any time from Install from repository > Tony.7.Bones Repo.
+  -->
   <extension point="xbmc.python.script" library="default.py">
     <provides>executable</provides>
   </extension>
@@ -16,6 +23,6 @@
     <license>GPL-2.0-or-later</license>
     <summary lang="en_GB">Tony.7.Bones Kodi Setup</summary>
     <description lang="en_GB">Installs repositories and add-ons for a personal Kodi build.</description>
-    <news>v1.0.18: Adds an end-of-setup restart prompt so the freshly installed add-ons load cleanly (fixes the Fire Stick end-of-setup freeze). You choose Restart now / Later; on desktop Kodi restarts itself, on Android/Fire Stick it asks you to fully close and reopen. (v1.0.17 added Multi Weather and IPTV Simple Client and removed the unknown-sources toggle so no security prompt appears. v1.0.14 fixed the "Registering add-ons" freeze via direct-extract + enable.)</news>
+    <news>Setup now removes itself after a successful run — no leftover home tile; reinstall from the repo anytime. (v1.0.19 stopped pinning Setup to the home screen and made the MOD V2 patch manual-only. v1.0.18 added the end-of-setup restart prompt fixing the Fire Stick end-of-setup freeze. v1.0.17 added Multi Weather and IPTV Simple Client and removed the unknown-sources toggle so no security prompt appears.)</news>
   </extension>
 </addon>

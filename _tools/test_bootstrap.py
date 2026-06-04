@@ -62,12 +62,30 @@ def test_addon_name_is_branded():
 
 def test_version_bumped_past_old():
     v = _addon_root().get("version")
-    assert rl.is_greater(v, "1.0.17"), f"version {v} must exceed the old 1.0.17"
+    assert rl.is_greater(v, "1.0.19"), f"version {v} must exceed the old 1.0.19"
 
 
 # --------------------------------------------------------------------------- #
 # Script
 # --------------------------------------------------------------------------- #
+def test_script_is_a_proper_program_addon():
+    """The setup is a normal runnable Program add-on while it briefly exists.
+
+    The old 'image' content-type hack (to hide it from Estuary's home Programs
+    widget) is gone: the add-on now keeps itself off the home screen by REMOVING
+    ITSELF after a successful run (see test_self_uninstall_logic_exists), so it
+    can declare the correct content type. It must provide 'executable' so that,
+    for the one run it exists, it behaves like the Program add-on it is."""
+    ext = _addon_root().find("extension[@point='xbmc.python.script']")
+    assert ext is not None, "must keep the xbmc.python.script extension (runnable)"
+    assert ext.get("library") == "default.py"
+    provides = [p.text for p in ext.findall("provides")]
+    assert provides == ["executable"], (
+        "must declare <provides>executable</provides> (a proper Program add-on); "
+        f"got {provides!r}"
+    )
+
+
 def test_default_py_compiles():
     py_compile.compile(str(DEFAULT_PY), doraise=True)
 
@@ -108,9 +126,18 @@ def test_peno64_repo_is_installed_so_apps_resolve():
 
 
 def test_patch_is_first_party_direct_extract():
-    """The MOD V2 patch is installed by direct extract, NOT via InstallAddon."""
-    assert "script.tony7bones.modv2.patch" in _assign("FIRST_PARTY")
+    """The MOD V2 patch must NOT be auto-installed by the setup. It is neither in
+    the first-party direct-extract list nor in the apps list — a user installs it
+    by hand only if they adopt the Estuary MOD V2 skin. It stays HOST-provided
+    (see test_modv2_patch_is_host_provided)."""
+    assert "script.tony7bones.modv2.patch" not in _assign("FIRST_PARTY")
     assert "script.tony7bones.modv2.patch" not in _assign("ADDONS")
+
+
+def test_first_party_is_empty():
+    """Nothing is auto-installed from our Pages as a 'first-party' add-on now
+    that the MOD V2 patch is opt-in. run() must skip the first-party loop."""
+    assert _assign("FIRST_PARTY") == []
 
 
 def test_apps_install_without_modal_installer():
@@ -218,6 +245,39 @@ def test_restart_comes_after_success_summary():
     restart_pos = src.rfind("_restart_kodi()")
     assert ok_pos != -1 and restart_pos != -1
     assert restart_pos > ok_pos, "restart prompt must come after the summary dialog"
+
+
+# --------------------------------------------------------------------------- #
+# Self-uninstall (run once, then disappear — no leftover home tile)
+# --------------------------------------------------------------------------- #
+def test_self_uninstall_logic_exists():
+    """The setup must remove itself after a successful run. Kodi 21 Omega has no
+    UninstallAddon builtin and no JSON-RPC uninstall method, so the supported
+    mechanism is: delete our own add-on directory and let the end-of-setup
+    restart de-register it. The code must therefore reference its own add-on id
+    and delete that directory."""
+    src = DEFAULT_PY.read_text()
+    assert "_self_uninstall" in src, "self-uninstall helper must exist"
+    assert "_self_uninstall()" in src, "self-uninstall must be invoked in run()"
+    assert "script.tony7bones.bootstrap" in src, (
+        "self-uninstall must target the add-on's own id"
+    )
+    # It must actually delete its own directory (the supported uninstall path).
+    assert "rmtree" in src, "self-uninstall must delete its own add-on directory"
+    assert "special://home/addons/" in src, "must resolve its own addons/ path"
+
+
+def test_self_uninstall_runs_after_summary_and_before_restart():
+    """Sequence must be: summary dialog -> self-uninstall -> restart prompt.
+    The restart is what finalises the removal (startup scan drops the DB row)."""
+    src = DEFAULT_PY.read_text()
+    ok_pos = src.rfind("Open Add-ons to finish")
+    uninstall_pos = src.rfind("_self_uninstall()")
+    restart_pos = src.rfind("_restart_kodi()")
+    assert ok_pos != -1 and uninstall_pos != -1 and restart_pos != -1
+    assert ok_pos < uninstall_pos < restart_pos, (
+        "order must be summary -> self-uninstall -> restart"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -526,8 +586,9 @@ def test_run_installs_apps_without_modal(boot):
     assert "weather.multi" in s["installed"]
     assert "pvr.iptvsimple" in s["installed"]
     assert "inputstream.ffmpegdirect" in s["installed"]  # binary dep of the PVR
-    # first-party patch still direct-extracted + enabled
-    assert "script.tony7bones.modv2.patch" in s["installed"]
+    # the MOD V2 patch is NO LONGER auto-installed (opt-in only)
+    assert "script.tony7bones.modv2.patch" not in s["installed"]
+    assert "script.tony7bones.modv2.patch" not in s["extracted"]
     assert s["ok"], "no completion dialog shown"
     _title, msg = s["ok"][-1]
     assert "Repos:" in msg and "Patches:" in msg and "Apps:" in msg
@@ -576,6 +637,52 @@ def test_binary_addon_resolves_to_platform_path(boot):
     assert "+osx-arm64/" in closure["inputstream.ffmpegdirect"]
     # the kodi.binary.* system import is NOT downloaded
     assert not any(k.startswith("kodi.") for k in closure)
+
+
+def test_self_uninstall_removes_own_dir(boot):
+    """_self_uninstall() must delete its own add-on directory (the supported
+    Omega uninstall path: delete dir, then the restart de-registers it)."""
+    my_dir = boot.addons / "script.tony7bones.bootstrap"
+    my_dir.mkdir()
+    (my_dir / "addon.xml").write_text('<addon id="script.tony7bones.bootstrap"/>')
+    assert my_dir.exists()
+    boot.mod._self_uninstall()
+    assert not my_dir.exists(), "self-uninstall must remove its own add-on dir"
+
+
+def test_self_uninstall_only_touches_own_dir(boot):
+    """It must delete ONLY its own dir, never a sibling add-on."""
+    mine = boot.addons / "script.tony7bones.bootstrap"
+    other = boot.addons / "script.realdebrid"
+    mine.mkdir()
+    other.mkdir()
+    (other / "addon.xml").write_text('<addon id="script.realdebrid"/>')
+    boot.mod._self_uninstall()
+    assert not mine.exists()
+    assert other.exists(), "must not delete other add-ons"
+
+
+def test_self_uninstall_never_raises(boot, monkeypatch):
+    """A failure during self-uninstall must be swallowed (it runs last and must
+    not abort the run)."""
+    import shutil as _shutil
+
+    def boom(*a, **k):
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(_shutil, "rmtree", boom)
+    mine = boot.addons / "script.tony7bones.bootstrap"
+    mine.mkdir()
+    boot.mod._self_uninstall()  # must not raise
+
+
+def test_run_self_uninstalls_at_end(boot):
+    """A full run must end by removing the setup's own add-on directory."""
+    mine = boot.addons / "script.tony7bones.bootstrap"
+    mine.mkdir()
+    (mine / "addon.xml").write_text('<addon id="script.tony7bones.bootstrap"/>')
+    boot.mod.run()
+    assert not mine.exists(), "run() must self-uninstall at the end"
 
 
 def test_run_aborts_cleanly_on_cancel(boot, monkeypatch):

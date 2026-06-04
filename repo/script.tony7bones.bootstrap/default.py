@@ -8,6 +8,9 @@ run():
   * installs each requested app together with its full dependency closure by
     direct download + extract, then registers + enables every add-on through
     Kodi's add-on manager so the apps actually function.
+  * finally removes ITSELF (run once, then disappear) so no Setup tile lingers
+    on the home screen — the end-of-setup restart de-registers it cleanly. It
+    stays in the Tony.7.Bones repo for one-tap reinstall whenever needed.
 
 Why not Kodi's InstallAddon builtin: on Omega it calls CAddonInstaller::
 InstallModal(..., CHOICE_YES), which (1) pops a blocking "Do you want to
@@ -81,7 +84,12 @@ REPO_ZIPS = [
 ]
 
 # First-party add-on ids on our Pages — direct extract, version resolved live.
-FIRST_PARTY = ["script.tony7bones.modv2.patch"]
+# The Estuary MOD V2 patch (script.tony7bones.modv2.patch) is deliberately NOT
+# auto-installed: it only makes sense once a user adopts the Estuary MOD V2 skin.
+# It stays hosted in our repo (repo/script.tony7bones.modv2.patch/ and in
+# repo/addons.xml) so anyone who wants it can install it by hand. Leave this list
+# empty and run() will simply skip the first-party loop.
+FIRST_PARTY = []
 
 # Apps installed (with dependency closure) by direct extract, in order.
 #   * script.ezmaintenanceplus / script.realdebrid — peno64 (python).
@@ -321,6 +329,57 @@ def _is_android():
         return False
 
 
+def _self_uninstall():
+    """Remove the Setup add-on itself so it leaves no permanent home tile.
+
+    Kodi 21 Omega has NO uninstall path a script can call: there is no
+    UninstallAddon executebuiltin (only install/enable/disable/run exist) and no
+    JSON-RPC uninstall method (the Addons namespace exposes only GetAddons /
+    GetAddonDetails / SetAddonEnabled / ExecuteAddon). The supported mechanism is
+    therefore: delete our own add-on directory, then let the end-of-setup restart
+    finalise removal. On the next start Kodi's add-on scan (CAddonMgr::FindAddons)
+    skips the now-missing dir and AddonDatabase::SyncInstalled deletes the stale
+    rows ("DELETE FROM installed WHERE addonID=..." plus its update rules and any
+    repository entry) — so there is no dangling DB row and no "broken add-on".
+
+    Defensive by design: this runs only after everything else succeeded, never
+    raises (a failure here must not abort the run), and deletes ONLY this
+    add-on's own directory — nothing else.
+
+    Caveat: deleting a directory whose code is currently executing is fine on
+    macOS / Linux / Android (the inode stays alive until the interpreter
+    finishes; the path is just unlinked). On Windows the file is locked while
+    open and the rmtree can partially fail; the restart still de-registers the
+    add-on because SyncInstalled keys off addon.xml being absent — and even a
+    fully-intact dir left behind is merely re-registered, never "broken". The
+    target boxes (Fire Stick / Android, macOS, Linux) are unaffected.
+    """
+    try:
+        my_id = "script.tony7bones.bootstrap"
+        my_dir = xbmcvfs.translatePath("special://home/addons/" + my_id)
+        # Hard guard: only ever delete OUR OWN add-on directory.
+        if os.path.basename(os.path.normpath(my_dir)) != my_id:
+            xbmc.log(
+                "[tony7bones.bootstrap] self-uninstall: refusing unexpected path "
+                f"{my_dir}",
+                xbmc.LOGERROR,
+            )
+            return
+        if os.path.isdir(my_dir):
+            import shutil
+
+            shutil.rmtree(my_dir, ignore_errors=True)
+            xbmc.log(
+                f"[tony7bones.bootstrap] self-uninstall: removed {my_dir}",
+                xbmc.LOGINFO,
+            )
+    except Exception as e:  # noqa: BLE001 - self-uninstall must never abort the run
+        xbmc.log(
+            f"[tony7bones.bootstrap] self-uninstall failed (non-fatal): {e}",
+            xbmc.LOGERROR,
+        )
+
+
 def _restart_kodi():
     """Restart Kodi the platform-correct way after setup completes.
 
@@ -410,8 +469,17 @@ def run():
         f"Apps: {app_ok}/{len(ADDONS)}\n"
         "Open Add-ons to finish any remaining setup.",
     )
-    # A restart finalises the freshly extracted add-ons. Platform-correct and
-    # prompt-driven so it never freezes (the Fire Stick end-of-setup fix).
+    # Run once, then disappear: remove ourselves so no Setup tile lingers on the
+    # home screen. Done AFTER the summary and only after everything else ran; it
+    # never raises (so a failure here can't break the run) and deletes only our
+    # own add-on dir. The restart below de-registers us from the add-on DB.
+    _self_uninstall()
+    # A restart finalises the freshly extracted add-ons AND finalises the
+    # self-removal (the startup scan drops the now-missing add-on from the DB).
+    # Platform-correct and prompt-driven so it never freezes (Fire Stick fix).
+    # If the user declines the restart the state is still sane: our files are
+    # gone, we stay enabled in the DB until the next start, and that next start
+    # cleans the row — there is no broken/half-state in between.
     _restart_kodi()
 
 
