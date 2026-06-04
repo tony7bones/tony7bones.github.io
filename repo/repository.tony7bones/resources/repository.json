@@ -148,5 +148,15 @@
     "assets": {
       "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/repo/{id}/{id}-{version}.zip"
     }
+  },
+  {
+    "id": "script.tony7bones.video",
+    "username": "tony7bones",
+    "repository": "tony7bones.github.io",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/repo/{id}/",
+    "assets": {
+      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/repo/{id}/{id}-{version}.zip"
+    }
   }
 ]
