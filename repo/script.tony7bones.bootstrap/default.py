@@ -350,7 +350,7 @@ def _trim_home_menu():
 
 
 def _ask_also_video():
-    """Front-loaded yes/no: 'Also install Video Add-ons after setup?'.
+    """Front-loaded yes/no: 'Include video add-ons?'.
 
     DEFAULTS TO NO (opt-in): the No button is pre-focused via Kodi's
     defaultbutton=DLG_YESNO_NO_BTN. Both the constant and the kwarg exist on
@@ -359,7 +359,7 @@ def _ask_also_video():
     button. Returns True only if the user explicitly chose Yes.
     """
     title = "Tony.7.Bones Setup"
-    msg = "Also install Video Add-ons after setup?"
+    msg = "Include video add-ons?"
     no_btn = getattr(xbmcgui, "DLG_YESNO_NO_BTN", None)
     if no_btn is not None:
         try:

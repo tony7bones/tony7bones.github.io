@@ -407,13 +407,13 @@ def boot(tmp_path, monkeypatch):
             state["ok"].append((title, msg))
 
         def yesno(self, title, msg, **kwargs):
-            # Two yes/no prompts exist now: the front-loaded "Also install Video
-            # Add-ons?" (msg starts with "Also install Video") and the end-of-setup
+            # Two yes/no prompts exist now: the front-loaded "Include video
+            # add-ons?" (msg starts with "Include video") and the end-of-setup
             # restart prompt. The "also video" answer is driven by state
             # (default False = base-only, today's behaviour); the restart prompt is
             # always declined so run() never actually restarts in tests.
             state.setdefault("yesno", []).append((title, msg))
-            if msg.startswith("Also install Video"):
+            if msg.startswith("Include video"):
                 return bool(state.get("also_video", False))
             return False
 
@@ -426,7 +426,7 @@ def boot(tmp_path, monkeypatch):
     xbmcgui.DialogProgress = _DP
     xbmcgui.Dialog = _Dialog
     # Kodi 21 Omega exposes this; the base Setup uses it to default the
-    # "Also install Video Add-ons?" prompt to No.
+    # "Include video add-ons?" prompt to No.
     xbmcgui.DLG_YESNO_NO_BTN = 1
 
     xbmcvfs = types.ModuleType("xbmcvfs")
@@ -974,10 +974,10 @@ def test_imports_from_shared_module():
 
 
 def test_one_shot_prompt_is_front_loaded_and_defaults_no():
-    """The 'Also install Video Add-ons?' yes/no must come BEFORE any install and
+    """The 'Include video add-ons?' yes/no must come BEFORE any install and
     default to No (opt-in) via DLG_YESNO_NO_BTN."""
     src = DEFAULT_PY.read_text()
-    assert "Also install Video Add-ons after setup?" in src
+    assert "Include video add-ons?" in src
     assert "DLG_YESNO_NO_BTN" in src, "must default the prompt to No"
     # the ask happens before the progress dialog / base install in run()
     ask_pos = src.find("_ask_also_video()")
