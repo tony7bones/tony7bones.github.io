@@ -46,12 +46,27 @@ The proxy serves add-ons from its **baked** `resources/repository.json` (read lo
 # Run this locally before committing whenever you change addon sources or add zips
 python3 _tools/generate_repo.py
 
-# Run tests
+# Run the full test suite
 python3 -m pytest _tools/ -q
+
+# Run one test file, or a single test (test files mapped below)
+python3 -m pytest _tools/test_bootstrap.py -q
+python3 -m pytest _tools/test_bootstrap.py::test_one_shot_yes_fetches_video_setup_when_absent -q
 
 # Lint the Python tooling
 ruff check _tools/
 ```
+
+Test files map to what they cover (all tests import the add-on `default.py` under **mocked Kodi modules** — `run()` is `__main__`-guarded, so importing is side-effect-free, and the install/resolve logic is exercised directly with fake `xbmc*`):
+
+| Test file                | Covers                                                                  |
+| ------------------------ | ----------------------------------------------------------------------- |
+| `test_bootstrap.py`      | `script.tony7bones.bootstrap` (base Setup + the one-shot orchestration) |
+| `test_video.py`          | `script.tony7bones.video` (Video Add-ons Setup)                         |
+| `test_module.py`         | `script.module.tony7bones` (shared install library)                     |
+| `test_deploy.py`         | `deploy.py` / `release_lib.py` (sandbox end-to-end with a bare remote)  |
+| `test_check_versions.py` | the per-add-on version-bump gate                                        |
+| `test_generate_repo.py`  | the generator (zips, indexes, determinism)                              |
 
 ## Releasing
 
