@@ -2,6 +2,11 @@ name: Validate Kodi Repository
 
 on:
   push:
+    # Branch pushes only — tag pushes (from deploy.py's atomic main+virtual-repo+tag
+    # push) re-point at main's HEAD, which already ran; and on a tag checkout the
+    # consistency gate can't resolve the main branch, so the tag run fails spuriously.
+    branches:
+      - main
     paths:
       - "repo/**"
       - "_tools/**"
