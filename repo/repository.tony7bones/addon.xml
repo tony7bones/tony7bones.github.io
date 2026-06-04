@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<addon id="repository.tony7bones" name="Tony.7.Bones Repository" provider-name="Tony.7.Bones" version="1.0.7">
+<addon id="repository.tony7bones" name="Tony.7.Bones Repo" provider-name="Tony.7.Bones" version="1.0.7">
     <requires>
         <import addon="xbmc.python" version="3.0.0"/>
     </requires>
