@@ -119,7 +119,7 @@ def _styled_page(title: str, heading: str, links: list[str]) -> str:
         '    <link rel="stylesheet" href="/style.css">\n'
         "  </head>\n"
         "  <body>\n"
-        '    <img src="/images/tony7bones.jpg" alt="Tony.7.Bones" class="avatar">\n'
+        '    <img src="/images/tony7bones.png" alt="Tony.7.Bones" class="avatar">\n'
         f"    <h1>{heading}</h1>\n"
         '    <nav class="links">\n'
         f"      {link_tags}\n"
