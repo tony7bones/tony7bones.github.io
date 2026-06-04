@@ -8,10 +8,22 @@ run():
     the official Kodi repo (for the shared script.module.* deps, so they match
     the running Kodi), then installs every add-on in the closure by direct
     download + extract and registers + enables each through Kodi's add-on
-    manager so the apps actually function.
+    manager, then STAMPS each installed add-on's `origin` with its source repo
+    so the apps actually function (see below).
   * finally removes ITSELF after a successful run (run once, then disappear) so
-    no Setup tile lingers on the home screen. It stays in the Tony.7.Bones repo
-    for re-install whenever needed.
+    no Setup tile lingers on the home screen, and restarts Kodi to finish. It
+    stays in the Tony.7.Bones repo for re-install whenever needed.
+
+Why stamp `origin` (the fix for broken POV / The Loop): Kodi's repository
+installer records which repo an add-on came from in the `installed.origin`
+column. The direct-extract path leaves it blank, and a blank origin breaks the
+video apps: The Loop shows a blocking "installed from unknown source" dialog on
+every launch (its directory never returns -> "script aborted"), and POV's
+language strings fail to load (getLocalizedString -> '' -> setLabel raises ->
+empty menu). After installing we set origin to the providing repo — the exact
+value Kodi would have written — and enable the source repos + restart so the
+change is live on first launch. This keeps the prompt-free direct-extract path
+(no modal installer) while making the apps actually browse content.
 
 Why resolve from the INSTALLED repos rather than fixed URLs: these video apps
 live across several third-party repos (The Loop -> repository.loop, Umbrella ->
@@ -140,7 +152,7 @@ def _version_ok(attr, *, is_min):
 
 
 def _repo_dirs():
-    """Discover (info_url, datadir_url) pairs from every installed repository.
+    """Discover (repo_id, info_url, datadir_url) triples from every installed repo.
 
     Reads each special://home/addons/repository.*/addon.xml, walks its
     xbmc.addon.repository extension's <dir> blocks (or the legacy flat form
@@ -148,14 +160,20 @@ def _repo_dirs():
     dirs whose min/maxversion gate matches this Kodi major — so Omega repos with
     several per-release dirs contribute their Omega index, not an older one.
     Our own host proxy (127.0.0.1) is skipped: it is not a content source here.
+
+    repo_id is the owning repository.* add-on id; it is carried through the index
+    so every installed add-on can be stamped with a real `origin` (the source
+    repo). An empty origin is what breaks the video apps: The Loop refuses to
+    open ("installed from unknown source") and POV's language strings fail to
+    load (setLabel errors -> empty menu). See run() for the origin stamping.
     """
     addons_root = xbmcvfs.translatePath("special://home/addons/")
-    pairs = []
+    triples = []
     try:
         names = sorted(os.listdir(addons_root))
     except OSError as e:
         _log(f"cannot list addons dir: {e}", xbmc.LOGERROR)
-        return pairs
+        return triples
     for name in names:
         if not name.startswith("repository."):
             continue
@@ -167,6 +185,7 @@ def _repo_dirs():
         except ET.ParseError as e:
             _log(f"bad addon.xml in {name}: {e}", xbmc.LOGERROR)
             continue
+        repo_id = root.get("id") or name
         ext = root.find("extension[@point='xbmc.addon.repository']")
         if ext is None:
             continue
@@ -190,16 +209,18 @@ def _repo_dirs():
                 if datadir is not None and datadir.text
                 else info_url.rsplit("/", 1)[0]
             )
-            pairs.append((info_url, base))
-    return pairs
+            triples.append((repo_id, info_url, base))
+    return triples
 
 
-def _parse_index(xml_bytes, base, platform_tag=None):
-    """Parse one addons.xml into {id: (version, [dep_ids], zip_url)}.
+def _parse_index(xml_bytes, base, platform_tag=None, origin=""):
+    """Parse one addons.xml into {id: (version, [dep_ids], zip_url, origin)}.
 
     A binary add-on declares an explicit <path> per platform; we keep only the
     entry matching this machine and download from that path. Otherwise the
-    conventional '<base>/<id>/<id>-<ver>.zip' url is built.
+    conventional '<base>/<id>/<id>-<ver>.zip' url is built. `origin` is the
+    owning repository.* id, carried so installed add-ons can be stamped with a
+    real source repo (an empty origin breaks The Loop and POV — see run()).
     """
     out = {}
     root = ET.fromstring(xml_bytes)
@@ -231,11 +252,11 @@ def _parse_index(xml_bytes, base, platform_tag=None):
             continue
         ver = a.get("version")
         rel = path.strip() if path else f"{aid}/{aid}-{ver}.zip"
-        out[aid] = (ver, deps, f"{base}/{rel}")
+        out[aid] = (ver, deps, f"{base}/{rel}", origin)
     return out
 
 
-def _load_repo_index(info_url, base, platform_tag=None):
+def _load_repo_index(info_url, base, platform_tag=None, origin=""):
     """Fetch+parse a single repo dir's index. Tries the declared info url, then
     its .gz / plain sibling, so a repo that lists addons.xml works even if only
     addons.xml.gz exists (and vice versa)."""
@@ -247,7 +268,7 @@ def _load_repo_index(info_url, base, platform_tag=None):
     last = None
     for url in candidates:
         try:
-            return _parse_index(_http_get(url), base, platform_tag)
+            return _parse_index(_http_get(url), base, platform_tag, origin)
         except Exception as e:  # noqa: BLE001 - try the next variant / repo
             last = e
     _log(f"index load failed {info_url}: {last}", xbmc.LOGERROR)
@@ -279,56 +300,61 @@ def _merge_index(combined, idx, *, prefer):
     shared script.module.* resolve to the Kodi-matched build. Otherwise the
     HIGHEST version wins — across all third-party repos — so an old duplicate
     (e.g. resolveurl 5.0.09 in one repo) never shadows the current build
-    (5.1.200 in another). Each value is (version, [deps], zip_url, prefer_flag).
+    (5.1.200 in another). Each value is
+    (version, [deps], zip_url, origin, prefer_flag).
     """
-    for aid, (ver, deps, url) in idx.items():
+    for aid, (ver, deps, url, origin) in idx.items():
         existing = combined.get(aid)
         if existing is None:
-            combined[aid] = (ver, deps, url, prefer)
+            combined[aid] = (ver, deps, url, origin, prefer)
             continue
-        _ever, _ed, _eu, eprefer = existing
+        _ever, _ed, _eu, _eo, eprefer = existing
         if eprefer and not prefer:
             continue  # official already won this id
         if prefer and not eprefer:
-            combined[aid] = (ver, deps, url, prefer)
+            combined[aid] = (ver, deps, url, origin, prefer)
             continue
         # same tier (both official, or both third-party): newest version wins
         if _ver_key(ver) > _ver_key(_ever):
-            combined[aid] = (ver, deps, url, prefer)
+            combined[aid] = (ver, deps, url, origin, prefer)
 
 
 def _build_index(platform_tag=None):
     """Build a single combined index across every installed repo + the official
     Kodi repo, choosing the best entry per id (see _merge_index).
 
-    Returns {id: (version, [dep_ids], zip_url)}. The official repo is merged
-    with prefer=True so its modules win (Kodi-matched versions); among the
-    third-party repos the highest version of any duplicated id wins.
+    Returns {id: (version, [dep_ids], zip_url, origin)}. The official repo is
+    merged with prefer=True so its modules win (Kodi-matched versions); among
+    the third-party repos the highest version of any duplicated id wins. origin
+    is the providing repository.* id (official repo -> 'repository.xbmc.org').
     """
     combined = {}
-    for info_url, base in _repo_dirs():
-        idx = _load_repo_index(info_url, base, platform_tag)
+    for repo_id, info_url, base in _repo_dirs():
+        idx = _load_repo_index(info_url, base, platform_tag, repo_id)
         if idx:
             _merge_index(combined, idx, prefer=False)
     official = _load_repo_index(
-        f"{OFFICIAL_BASE}/addons.xml.gz", OFFICIAL_BASE, platform_tag
+        f"{OFFICIAL_BASE}/addons.xml.gz",
+        OFFICIAL_BASE,
+        platform_tag,
+        "repository.xbmc.org",
     )
     if official:
         _merge_index(combined, official, prefer=True)
-    # Drop the prefer flag from the public shape: {id: (version, deps, url)}.
-    return {aid: (v, d, u) for aid, (v, d, u, _p) in combined.items()}
+    # Drop the prefer flag: {id: (version, deps, url, origin)}.
+    return {aid: (v, d, u, o) for aid, (v, d, u, o, _p) in combined.items()}
 
 
 def _resolve_closure(targets, index):
     """Walk the dependency graph of `targets` against the combined `index`.
 
-    Returns an ordered list of (addon_id, zip_url) with dependencies BEFORE the
-    add-ons that need them, so extraction order is safe. System imports
-    (xbmc.* / kodi.*) are skipped. An add-on already installed on the box is
-    treated as satisfied (its subtree is not re-resolved). Also returns the set
-    of ids that could not be resolved from any installed repo.
+    Returns an ordered list of (addon_id, zip_url, origin) with dependencies
+    BEFORE the add-ons that need them, so extraction order is safe. System
+    imports (xbmc.* / kodi.*) are skipped. An add-on already installed on the
+    box is treated as satisfied (its subtree is not re-resolved). Also returns
+    the set of ids that could not be resolved from any installed repo.
     """
-    resolved = {}  # id -> zip_url
+    resolved = {}  # id -> (zip_url, origin)
     order = []
     missing = set()
 
@@ -340,15 +366,15 @@ def _resolve_closure(targets, index):
             missing.add(aid)
             _log(f"cannot resolve dependency: {aid}", xbmc.LOGERROR)
             return
-        _ver, deps, url = entry
-        resolved[aid] = url
+        _ver, deps, url, origin = entry
+        resolved[aid] = (url, origin)
         for dep in deps:  # deps first
             visit(dep)
         order.append(aid)
 
     for t in targets:
         visit(t)
-    return [(aid, resolved[aid]) for aid in order], missing
+    return [(aid, resolved[aid][0], resolved[aid][1]) for aid in order], missing
 
 
 def _extract_zip(url, dialog, pct):
@@ -392,12 +418,77 @@ def _enable(addon_id):
     xbmc.sleep(200)
 
 
-def _install_closure(closure, dialog):
-    """Extract every zip in `closure` (deps first), rescan, then enable each.
+def _addons_db_path():
+    """Locate Kodi's current Addons<NN>.db (the schema version varies by Kodi
+    release — Omega ships Addons33.db). Returns the newest match, or None."""
+    db_dir = xbmcvfs.translatePath("special://database/")
+    try:
+        cands = [
+            os.path.join(db_dir, n)
+            for n in os.listdir(db_dir)
+            if n.startswith("Addons") and n.endswith(".db")
+        ]
+    except OSError:
+        return None
+    if not cands:
+        return None
 
-    Returns the count of closure ids that report installed afterwards.
+    def _schema_num(path):
+        digits = "".join(c for c in os.path.basename(path) if c.isdigit())
+        return int(digits) if digits else -1
+
+    # Highest schema number wins (e.g. Addons33.db over Addons27.db).
+    return max(cands, key=_schema_num)
+
+
+def _set_origins(origins):
+    """Stamp each installed add-on's `origin` to its source repository id.
+
+    `origins` is {addon_id: repository_id}. An empty origin is what breaks the
+    video apps: The Loop opens a blocking "installed from unknown source" dialog
+    on every launch (so its directory never returns), and POV's language strings
+    fail to load (getLocalizedString -> '' -> setLabel raises -> empty menu).
+    Kodi's own repository installer sets this column; the direct-extract path
+    does not, so we set it ourselves — exactly the value Kodi would have written
+    (the providing repo). Writing the live Addons DB is how build wizards do it;
+    we touch only the `origin` column of rows we just installed, and the change
+    takes effect on the next Kodi start (run() restarts at the end).
+
+    Never raises: a failure here must not abort the run (the apps are at least
+    installed; the user can re-run if origins did not take).
     """
-    for aid, url in closure:
+    db = _addons_db_path()
+    if not db:
+        _log("could not locate Addons DB; origins not set", xbmc.LOGERROR)
+        return
+    try:
+        import sqlite3  # noqa: PLC0415 - stdlib, only needed here
+
+        con = sqlite3.connect(db, timeout=10)
+        try:
+            for aid, repo_id in origins.items():
+                if not repo_id:
+                    continue
+                con.execute(
+                    "UPDATE installed SET origin=? WHERE addonID=? AND origin=''",
+                    (repo_id, aid),
+                )
+            con.commit()
+        finally:
+            con.close()
+        _log(f"stamped origin on {len(origins)} add-on(s)", xbmc.LOGINFO)
+    except Exception as e:  # noqa: BLE001 - origin stamping must not abort the run
+        _log(f"set_origins failed (non-fatal): {e}", xbmc.LOGERROR)
+
+
+def _install_closure(closure, dialog):
+    """Extract every zip in `closure` (deps first), rescan, enable each, then
+    stamp every add-on's origin with its source repo.
+
+    `closure` is a list of (addon_id, zip_url, origin). Returns the count of
+    closure ids that report installed afterwards.
+    """
+    for aid, url, _origin in closure:
         if _is_installed(aid):
             continue
         _extract_zip(url, dialog, 100)
@@ -405,9 +496,11 @@ def _install_closure(closure, dialog):
     # dependencies-first so each app's imports are satisfied when enabled.
     xbmc.executebuiltin("UpdateLocalAddons()")
     xbmc.sleep(2000)
-    for aid, _url in closure:
+    for aid, _url, _origin in closure:
         _enable(aid)
-    return sum(1 for aid, _url in closure if _is_installed(aid))
+    # Stamp origins so the apps are not treated as "unknown source" orphans.
+    _set_origins({aid: origin for aid, _url, origin in closure})
+    return sum(1 for aid, _url, _origin in closure if _is_installed(aid))
 
 
 def _self_uninstall():
@@ -440,6 +533,79 @@ def _have_source_repos():
     return len(_repo_dirs()) > 0
 
 
+def _enable_source_repos():
+    """Enable every installed repository.* add-on (except our 127.0.0.1 proxy).
+
+    The direct-extract setup drops repo dirs into addons/ but can leave them
+    DISABLED, so Kodi never indexes them and never treats their add-ons as
+    repo-installed — which is why installed apps end up with an empty origin.
+    Enabling the repos makes the origin we stamp reference a repo Kodi knows
+    about, and lets Kodi keep them current going forward. Never raises.
+    """
+    addons_root = xbmcvfs.translatePath("special://home/addons/")
+    try:
+        names = sorted(os.listdir(addons_root))
+    except OSError:
+        return
+    for name in names:
+        if not name.startswith("repository."):
+            continue
+        axml = os.path.join(addons_root, name, "addon.xml")
+        if not os.path.isfile(axml):
+            continue
+        try:
+            root = ET.parse(axml).getroot()
+            repo_id = root.get("id") or name
+            ext = root.find("extension[@point='xbmc.addon.repository']")
+            info = ext.find("dir/info") if ext is not None else None
+            if info is None and ext is not None:
+                info = ext.find("info")
+            info_url = (info.text or "") if info is not None else ""
+            if "127.0.0.1" in info_url or "localhost" in info_url:
+                continue  # our own proxy is not a content source
+            _enable(repo_id)
+        except Exception:  # noqa: BLE001 - one bad repo must not abort the run
+            continue
+
+
+def _restart_kodi():
+    """Restart Kodi so freshly installed add-ons (and the origins just stamped)
+    are fully loaded before first use.
+
+    POV builds its menu from localized strings on first run; if it is invoked
+    before Kodi has registered its language resource, getLocalizedString returns
+    '' and setLabel raises (empty menu). The Loop reads its origin at startup; a
+    blank origin shows a blocking "unknown source" dialog. A restart guarantees
+    both the language resources and the stamped origins are live. Platform-aware
+    and prompt-driven so it never freezes (matches the main Setup's behaviour).
+    """
+    if _is_android():
+        if xbmcgui.Dialog().yesno(
+            "Video Add-ons Setup",
+            "Setup is complete. Kodi must fully close and reopen to finish.\n\n"
+            "Close Kodi now? After it closes, open it again to finish setup.",
+            yeslabel="Close now",
+            nolabel="Later",
+        ):
+            xbmc.executebuiltin("Quit()")
+        return
+    if xbmcgui.Dialog().yesno(
+        "Video Add-ons Setup",
+        "Setup is complete. Kodi needs to restart to finish.\n\nRestart now?",
+    ):
+        xbmc.executebuiltin("RestartApp()")
+
+
+def _is_android():
+    """True on Android (incl. Fire Stick), where the app cannot relaunch itself."""
+    if os.environ.get("ANDROID_ROOT") or os.environ.get("ANDROID_DATA"):
+        return True
+    try:
+        return "android" in os.uname().sysname.lower()
+    except AttributeError:  # Windows
+        return False
+
+
 def run():
     # Bail early with a clear message if the box has no source repos yet.
     if not _have_source_repos():
@@ -464,6 +630,10 @@ def run():
 
     dialog = xbmcgui.DialogProgress()
     dialog.create("Video Add-ons Setup", "Resolving add-ons...")
+
+    # Enable the source repos so the origins we stamp reference repos Kodi knows
+    # about (a blank origin is what breaks The Loop and POV — see _set_origins).
+    _enable_source_repos()
 
     plat = _platform_tag()
     indexes = _build_index(plat)
@@ -493,14 +663,20 @@ def run():
     msg = f"Installed {installed_ok}/{len(selected)} selected add-on(s)."
     if unresolved_apps:
         msg += "\n\nNot found in your repos: " + ", ".join(unresolved_apps)
-    msg += "\n\nOpen Add-ons to start using them."
+    msg += "\n\nKodi will restart to finish setup."
     xbmcgui.Dialog().ok("Video Add-ons Setup", msg)
 
     # Self-remove only after an actual install run completed (at least one app
     # selected and the flow reached here). It never raises and deletes only our
-    # own dir. These are pure-python video plugins, so no restart is needed —
-    # they are runnable as soon as they are extracted + enabled.
+    # own dir.
     _self_uninstall()
+
+    # Restart so the freshly installed apps load their language resources and
+    # the stamped origins take effect on first launch (POV's menu and The Loop's
+    # origin check both need a clean start — see _restart_kodi). Only reached
+    # after an actual install; prompt-driven so it never freezes.
+    if installed_ok:
+        _restart_kodi()
 
 
 if __name__ == "__main__":

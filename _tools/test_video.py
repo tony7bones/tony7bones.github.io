@@ -194,24 +194,45 @@ class _FakeResp:
 
 # A small fake index covering the apps and a transitive module dep. Sports HD
 # pulls dateutil/six/requests; resolveurl stands in for the heavier Loop deps.
+# Each value is (version, [deps], zip_url, origin). origin is unused by the
+# fake index serialiser (the real origin is derived from the discovered
+# repository.fake during _parse_index) but keeps the tuple shape consistent with
+# the module's index shape.
 _INDEX = {
-    "plugin.video.pov": ("6.06.04", ["script.module.requests"], None),
+    "plugin.video.pov": (
+        "6.06.04",
+        ["script.module.requests"],
+        None,
+        "repository.fake",
+    ),
     "plugin.video.the-loop": (
         "7.9",
         ["script.module.requests", "script.module.resolveurl"],
         None,
+        "repository.fake",
     ),
     "plugin.video.sporthdme": (
         "0.1.85.1",
         ["script.module.dateutil", "script.module.requests"],
         None,
+        "repository.fake",
     ),
-    "plugin.video.umbrella": ("6.7.77", ["script.module.requests"], None),
-    "script.module.requests": ("2.31.0", ["script.module.urllib3"], None),
-    "script.module.urllib3": ("2.2.3", [], None),
-    "script.module.resolveurl": ("5.1.0", [], None),
-    "script.module.dateutil": ("2.8.2", ["script.module.six"], None),
-    "script.module.six": ("1.16.0", [], None),
+    "plugin.video.umbrella": (
+        "6.7.77",
+        ["script.module.requests"],
+        None,
+        "repository.fake",
+    ),
+    "script.module.requests": (
+        "2.31.0",
+        ["script.module.urllib3"],
+        None,
+        "repository.fake",
+    ),
+    "script.module.urllib3": ("2.2.3", [], None, "repository.fake"),
+    "script.module.resolveurl": ("5.1.0", [], None, "repository.fake"),
+    "script.module.dateutil": ("2.8.2", ["script.module.six"], None, "repository.fake"),
+    "script.module.six": ("1.16.0", [], None, "repository.fake"),
 }
 
 
@@ -351,7 +372,8 @@ def vid(tmp_path, monkeypatch):
 
     def _index_xml(index):
         parts = ['<?xml version="1.0"?>', "<addons>"]
-        for aid, (ver, deps, _path) in index.items():
+        for aid, entry in index.items():
+            ver, deps = entry[0], entry[1]
             parts.append(f'<addon id="{aid}" version="{ver}"><requires>')
             for d in deps:
                 parts.append(f'<import addon="{d}" version="1.0.0"/>')
@@ -393,12 +415,14 @@ def vid(tmp_path, monkeypatch):
 
 def test_repo_dirs_discovers_installed_filters_old_and_proxy(vid):
     """Discovery keeps the Omega-gated repo, drops the Nexus-gated one and the
-    127.0.0.1 host proxy."""
-    pairs = vid.mod._repo_dirs()
-    infos = [info for info, _base in pairs]
+    127.0.0.1 host proxy. Each result is (repo_id, info_url, datadir)."""
+    triples = vid.mod._repo_dirs()
+    infos = [info for _repo_id, info, _base in triples]
     assert "https://fake.repo/zips/addons.xml" in infos
     assert "https://old.repo/zips/addons.xml" not in infos, "old Kodi dir must be gated"
     assert not any("127.0.0.1" in i for i in infos), "host proxy must be skipped"
+    # repo_id is carried so installed add-ons can be origin-stamped.
+    assert all(rid and rid.startswith("repository.") for rid, _i, _b in triples)
 
 
 def test_build_index_combines_repos(vid):
@@ -411,8 +435,8 @@ def test_build_index_picks_highest_version(vid):
     """When several repos publish the same id at different versions, the newest
     build must win — regression for resolveurl 5.0.09 shadowing 5.1.200, which
     made Kodi reject the old build as incompatible."""
-    a = {"script.module.resolveurl": ("5.0.09", [], None)}
-    b = {"script.module.resolveurl": ("5.1.200", [], None)}
+    a = {"script.module.resolveurl": ("5.0.09", [], None, "repository.a")}
+    b = {"script.module.resolveurl": ("5.1.200", [], None, "repository.b")}
     combined = {}
     vid.mod._merge_index(combined, a, prefer=False)
     vid.mod._merge_index(combined, b, prefer=False)
@@ -434,18 +458,20 @@ def test_ver_key_numeric_compare(vid):
 def test_official_preferred_for_shared_modules(vid):
     """A module the official repo carries must come from official even if a
     third-party repo lists a higher version (Kodi-matched build wins)."""
-    third = {"script.module.requests": ("9.9.9", [], None)}
-    official = {"script.module.requests": ("2.31.0", [], None)}
+    third = {"script.module.requests": ("9.9.9", [], None, "repository.third")}
+    official = {"script.module.requests": ("2.31.0", [], None, "repository.xbmc.org")}
     combined = {}
     vid.mod._merge_index(combined, third, prefer=False)
     vid.mod._merge_index(combined, official, prefer=True)
     assert combined["script.module.requests"][0] == "2.31.0"
+    # origin follows the winning entry (official here).
+    assert combined["script.module.requests"][3] == "repository.xbmc.org"
 
 
 def test_resolve_closure_walks_deps_order(vid):
     indexes = vid.mod._build_index(None)
     closure, missing = vid.mod._resolve_closure(["plugin.video.sporthdme"], indexes)
-    ids = [aid for aid, _url in closure]
+    ids = [aid for aid, _url, _origin in closure]
     assert "plugin.video.sporthdme" in ids
     assert "script.module.requests" in ids
     assert "script.module.six" in ids  # transitive dep of dateutil
@@ -466,10 +492,11 @@ def test_parse_index_skips_optional_imports(vid):
         '<import addon="plugin.googledrive" version="1.0.0" optional="true"/>'
         "</requires></addon></addons>"
     ).encode("utf-8")
-    idx = vid.mod._parse_index(xml, "https://fake.repo/zips")
-    _ver, deps, _url = idx["script.module.resolveurl"]
+    idx = vid.mod._parse_index(xml, "https://fake.repo/zips", origin="repository.x")
+    _ver, deps, _url, origin = idx["script.module.resolveurl"]
     assert "script.module.required.dep" in deps, "required import must be kept"
     assert "plugin.googledrive" not in deps, "optional import must be skipped"
+    assert origin == "repository.x", "origin must be carried through parse"
 
 
 def test_resolve_closure_skips_optional_dep(vid):
@@ -480,11 +507,17 @@ def test_resolve_closure_skips_optional_dep(vid):
             "7.9",
             ["script.module.resolveurl"],
             None,
+            "repository.loop",
         ),
-        "script.module.resolveurl": ("5.1.0", ["script.module.requests"], None),
-        "script.module.requests": ("2.31.0", [], None),
+        "script.module.resolveurl": (
+            "5.1.0",
+            ["script.module.requests"],
+            None,
+            "repository.loop",
+        ),
+        "script.module.requests": ("2.31.0", [], None, "repository.xbmc.org"),
         # present in the repo but only reachable as an optional dep → must stay out
-        "plugin.googledrive": ("3.0.0", [], None),
+        "plugin.googledrive": ("3.0.0", [], None, "repository.loop"),
     }
     # Re-point resolveurl's optional dep by injecting raw XML through the fixture's
     # index builder: mark plugin.googledrive optional on resolveurl.
@@ -501,9 +534,9 @@ def test_resolve_closure_skips_optional_dep(vid):
         '<addon id="plugin.googledrive" version="3.0.0"><requires/></addon>'
         "</addons>"
     ).encode("utf-8")
-    idx = vid.mod._parse_index(raw, "https://fake.repo/zips")
+    idx = vid.mod._parse_index(raw, "https://fake.repo/zips", origin="repository.loop")
     closure, missing = vid.mod._resolve_closure(["plugin.video.the-loop"], idx)
-    ids = [aid for aid, _url in closure]
+    ids = [aid for aid, _url, _origin in closure]
     assert "plugin.video.the-loop" in ids
     assert "script.module.resolveurl" in ids
     assert "script.module.requests" in ids  # required transitive dep present
@@ -522,7 +555,7 @@ def test_resolve_closure_skips_installed(vid):
     vid.state["installed"].add("script.module.requests")
     indexes = vid.mod._build_index(None)
     closure, _missing = vid.mod._resolve_closure(["plugin.video.pov"], indexes)
-    ids = [aid for aid, _url in closure]
+    ids = [aid for aid, _url, _origin in closure]
     # requests already installed → not re-resolved
     assert "script.module.requests" not in ids
     assert "plugin.video.pov" in ids
@@ -551,6 +584,13 @@ def test_run_default_selection_installs_three(vid):
     assert not any(b.startswith("InstallAddon(") for b in s["builtins"])
     assert "UpdateLocalAddons()" in s["builtins"]
     assert s["ok"], "completion dialog must be shown"
+    # source repos were enabled (so stamped origins reference repos Kodi knows).
+    enabled = [
+        _json.loads(j)["params"]["addonid"]
+        for j in s["jsonrpc"]
+        if _json.loads(j).get("method") == "Addons.SetAddonEnabled"
+    ]
+    assert "repository.fake" in enabled, "source repos must be enabled"
 
 
 def test_run_umbrella_when_selected(vid):
@@ -626,3 +666,167 @@ def test_platform_tag_shape(vid):
     import re
 
     assert tag is None or re.match(r"^(osx|windows|android)-", tag), tag
+
+
+# --- origin stamping (the fix for broken POV / The Loop) -------------------
+
+
+def _make_addons_db(path):
+    """Create a minimal Kodi-shaped installed table with blank origins."""
+    import sqlite3
+
+    con = sqlite3.connect(str(path))
+    con.execute(
+        "CREATE TABLE installed (id INTEGER PRIMARY KEY, addonID TEXT UNIQUE, "
+        "enabled BOOLEAN, origin TEXT NOT NULL DEFAULT '')"
+    )
+    for aid in ("plugin.video.the-loop", "plugin.video.pov", "script.module.requests"):
+        con.execute(
+            "INSERT INTO installed (addonID, enabled, origin) VALUES (?, 1, '')", (aid,)
+        )
+    con.commit()
+    con.close()
+
+
+def test_set_origins_stamps_blank_rows(vid, monkeypatch, tmp_path):
+    """_set_origins writes the source repo into the blank origin column."""
+    import sqlite3
+
+    dbdir = tmp_path / "db"
+    dbdir.mkdir()
+    db = dbdir / "Addons33.db"
+    _make_addons_db(db)
+    monkeypatch.setattr(vid.mod, "_addons_db_path", lambda: str(db))
+    vid.mod._set_origins(
+        {
+            "plugin.video.the-loop": "repository.loop",
+            "plugin.video.pov": "repository.kodifitzwell",
+            "script.module.requests": "repository.xbmc.org",
+        }
+    )
+    con = sqlite3.connect(str(db))
+    rows = dict(con.execute("SELECT addonID, origin FROM installed").fetchall())
+    con.close()
+    assert rows["plugin.video.the-loop"] == "repository.loop"
+    assert rows["plugin.video.pov"] == "repository.kodifitzwell"
+    assert rows["script.module.requests"] == "repository.xbmc.org"
+
+
+def test_set_origins_does_not_overwrite_existing(vid, monkeypatch, tmp_path):
+    """An add-on already carrying an origin (real repo install) is left alone."""
+    import sqlite3
+
+    db = tmp_path / "Addons33.db"
+    _make_addons_db(db)
+    con = sqlite3.connect(str(db))
+    con.execute(
+        "UPDATE installed SET origin='repository.real' WHERE addonID='plugin.video.pov'"
+    )
+    con.commit()
+    con.close()
+    monkeypatch.setattr(vid.mod, "_addons_db_path", lambda: str(db))
+    vid.mod._set_origins({"plugin.video.pov": "repository.kodifitzwell"})
+    con = sqlite3.connect(str(db))
+    origin = con.execute(
+        "SELECT origin FROM installed WHERE addonID='plugin.video.pov'"
+    ).fetchone()[0]
+    con.close()
+    assert origin == "repository.real", "must not clobber an existing origin"
+
+
+def test_set_origins_never_raises_without_db(vid, monkeypatch):
+    monkeypatch.setattr(vid.mod, "_addons_db_path", lambda: None)
+    vid.mod._set_origins({"plugin.video.pov": "repository.kodifitzwell"})  # no raise
+
+
+def test_set_origins_skips_blank_repo(vid, monkeypatch, tmp_path):
+    """A resolved add-on with no known repo (blank origin) is not stamped blank."""
+    import sqlite3
+
+    db = tmp_path / "Addons33.db"
+    _make_addons_db(db)
+    monkeypatch.setattr(vid.mod, "_addons_db_path", lambda: str(db))
+    vid.mod._set_origins({"plugin.video.the-loop": ""})
+    con = sqlite3.connect(str(db))
+    origin = con.execute(
+        "SELECT origin FROM installed WHERE addonID='plugin.video.the-loop'"
+    ).fetchone()[0]
+    con.close()
+    assert origin == ""
+
+
+def test_install_closure_stamps_origins(vid, monkeypatch):
+    """_install_closure calls _set_origins with each add-on's source repo."""
+    captured = {}
+    monkeypatch.setattr(vid.mod, "_set_origins", lambda m: captured.update(m))
+    closure = [
+        ("script.module.requests", "https://r/requests.zip", "repository.fake"),
+        ("plugin.video.the-loop", "https://r/the-loop.zip", "repository.loop"),
+    ]
+    vid.mod._install_closure(closure, None)
+    assert captured == {
+        "script.module.requests": "repository.fake",
+        "plugin.video.the-loop": "repository.loop",
+    }
+
+
+def test_addons_db_path_finds_versioned_db(vid, monkeypatch, tmp_path):
+    """_addons_db_path locates Addons<NN>.db under special://database/."""
+    dbdir = tmp_path / "database"
+    dbdir.mkdir()
+    (dbdir / "Addons33.db").write_bytes(b"")
+    (dbdir / "MyVideos131.db").write_bytes(b"")
+    monkeypatch.setattr(vid.mod.xbmcvfs, "translatePath", lambda p: str(dbdir) + "/")
+    found = vid.mod._addons_db_path()
+    assert found is not None and found.endswith("Addons33.db")
+
+
+# --- restart so the fix takes effect on first launch -----------------------
+
+
+def test_run_restarts_after_install(vid, monkeypatch):
+    """A successful install restarts Kodi (so POV's strings load and the stamped
+    origins go live). yesno is forced True to take the restart branch."""
+    monkeypatch.setattr(vid.mod.xbmcgui, "Dialog", _yes_dialog_factory(vid.state))
+    vid.state["pick"] = [0]
+    vid.mod.run()
+    assert any(b.startswith("RestartApp") for b in vid.state["builtins"]), (
+        "must restart after install"
+    )
+
+
+def test_run_no_restart_when_nothing_installed(vid, monkeypatch):
+    """If no app ends up installed, do not restart."""
+    monkeypatch.setattr(vid.mod.xbmcgui, "Dialog", _yes_dialog_factory(vid.state))
+    # Make extraction a no-op so nothing reports installed.
+    monkeypatch.setattr(vid.mod, "_extract_zip", lambda *a, **k: False)
+    monkeypatch.setattr(vid.mod, "_enable", lambda *a, **k: None)
+    vid.state["pick"] = [0]
+    vid.mod.run()
+    assert not any(b.startswith("RestartApp") for b in vid.state["builtins"])
+
+
+def test_no_modal_installer_runtime(vid):
+    """Belt-and-braces: the live module never emits an InstallAddon builtin."""
+    vid.state["pick"] = [0, 1, 2]
+    vid.mod.run()
+    assert not any(b.startswith("InstallAddon(") for b in vid.state["builtins"])
+
+
+def _yes_dialog_factory(state):
+    """A Dialog whose yesno() returns True (to exercise the restart branch),
+    recording ok()/multiselect like the default fake."""
+
+    class _D:
+        def ok(self, title, msg):
+            state["ok"].append((title, msg))
+
+        def multiselect(self, title, options, preselect=None):
+            state["multiselect"].append((title, options, preselect))
+            pick = state.get("pick", preselect)
+            return None if pick is None else list(pick)
+
+        def yesno(self, title, msg, **kwargs):
+            return True
+
+    return _D
