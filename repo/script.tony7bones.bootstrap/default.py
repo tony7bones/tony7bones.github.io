@@ -328,6 +328,123 @@ def _install_with_deps(addon_id, dialog):
     return _is_installed(addon_id)
 
 
+# File-Manager sources added to userdata/sources.xml (the <files> section).
+# (display name, path). The second path is the Android/Fire Stick internal
+# storage dir — we try to create it (harmless no-op off Android) but always
+# add the source entry regardless.
+FILE_SOURCES = [
+    ("Kodi home directory", "special://home"),
+    ("Kodi sources directory", "/storage/emulated/0/kodi/"),
+]
+
+
+def _sources_xml_path():
+    """Resolve the absolute path to userdata/sources.xml via xbmcvfs.
+
+    special://profile is the active profile's userdata dir (== userdata/ for the
+    master profile); sources.xml lives directly inside it. Fall back to the
+    home-relative path if needed."""
+    p = xbmcvfs.translatePath("special://profile/sources.xml")
+    if not p:
+        p = xbmcvfs.translatePath("special://home/userdata/sources.xml")
+    return p
+
+
+def _make_files_source(parent, name, path):
+    """Append a standard <source> entry to the given <files> element."""
+    src = ET.SubElement(parent, "source")
+    ET.SubElement(src, "name").text = name
+    p = ET.SubElement(src, "path")
+    p.set("pathversion", "1")
+    p.text = path
+    ET.SubElement(src, "allowsharing").text = "true"
+
+
+def _add_file_sources():
+    """Add our File-Manager sources to userdata/sources.xml.
+
+    Edits the <files> section in place: creates the file/structure if missing,
+    PRESERVES every existing source (Movies/Music/Pictures, a .tony7.bones
+    source, anything else), and DEDUPES on both name and path so a second run
+    adds nothing. For the Android internal-storage path we attempt mkdirs first
+    (guarded — it can't and won't succeed off Android, which is fine) but add
+    the source entry either way. Fully defensive: any error is logged and the
+    rest of setup continues. The end-of-setup restart is what makes Kodi pick up
+    the new sources (it caches sources.xml at startup)."""
+    try:
+        xml_path = _sources_xml_path()
+
+        # Parse the existing file, or start a fresh <sources> tree.
+        root = None
+        if xml_path and os.path.exists(xml_path):
+            try:
+                root = ET.parse(xml_path).getroot()
+            except ET.ParseError as e:
+                xbmc.log(
+                    f"[tony7bones.bootstrap] sources.xml malformed, recreating: {e}",
+                    xbmc.LOGERROR,
+                )
+                root = None
+        if root is None or root.tag != "sources":
+            root = ET.Element("sources")
+
+        # Ensure a <files> section with a leading <default> element exists.
+        files = root.find("files")
+        if files is None:
+            files = ET.SubElement(root, "files")
+        if files.find("default") is None:
+            # Prepend <default> so the section matches Kodi's canonical shape.
+            default = ET.Element("default")
+            files.insert(0, default)
+
+        # Existing names/paths in <files> — dedupe against both.
+        have_names = {
+            (s.findtext("name") or "").strip() for s in files.findall("source")
+        }
+        have_paths = {
+            (s.findtext("path") or "").strip() for s in files.findall("source")
+        }
+
+        added = 0
+        for name, path in FILE_SOURCES:
+            # The Android internal-storage dir: try to create it, guarded.
+            if path == "/storage/emulated/0/kodi/":
+                try:
+                    if not xbmcvfs.exists(path):
+                        xbmcvfs.mkdirs(path)
+                except Exception as e:  # noqa: BLE001 - non-Android: harmless
+                    xbmc.log(
+                        f"[tony7bones.bootstrap] mkdirs {path} skipped "
+                        f"(expected off Android): {e}",
+                        xbmc.LOGINFO,
+                    )
+            if name in have_names or path in have_paths:
+                continue  # dedupe: already present by name or path
+            _make_files_source(files, name, path)
+            have_names.add(name)
+            have_paths.add(path)
+            added += 1
+
+        if added:
+            data = ET.tostring(root, encoding="unicode")
+            with open(xml_path, "w", encoding="utf-8") as f:
+                f.write(data)
+            xbmc.log(
+                f"[tony7bones.bootstrap] added {added} file source(s) to {xml_path}",
+                xbmc.LOGINFO,
+            )
+        else:
+            xbmc.log(
+                "[tony7bones.bootstrap] file sources already present (no change)",
+                xbmc.LOGINFO,
+            )
+    except Exception as e:  # noqa: BLE001 - never abort the rest of setup
+        xbmc.log(
+            f"[tony7bones.bootstrap] _add_file_sources failed (non-fatal): {e}",
+            xbmc.LOGERROR,
+        )
+
+
 def _is_android():
     """True when running on Android (incl. Fire Stick), where the app cannot
     relaunch itself. Detected the same way as _platform_tag()."""
@@ -484,6 +601,10 @@ def run():
     # never raises (so a failure here can't break the run) and deletes only our
     # own add-on dir. The restart below de-registers us from the add-on DB.
     _self_uninstall()
+    # Add our File-Manager sources (Kodi home + sources dirs) to sources.xml.
+    # Must run BEFORE the restart: Kodi caches sources.xml at startup, so the
+    # new entries only appear in File Manager after the end-of-setup restart.
+    _add_file_sources()
     # A restart finalises the freshly extracted add-ons AND finalises the
     # self-removal (the startup scan drops the now-missing add-on from the DB).
     # Platform-correct and prompt-driven so it never freezes (Fire Stick fix).

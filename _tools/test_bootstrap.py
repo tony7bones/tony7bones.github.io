@@ -15,6 +15,7 @@ Two layers:
 from __future__ import annotations
 
 import ast
+import os
 import py_compile
 import re
 import sys
@@ -62,7 +63,7 @@ def test_addon_name_is_branded():
 
 def test_version_bumped_past_old():
     v = _addon_root().get("version")
-    assert rl.is_greater(v, "1.0.20"), f"version {v} must exceed the old 1.0.20"
+    assert rl.is_greater(v, "1.0.21"), f"version {v} must exceed the old 1.0.21"
 
 
 # --------------------------------------------------------------------------- #
@@ -409,15 +410,40 @@ def boot(tmp_path, monkeypatch):
     xbmcvfs = types.ModuleType("xbmcvfs")
     temp = tmp_path / "temp"
     addons = tmp_path / "addons"
+    profile = tmp_path / "userdata"
     temp.mkdir()
     addons.mkdir()
+    profile.mkdir()
+    sources_xml = profile / "sources.xml"
+    # Record every mkdirs() call so the directory-create attempt is provable.
+    state["mkdirs"] = []
 
     def _translate(p):
-        return p.replace("special://temp/", str(temp) + "/").replace(
-            "special://home/addons/", str(addons) + "/"
+        return (
+            p.replace("special://temp/", str(temp) + "/")
+            .replace("special://home/addons/", str(addons) + "/")
+            .replace("special://profile/", str(profile) + "/")
+            .replace("special://home/userdata/", str(profile) + "/")
         )
 
     xbmcvfs.translatePath = _translate
+
+    def _exists(p):
+        return os.path.exists(p)
+
+    def _mkdirs(p):
+        # Record the attempt. The Android path can't be created on this host —
+        # mimic that by refusing to create absolute /storage/... paths (returns
+        # False, as Kodi's xbmcvfs.mkdirs does on failure), so the test proves
+        # the call is guarded and the source is still added.
+        state["mkdirs"].append(p)
+        if p.startswith("/storage/"):
+            return False
+        os.makedirs(p, exist_ok=True)
+        return True
+
+    xbmcvfs.exists = _exists
+    xbmcvfs.mkdirs = _mkdirs
 
     for nm, mod in (
         ("xbmc", xbmc),
@@ -470,7 +496,9 @@ def boot(tmp_path, monkeypatch):
     spec = importlib.util.spec_from_file_location("boot_default", DEFAULT_PY)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)  # run() is __main__-guarded, so this does not run it
-    return types.SimpleNamespace(mod=mod, state=state, addons=addons)
+    return types.SimpleNamespace(
+        mod=mod, state=state, addons=addons, sources_xml=sources_xml
+    )
 
 
 def test_no_unknown_sources_jsonrpc_during_run(boot):
@@ -744,3 +772,156 @@ def test_run_aborts_cleanly_on_cancel(boot, monkeypatch):
     boot.mod.run()  # must not raise
     # cancelled before finishing → no completion dialog
     assert boot.state["ok"] == []
+
+
+# --------------------------------------------------------------------------- #
+# File-Manager sources (Kodi home + sources dirs added to sources.xml)
+# --------------------------------------------------------------------------- #
+def _files_sources(boot):
+    """Parse sources.xml and return [(name, path), ...] from the <files> section."""
+    root = ET.parse(boot.sources_xml).getroot()
+    files = root.find("files")
+    assert files is not None, "<files> section must exist"
+    return [(s.findtext("name"), s.findtext("path")) for s in files.findall("source")]
+
+
+_HOME = ("Kodi home directory", "special://home")
+_SRC = ("Kodi sources directory", "/storage/emulated/0/kodi/")
+
+
+def test_add_file_sources_helper_exists():
+    """The helper must exist and be wired into run() before the restart."""
+    src = DEFAULT_PY.read_text()
+    assert "_add_file_sources" in src, "helper must exist"
+    assert "_add_file_sources()" in src, "helper must be invoked in run()"
+    # Must run before the restart (Kodi caches sources.xml at startup).
+    add_pos = src.rfind("_add_file_sources()")
+    restart_pos = src.rfind("_restart_kodi()")
+    assert add_pos != -1 and restart_pos != -1
+    assert add_pos < restart_pos, "_add_file_sources() must come before the restart"
+
+
+def test_add_file_sources_creates_file_when_missing(boot):
+    """No sources.xml → it creates the structure and adds both sources."""
+    assert not boot.sources_xml.exists()
+    boot.mod._add_file_sources()
+    entries = _files_sources(boot)
+    assert _HOME in entries
+    assert _SRC in entries
+    # canonical shape: <files> opens with a <default> element
+    root = ET.parse(boot.sources_xml).getroot()
+    assert root.find("files")[0].tag == "default"
+    # path entries carry pathversion="1"
+    for s in root.find("files").findall("source"):
+        assert s.find("path").get("pathversion") == "1"
+        assert s.findtext("allowsharing") == "true"
+
+
+def test_add_file_sources_both_present_with_names_and_paths(boot):
+    boot.mod._add_file_sources()
+    entries = dict(_files_sources(boot))
+    assert entries["Kodi home directory"] == "special://home"
+    assert entries["Kodi sources directory"] == "/storage/emulated/0/kodi/"
+
+
+def test_add_file_sources_preserves_existing(boot):
+    """Existing sources (incl. a .tony7.bones files source and other media
+    sections) must survive untouched."""
+    boot.sources_xml.write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        "<sources>\n"
+        "  <video>\n"
+        "    <default></default>\n"
+        "    <source><name>Movies</name>"
+        "<path>/Users/x/Movies</path><allowsharing>true</allowsharing></source>\n"
+        "  </video>\n"
+        "  <files>\n"
+        "    <default></default>\n"
+        "    <source><name>.tony7.bones</name>"
+        "<path>https://tony7bones.github.io/</path>"
+        "<allowsharing>true</allowsharing></source>\n"
+        "  </files>\n"
+        "</sources>\n"
+    )
+    boot.mod._add_file_sources()
+    root = ET.parse(boot.sources_xml).getroot()
+    # video section + its Movies source preserved
+    movies = [s.findtext("name") for s in root.find("video").findall("source")]
+    assert "Movies" in movies
+    # the .tony7.bones files source preserved, plus the two new ones added
+    files_entries = _files_sources(boot)
+    names = [n for n, _p in files_entries]
+    assert ".tony7.bones" in names
+    assert "Kodi home directory" in names
+    assert "Kodi sources directory" in names
+
+
+def test_add_file_sources_dedupes_on_second_run(boot):
+    """Running twice must not duplicate (dedupe on name OR path)."""
+    boot.mod._add_file_sources()
+    boot.mod._add_file_sources()
+    entries = _files_sources(boot)
+    assert entries.count(_HOME) == 1
+    assert entries.count(_SRC) == 1
+
+
+def test_add_file_sources_dedupes_on_path_with_different_name(boot):
+    """A pre-existing source sharing only the PATH must block re-adding."""
+    boot.sources_xml.write_text(
+        "<sources><files><default></default>"
+        "<source><name>my home</name>"
+        '<path pathversion="1">special://home</path>'
+        "<allowsharing>true</allowsharing></source>"
+        "</files></sources>"
+    )
+    boot.mod._add_file_sources()
+    paths = [p for _n, p in _files_sources(boot)]
+    # special://home appears exactly once (the pre-existing one), not duplicated
+    assert paths.count("special://home") == 1
+    # the sources dir was still added
+    assert "/storage/emulated/0/kodi/" in paths
+
+
+def test_add_file_sources_handles_malformed_xml(boot):
+    """A corrupt sources.xml must be recreated, not crash the run."""
+    boot.sources_xml.write_text("<sources><files><not closed")
+    boot.mod._add_file_sources()  # must not raise
+    entries = _files_sources(boot)
+    assert _HOME in entries
+    assert _SRC in entries
+
+
+def test_add_file_sources_attempts_guarded_mkdirs(boot):
+    """mkdirs must be ATTEMPTED for the Android path and guarded so a failure
+    off Android is harmless — the source entry lands regardless."""
+    boot.mod._add_file_sources()
+    # the directory-create was attempted on the Android internal-storage path
+    assert "/storage/emulated/0/kodi/" in boot.state["mkdirs"], (
+        "mkdirs must be attempted for the Android storage path"
+    )
+    # and even though that mkdirs returns False on this host, the source landed
+    paths = [p for _n, p in _files_sources(boot)]
+    assert "/storage/emulated/0/kodi/" in paths
+
+
+def test_add_file_sources_never_raises_on_write_error(boot, monkeypatch):
+    """Any failure must be swallowed (never aborts the rest of setup)."""
+    real_open = open
+
+    def boom(path, *a, **k):
+        if str(path).endswith("sources.xml") and (
+            "w" in (a[0] if a else k.get("mode", ""))
+        ):
+            raise OSError("disk full")
+        return real_open(path, *a, **k)
+
+    monkeypatch.setattr("builtins.open", boom)
+    boot.mod._add_file_sources()  # must not raise
+
+
+def test_run_adds_file_sources(boot):
+    """A full run must add the two File-Manager sources to sources.xml."""
+    boot.mod.run()
+    entries = _files_sources(boot)
+    assert _HOME in entries
+    assert _SRC in entries
