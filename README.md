@@ -1,4 +1,4 @@
-# Tony 7 Bones Kodi Repository
+# Tony.7.Bones Kodi Repository
 
 Kodi add-on repository hosted via GitHub Pages.
 

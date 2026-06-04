@@ -55,13 +55,13 @@ def test_addon_id_unchanged():
     assert _addon_root().get("id") == "script.tony7bones.bootstrap"
 
 
-def test_addon_name_is_original():
-    assert _addon_root().get("name") == "Tony 7 Bones Setup"
+def test_addon_name_is_branded():
+    assert _addon_root().get("name") == "Tony.7.Bones Setup"
 
 
 def test_version_bumped_past_old():
     v = _addon_root().get("version")
-    assert rl.is_greater(v, "1.0.12"), f"version {v} must exceed the old 1.0.12"
+    assert rl.is_greater(v, "1.0.14"), f"version {v} must exceed the old 1.0.14"
 
 
 # --------------------------------------------------------------------------- #
@@ -107,9 +107,13 @@ def test_patch_is_first_party_direct_extract():
     assert "script.tony7bones.modv2.patch" not in _assign("ADDONS")
 
 
-def test_apps_install_via_repo_installer():
-    """Apps must go through Kodi's InstallAddon, not direct extract."""
-    assert "InstallAddon(" in DEFAULT_PY.read_text()
+def test_apps_install_without_modal_installer():
+    """Apps must NOT use Kodi's InstallAddon builtin — it pops a blocking modal
+    install dialog that deadlocks the GUI when driven from a script. They are
+    installed by resolving the dependency closure and extracting directly."""
+    src = DEFAULT_PY.read_text()
+    assert "InstallAddon(" not in src, "InstallAddon modal must not be used"
+    assert "_resolve_closure" in src and "_install_with_deps" in src
 
 
 def test_sets_unknown_sources():
@@ -164,10 +168,10 @@ def test_modv2_patch_is_host_provided():
 # --------------------------------------------------------------------------- #
 # Runtime coverage — import default.py under mocked Kodi APIs and run it
 # --------------------------------------------------------------------------- #
-import gzip  # noqa: E402, F401
+import gzip as _gzip  # noqa: E402
 import importlib.util  # noqa: E402
+import io  # noqa: E402
 import json as _json  # noqa: E402
-import re as _re  # noqa: E402
 import types  # noqa: E402
 import urllib.request  # noqa: E402
 import zipfile as _zipfile  # noqa: E402
@@ -190,7 +194,25 @@ class _FakeResp:
 @pytest.fixture
 def boot(tmp_path, monkeypatch):
     """Import default.py with fake Kodi modules; return module + recorded state."""
-    state = {"installed": set(), "builtins": [], "jsonrpc": [], "ok": []}
+    # Fake repo index: id -> (version, [deps]). The two apps depend on the
+    # requests module, which pulls a small closure — the resolver must walk it.
+    state = {
+        "installed": set(),
+        "extracted": set(),  # zips unpacked on disk but not yet enabled
+        "builtins": [],
+        "jsonrpc": [],
+        "ok": [],
+        "index": {
+            "script.ezmaintenanceplus": ("2026.04.05.0", ["script.module.requests"]),
+            "script.realdebrid": ("0.7", ["script.module.requests"]),
+            "script.module.requests": (
+                "2.31.0",
+                ["script.module.urllib3", "script.module.certifi", "xbmc.python"],
+            ),
+            "script.module.urllib3": ("2.2.3", []),
+            "script.module.certifi": ("2023.5.7", []),
+        },
+    }
 
     xbmc = types.ModuleType("xbmc")
     xbmc.LOGERROR = 4
@@ -199,9 +221,6 @@ def boot(tmp_path, monkeypatch):
 
     def _builtin(cmd, wait=False):
         state["builtins"].append(cmd)
-        m = _re.match(r"InstallAddon\((.+)\)", cmd)
-        if m:
-            state["installed"].add(m.group(1))
 
     xbmc.executebuiltin = _builtin
 
@@ -209,7 +228,10 @@ def boot(tmp_path, monkeypatch):
         state["jsonrpc"].append(s)
         d = _json.loads(s)
         if d.get("method") == "Addons.SetAddonEnabled":
-            state["installed"].add(d["params"]["addonid"])
+            aid = d["params"]["addonid"]
+            # Kodi only enables an add-on it has scanned (extracted on disk).
+            if aid in state["extracted"]:
+                state["installed"].add(aid)
         return "{}"
 
     xbmc.executeJSONRPC = _jsonrpc
@@ -266,14 +288,39 @@ def boot(tmp_path, monkeypatch):
     ):
         monkeypatch.setitem(sys.modules, nm, mod)
 
-    def _fake_urlretrieve(url, dst):
-        with _zipfile.ZipFile(dst, "w") as z:
-            z.writestr("addon/addon.xml", "<addon/>")
+    def _index_xml():
+        parts = ['<?xml version="1.0"?>', "<addons>"]
+        for aid, (ver, deps) in state["index"].items():
+            parts.append(f'<addon id="{aid}" version="{ver}">')
+            parts.append("<requires>")
+            for d in deps:
+                parts.append(f'<import addon="{d}" version="1.0.0"/>')
+            parts.append("</requires></addon>")
+        parts.append("</addons>")
+        return "".join(parts).encode("utf-8")
 
-    def _fake_urlopen(url, timeout=None):
-        return _FakeResp(b'<addon id="script.tony7bones.modv2.patch" version="1.0.3"/>')
+    def _url_of(req):
+        return req.full_url if hasattr(req, "full_url") else req
 
-    monkeypatch.setattr(urllib.request, "urlretrieve", _fake_urlretrieve)
+    def _fake_urlopen(req, timeout=None):
+        url = _url_of(req)
+        if url.endswith("addon.xml"):
+            return _FakeResp(
+                b'<addon id="script.tony7bones.modv2.patch" version="1.0.3"/>'
+            )
+        if url.endswith("addons.xml") or url.endswith("addons.xml.gz"):
+            data = _index_xml()
+            return _FakeResp(_gzip.compress(data) if url.endswith(".gz") else data)
+        if url.endswith(".zip"):
+            # name pattern: .../<id>/<id>-<ver>.zip  → record the inner id
+            aid = url.rsplit("/", 1)[-1].rsplit("-", 1)[0]
+            state["extracted"].add(aid)
+            buf = io.BytesIO()
+            with _zipfile.ZipFile(buf, "w") as z:
+                z.writestr(f"{aid}/addon.xml", f'<addon id="{aid}"/>')
+            return _FakeResp(buf.getvalue())
+        return _FakeResp(b"")
+
     monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen)
 
     spec = importlib.util.spec_from_file_location("boot_default", DEFAULT_PY)
@@ -306,54 +353,81 @@ def test_latest_zip_url_handles_error(boot, monkeypatch):
 def test_extract_zip_success(boot):
     dp = boot.mod.xbmcgui.DialogProgress()
     assert boot.mod._extract_zip("https://x/repository.foo-1.0.zip", dp, 50)
-    assert (boot.addons / "addon" / "addon.xml").exists()
+    # the fake zip lays down <id>/addon.xml using the id parsed from the name
+    assert (boot.addons / "repository.foo" / "addon.xml").exists()
 
 
 def test_extract_zip_failure(boot, monkeypatch):
-    def boom(url, dst):
+    def boom(*a, **k):
         raise OSError("download failed")
 
-    monkeypatch.setattr(urllib.request, "urlretrieve", boom)
+    monkeypatch.setattr(urllib.request, "urlopen", boom)
     dp = boot.mod.xbmcgui.DialogProgress()
     assert boot.mod._extract_zip("https://x/y.zip", dp, 50) is False
 
 
-# --- interactive installer units ------------------------------------------- #
-def test_install_interactive_uses_installaddon_builtin(boot):
-    assert boot.mod._install_interactive("script.ezmaintenanceplus")
-    assert "InstallAddon(script.ezmaintenanceplus)" in boot.state["builtins"]
-    assert "script.ezmaintenanceplus" in boot.state["installed"]
+# --- dependency resolver + direct-install units ---------------------------- #
+def test_resolve_closure_walks_dependencies(boot):
+    """The closure must include the app AND its transitive module deps, with
+    dependencies ordered before the add-on that imports them, and system
+    imports (xbmc.* / kodi.*) excluded."""
+    idx = boot.state["index"]
+    indexes = [("https://peno64", idx), ("https://official", idx)]
+    closure = boot.mod._resolve_closure(["script.ezmaintenanceplus"], indexes)
+    ids = [aid for aid, _url in closure]
+    assert "script.ezmaintenanceplus" in ids
+    assert "script.module.requests" in ids
+    assert "script.module.urllib3" in ids  # transitive dep of requests
+    assert not any(i.startswith(("xbmc.", "kodi.")) for i in ids)
+    # dependency must come before the add-on that imports it
+    assert ids.index("script.module.requests") < ids.index("script.ezmaintenanceplus")
+    assert ids.index("script.module.urllib3") < ids.index("script.module.requests")
 
 
-def test_install_interactive_skips_already_installed(boot):
+def test_resolve_closure_skips_unresolvable(boot):
+    indexes = [("https://x", boot.state["index"])]
+    closure = boot.mod._resolve_closure(["script.does.not.exist"], indexes)
+    assert closure == []
+
+
+def test_install_with_deps_extracts_and_enables(boot):
+    dp = boot.mod.xbmcgui.DialogProgress()
+    assert boot.mod._install_with_deps("script.ezmaintenanceplus", dp)
+    s = boot.state
+    # the app and its dependency closure were extracted AND enabled
+    assert "script.ezmaintenanceplus" in s["installed"]
+    assert "script.module.requests" in s["installed"]
+    # no modal installer was ever invoked
+    assert not any(b.startswith("InstallAddon(") for b in s["builtins"])
+    # the local add-on store was rescanned so Kodi sees the extracted dirs
+    assert "UpdateLocalAddons()" in s["builtins"]
+
+
+def test_install_with_deps_skips_already_installed(boot):
     boot.state["installed"].add("script.realdebrid")
-    assert boot.mod._install_interactive("script.realdebrid")
-    # already present → no InstallAddon prompt fired
-    assert not any(b.startswith("InstallAddon(") for b in boot.state["builtins"])
+    dp = boot.mod.xbmcgui.DialogProgress()
+    assert boot.mod._install_with_deps("script.realdebrid", dp)
+    # already present → nothing extracted
+    assert "script.realdebrid" not in boot.state["extracted"]
 
 
-def test_install_interactive_reports_failure_when_absent(boot, monkeypatch):
-    # builtin that does NOT register the add-on → install never completes
-    monkeypatch.setattr(boot.mod.xbmc, "executebuiltin", lambda *a, **k: None)
-    assert boot.mod._install_interactive("script.does.not.exist") is False
+def test_install_with_deps_reports_failure_when_unresolvable(boot):
+    dp = boot.mod.xbmcgui.DialogProgress()
+    assert boot.mod._install_with_deps("script.does.not.exist", dp) is False
 
 
-def test_run_installs_apps_via_repo_installer(boot):
+def test_run_installs_apps_without_modal(boot):
     boot.mod.run()
     s = boot.state
     assert any("addons.unknownsources" in j for j in s["jsonrpc"])
-    # repos refreshed so the installer can resolve apps
-    assert "UpdateAddonRepos()" in s["builtins"]
-    # each app went through Kodi's interactive installer
+    # local add-on store rescanned so Kodi sees the freshly extracted dirs
+    assert "UpdateLocalAddons()" in s["builtins"]
+    # NO modal installer was ever used — that is what caused the GUI freeze
+    assert not any(b.startswith("InstallAddon(") for b in s["builtins"])
+    # each app and its dependency closure ended up installed + enabled
     for aid in boot.mod.ADDONS:
-        assert f"InstallAddon({aid})" in s["builtins"]
-        assert aid in s["installed"]
-    # the progress dialog is closed BEFORE any InstallAddon — otherwise Kodi's
-    # installer dialog deadlocks behind it (the "Registering add-ons" freeze).
-    first_install = next(
-        i for i, b in enumerate(s["builtins"]) if b.startswith("InstallAddon(")
-    )
-    assert "DialogProgress.close" in s["builtins"][:first_install]
+        assert aid in s["installed"], f"{aid} not installed"
+    assert "script.module.requests" in s["installed"]  # resolved dependency
     # first-party patch still direct-extracted + enabled
     assert "script.tony7bones.modv2.patch" in s["installed"]
     assert s["ok"], "no completion dialog shown"

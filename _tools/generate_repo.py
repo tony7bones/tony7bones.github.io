@@ -119,7 +119,7 @@ def _styled_page(title: str, heading: str, links: list[str]) -> str:
         '    <link rel="stylesheet" href="/style.css">\n'
         "  </head>\n"
         "  <body>\n"
-        '    <img src="/images/tony7bones.jpg" alt="Tony 7 Bones" class="avatar">\n'
+        '    <img src="/images/tony7bones.jpg" alt="Tony.7.Bones" class="avatar">\n'
         f"    <h1>{heading}</h1>\n"
         '    <nav class="links">\n'
         f"      {link_tags}\n"
@@ -206,7 +206,7 @@ def generate_scripts_index() -> None:
     if not os.path.isdir(SCRIPTS_DIR):
         return
     zips = sorted(e for e in os.listdir(SCRIPTS_DIR) if e.lower().endswith(".zip"))
-    html = _styled_page("Tony 7 Bones — Scripts", "Scripts", zips)
+    html = _styled_page("Tony.7.Bones — Scripts", "Scripts", zips)
     with open(os.path.join(SCRIPTS_DIR, "index.html"), "w", encoding="utf-8") as fh:
         fh.write(html)
     print(f"scripts/index.html: {len(zips)} zip(s)")
@@ -219,7 +219,7 @@ def generate_media_index() -> None:
     images = sorted(
         e for e in os.listdir(MEDIA_DIR) if os.path.splitext(e)[1].lower() in MEDIA_EXTS
     )
-    html = _styled_page("Tony 7 Bones — Media", "Media", images)
+    html = _styled_page("Tony.7.Bones — Media", "Media", images)
     with open(os.path.join(MEDIA_DIR, "index.html"), "w", encoding="utf-8") as fh:
         fh.write(html)
     print(f"media/index.html: {len(images)} image(s)")
@@ -293,7 +293,7 @@ def generate() -> None:
         for e in os.listdir(REPOS_DIR)
         if os.path.isfile(os.path.join(REPOS_DIR, e)) and e.lower().endswith(".zip")
     )
-    html = _styled_page("Tony 7 Bones — Repositories", "Repositories", zip_entries)
+    html = _styled_page("Tony.7.Bones — Repositories", "Repositories", zip_entries)
     with open(os.path.join(REPOS_DIR, "index.html"), "w", encoding="utf-8") as fh:
         fh.write(html)
 
