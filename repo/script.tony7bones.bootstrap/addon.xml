@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="script.tony7bones.bootstrap"
        name="Tony.7.Bones Setup"
-       version="1.0.15"
+       version="1.0.17"
        provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
@@ -16,6 +16,6 @@
     <license>GPL-2.0-or-later</license>
     <summary lang="en_GB">Tony.7.Bones Kodi Setup</summary>
     <description lang="en_GB">Installs repositories and add-ons for a personal Kodi build.</description>
-    <news>v1.0.15: Branding — renamed to "Tony.7.Bones Setup". (v1.0.14 fixed the "Registering add-ons" freeze: apps and their full dependency closure are resolved from the repos and extracted directly, then enabled, so installs run prompt-free and the add-ons actually function.)</news>
+    <news>v1.0.17: Adds Multi Weather and IPTV Simple Client (binary PVR, platform-correct build auto-selected) to the install set, and removes the unknown-sources toggle entirely so no security prompt ever appears. (v1.0.14 fixed the "Registering add-ons" freeze: apps and their full dependency closure are resolved from the repos and extracted directly, then enabled, so installs run prompt-free and the add-ons actually function.)</news>
   </extension>
 </addon>

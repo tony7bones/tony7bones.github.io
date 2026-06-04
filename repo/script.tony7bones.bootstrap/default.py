@@ -20,6 +20,22 @@ the dependency closure ourselves from the repos' addons.xml and extract every
 zip directly, exactly the way build wizards do, then enable each add-on — which
 inserts it into Kodi's installed table and makes it runnable.
 
+No unknown-sources prompt: the script never toggles the unknown-sources
+setting. That GUI setting only gates Kodi's *install-from-zip* UI flow; it has
+no bearing on the direct-extract + Addons.SetAddonEnabled path used here, which
+registers and enables an add-on regardless of the setting. Flipping it
+false->true (the old behaviour) popped the blocking "Add-ons will be given
+access to personal data... Proceed?" warning, so it is deliberately left
+untouched — a real user running this setup never sees that dialog.
+
+Binary (platform-specific) add-ons — e.g. pvr.iptvsimple and the
+inputstream.* clients it needs — are not in the common omega/ datadir as
+plain zips. The official repo's addons.xml lists each binary add-on once per
+platform, every entry carrying a <platform> tag and a <path> pointing at the
+correct platform-suffixed zip (e.g. pvr.iptvsimple+osx-arm64/...). We detect
+this machine's Kodi platform string at runtime and pick the matching entry,
+so the right native build is downloaded on any OS/arch without hardcoding.
+
 No secrets are embedded in this script.
 """
 
@@ -40,8 +56,9 @@ REPO_BASE = "https://tony7bones.github.io/repo/repositories/"
 STATIC_BASE = "https://tony7bones.github.io/repo"
 
 # Add-on index (addons.xml / addons.xml.gz) + per-id datadir for the closure.
-# The two apps live in peno64; their module dependencies live in the official
-# Kodi repo. The resolver walks <requires>/<import> recursively across both.
+# The two peno64 apps live in peno64; their module dependencies, the weather
+# add-on, and the binary PVR/inputstream clients all live in the official Kodi
+# repo. The resolver walks <requires>/<import> recursively across both.
 OFFICIAL_BASE = "https://mirrors.kodi.tv/addons/omega"
 PENO64_BASE = (
     "https://raw.githubusercontent.com/peno64/repository.peno64/master/repo/zips"
@@ -67,8 +84,15 @@ REPO_ZIPS = [
 FIRST_PARTY = ["script.tony7bones.modv2.patch"]
 
 # Apps installed (with dependency closure) by direct extract, in order.
-# Both live in the peno64 repository (installed above).
-ADDONS = ["script.ezmaintenanceplus", "script.realdebrid"]
+#   * script.ezmaintenanceplus / script.realdebrid — peno64 (python).
+#   * weather.multi — official repo (pure python; pulls python module deps).
+#   * pvr.iptvsimple — official repo (BINARY; pulls binary inputstream deps).
+ADDONS = [
+    "script.ezmaintenanceplus",
+    "script.realdebrid",
+    "weather.multi",
+    "pvr.iptvsimple",
+]
 
 # Dependency ids provided by the Kodi runtime itself — never downloaded.
 _SYSTEM_PREFIXES = ("xbmc.", "kodi.")
@@ -82,18 +106,35 @@ def _is_installed(addon_id):
         return False
 
 
-def _set_unknown_sources():
-    """Allow zip installs without the per-install security warning (no dialog)."""
-    xbmc.executeJSONRPC(
-        json.dumps(
-            {
-                "jsonrpc": "2.0",
-                "method": "Settings.SetSettingValue",
-                "params": {"setting": "addons.unknownsources", "value": True},
-                "id": 1,
-            }
-        )
-    )
+def _platform_tag():
+    """Kodi's platform/arch tag for binary add-ons, e.g. 'osx-arm64'.
+
+    Mirrors the way the official repo names its platform-specific datadirs
+    (<id>+<platform>-<arch>/). Detected at runtime from os.uname()/os.name so
+    the correct native build is selected on any machine. Returns None on
+    platforms whose binaries are not served from this mirror (e.g. desktop
+    Linux, which ships binary add-ons via the OS package manager).
+    """
+    name = os.name
+    try:
+        sysname = os.uname().sysname.lower()
+        machine = os.uname().machine.lower()
+    except AttributeError:  # Windows has no os.uname()
+        sysname = ""
+        import platform as _platform
+
+        machine = _platform.machine().lower()
+
+    if sysname == "darwin":
+        arch = "arm64" if machine in ("arm64", "aarch64") else "x86_64"
+        return f"osx-{arch}"
+    if name == "nt" or sysname.startswith("win"):
+        # Kodi tags: windows-x86_64 (64-bit) / windows-i686 (32-bit).
+        return "windows-x86_64" if machine in ("amd64", "x86_64") else "windows-i686"
+    if "android" in sysname or os.environ.get("ANDROID_ROOT"):
+        return "android-aarch64" if machine in ("aarch64", "arm64") else "android-armv7"
+    # Linux/other: binaries come from the distro, not this mirror.
+    return None
 
 
 def _http_get(url, timeout=30):
@@ -106,16 +147,39 @@ def _http_get(url, timeout=30):
     return data
 
 
-def _load_index(base):
-    """Return {id: (version, [dep_ids])} from a repo's addons.xml(.gz)."""
+def _load_index(base, platform_tag=None):
+    """Return {id: (version, [dep_ids], path_or_None)} from a repo's addons.xml(.gz).
+
+    `path` is the add-on's relative download path when the manifest declares one
+    (binary add-ons do: e.g. 'pvr.iptvsimple+osx-arm64/pvr.iptvsimple-X.zip'),
+    otherwise None and the caller builds the conventional '<id>/<id>-<ver>.zip'
+    path. Binary add-ons appear once per platform; when `platform_tag` is given
+    we keep only the entry whose <platform> matches this machine, so the right
+    native build wins.
+    """
     err = None
     for name in ("addons.xml.gz", "addons.xml"):
         try:
             root = ET.fromstring(_http_get(f"{base}/{name}"))
             out = {}
             for a in root.findall("addon"):
+                aid = a.get("id")
                 deps = [imp.get("addon") for imp in a.findall("requires/import")]
-                out[a.get("id")] = (a.get("version"), [d for d in deps if d])
+                deps = [d for d in deps if d]
+                meta = a.find("extension[@point='xbmc.addon.metadata']")
+                path = plat = None
+                if meta is not None:
+                    p = meta.find("path")
+                    path = p.text if p is not None else None
+                    pl = meta.find("platform")
+                    plat = pl.text if pl is not None else None
+                # A real per-arch entry tags an arch like "osx-arm64"; "all"
+                # (or any tag without a "-") is universal and always kept.
+                # Of the arch-specific duplicates, keep only this machine's.
+                is_arch = bool(plat) and "-" in plat
+                if is_arch and platform_tag and plat != platform_tag:
+                    continue
+                out[aid] = (a.get("version"), deps, path)
             return out
         except Exception as e:  # noqa: BLE001 - try the next index variant
             err = e
@@ -129,7 +193,9 @@ def _resolve_closure(targets, indexes):
     `indexes` is an ordered list of (base_url, index_dict); the first repo that
     declares an id wins. Returns an ordered list of (addon_id, zip_url) with
     dependencies BEFORE the add-ons that need them, so extraction order is safe.
-    System imports (xbmc.* / kodi.*) are skipped — Kodi provides them.
+    System imports (xbmc.* / kodi.*) are skipped — Kodi provides them. An entry
+    whose manifest carries an explicit <path> (binary add-ons) is downloaded
+    from that path; otherwise the conventional '<id>/<id>-<ver>.zip' is used.
     """
     resolved = {}  # id -> zip_url
     order = []
@@ -139,8 +205,9 @@ def _resolve_closure(targets, indexes):
             return
         for base, idx in indexes:
             if aid in idx:
-                ver, deps = idx[aid]
-                resolved[aid] = f"{base}/{aid}/{aid}-{ver}.zip"
+                ver, deps, path = idx[aid]
+                rel = path if path else f"{aid}/{aid}-{ver}.zip"
+                resolved[aid] = f"{base}/{rel}"
                 for dep in deps:  # deps first
                     visit(dep)
                 order.append(aid)
@@ -194,7 +261,9 @@ def _latest_zip_url(addon_id):
 
 def _enable(addon_id):
     """Register + enable an add-on. SetAddonEnabled adds it to Kodi's installed
-    table, which is what makes a directly-extracted add-on actually runnable."""
+    table, which is what makes a directly-extracted add-on actually runnable.
+    Works without the unknown-sources setting — that setting only gates the
+    install-from-zip GUI, not this direct-extract + enable path."""
     xbmc.executeJSONRPC(
         json.dumps(
             {
@@ -212,15 +281,18 @@ def _install_with_deps(addon_id, dialog):
     """Install an app and its full dependency closure by direct extract.
 
     No modal installer is used (InstallAddon would deadlock the GUI), so this
-    never freezes. After extracting the closure the caller rescans local
-    add-ons and enables each id, which registers them and makes them function.
-    Returns True once the app reports as installed.
+    never freezes. The official index is loaded with this machine's platform
+    tag so binary add-ons (pvr.iptvsimple + inputstream.* clients) resolve to
+    the correct native build. After extracting the closure the caller rescans
+    local add-ons and enables each id, which registers them and makes them
+    function. Returns True once the app reports as installed.
     """
     if _is_installed(addon_id):
         return True
+    plat = _platform_tag()
     indexes = [
         (PENO64_BASE, _load_index(PENO64_BASE)),
-        (OFFICIAL_BASE, _load_index(OFFICIAL_BASE)),
+        (OFFICIAL_BASE, _load_index(OFFICIAL_BASE, plat)),
     ]
     closure = _resolve_closure([addon_id], indexes)
     if not any(aid == addon_id for aid, _ in closure):
@@ -241,8 +313,6 @@ def _install_with_deps(addon_id, dialog):
 def run():
     dialog = xbmcgui.DialogProgress()
     dialog.create("Tony.7.Bones Setup", "Starting setup...")
-
-    _set_unknown_sources()
 
     total = len(REPO_ZIPS) + len(FIRST_PARTY) + len(ADDONS) + 1
     step = 0

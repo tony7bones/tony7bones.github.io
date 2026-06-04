@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import ast
 import py_compile
+import re
 import sys
 from pathlib import Path
 from xml.etree import ElementTree as ET
@@ -90,9 +91,14 @@ def test_addons_are_plain_id_strings_no_labels():
         assert isinstance(item, str), f"FIRST_PARTY entry is not a bare id: {item!r}"
 
 
-def test_addons_is_exactly_the_two_peno64_apps():
-    """Scope is narrowed to EZ Maintenance+ and RealDebrid from peno64."""
-    assert _assign("ADDONS") == ["script.ezmaintenanceplus", "script.realdebrid"]
+def test_addons_includes_peno64_apps_weather_and_pvr():
+    """Install set: the two peno64 apps plus Multi Weather and IPTV Simple."""
+    assert _assign("ADDONS") == [
+        "script.ezmaintenanceplus",
+        "script.realdebrid",
+        "weather.multi",
+        "pvr.iptvsimple",
+    ]
 
 
 def test_peno64_repo_is_installed_so_apps_resolve():
@@ -116,9 +122,28 @@ def test_apps_install_without_modal_installer():
     assert "_resolve_closure" in src and "_install_with_deps" in src
 
 
-def test_sets_unknown_sources():
-    """Bootstrap must enable Unknown sources up front to avoid zip warnings."""
-    assert "addons.unknownsources" in DEFAULT_PY.read_text()
+def test_never_toggles_unknown_sources():
+    """The bootstrap must NOT touch addons.unknownsources. Flipping it
+    false->true pops a blocking "access to personal data... Proceed?" warning.
+    Direct-extract + SetAddonEnabled installs/enables add-ons without that
+    setting, so a real user running the setup never sees the prompt."""
+    src = DEFAULT_PY.read_text()
+    assert "addons.unknownsources" not in src, (
+        "must not write addons.unknownsources (it pops the security prompt)"
+    )
+    assert "_set_unknown_sources" not in src, (
+        "the unknown-sources toggle helper must be removed"
+    )
+
+
+def test_installs_weather_and_pvr_binary():
+    """The install set must include the weather add-on and the binary PVR
+    client, and the script must detect the platform to pick the right build."""
+    addons = _assign("ADDONS")
+    assert "weather.multi" in addons
+    assert "pvr.iptvsimple" in addons
+    src = DEFAULT_PY.read_text()
+    assert "_platform_tag" in src, "binary add-ons need runtime platform detection"
 
 
 @pytest.mark.parametrize(
@@ -194,8 +219,11 @@ class _FakeResp:
 @pytest.fixture
 def boot(tmp_path, monkeypatch):
     """Import default.py with fake Kodi modules; return module + recorded state."""
-    # Fake repo index: id -> (version, [deps]). The two apps depend on the
-    # requests module, which pulls a small closure — the resolver must walk it.
+    # Fake repo index: id -> (version, [deps], path_or_None). The apps depend on
+    # the requests module, which pulls a small closure — the resolver must walk
+    # it. weather.multi is pure python; pvr.iptvsimple is BINARY and carries an
+    # explicit platform-suffixed <path>, as does its inputstream dep, exercising
+    # the binary-path branch.
     state = {
         "installed": set(),
         "extracted": set(),  # zips unpacked on disk but not yet enabled
@@ -203,14 +231,30 @@ def boot(tmp_path, monkeypatch):
         "jsonrpc": [],
         "ok": [],
         "index": {
-            "script.ezmaintenanceplus": ("2026.04.05.0", ["script.module.requests"]),
-            "script.realdebrid": ("0.7", ["script.module.requests"]),
+            "script.ezmaintenanceplus": (
+                "2026.04.05.0",
+                ["script.module.requests"],
+                None,
+            ),
+            "script.realdebrid": ("0.7", ["script.module.requests"], None),
             "script.module.requests": (
                 "2.31.0",
                 ["script.module.urllib3", "script.module.certifi", "xbmc.python"],
+                None,
             ),
-            "script.module.urllib3": ("2.2.3", []),
-            "script.module.certifi": ("2023.5.7", []),
+            "script.module.urllib3": ("2.2.3", [], None),
+            "script.module.certifi": ("2023.5.7", [], None),
+            "weather.multi": ("1.1.0", ["script.module.requests"], None),
+            "pvr.iptvsimple": (
+                "21.11.0",
+                ["inputstream.ffmpegdirect", "kodi.binary.instance.pvr"],
+                "pvr.iptvsimple+osx-arm64/pvr.iptvsimple-21.11.0.zip",
+            ),
+            "inputstream.ffmpegdirect": (
+                "21.3.8",
+                ["kodi.binary.instance.inputstream"],
+                "inputstream.ffmpegdirect+osx-arm64/inputstream.ffmpegdirect-21.3.8.zip",
+            ),
         },
     }
 
@@ -290,12 +334,17 @@ def boot(tmp_path, monkeypatch):
 
     def _index_xml():
         parts = ['<?xml version="1.0"?>', "<addons>"]
-        for aid, (ver, deps) in state["index"].items():
+        for aid, (ver, deps, path) in state["index"].items():
             parts.append(f'<addon id="{aid}" version="{ver}">')
             parts.append("<requires>")
             for d in deps:
                 parts.append(f'<import addon="{d}" version="1.0.0"/>')
-            parts.append("</requires></addon>")
+            parts.append("</requires>")
+            # binary add-ons carry an explicit <path> in the metadata extension
+            parts.append('<extension point="xbmc.addon.metadata">')
+            if path:
+                parts.append(f"<path>{path}</path>")
+            parts.append("</extension></addon>")
         parts.append("</addons>")
         return "".join(parts).encode("utf-8")
 
@@ -329,9 +378,18 @@ def boot(tmp_path, monkeypatch):
     return types.SimpleNamespace(mod=mod, state=state, addons=addons)
 
 
-def test_set_unknown_sources_sends_jsonrpc(boot):
-    boot.mod._set_unknown_sources()
-    assert any("addons.unknownsources" in s for s in boot.state["jsonrpc"])
+def test_no_unknown_sources_jsonrpc_during_run(boot):
+    """A full run must never send a Settings.SetSettingValue for
+    addons.unknownsources — that is what pops the security prompt."""
+    boot.mod.run()
+    assert not any("addons.unknownsources" in s for s in boot.state["jsonrpc"])
+
+
+def test_platform_tag_returns_kodi_arch_string(boot):
+    """The platform tag must look like Kodi's binary datadir suffix
+    (e.g. osx-arm64, windows-x86_64) or None on platforms not served here."""
+    tag = boot.mod._platform_tag()
+    assert tag is None or re.match(r"^(osx|windows|android)-", tag), tag
 
 
 def test_latest_zip_url_resolves_live_version(boot):
@@ -419,7 +477,8 @@ def test_install_with_deps_reports_failure_when_unresolvable(boot):
 def test_run_installs_apps_without_modal(boot):
     boot.mod.run()
     s = boot.state
-    assert any("addons.unknownsources" in j for j in s["jsonrpc"])
+    # NO unknown-sources toggle — that prompt must never fire for a real user
+    assert not any("addons.unknownsources" in j for j in s["jsonrpc"])
     # local add-on store rescanned so Kodi sees the freshly extracted dirs
     assert "UpdateLocalAddons()" in s["builtins"]
     # NO modal installer was ever used — that is what caused the GUI freeze
@@ -428,11 +487,60 @@ def test_run_installs_apps_without_modal(boot):
     for aid in boot.mod.ADDONS:
         assert aid in s["installed"], f"{aid} not installed"
     assert "script.module.requests" in s["installed"]  # resolved dependency
+    # weather add-on and the binary PVR client both installed + enabled
+    assert "weather.multi" in s["installed"]
+    assert "pvr.iptvsimple" in s["installed"]
+    assert "inputstream.ffmpegdirect" in s["installed"]  # binary dep of the PVR
     # first-party patch still direct-extracted + enabled
     assert "script.tony7bones.modv2.patch" in s["installed"]
     assert s["ok"], "no completion dialog shown"
     _title, msg = s["ok"][-1]
     assert "Repos:" in msg and "Patches:" in msg and "Apps:" in msg
+
+
+def test_load_index_keeps_noarch_and_filters_arch(boot, monkeypatch):
+    """A 'platform=all' entry (e.g. weather.multi, script.module.requests) is
+    universal and must be kept; arch-tagged duplicates must be filtered to this
+    machine's tag. Regression: an 'all' tag must not be mistaken for an arch."""
+    xml = (
+        '<?xml version="1.0"?><addons>'
+        '<addon id="weather.multi" version="1.1.0"><requires/>'
+        '<extension point="xbmc.addon.metadata"><platform>all</platform>'
+        "<path>weather.multi/weather.multi-1.1.0.zip</path></extension></addon>"
+        '<addon id="pvr.iptvsimple" version="21.11.0"><requires/>'
+        '<extension point="xbmc.addon.metadata"><platform>osx-arm64</platform>'
+        "<path>pvr.iptvsimple+osx-arm64/pvr.iptvsimple-21.11.0.zip</path>"
+        "</extension></addon>"
+        '<addon id="pvr.iptvsimple" version="21.11.0"><requires/>'
+        '<extension point="xbmc.addon.metadata"><platform>windows-x86_64</platform>'
+        "<path>pvr.iptvsimple+windows-x86_64/pvr.iptvsimple-21.11.0.zip</path>"
+        "</extension></addon>"
+        "</addons>"
+    ).encode("utf-8")
+    monkeypatch.setattr(
+        urllib.request,
+        "urlopen",
+        lambda req, timeout=None: _FakeResp(_gzip.compress(xml)),
+    )
+    idx = boot.mod._load_index("https://official", "osx-arm64")
+    assert "weather.multi" in idx, "platform=all entry must be kept"
+    assert idx["pvr.iptvsimple"][2].startswith("pvr.iptvsimple+osx-arm64/")
+
+
+def test_binary_addon_resolves_to_platform_path(boot):
+    """A binary add-on with an explicit <path> must download from that path
+    (the platform-suffixed datadir), not the conventional '<id>/<id>-<ver>.zip'."""
+    idx = boot.mod._load_index("https://official", "osx-arm64")
+    indexes = [("https://official", idx)]
+    closure = dict(boot.mod._resolve_closure(["pvr.iptvsimple"], indexes))
+    assert closure["pvr.iptvsimple"].endswith(
+        "pvr.iptvsimple+osx-arm64/pvr.iptvsimple-21.11.0.zip"
+    )
+    # its binary inputstream dependency is pulled the same way
+    assert "inputstream.ffmpegdirect" in closure
+    assert "+osx-arm64/" in closure["inputstream.ffmpegdirect"]
+    # the kodi.binary.* system import is NOT downloaded
+    assert not any(k.startswith("kodi.") for k in closure)
 
 
 def test_run_aborts_cleanly_on_cancel(boot, monkeypatch):
