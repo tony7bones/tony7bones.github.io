@@ -64,15 +64,20 @@ WHY and the exact code locations.
 - **Path A — `script.*` / `script.module.*` add-on:** edit `addon.xml` version +
   news → `python3 _tools/generate_repo.py` → commit regenerated files → `git push`.
   NOT deploy.py.
-- **Path B — `repository.tony7bones`:** `python3 _tools/deploy.py --news "…"` — it
-  syncs the 5 version locations across both branches, builds deterministically,
-  commits main + virtual-repo (worktree), tags, atomic-pushes, verifies live.
-- **Add a served add-on:** edit BOTH `repository.json` copies (main `resources/` +
-  virtual-repo root) then `deploy.py` so the baked manifest ships.
+- **Path B — `repository.tony7bones` (single-branch):** `python3 _tools/deploy.py --news "…"`
+  — it syncs the 4 version locations on `main` (the main `addon.xml` is also the
+  proxy self-update source), builds deterministically, commits main, tags,
+  pushes `main + tag`, forces a Pages build, verifies live.
+- **Add a served add-on:** edit the single `repository.json`
+  (`repo/repository.tony7bones/resources/`); for a mirrored third-party repo drop
+  its `addon.xml`/zip under `repo/hosted/<id>/` with `"branch": "main"` +
+  `asset_prefix` `.../{ref}/repo/hosted/{id}/`, then `deploy.py`.
 - **Pages gotcha:** Pages often skips the build → live-verify times out.
+  `deploy.py` now forces a build automatically; by hand:
   `gh api --method POST repos/tony7bones/tony7bones.github.io/pages/builds`, then
-  poll the root zip for HTTP 200. (Add-on zips come from raw.githubusercontent —
-  instant; only the installer zip rides Pages.)
+  poll the root zip for HTTP 200. (Add-on zips + `repo/hosted/**` come from
+  raw.githubusercontent — instant; only the installer zip rides Pages.)
+- **`virtual-repo` is retired** — single branch now; do not write to it.
 - **Determinism:** `generate_repo.py` excludes `__pycache__`; if a zip churns by
   mtime, commit → regenerate → `git commit --amend --no-edit` → confirm a second
   regenerate is clean.

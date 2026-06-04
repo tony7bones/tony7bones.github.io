@@ -28,8 +28,13 @@ SCRIPTS_DIR = os.path.join(REPO_DIR, "scripts")
 MEDIA_DIR = os.path.join(REPO_DIR, "media")
 MEDIA_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"}
 
-# Top-level dirs handled by dedicated generators — skip in asset discovery
-_SPECIAL_DIRS = {"repositories", "scripts", "media"}
+# Top-level dirs handled by dedicated generators — skip in asset discovery.
+# "hosted" holds the third-party-repo mirror trees (addon.xml + zip) that the
+# virtual proxy fetches from main via raw.githubusercontent. They are static,
+# committed-by-hand files — NOT generated, and NOT auto-indexed (we don't want a
+# Kodi-browsable listing of them, and indexing would churn index.html into every
+# hosted subdir on each run).
+_SPECIAL_DIRS = {"repositories", "scripts", "media", "hosted"}
 
 
 def _fmt_size(n: int) -> str:

@@ -5,8 +5,13 @@ Two layers:
     the single-source-of-truth DeployPlan);
   * a real end-to-end system test that runs the ACTUAL deploy.py against a
     throwaway git repo with a bare "remote" — proving the whole bump -> build ->
-    commit-both-branches -> tag -> atomic-push pipeline, plus every guardrail,
+    commit-main -> tag -> push (main + tag) pipeline, plus every guardrail,
     without ever touching the live remote.
+
+Single-branch model: there is no virtual-repo branch and no separate hosted
+self-update addon.xml; the proxy's self-update source is the canonical main
+addon.xml itself. The four version-bearing locations are main addon.xml, root
+zip, index.html link, and the git tag.
 """
 
 from __future__ import annotations
@@ -160,7 +165,7 @@ def test_rewrite_index_link_preserves_base_url():
 # ============================================================================ #
 
 
-def test_deployplan_all_five_carry_same_version():
+def test_deployplan_all_locations_carry_same_version():
     plan = rl.DeployPlan("1.0.8")
     assert set(plan.all_versions().values()) == {"1.0.8"}
     assert plan.is_consistent()
@@ -177,9 +182,11 @@ def test_deployplan_rejects_bad_version():
 
 def test_deployplan_single_source_of_truth():
     # there is exactly one way to set the version: the constructor argument.
+    # Single-branch model has four version-bearing locations (no hosted addon).
     plan = rl.DeployPlan("3.1.4")
     locations = plan.all_versions()
-    assert len(locations) == 5
+    assert len(locations) == 4
+    assert set(locations) == {"main_addon", "root_zip", "index", "tag"}
     assert all(v == "3.1.4" for v in locations.values())
 
 
@@ -226,7 +233,7 @@ def _git_identity(repo):
 
 @pytest.fixture
 def sandbox(tmp_path):
-    """A self-contained repo (main + virtual-repo) wired to a bare 'remote'."""
+    """A self-contained single-branch repo (main) wired to a bare 'remote'."""
     repo = tmp_path / "repo_work"
     repo.mkdir()
     tools = repo / "_tools"
@@ -264,20 +271,11 @@ def sandbox(tmp_path):
     _git(repo, "commit", "-q", "-m", "seed 1.0.0")
     _git(repo, "tag", "-a", "v1.0.0", "-m", "seed")
 
-    # virtual-repo branch carrying the hosted self-update manifest
-    _git(repo, "checkout", "-q", "-b", "virtual-repo")
-    hosted = repo / "hosted" / "repository.tony7bones"
-    hosted.mkdir(parents=True)
-    (hosted / "addon.xml").write_text(SEED_ADDON)
-    _git(repo, "add", "-A")
-    _git(repo, "commit", "-q", "-m", "seed hosted 1.0.0")
-    _git(repo, "checkout", "-q", "main")
-
     # bare "remote"
     bare = tmp_path / "remote.git"
     _run(["git", "init", "-q", "--bare", str(bare)], cwd=str(tmp_path))
     _git(repo, "remote", "add", "origin", str(bare))
-    _git(repo, "push", "-q", "origin", "main", "virtual-repo", "v1.0.0")
+    _git(repo, "push", "-q", "origin", "main", "v1.0.0")
 
     return repo, bare
 
@@ -299,7 +297,8 @@ def test_system_full_deploy_happy_path(sandbox):
     repo, bare = sandbox
     _deploy(repo, "--news", "system test", "--no-verify")
 
-    # all five locations land on 1.0.1
+    # all version-bearing locations land on 1.0.1 (single-branch: main addon
+    # doubles as the proxy self-update source — no separate hosted addon)
     assert (
         rl.read_addon_version(
             _show(repo, "main", "repo/repository.tony7bones/addon.xml")
@@ -307,13 +306,9 @@ def test_system_full_deploy_happy_path(sandbox):
         == "1.0.1"
     )
     assert rl.version_from_index(_show(repo, "main", "index.html")) == "1.0.1"
-    assert (
-        rl.read_addon_version(
-            _show(repo, "virtual-repo", "hosted/repository.tony7bones/addon.xml")
-        )
-        == "1.0.1"
-    )
     assert (repo / "repository.tony7bones-1.0.1.zip").exists()
+    # there is no virtual-repo branch
+    assert _git(repo, "branch", "--list", "virtual-repo").stdout.strip() == ""
 
     # root zip byte-identical to the generated zip
     import hashlib
@@ -392,18 +387,15 @@ def test_system_deterministic_regen_clean_after_deploy(sandbox):
 def test_system_consistency_gate_detects_mismatch(sandbox):
     repo, _ = sandbox
     _deploy(repo, "--news", "x", "--no-verify")  # now consistent at 1.0.1
-    # corrupt the hosted manifest on virtual-repo via a worktree commit
-    wt = repo.parent / "wt_vr"
-    _git(repo, "worktree", "add", "-q", str(wt), "virtual-repo")
-    hosted = wt / "hosted" / "repository.tony7bones" / "addon.xml"
-    hosted.write_text(rl.set_addon_version(hosted.read_text(), "9.9.9"))
-    _git(wt, "add", "-A")
+    # corrupt the main addon.xml version so it disagrees with index.html
+    addon = repo / "repo" / "repository.tony7bones" / "addon.xml"
+    addon.write_text(rl.set_addon_version(addon.read_text(), "9.9.9"))
+    _git(repo, "add", "-A")
     _run(
-        ["git", "-C", str(wt), "commit", "-q", "-m", "corrupt"],
-        cwd=str(wt),
+        ["git", "-C", str(repo), "commit", "-q", "-m", "corrupt"],
+        cwd=str(repo),
         env={"PRE_COMMIT_ALLOW_NO_CONFIG": "1"},
     )
-    _git(repo, "worktree", "remove", "--force", str(wt))
 
     r = _run(
         [sys.executable, str(repo / "_tools" / "deploy.py"), "check"],
@@ -455,45 +447,25 @@ def test_system_behind_origin_refused(sandbox):
 
 
 def test_system_rollback_on_push_failure(sandbox):
-    """D2/D4: a rejected push must roll main, the tag, and virtual-repo back."""
+    """A rejected push must roll main and the tag back to pre-deploy state."""
     repo, bare = sandbox
     hook = bare / "hooks" / "pre-receive"
     hook.write_text("#!/bin/sh\necho 'remote rejects this push' >&2\nexit 1\n")
     hook.chmod(0o755)
 
     main_head = _git(repo, "rev-parse", "main").stdout.strip()
-    vr_head = _git(repo, "rev-parse", "virtual-repo").stdout.strip()
 
     r = _deploy(repo, "--news", "x", "--no-verify", check=False)
     assert r.returncode != 0
 
     # every ref restored to pre-deploy state
     assert _git(repo, "rev-parse", "main").stdout.strip() == main_head
-    assert _git(repo, "rev-parse", "virtual-repo").stdout.strip() == vr_head
     assert _git(repo, "tag", "-l", "v1.0.1").stdout.strip() == ""
-    # left on a clean main, no leftover worktree
+    # left on a clean main
     assert _git(repo, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip() == "main"
     assert _git(repo, "status", "--porcelain").stdout.strip() == ""
-    assert "t7b-vr-" not in _git(repo, "worktree", "list").stdout
     # remote was never advanced
     assert "v1.0.1" not in _git(repo, "ls-remote", "--tags", "origin").stdout
-
-
-def test_system_stale_worktree_pruned(sandbox):
-    """D3: a worktree left by a crashed deploy must not block the next deploy."""
-    repo, _ = sandbox
-    stale = repo.parent / "stale_wt"
-    _git(repo, "worktree", "add", "-q", str(stale), "virtual-repo")
-    shutil.rmtree(stale)  # simulate crash: dir gone, admin entry lingers
-
-    # without the startup prune, `worktree add virtual-repo` would fail
-    _deploy(repo, "--news", "x", "--no-verify")
-    assert (
-        rl.read_addon_version(
-            _show(repo, "main", "repo/repository.tony7bones/addon.xml")
-        )
-        == "1.0.1"
-    )
 
 
 def test_system_no_push_keeps_local_only(sandbox):

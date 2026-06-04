@@ -2,8 +2,8 @@ name: Validate Kodi Repository
 
 on:
   push:
-    # Branch pushes only — tag pushes (from deploy.py's atomic main+virtual-repo+tag
-    # push) re-point at main's HEAD, which already ran; and on a tag checkout the
+    # Branch pushes only — tag pushes (from deploy.py's atomic main+tag push)
+    # re-point at main's HEAD, which already ran; and on a tag checkout the
     # consistency gate can't resolve the main branch, so the tag run fails spuriously.
     branches:
       - main
@@ -53,8 +53,7 @@ jobs:
 
       - name: Version-consistency gate
         # Backstop for the local pre-push hook: every version-bearing location
-        # across main + virtual-repo must agree and be tagged.
+        # on main must agree and be tagged.
         run: |
           git fetch --quiet --tags origin
-          git fetch --quiet origin virtual-repo:virtual-repo || true
           python3 _tools/check_consistency.py

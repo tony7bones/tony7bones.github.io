@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
-"""One-command release for the Tony.7.Bones Kodi repository.
+"""One-command release for the Tony.7.Bones Kodi repository (single-branch).
 
-Bumps the version, builds deterministically, syncs ALL FIVE version-bearing
-locations from a single version string, commits main + virtual-repo, tags, and
-atomic-pushes the three refs together. CI stays validate-only — this script is
-the only thing that commits a release.
+Bumps the version, builds deterministically, syncs ALL FOUR version-bearing
+locations from a single version string, commits main, tags, and pushes
+main + tag together. CI stays validate-only — this script is the only thing
+that commits a release.
+
+Single-branch model: the proxy fetches everything from `main`, and its
+self-update version source is the canonical `repo/repository.tony7bones/addon.xml`
+itself (the baked manifest points the repository.tony7bones entry at
+`.../main/repo/repository.tony7bones/`). There is no `virtual-repo` branch and
+no separate hosted self-update addon.xml anymore. The four version-bearing
+locations are: main addon.xml, root zip filename, root index.html link, tag.
 
 Gates enforced before anything is pushed:
   * working tree clean, on main, not behind origin
@@ -12,10 +19,14 @@ Gates enforced before anything is pushed:
   * tag / root zip for the new version must not already exist
   * generator output is byte-reproducible (re-run produces zero diff)
   * root zip is byte-identical to the generated zip
-  * cross-branch version consistency (check_consistency) passes
+  * version consistency (check_consistency) passes
 
-Any failure before the push rolls main, the tag, and virtual-repo back to where
-they started, and the working tree is left on main.
+Any failure before the push rolls main and the tag back to where they started,
+and the working tree is left on main.
+
+After pushing, the script forces a GitHub Pages build (Pages frequently skips
+the auto-build for a content-only push, which would make live verification time
+out), then polls the live root zip.
 
 Usage:
     python3 _tools/deploy.py --news "What changed"          # patch bump
@@ -36,7 +47,6 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -49,9 +59,9 @@ REPO = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
 MAIN_ADDON = os.path.join(REPO, "repo", "repository.tony7bones", "addon.xml")
 GENERATED_ZIP_DIR = os.path.join(REPO, "repo", "repository.tony7bones")
 ROOT_INDEX = os.path.join(REPO, "index.html")
-HOSTED_ADDON_REL = os.path.join("hosted", "repository.tony7bones", "addon.xml")
 GENERATOR = os.path.join(REPO, "_tools", "generate_repo.py")
 BASE_URL = "https://tony7bones.github.io"
+PAGES_BUILDS_API = "repos/tony7bones/tony7bones.github.io/pages/builds"
 
 
 # --------------------------------------------------------------------------- #
@@ -151,15 +161,14 @@ def _behind_origin() -> list[str]:
             file=sys.stderr,
         )
         return problems
-    for branch in ("main", "virtual-repo"):
-        if not git(
-            "rev-parse",
-            "--verify",
-            "--quiet",
-            f"refs/remotes/origin/{branch}",
-            check=False,
-        ):
-            continue
+    branch = "main"
+    if git(
+        "rev-parse",
+        "--verify",
+        "--quiet",
+        f"refs/remotes/origin/{branch}",
+        check=False,
+    ):
         behind = git("rev-list", "--count", f"{branch}..origin/{branch}", check=False)
         if behind not in ("", "0"):
             problems.append(
@@ -175,11 +184,10 @@ def plan_text(nxt: str, cur: str, news: str) -> str:
             f"  current version  : {cur}",
             f"  next version     : {nxt}   (tag {plan.tag})",
             f"  news             : {news}",
-            f"  main addon.xml   : version -> {nxt}",
+            f"  main addon.xml   : version -> {nxt}  (also the proxy self-update source)",
             f"  root zip         : {plan.root_zip}",
             f"  index.html link  : {plan.root_zip}",
-            f"  hosted addon.xml : version -> {nxt}  (virtual-repo)",
-            f"  push (--atomic)  : main, virtual-repo, {plan.tag}",
+            f"  push             : main, {plan.tag}",
         ]
     )
 
@@ -204,18 +212,14 @@ def deploy(args) -> int:
         print("\n--dry-run: nothing was changed.")
         return 0
 
-    # Clear any worktree left registered by a previously crashed deploy so the
-    # `worktree add` below can re-check-out virtual-repo.
-    git("worktree", "prune", check=False)
-
     plan = rl.DeployPlan(nxt)
     tag = plan.tag
     main_head = git("rev-parse", "HEAD")
-    vr_head = git("rev-parse", "virtual-repo")
-    worktree: str | None = None
 
     try:
-        # 1. main: bump addon.xml (version + news)
+        # 1. main: bump addon.xml (version + news). This file is BOTH the
+        #    installed-addon metadata AND the proxy's self-update version source,
+        #    so this single bump covers self-update too.
         xml = read(MAIN_ADDON)
         xml = rl.set_addon_version(xml, nxt)
         xml = rl.set_addon_news(xml, f"v{nxt}: {args.news}")
@@ -243,83 +247,66 @@ def deploy(args) -> int:
                 "generator is non-deterministic: regeneration produced a diff"
             )
 
-        # 6. virtual-repo via a worktree (main never leaves main)
-        worktree = tempfile.mkdtemp(prefix="t7b-vr-")
-        git("worktree", "add", worktree, "virtual-repo")
-        hosted = os.path.join(worktree, HOSTED_ADDON_REL)
-        hx = read(hosted)
-        hx = rl.set_addon_version(hx, nxt)
-        hx = rl.set_addon_news(hx, f"v{nxt}: {args.news}")
-        write(hosted, hx)
-
-        archived = os.path.join(worktree, plan.root_zip)
-        archived_bytes = subprocess.run(
-            ["git", "-C", REPO, "show", f"main:{plan.root_zip}"],
-            check=True,
-            capture_output=True,
-        ).stdout
-        with open(archived, "wb") as f:
-            f.write(archived_bytes)
-        if sha256(archived) != sha256(root_zip):
-            raise RuntimeError("archived virtual-repo zip is not byte-identical")
-
-        env = dict(os.environ, PRE_COMMIT_ALLOW_NO_CONFIG="1")
-        git("add", "-A", repo=worktree)
-        git(
-            "commit",
-            "-m",
-            f"Release {tag} (hosted self-update source)",
-            repo=worktree,
-            env=env,
-        )
-
-        # 7. tag the main release commit
+        # 6. tag the main release commit
         git("tag", "-a", tag, "-m", f"Release {tag}")
 
-        # 8. cross-branch consistency gate BEFORE pushing
+        # 7. version-consistency gate BEFORE pushing
         ok, info, cproblems = cc.check(REPO)
         if not ok:
             raise RuntimeError("consistency gate failed: " + "; ".join(cproblems))
 
-        # 9. publish all-or-nothing
+        # 8. publish (main + tag together)
         if args.no_push:
             print(f"\n--no-push: committed + tagged {tag} locally. To publish:")
-            print(f"  git push --atomic origin main virtual-repo {tag}")
+            print(f"  git push --atomic origin main {tag}")
         else:
-            git(
-                "push", "--atomic", "origin", "main", "virtual-repo", f"refs/tags/{tag}"
-            )
-            print(f"\nPushed main + virtual-repo + {tag}.")
+            git("push", "--atomic", "origin", "main", f"refs/tags/{tag}")
+            print(f"\nPushed main + {tag}.")
 
     except Exception as exc:  # noqa: BLE001 — we re-raise after rollback
         print(
             f"\nDEPLOY FAILED: {exc}\nRolling back to pre-deploy state...",
             file=sys.stderr,
         )
-        # Remove the worktree first so virtual-repo is no longer checked out,
-        # then restore all three refs to their pre-deploy state.
-        if worktree:
-            git("worktree", "remove", "--force", worktree, check=False)
-            git("worktree", "prune", check=False)
-            worktree = None
         git("reset", "--hard", main_head, check=False)
         git("tag", "-d", tag, check=False)
-        restored = git("update-ref", "refs/heads/virtual-repo", vr_head, check=False)
-        if git("rev-parse", "virtual-repo", check=False) != vr_head:
-            print(
-                f"WARNING: could not restore virtual-repo to {vr_head[:9]} "
-                f"({restored}); inspect manually before retrying.",
-                file=sys.stderr,
-            )
         raise
-    finally:
-        if worktree:
-            git("worktree", "remove", "--force", worktree, check=False)
-            git("worktree", "prune", check=False)
 
-    if not args.no_push and not args.no_verify:
-        verify_live(nxt, os.path.join(REPO, plan.root_zip))
+    if not args.no_push:
+        force_pages_build()
+        if not args.no_verify:
+            verify_live(nxt, os.path.join(REPO, plan.root_zip))
     return 0
+
+
+# --------------------------------------------------------------------------- #
+# Force a GitHub Pages build (Pages skips the auto-build often enough that it
+# has bitten every release). Best-effort: needs the `gh` CLI authenticated; a
+# failure just means we fall back to polling and waiting for any auto-build.
+# --------------------------------------------------------------------------- #
+def force_pages_build() -> None:
+    # Only against the real GitHub origin — never when pushing to a sandbox's
+    # bare-repo "remote" (the test suite), where there is no Pages site.
+    origin = git("remote", "get-url", "origin", check=False)
+    if "github.com" not in origin and "tony7bones.github.io" not in origin:
+        return
+    if not shutil.which("gh"):
+        print("note: gh CLI not found — skipping Pages force-build.", file=sys.stderr)
+        return
+    r = subprocess.run(
+        ["gh", "api", "--method", "POST", PAGES_BUILDS_API],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+    )
+    if r.returncode == 0:
+        print("Requested a GitHub Pages build.")
+    else:
+        print(
+            f"note: could not force a Pages build ({r.stderr.strip()}); "
+            "relying on the auto-build.",
+            file=sys.stderr,
+        )
 
 
 # --------------------------------------------------------------------------- #

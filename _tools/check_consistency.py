@@ -1,13 +1,21 @@
 #!/usr/bin/env python3
-"""Version-consistency gate.
+"""Version-consistency gate (single-branch model).
 
-Reads every version-bearing location from git refs on both branches and fails
-loudly on any mismatch. The SAME function backs three call sites — the pre-push
-hook, CI, and the deploy tool's pre-push assertion — so the guard and the gate
-can never drift apart.
+Reads every version-bearing location from git refs on `main` and fails loudly
+on any mismatch. The SAME function backs three call sites — the pre-push hook,
+CI, and the deploy tool's pre-push assertion — so the guard and the gate can
+never drift apart.
 
 Reads from git refs (not the working tree) so it validates what will actually
 ship.
+
+Single-branch model: the proxy fetches everything from `main`, and its
+self-update source is the canonical `repo/repository.tony7bones/addon.xml`
+itself (the manifest points the repository.tony7bones entry's asset_prefix at
+`.../main/repo/repository.tony7bones/`). There is no longer a separate
+`virtual-repo` branch or a `hosted/repository.tony7bones/addon.xml` mirror to
+keep in sync. The version-bearing locations are: the main addon.xml, the root
+index.html link, the committed root zip, and the git tag.
 
 Usage:
     python3 _tools/check_consistency.py        # exit 0 = consistent, 1 = mismatch
@@ -23,9 +31,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import release_lib as rl  # noqa: E402
 
 MAIN = "main"
-VIRTUAL = "virtual-repo"
 MAIN_ADDON = "repo/repository.tony7bones/addon.xml"
-HOSTED_ADDON = "hosted/repository.tony7bones/addon.xml"
 INDEX = "index.html"
 
 REPO_ROOT = os.path.normpath(
@@ -47,8 +53,7 @@ def _show(repo: str, ref: str, path: str) -> str:
 def _resolve(repo: str, name: str) -> str:
     """Return a usable ref for `name`, falling back to origin/<name>.
 
-    Local checkouts have `main`/`virtual-repo` branches; a CI runner that only
-    checked out one branch sees the other as a remote-tracking ref after fetch.
+    A CI runner or shallow checkout may only have the remote-tracking ref.
     """
     if _git(repo, "rev-parse", "--verify", "--quiet", name).returncode == 0:
         return name
@@ -60,11 +65,9 @@ def _resolve(repo: str, name: str) -> str:
 def gather(repo: str) -> dict:
     """Read the observed version at every location, from git refs."""
     main_ref = _resolve(repo, MAIN)
-    virtual_ref = _resolve(repo, VIRTUAL)
 
     main_addon = rl.read_addon_version(_show(repo, main_ref, MAIN_ADDON))
     index_v = rl.version_from_index(_show(repo, main_ref, INDEX))
-    hosted = rl.read_addon_version(_show(repo, virtual_ref, HOSTED_ADDON))
 
     tree = _git(repo, "ls-tree", "--name-only", main_ref).stdout.split()
     zip_present = rl.zip_name(index_v) in tree
@@ -77,7 +80,6 @@ def gather(repo: str) -> dict:
     return {
         "main_addon": main_addon,
         "index": index_v,
-        "hosted_addon": hosted,
         "root_zip": rl.zip_name(index_v),
         "root_zip_present": zip_present,
         "tag": tag,
@@ -90,13 +92,10 @@ def check(repo: str) -> tuple[bool, dict, list[str]]:
     info = gather(repo)
     problems: list[str] = []
 
-    versions = {info["main_addon"], info["index"], info["hosted_addon"]}
+    versions = {info["main_addon"], info["index"]}
     if len(versions) != 1:
         problems.append(
-            "version mismatch: "
-            f"main_addon={info['main_addon']} "
-            f"index={info['index']} "
-            f"hosted={info['hosted_addon']}"
+            f"version mismatch: main_addon={info['main_addon']} index={info['index']}"
         )
     if not info["root_zip_present"]:
         problems.append(f"root zip {info['root_zip']} not present in main tree")

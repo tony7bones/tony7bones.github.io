@@ -4,7 +4,15 @@
 No git, no filesystem, no network — every function is a pure transformation so
 it can be exhaustively unit-tested. Every version-bearing location in a release
 is derived from a single version string (see DeployPlan), which makes version
-drift across the five locations structurally impossible.
+drift across the (now four) locations structurally impossible.
+
+Single-branch model: the proxy fetches everything from `main`. The proxy's
+self-update version source is the canonical `repo/repository.tony7bones/addon.xml`
+itself (the manifest's repository.tony7bones entry points its asset_prefix at
+`.../main/repo/repository.tony7bones/`), so there is no longer a separate
+`hosted/repository.tony7bones/addon.xml` on a second branch. The four
+version-bearing locations are: main addon.xml, root zip filename, root
+index.html link, and the git tag.
 """
 
 from __future__ import annotations
@@ -124,10 +132,15 @@ def rewrite_index_link(html_text: str, version: str) -> str:
 # --------------------------------------------------------------------------- #
 @dataclass(frozen=True)
 class DeployPlan:
-    """All five version-bearing locations derived from ONE version string.
+    """All four version-bearing locations derived from ONE version string.
 
-    There is deliberately no way to set the five locations independently —
+    There is deliberately no way to set the four locations independently —
     this collapses an entire class of version-drift bugs into a single input.
+
+    Single-branch model: the proxy's self-update source is the canonical main
+    addon.xml itself, so there is no separate hosted self-update addon.xml. The
+    four locations are: main addon.xml, root zip filename, root index.html link,
+    and the git tag.
     """
 
     version: str
@@ -137,10 +150,6 @@ class DeployPlan:
 
     @property
     def main_addon_version(self) -> str:
-        return self.version
-
-    @property
-    def hosted_addon_version(self) -> str:
         return self.version
 
     @property
@@ -161,7 +170,6 @@ class DeployPlan:
             "main_addon": self.main_addon_version,
             "root_zip": version_from_zip_name(self.root_zip),
             "index": self.index_version,
-            "hosted_addon": self.hosted_addon_version,
             "tag": self.tag[1:],
         }
 

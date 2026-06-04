@@ -3,7 +3,7 @@
 #
 # Blocks the push unless: the test suite passes, the tooling lints clean, the
 # generated files are byte-reproducible (no stale output), and every
-# version-bearing location across main + virtual-repo agrees and is tagged.
+# version-bearing location on main agrees and is tagged.
 #
 # Install once after cloning:
 #     git config core.hooksPath .githooks
@@ -26,7 +26,7 @@ if [ -n "$(git status --porcelain)" ]; then
   exit 1
 fi
 
-echo "[pre-push] checking version consistency across branches..."
+echo "[pre-push] checking version consistency on main..."
 python3 _tools/check_consistency.py
 
 echo "[pre-push] validating every changed add-on bumped its version..."

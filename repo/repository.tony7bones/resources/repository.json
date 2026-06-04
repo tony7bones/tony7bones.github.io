@@ -43,8 +43,8 @@
     "id": "repository.kodifitzwell",
     "username": "tony7bones",
     "repository": "tony7bones.github.io",
-    "branch": "virtual-repo",
-    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/hosted/{id}/",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/repo/hosted/{id}/",
     "assets": {
       "zip": "https://kodifitzwell.github.io/repo/repository.kodifitzwell-{version}.zip"
     }
@@ -63,8 +63,8 @@
     "id": "repository.umbrella",
     "username": "tony7bones",
     "repository": "tony7bones.github.io",
-    "branch": "virtual-repo",
-    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/hosted/{id}/",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/repo/hosted/{id}/",
     "assets": {
       "zip": "https://raw.githubusercontent.com/umbrellaplug/umbrellaplug.github.io/master/repository.umbrella-{version}.zip"
     }
@@ -73,8 +73,8 @@
     "id": "repository.diggz",
     "username": "tony7bones",
     "repository": "tony7bones.github.io",
-    "branch": "virtual-repo",
-    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/hosted/{id}/",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/repo/hosted/{id}/",
     "assets": {
       "zip": "https://raw.githubusercontent.com/nebulous42069/Omega/main/omega/zips/repository.diggz/repository.diggz-{version}.zip"
     }
@@ -83,48 +83,48 @@
     "id": "repository.Magnetic",
     "username": "tony7bones",
     "repository": "tony7bones.github.io",
-    "branch": "virtual-repo",
-    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/hosted/{id}/",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/repo/hosted/{id}/",
     "assets": {
-      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/hosted/{id}/{id}.zip"
+      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/repo/hosted/{id}/{id}.zip"
     }
   },
   {
     "id": "repository.kodinerds",
     "username": "tony7bones",
     "repository": "tony7bones.github.io",
-    "branch": "virtual-repo",
-    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/hosted/{id}/",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/repo/hosted/{id}/",
     "assets": {
-      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/hosted/{id}/{id}.zip"
+      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/repo/hosted/{id}/{id}.zip"
     }
   },
   {
     "id": "repository.loop",
     "username": "tony7bones",
     "repository": "tony7bones.github.io",
-    "branch": "virtual-repo",
-    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/hosted/{id}/",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/repo/hosted/{id}/",
     "assets": {
-      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/hosted/{id}/{id}.zip"
+      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/repo/hosted/{id}/{id}.zip"
     }
   },
   {
     "id": "repository.redwizard",
     "username": "tony7bones",
     "repository": "tony7bones.github.io",
-    "branch": "virtual-repo",
-    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/hosted/{id}/",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/repo/hosted/{id}/",
     "assets": {
-      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/hosted/{id}/{id}.zip"
+      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/repo/hosted/{id}/{id}.zip"
     }
   },
   {
     "id": "repository.tony7bones",
     "username": "tony7bones",
     "repository": "tony7bones.github.io",
-    "branch": "virtual-repo",
-    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/hosted/{id}/",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/repo/{id}/",
     "assets": {
       "zip": "https://tony7bones.github.io/repository.tony7bones-{version}.zip"
     }

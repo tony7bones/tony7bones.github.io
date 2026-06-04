@@ -10,14 +10,13 @@ The repository add-on, `repository.tony7bones`, is a **virtual repository** buil
 
 **Install URL (must stay constant): `https://tony7bones.github.io/`** (the root). The root `index.html` exposes a Kodi-parseable link to `repository.tony7bones-<version>.zip` (the installer) plus a `repo/` link for file-manager browsing. Cache-busting comes ONLY from the versioned zip _filename_ — never from versioned paths, because Kodi cannot follow a moving base URL.
 
-### Two branches — both are touched on every release
+### Single branch — `main` only
 
-| Branch         | Role                                                                                                                                                                                                                                                                               |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `main`         | Served by GitHub Pages. Holds the root installer zip(s), root `index.html`, the static browsable area under `repo/`, the proxy add-on source at `repo/repository.tony7bones/`, and all `_tools/`.                                                                                  |
-| `virtual-repo` | NOT served by Pages. Holds `repository.json` (the manifest baked into the installer), `hosted/<id>/` source for self-hosted entries, and `hosted/repository.tony7bones/addon.xml` — the version source the proxy reads (via raw.githubusercontent) to resolve its own self-update. |
+Everything lives on `main` and the proxy fetches everything from `main` via raw.githubusercontent. `main` is served by GitHub Pages and holds the root installer zip(s), root `index.html`, the static browsable area under `repo/`, the proxy add-on source at `repo/repository.tony7bones/`, the mirrored third-party-repo trees under `repo/hosted/<id>/`, and all `_tools/`.
 
-A release must bump the version identically in both branches; `_tools/deploy.py` does this atomically (see below). `hybrid-repo` is an abandoned experiment — ignore it.
+A release bumps the version in one place — `repo/repository.tony7bones/addon.xml` — which is **both** the installed-addon metadata and the proxy's self-update version source. `_tools/deploy.py` does this atomically and pushes `main + tag` (see below).
+
+> The `virtual-repo` branch is **retired** (the single-branch migration moved its `hosted/<id>/` trees to `repo/hosted/` on main and consolidated the self-update source into the main `addon.xml`). It may still exist as a fallback but is **unreferenced** by all shipped manifests and tooling — do not add anything to it. `hybrid-repo` is an abandoned experiment — ignore it.
 
 ### First-party add-ons (current)
 
@@ -28,7 +27,7 @@ Besides the proxy, the repo ships three first-party add-ons plus a manual-only s
 - `script.tony7bones.video` — "Video Add-ons Setup", the standalone video installer; its `install_selected()` is the shared entry point the base Setup chains.
 - `script.tony7bones.modv2.patch` — "Estuary MOD V2 Patch", run by hand after installing/updating `skin.estuary.modv2`.
 
-The proxy serves add-ons from its **baked** `resources/repository.json` (read locally by `lib/service.py`), not `repo/addons.xml`. To add/change a served add-on, edit BOTH `repository.json` copies (main `repo/repository.tony7bones/resources/` and the `virtual-repo` root) and release the proxy.
+The proxy serves add-ons from its **baked** `resources/repository.json` (read locally by `lib/service.py`), not `repo/addons.xml`. To add/change a served add-on, edit the single `repository.json` at `repo/repository.tony7bones/resources/` (for a mirrored third-party repo, drop its `addon.xml`/zip under `repo/hosted/<id>/` and point `asset_prefix` at `.../{ref}/repo/hosted/{id}/` with `"branch": "main"`) and release the proxy.
 
 > Detailed operating guidance lives in the playbooks and the agent skill:
 >
@@ -73,7 +72,7 @@ Test files map to what they cover (all tests import the add-on `default.py` unde
 
 There are **two** release paths — pick the right one (full detail in `docs/playbooks/release-and-deploy.md`):
 
-- **A `script.*` / `script.module.*` add-on** (`script.module.tony7bones`, `script.tony7bones.bootstrap`, `script.tony7bones.video`, `script.tony7bones.modv2.patch`): bump its `repo/<id>/addon.xml` version (+ news), run `python3 _tools/generate_repo.py`, commit the regenerated files, `git push`. **Not** `deploy.py`. The pre-push hook enforces tests, ruff, generated-files freshness, cross-branch consistency, and a per-add-on version-bump (`check_versions.py`).
+- **A `script.*` / `script.module.*` add-on** (`script.module.tony7bones`, `script.tony7bones.bootstrap`, `script.tony7bones.video`, `script.tony7bones.modv2.patch`): bump its `repo/<id>/addon.xml` version (+ news), run `python3 _tools/generate_repo.py`, commit the regenerated files, `git push`. **Not** `deploy.py`. The pre-push hook enforces tests, ruff, generated-files freshness, version consistency on main, and a per-add-on version-bump (`check_versions.py`).
 - **The repository add-on (`repository.tony7bones`)**: use the one-command release tool below.
 
 ### Releasing the repository add-on (`repository.tony7bones`)
@@ -92,24 +91,24 @@ python3 _tools/deploy.py check                      # version-consistency gate o
 Or via npm (thin wrappers): `npm run deploy -- --news "..."`, `deploy:dry`, `deploy:minor`, `deploy:major`, `deploy:local` (`--no-push`), `check`, `verify`.
 
 `deploy.py` runs the whole pipeline atomically: bump → build deterministically →
-sync all five version-bearing locations (main `repo/repository.tony7bones/addon.xml`,
-root zip filename, root `index.html` link, `virtual-repo:hosted/repository.tony7bones/addon.xml`,
-git tag) → commit main + virtual-repo (the latter via a `git worktree`, so main never
-leaves main) → `git push --atomic main virtual-repo <tag>` → verify live on Pages. Any
-failure before the push rolls every ref back. It refuses to run on a dirty tree, when
-behind origin, or when the new version is not greater than the current one. The version
-lives ONLY in `addon.xml`; `package.json` deliberately does not mirror it.
+sync all four version-bearing locations (main `repo/repository.tony7bones/addon.xml`
+— which doubles as the proxy self-update source — root zip filename, root
+`index.html` link, git tag) → commit main → tag → `git push --atomic main <tag>` →
+force a GitHub Pages build → verify live on Pages. Any failure before the push rolls
+main and the tag back. It refuses to run on a dirty tree, when behind origin, or when
+the new version is not greater than the current one. The version lives ONLY in
+`addon.xml`; `package.json` deliberately does not mirror it.
 
 The release tooling is split for testability: `_tools/release_lib.py` (pure version
 math + file transforms + the single-source-of-truth `DeployPlan`), `_tools/check_consistency.py`
-(reads all five locations across both branches and fails on any mismatch — reused by
+(reads all four locations on main and fails on any mismatch — reused by
 the hook, CI, and deploy), `_tools/deploy.py` (orchestrator), `_tools/test_deploy.py`
 (unit + end-to-end sandbox tests with a bare remote).
 
 ## Gates (pre-push hook)
 
 `.githooks/pre-push` blocks a push unless tests pass, lint is clean, generated files
-are up to date, and all five version locations agree and are tagged. Install once
+are up to date, and all four version locations agree and are tagged. Install once
 after cloning:
 
 ```bash
@@ -123,13 +122,14 @@ main**. The old `.pre-commit-config.yaml` (pytest on commit) still works if inst
 
 ### Content areas under `repo/`
 
-| Path                      | Purpose                                                                                                                                                                                                                                                                                                                                              |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `repo/<addon-id>/`        | Any dir with an `addon.xml` becomes a zip and is listed in `addons.xml`. Currently: `repository.tony7bones` (the virtual proxy), `script.module.tony7bones` (the shared LIBRARY), `script.tony7bones.bootstrap` (Tony.7.Bones Setup), `script.tony7bones.video` (Video Add-ons Setup), and `script.tony7bones.modv2.patch` (manual-only skin patch). |
-| `repo/repositories/`      | Stand-alone third-party repository installer zips. Not in `addons.xml` — Kodi installs them manually via file manager.                                                                                                                                                                                                                               |
-| `repo/scripts/`           | One-shot script zips. Not in `addons.xml` — installed manually.                                                                                                                                                                                                                                                                                      |
-| `repo/media/`             | Images browsable from Kodi's file manager. `index.html` auto-generated.                                                                                                                                                                                                                                                                              |
-| `repo/iptv/`, `repo/rss/` | Arbitrary asset dirs. Any non-special dir without an `addon.xml` is recursively auto-indexed for file-manager browsing.                                                                                                                                                                                                                              |
+| Path                      | Purpose                                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `repo/<addon-id>/`        | Any dir with an `addon.xml` becomes a zip and is listed in `addons.xml`. Currently: `repository.tony7bones` (the virtual proxy), `script.module.tony7bones` (the shared LIBRARY), `script.tony7bones.bootstrap` (Tony.7.Bones Setup), `script.tony7bones.video` (Video Add-ons Setup), and `script.tony7bones.modv2.patch` (manual-only skin patch).                       |
+| `repo/repositories/`      | Stand-alone third-party repository installer zips. Not in `addons.xml` — Kodi installs them manually via file manager.                                                                                                                                                                                                                                                     |
+| `repo/scripts/`           | One-shot script zips. Not in `addons.xml` — installed manually.                                                                                                                                                                                                                                                                                                            |
+| `repo/media/`             | Images browsable from Kodi's file manager. `index.html` auto-generated.                                                                                                                                                                                                                                                                                                    |
+| `repo/hosted/<id>/`       | Mirrored third-party-repo trees (`addon.xml` + zip) that the **proxy fetches from `main`** via raw.githubusercontent (the single-branch home of what used to be `virtual-repo:hosted/`). Static, committed by hand — NOT zipped or auto-indexed by the generator (`hosted` is a `_SPECIAL_DIRS` entry). Served by Pages too, but Pages-serving is irrelevant to the proxy. |
+| `repo/iptv/`, `repo/rss/` | Arbitrary asset dirs. Any non-special dir without an `addon.xml` is recursively auto-indexed for file-manager browsing.                                                                                                                                                                                                                                                    |
 
 `repo/addons.xml` (the static-repo index) still lists `repository.tony7bones` so that anyone on the legacy static repo auto-updates to the virtual proxy. The proxy itself does NOT read `repo/addons.xml` at runtime — it serves from its local `127.0.0.1` server driven by `repository.json`.
 
@@ -163,7 +163,7 @@ All HTML generation (repositories index, scripts index, media index, per-addon i
 
 ### CI — `.github/workflows/generate_repo.yml`
 
-Triggers on push touching `repo/**`, `_tools/**`, or `index.html`. Runs the full `_tools/` test suite, `ruff`, the generator + `git status --porcelain` staleness check, and the cross-branch version-consistency gate. **CI never commits anything back to main** — it only validates; if generated files are stale the author must run the generator (or `deploy.py`) and commit. This is why generated zips are deterministic: a non-reproducible zip would make CI flag stale files on every run.
+Triggers on push touching `repo/**`, `_tools/**`, or `index.html`. Runs the full `_tools/` test suite, `ruff`, the generator + `git status --porcelain` staleness check, and the version-consistency gate (main only). **CI never commits anything back to main** — it only validates; if generated files are stale the author must run the generator (or `deploy.py`) and commit. This is why generated zips are deterministic: a non-reproducible zip would make CI flag stale files on every run.
 
 ### Adding a new Kodi add-on
 
@@ -194,4 +194,4 @@ Triggers on push touching `repo/**`, `_tools/**`, or `index.html`. Runs the full
 
 **`https://tony7bones.github.io/`** (the root). Users add this as a file-manager source, then install `repository.tony7bones-<version>.zip` from it. This URL must never change — only the zip filename's version moves. The legacy static endpoint `https://tony7bones.github.io/repo/addons.xml` still exists for migration but is not the install path.
 
-Note: the `repository.tony7bones` add-on is the virtual proxy and is released only via `_tools/deploy.py` (it bumps both branches and tags). The "adding a new add-on / zip" steps above are for _other_ content (third-party repos, scripts, images) and do not bump `repository.tony7bones`. After any of them, the pre-push hook will run tests + lint + staleness + consistency before the push is accepted.
+Note: the `repository.tony7bones` add-on is the virtual proxy and is released only via `_tools/deploy.py` (single-branch: it bumps `main` and tags, then pushes `main + tag`). The "adding a new add-on / zip" steps above are for _other_ content (third-party repos, scripts, images) and do not bump `repository.tony7bones`. After any of them, the pre-push hook will run tests + lint + staleness + consistency before the push is accepted.

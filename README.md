@@ -49,20 +49,26 @@ once. See `docs/playbooks/one-shot-and-architecture.md`.
 
 ## Architecture (developers)
 
-### Two branches — both touched on every repo release
+### Single branch — `main` only
 
-| Branch         | Role                                                                                                                                                                                                                                                   |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `main`         | Served by GitHub Pages. Holds the root installer zip(s), `index.html`, the static browsable area under `repo/`, the proxy add-on source at `repo/repository.tony7bones/`, the three first-party add-ons, and all of `_tools/`.                         |
-| `virtual-repo` | NOT served by Pages. Holds the `repository.json` manifest copy, `hosted/<id>/` sources for self-hosted entries, and `hosted/repository.tony7bones/addon.xml` — the version source the proxy reads (via raw.githubusercontent) for its own self-update. |
+Everything lives on `main`, served by GitHub Pages: the root installer zip(s),
+`index.html`, the static browsable area under `repo/`, the proxy add-on source at
+`repo/repository.tony7bones/`, the first-party add-ons, the mirrored
+third-party-repo trees under `repo/hosted/<id>/`, and all of `_tools/`. **The
+proxy fetches everything from `main`** via raw.githubusercontent.
+
+> The old `virtual-repo` branch is retired (its `hosted/<id>/` trees moved to
+> `repo/hosted/`, and the proxy's self-update source was consolidated into the
+> main `addon.xml`). It may linger as a fallback but is unreferenced.
 
 ### How the virtual proxy serves add-ons
 
 The proxy reads a **baked** `resources/repository.json` from inside the installed
 add-on (`lib/service.py`), not `repo/addons.xml`. It serves the listed add-ons
 from its local server, streaming zips from GitHub. To change what the repo serves,
-edit **both** `repository.json` copies (main `repo/repository.tony7bones/resources/`
-and the `virtual-repo` root) and release the repo add-on.
+edit the single `repository.json` at `repo/repository.tony7bones/resources/` (drop
+any mirrored third-party `addon.xml`/zip under `repo/hosted/<id>/`) and release the
+repo add-on.
 
 ### Content areas under `repo/`
 
@@ -71,6 +77,7 @@ and the `virtual-repo` root) and release the repo add-on.
 | `repo/<addon-id>/`                       | Any dir with an `addon.xml` becomes a zip and is listed in `addons.xml` (the first-party add-ons + the proxy). |
 | `repo/repositories/`                     | Third-party repository installer zips (Kodi installs them manually).                                           |
 | `repo/scripts/`                          | One-shot script zips (installed manually).                                                                     |
+| `repo/hosted/<id>/`                      | Mirrored third-party-repo trees the proxy fetches from `main` (not auto-indexed/zipped).                       |
 | `repo/media/`, `repo/iptv/`, `repo/rss/` | Assets auto-indexed for file-manager browsing.                                                                 |
 
 ### Generated files (must be committed)
@@ -93,12 +100,13 @@ Two release paths (full detail in `docs/playbooks/release-and-deploy.md`):
 - **`script.*` / `script.module.*` add-on** — bump its `addon.xml` version,
   `generate_repo.py`, commit, `git push`. NOT `deploy.py`.
 - **`repository.tony7bones`** — `python3 _tools/deploy.py --news "…"`. It bumps
-  the version in five locations across both branches, builds deterministically,
-  commits + tags, atomic-pushes `main` + `virtual-repo` + tag, and verifies live.
+  the version in four locations on `main` (the main `addon.xml` doubles as the
+  proxy self-update source), builds deterministically, commits + tags, pushes
+  `main` + tag, forces a Pages build, and verifies live.
 
 The pre-push hook blocks a push unless tests pass, lint is clean, generated files
-are fresh, every changed add-on bumped its version, and the cross-branch version
-locations agree and are tagged.
+are fresh, every changed add-on bumped its version, and the version locations on
+main agree and are tagged.
 
 ## Documentation
 
