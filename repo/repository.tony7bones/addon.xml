@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<addon id="repository.tony7bones" name="Tony.7.Bones Repo" provider-name="Tony.7.Bones" version="1.0.8">
+<addon id="repository.tony7bones" name="Tony.7.Bones Repo" provider-name="Tony.7.Bones" version="1.0.9">
     <requires>
         <import addon="xbmc.python" version="3.0.0"/>
     </requires>
@@ -18,7 +18,7 @@
         <summary lang="en">Welcome to Tony.7.Bones repository. Enjoy!</summary>
         <description lang="en">Welcome to Tony.7.Bones repository. Enjoy!</description>
         <news>
-v1.0.8: Rename repository to Tony.7.Bones Repo
+v1.0.9: Repo icon + fanart (Kodi diamond); repo is now a pure repository, no longer shown as a program add-on
         </news>
         <assets>
             <icon>icon.png</icon>
