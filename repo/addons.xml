@@ -27,10 +27,27 @@ v1.0.10: Repo now serves Video Add-ons Setup (script.tony7bones.video)
             </assets>
         </extension>
     </addon>
-    <addon id="script.tony7bones.bootstrap" name="Tony.7.Bones Setup" version="1.0.23" provider-name="tony7bones">
+    <addon id="script.module.tony7bones" name="Tony.7.Bones Shared Library" version="1.0.0" provider-name="tony7bones">
+        <requires>
+            <import addon="xbmc.python" version="3.0.0" />
+        </requires>
+        <extension point="xbmc.python.module" library="lib" />
+        <extension point="xbmc.addon.metadata">
+            <platform>all</platform>
+            <language />
+            <license>GPL-2.0-or-later</license>
+            <assets>
+                <icon>icon.png</icon>
+            </assets>
+            <summary lang="en_GB">Shared install library for the Tony.7.Bones Setup add-ons</summary>
+            <description lang="en_GB">Internal Python library used by the Tony.7.Bones Setup add-ons. It is not runnable on its own and does not appear on the home screen; it provides the shared add-on install, dependency-resolution and Kodi-integration machinery the Setup add-ons depend on.</description>
+        </extension>
+    </addon>
+    <addon id="script.tony7bones.bootstrap" name="Tony.7.Bones Setup" version="1.1.0" provider-name="tony7bones">
         <requires>
             <import addon="xbmc.python" version="3.0.0" />
             <import addon="xbmc.addon" version="12.0.0" />
+            <import addon="script.module.tony7bones" version="1.0.0" />
         </requires>
         <extension point="xbmc.python.script" library="default.py">
             <provides>executable</provides>
@@ -41,7 +58,7 @@ v1.0.10: Repo now serves Video Add-ons Setup (script.tony7bones.video)
             <license>GPL-2.0-or-later</license>
             <summary lang="en_GB">Tony.7.Bones Kodi Setup</summary>
             <description lang="en_GB">Installs repositories and add-ons for a personal Kodi build.</description>
-            <news>Trims the Estuary home menu to TV, Add-ons, Favourites, Weather. (v1.0.22 added Kodi home + sources directories to File Manager. v1.0.21 skipped optional dependencies — no more pulling Google Drive / cloud resolvers you didn't ask for. The installer now matches Kodi's own behaviour and resolves only required dependencies; optional imports stay on-demand. (v1.0.20 made Setup remove itself after a successful run. v1.0.19 stopped pinning Setup to the home screen and made the MOD V2 patch manual-only. v1.0.18 added the end-of-setup restart prompt.)</news>
+            <news>One-shot setup: Setup can now also install the Video Add-ons in the same run. It asks up front (default No); if you say yes it shows the video picker before anything installs, then does the whole job unattended — base repos and apps plus the chosen video add-ons — with one combined summary and one restart. The shared install machinery now lives in a common library (script.module.tony7bones). (v1.0.23 trimmed the Estuary home menu to TV, Add-ons, Favourites, Weather. v1.0.22 added Kodi home + sources directories to File Manager. v1.0.21 skipped optional dependencies — no more pulling Google Drive / cloud resolvers you didn't ask for. v1.0.20 made Setup remove itself after a successful run.)</news>
         </extension>
     </addon>
     <addon id="script.tony7bones.modv2.patch" name="Estuary MOD V2 Patch" version="1.0.3" provider-name="tony7bones">
@@ -55,10 +72,11 @@ v1.0.10: Repo now serves Video Add-ons Setup (script.tony7bones.video)
             <platform>all</platform>
         </extension>
     </addon>
-    <addon id="script.tony7bones.video" name="Video Add-ons Setup" version="1.0.4" provider-name="tony7bones">
+    <addon id="script.tony7bones.video" name="Video Add-ons Setup" version="1.1.0" provider-name="tony7bones">
         <requires>
             <import addon="xbmc.python" version="3.0.0" />
             <import addon="xbmc.addon" version="12.0.0" />
+            <import addon="script.module.tony7bones" version="1.0.0" />
         </requires>
         <extension point="xbmc.python.script" library="default.py">
             <provides>executable</provides>
@@ -72,7 +90,7 @@ v1.0.10: Repo now serves Video Add-ons Setup (script.tony7bones.video)
             </assets>
             <summary lang="en_GB">Install video add-ons from the Tony.7.Bones repos</summary>
             <description lang="en_GB">Pick which video add-ons to install (POV, The Loop, Sports HD, Umbrella). Each is installed with its full dependency closure, resolved live from the repositories already on this box, then enabled so it works straight away. Run the main Tony.7.Bones Setup first so the source repositories are present.</description>
-            <news>The Loop's Dailymotion is installed-but-disabled (durable across Loop updates) instead of excluded. Dailymotion is installed as The Loop's normal required dependency — so The Loop's dependency check is satisfied with no broken flag and no required-dependency lock — then disabled at the end of the run so it never actually runs. Because it stays installed, this survives Loop auto-updates with no re-patching. Only Dailymotion is disabled; The Loop, POV and Sports HD stay enabled and browse normally. Still stamps origins and skips optional dependencies (no Google Drive / cloud resolvers).</news>
+            <news>Now built on the shared Tony.7.Bones install library (script.module.tony7bones) — same behaviour, less duplicated code. The main Tony.7.Bones Setup can also run this picker as part of its one-shot setup. The Loop's Dailymotion stays installed-but-disabled (durable across Loop updates) so The Loop's dependency check is satisfied with no broken flag, then disabled so it never runs; only Dailymotion is disabled, The Loop / POV / Sports HD stay enabled and browse normally. Still stamps origins and skips optional dependencies (no Google Drive / cloud resolvers).</news>
         </extension>
     </addon>
 </addons>

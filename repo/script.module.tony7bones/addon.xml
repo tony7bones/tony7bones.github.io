@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<addon id="script.module.tony7bones"
+       name="Tony.7.Bones Shared Library"
+       version="1.0.0"
+       provider-name="tony7bones">
+  <requires>
+    <import addon="xbmc.python" version="3.0.0"/>
+  </requires>
+  <!--
+    A pure Python LIBRARY add-on (xbmc.python.module). It exposes NO script entry
+    and provides NO executable, so it never appears on the home screen — it is an
+    invisible dependency that the Tony.7.Bones Setup add-ons import. It carries the
+    shared install machinery (HTTP fetch, addons.xml index load/parse/merge, the
+    dependency-closure resolver, zip extract, enable/disable, add-on origin
+    stamping, source-repo enabling, self-uninstall, restart) so the per-add-on
+    Setups hold only their own configuration (which repos/apps to install, the
+    file-manager sources, the home-menu trim, the picker items).
+  -->
+  <extension point="xbmc.python.module" library="lib"/>
+  <extension point="xbmc.addon.metadata">
+    <platform>all</platform>
+    <language/>
+    <license>GPL-2.0-or-later</license>
+    <assets>
+      <icon>icon.png</icon>
+    </assets>
+    <summary lang="en_GB">Shared install library for the Tony.7.Bones Setup add-ons</summary>
+    <description lang="en_GB">Internal Python library used by the Tony.7.Bones Setup add-ons. It is not runnable on its own and does not appear on the home screen; it provides the shared add-on install, dependency-resolution and Kodi-integration machinery the Setup add-ons depend on.</description>
+  </extension>
+</addon>

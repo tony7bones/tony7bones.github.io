@@ -17,7 +17,6 @@ from __future__ import annotations
 import ast
 import os
 import py_compile
-import re
 import sys
 from pathlib import Path
 from xml.etree import ElementTree as ET
@@ -147,7 +146,9 @@ def test_apps_install_without_modal_installer():
     installed by resolving the dependency closure and extracting directly."""
     src = DEFAULT_PY.read_text()
     assert "InstallAddon(" not in src, "InstallAddon modal must not be used"
-    assert "_resolve_closure" in src and "_install_with_deps" in src
+    # The closure-resolve + direct-extract install now lives in the shared
+    # library; the base Setup drives it through install_with_deps().
+    assert "install_with_deps" in src
 
 
 def test_never_toggles_unknown_sources():
@@ -170,8 +171,12 @@ def test_installs_weather_and_pvr_binary():
     addons = _assign("ADDONS")
     assert "weather.multi" in addons
     assert "pvr.iptvsimple" in addons
+    # Binary add-ons need runtime platform detection; that now lives in the
+    # shared library's install_with_deps (it loads the official index with the
+    # platform tag). The base Setup hands it the official base + peno64 base.
     src = DEFAULT_PY.read_text()
-    assert "_platform_tag" in src, "binary add-ons need runtime platform detection"
+    assert "install_with_deps" in src
+    assert "OFFICIAL_BASE" in src and "PENO64_BASE" in src
 
 
 @pytest.mark.parametrize(
@@ -223,27 +228,20 @@ def test_modv2_patch_is_host_provided():
 # --------------------------------------------------------------------------- #
 def test_restart_flow_present_and_prompted():
     """After the success summary the script must offer a platform-correct
-    restart via a yes/no prompt — never a silent or forced restart."""
+    restart. The restart machinery (RestartApp/Quit/yesno, Android branch) now
+    lives in the shared library's restart_kodi(); the base Setup must call it."""
     src = DEFAULT_PY.read_text()
-    assert "_restart_kodi" in src, "restart helper must exist"
-    assert "_restart_kodi()" in src, "restart helper must be invoked in run()"
-    assert "yesno(" in src, "the restart must be user-confirmed (yesno)"
-
-
-def test_restart_is_platform_correct():
-    """Desktop uses RestartApp(); Android (which can't relaunch) uses Quit()
-    after telling the user to reopen Kodi by hand."""
-    src = DEFAULT_PY.read_text()
-    assert "RestartApp()" in src, "desktop restart must use RestartApp()"
-    assert "_is_android" in src, "must branch on Android (no RestartApp there)"
-    assert "Quit()" in src, "Android path must Quit() so the user can reopen"
+    assert "restart_kodi" in src, "must invoke the shared restart helper"
+    assert 'restart_kodi("Tony.7.Bones Setup"' in src, (
+        "the base Setup must drive restart_kodi with its own title"
+    )
 
 
 def test_restart_comes_after_success_summary():
     """The restart prompt must follow the counts dialog, not replace it."""
     src = DEFAULT_PY.read_text()
     ok_pos = src.rfind("Open Add-ons to finish")
-    restart_pos = src.rfind("_restart_kodi()")
+    restart_pos = src.rfind("restart_kodi(")
     assert ok_pos != -1 and restart_pos != -1
     assert restart_pos > ok_pos, "restart prompt must come after the summary dialog"
 
@@ -252,20 +250,18 @@ def test_restart_comes_after_success_summary():
 # Self-uninstall (run once, then disappear — no leftover home tile)
 # --------------------------------------------------------------------------- #
 def test_self_uninstall_logic_exists():
-    """The setup must remove itself after a successful run. Kodi 21 Omega has no
-    UninstallAddon builtin and no JSON-RPC uninstall method, so the supported
-    mechanism is: delete our own add-on directory and let the end-of-setup
-    restart de-register it. The code must therefore reference its own add-on id
-    and delete that directory."""
+    """The setup must remove itself after a successful run. The deletion
+    machinery (rmtree of its own addons/ dir, with the own-id guard) now lives in
+    the shared library's self_uninstall(); the base Setup must invoke it with its
+    own add-on id."""
     src = DEFAULT_PY.read_text()
-    assert "_self_uninstall" in src, "self-uninstall helper must exist"
-    assert "_self_uninstall()" in src, "self-uninstall must be invoked in run()"
-    assert "script.tony7bones.bootstrap" in src, (
+    assert "self_uninstall" in src, "must invoke the shared self-uninstall helper"
+    assert 'MY_ID = "script.tony7bones.bootstrap"' in src, (
+        "the base Setup must define its own id"
+    )
+    assert "self_uninstall(MY_ID" in src, (
         "self-uninstall must target the add-on's own id"
     )
-    # It must actually delete its own directory (the supported uninstall path).
-    assert "rmtree" in src, "self-uninstall must delete its own add-on directory"
-    assert "special://home/addons/" in src, "must resolve its own addons/ path"
 
 
 def test_self_uninstall_runs_after_summary_and_before_restart():
@@ -273,8 +269,8 @@ def test_self_uninstall_runs_after_summary_and_before_restart():
     The restart is what finalises the removal (startup scan drops the DB row)."""
     src = DEFAULT_PY.read_text()
     ok_pos = src.rfind("Open Add-ons to finish")
-    uninstall_pos = src.rfind("_self_uninstall()")
-    restart_pos = src.rfind("_restart_kodi()")
+    uninstall_pos = src.rfind("self_uninstall(MY_ID")
+    restart_pos = src.rfind("restart_kodi(")
     assert ok_pos != -1 and uninstall_pos != -1 and restart_pos != -1
     assert ok_pos < uninstall_pos < restart_pos, (
         "order must be summary -> self-uninstall -> restart"
@@ -318,6 +314,7 @@ def boot(tmp_path, monkeypatch):
     state = {
         "installed": set(),
         "extracted": set(),  # zips unpacked on disk but not yet enabled
+        "disabled": set(),  # ids disabled via SetAddonEnabled enabled=false
         "builtins": [],
         "jsonrpc": [],
         "ok": [],
@@ -368,9 +365,15 @@ def boot(tmp_path, monkeypatch):
         d = _json.loads(s)
         if d.get("method") == "Addons.SetAddonEnabled":
             aid = d["params"]["addonid"]
-            # Kodi only enables an add-on it has scanned (extracted on disk).
-            if aid in state["extracted"]:
-                state["installed"].add(aid)
+            enabled = d["params"].get("enabled", True)
+            if enabled:
+                # Kodi only enables an add-on it has scanned (extracted on disk).
+                if aid in state["extracted"]:
+                    state["installed"].add(aid)
+                state["disabled"].discard(aid)
+            else:
+                # Disabling leaves the add-on installed; just record the state.
+                state["disabled"].add(aid)
         return "{}"
 
     xbmc.executeJSONRPC = _jsonrpc
@@ -404,12 +407,27 @@ def boot(tmp_path, monkeypatch):
             state["ok"].append((title, msg))
 
         def yesno(self, title, msg, **kwargs):
-            # Record the restart prompt; decline so run() never restarts in tests.
+            # Two yes/no prompts exist now: the front-loaded "Also install Video
+            # Add-ons?" (msg starts with "Also install Video") and the end-of-setup
+            # restart prompt. The "also video" answer is driven by state
+            # (default False = base-only, today's behaviour); the restart prompt is
+            # always declined so run() never actually restarts in tests.
             state.setdefault("yesno", []).append((title, msg))
+            if msg.startswith("Also install Video"):
+                return bool(state.get("also_video", False))
             return False
+
+        def multiselect(self, title, options, preselect=None):
+            state.setdefault("multiselect", []).append((title, options, preselect))
+            # state['video_pick']: None = cancel, [] = nothing, else indexes.
+            pick = state.get("video_pick", preselect)
+            return None if pick is None else list(pick)
 
     xbmcgui.DialogProgress = _DP
     xbmcgui.Dialog = _Dialog
+    # Kodi 21 Omega exposes this; the base Setup uses it to default the
+    # "Also install Video Add-ons?" prompt to No.
+    xbmcgui.DLG_YESNO_NO_BTN = 1
 
     xbmcvfs = types.ModuleType("xbmcvfs")
     temp = tmp_path / "temp"
@@ -497,6 +515,16 @@ def boot(tmp_path, monkeypatch):
 
     monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen)
 
+    # Put the shared library (script.module.tony7bones) on sys.path exactly as
+    # Kodi does for an add-on that imports it, and purge any cached copy so the
+    # library re-binds to THIS test's mock Kodi modules (it does `import xbmc`
+    # at module load). Without the purge a prior test's mocks would leak in.
+    _LIB = REPO_ROOT / "repo" / "script.module.tony7bones" / "lib"
+    monkeypatch.syspath_prepend(str(_LIB))
+    for _name in list(sys.modules):
+        if _name == "tony7bones" or _name.startswith("tony7bones."):
+            monkeypatch.delitem(sys.modules, _name, raising=False)
+
     spec = importlib.util.spec_from_file_location("boot_default", DEFAULT_PY)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)  # run() is __main__-guarded, so this does not run it
@@ -517,13 +545,6 @@ def test_no_unknown_sources_jsonrpc_during_run(boot):
     assert not any("addons.unknownsources" in s for s in boot.state["jsonrpc"])
 
 
-def test_platform_tag_returns_kodi_arch_string(boot):
-    """The platform tag must look like Kodi's binary datadir suffix
-    (e.g. osx-arm64, windows-x86_64) or None on platforms not served here."""
-    tag = boot.mod._platform_tag()
-    assert tag is None or re.match(r"^(osx|windows|android)-", tag), tag
-
-
 def test_latest_zip_url_resolves_live_version(boot):
     url = boot.mod._latest_zip_url("script.tony7bones.modv2.patch")
     assert url == (
@@ -538,124 +559,6 @@ def test_latest_zip_url_handles_error(boot, monkeypatch):
 
     monkeypatch.setattr(urllib.request, "urlopen", boom)
     assert boot.mod._latest_zip_url("script.tony7bones.modv2.patch") is None
-
-
-def test_extract_zip_success(boot):
-    dp = boot.mod.xbmcgui.DialogProgress()
-    assert boot.mod._extract_zip("https://x/repository.foo-1.0.zip", dp, 50)
-    # the fake zip lays down <id>/addon.xml using the id parsed from the name
-    assert (boot.addons / "repository.foo" / "addon.xml").exists()
-
-
-def test_extract_zip_failure(boot, monkeypatch):
-    def boom(*a, **k):
-        raise OSError("download failed")
-
-    monkeypatch.setattr(urllib.request, "urlopen", boom)
-    dp = boot.mod.xbmcgui.DialogProgress()
-    assert boot.mod._extract_zip("https://x/y.zip", dp, 50) is False
-
-
-# --- dependency resolver + direct-install units ---------------------------- #
-def test_resolve_closure_walks_dependencies(boot):
-    """The closure must include the app AND its transitive module deps, with
-    dependencies ordered before the add-on that imports them, and system
-    imports (xbmc.* / kodi.*) excluded."""
-    idx = boot.state["index"]
-    indexes = [("https://peno64", idx), ("https://official", idx)]
-    closure = boot.mod._resolve_closure(["script.ezmaintenanceplus"], indexes)
-    ids = [aid for aid, _url in closure]
-    assert "script.ezmaintenanceplus" in ids
-    assert "script.module.requests" in ids
-    assert "script.module.urllib3" in ids  # transitive dep of requests
-    assert not any(i.startswith(("xbmc.", "kodi.")) for i in ids)
-    # dependency must come before the add-on that imports it
-    assert ids.index("script.module.requests") < ids.index("script.ezmaintenanceplus")
-    assert ids.index("script.module.urllib3") < ids.index("script.module.requests")
-
-
-def test_load_index_skips_optional_imports(boot, monkeypatch):
-    """_load_index must drop imports flagged optional="true": Kodi installs
-    optional deps on-demand, so resolving them into the closure over-installs
-    add-ons nothing requires (the plugin.googledrive-via-resolveurl bug)."""
-    xml = (
-        '<?xml version="1.0"?><addons>'
-        '<addon id="script.module.resolveurl" version="5.1.0"><requires>'
-        '<import addon="script.module.required.dep" version="1.0.0"/>'
-        '<import addon="plugin.googledrive" version="1.0.0" optional="true"/>'
-        "</requires></addon></addons>"
-    ).encode("utf-8")
-    monkeypatch.setattr(
-        urllib.request,
-        "urlopen",
-        lambda req, timeout=None: _FakeResp(_gzip.compress(xml)),
-    )
-    idx = boot.mod._load_index("https://official", None)
-    _ver, deps, _path = idx["script.module.resolveurl"]
-    assert "script.module.required.dep" in deps, "required import must be kept"
-    assert "plugin.googledrive" not in deps, "optional import must be skipped"
-
-
-def test_resolve_closure_skips_optional_dep(boot, monkeypatch):
-    """End-to-end: a target with one required + one optional dep resolves only
-    the required one. plugin.googledrive (optional) must never be pulled in."""
-    xml = (
-        '<?xml version="1.0"?><addons>'
-        '<addon id="plugin.video.the-loop" version="7.9"><requires>'
-        '<import addon="script.module.resolveurl" version="1.0.0"/>'
-        "</requires></addon>"
-        '<addon id="script.module.resolveurl" version="5.1.0"><requires>'
-        '<import addon="script.module.requests" version="1.0.0"/>'
-        '<import addon="plugin.googledrive" version="1.0.0" optional="true"/>'
-        "</requires></addon>"
-        '<addon id="script.module.requests" version="2.31.0"><requires/></addon>'
-        '<addon id="plugin.googledrive" version="3.0.0"><requires/></addon>'
-        "</addons>"
-    ).encode("utf-8")
-    monkeypatch.setattr(
-        urllib.request,
-        "urlopen",
-        lambda req, timeout=None: _FakeResp(_gzip.compress(xml)),
-    )
-    idx = boot.mod._load_index("https://official", None)
-    closure = boot.mod._resolve_closure(["plugin.video.the-loop"], [("https://x", idx)])
-    ids = [aid for aid, _url in closure]
-    assert "plugin.video.the-loop" in ids
-    assert "script.module.resolveurl" in ids
-    assert "script.module.requests" in ids  # required transitive dep present
-    assert "plugin.googledrive" not in ids, "optional dep must NOT be installed"
-
-
-def test_resolve_closure_skips_unresolvable(boot):
-    indexes = [("https://x", boot.state["index"])]
-    closure = boot.mod._resolve_closure(["script.does.not.exist"], indexes)
-    assert closure == []
-
-
-def test_install_with_deps_extracts_and_enables(boot):
-    dp = boot.mod.xbmcgui.DialogProgress()
-    assert boot.mod._install_with_deps("script.ezmaintenanceplus", dp)
-    s = boot.state
-    # the app and its dependency closure were extracted AND enabled
-    assert "script.ezmaintenanceplus" in s["installed"]
-    assert "script.module.requests" in s["installed"]
-    # no modal installer was ever invoked
-    assert not any(b.startswith("InstallAddon(") for b in s["builtins"])
-    # the local add-on store was rescanned so Kodi sees the extracted dirs
-    assert "UpdateLocalAddons()" in s["builtins"]
-
-
-def test_install_with_deps_skips_already_installed(boot):
-    boot.state["installed"].add("script.realdebrid")
-    dp = boot.mod.xbmcgui.DialogProgress()
-    assert boot.mod._install_with_deps("script.realdebrid", dp)
-    # already present → nothing extracted
-    assert "script.realdebrid" not in boot.state["extracted"]
-
-
-def test_install_with_deps_reports_failure_when_unresolvable(boot):
-    dp = boot.mod.xbmcgui.DialogProgress()
-    assert boot.mod._install_with_deps("script.does.not.exist", dp) is False
 
 
 def test_run_installs_apps_without_modal(boot):
@@ -681,88 +584,6 @@ def test_run_installs_apps_without_modal(boot):
     assert s["ok"], "no completion dialog shown"
     _title, msg = s["ok"][-1]
     assert "Repos:" in msg and "Patches:" in msg and "Apps:" in msg
-
-
-def test_load_index_keeps_noarch_and_filters_arch(boot, monkeypatch):
-    """A 'platform=all' entry (e.g. weather.multi, script.module.requests) is
-    universal and must be kept; arch-tagged duplicates must be filtered to this
-    machine's tag. Regression: an 'all' tag must not be mistaken for an arch."""
-    xml = (
-        '<?xml version="1.0"?><addons>'
-        '<addon id="weather.multi" version="1.1.0"><requires/>'
-        '<extension point="xbmc.addon.metadata"><platform>all</platform>'
-        "<path>weather.multi/weather.multi-1.1.0.zip</path></extension></addon>"
-        '<addon id="pvr.iptvsimple" version="21.11.0"><requires/>'
-        '<extension point="xbmc.addon.metadata"><platform>osx-arm64</platform>'
-        "<path>pvr.iptvsimple+osx-arm64/pvr.iptvsimple-21.11.0.zip</path>"
-        "</extension></addon>"
-        '<addon id="pvr.iptvsimple" version="21.11.0"><requires/>'
-        '<extension point="xbmc.addon.metadata"><platform>windows-x86_64</platform>'
-        "<path>pvr.iptvsimple+windows-x86_64/pvr.iptvsimple-21.11.0.zip</path>"
-        "</extension></addon>"
-        "</addons>"
-    ).encode("utf-8")
-    monkeypatch.setattr(
-        urllib.request,
-        "urlopen",
-        lambda req, timeout=None: _FakeResp(_gzip.compress(xml)),
-    )
-    idx = boot.mod._load_index("https://official", "osx-arm64")
-    assert "weather.multi" in idx, "platform=all entry must be kept"
-    assert idx["pvr.iptvsimple"][2].startswith("pvr.iptvsimple+osx-arm64/")
-
-
-def test_binary_addon_resolves_to_platform_path(boot):
-    """A binary add-on with an explicit <path> must download from that path
-    (the platform-suffixed datadir), not the conventional '<id>/<id>-<ver>.zip'."""
-    idx = boot.mod._load_index("https://official", "osx-arm64")
-    indexes = [("https://official", idx)]
-    closure = dict(boot.mod._resolve_closure(["pvr.iptvsimple"], indexes))
-    assert closure["pvr.iptvsimple"].endswith(
-        "pvr.iptvsimple+osx-arm64/pvr.iptvsimple-21.11.0.zip"
-    )
-    # its binary inputstream dependency is pulled the same way
-    assert "inputstream.ffmpegdirect" in closure
-    assert "+osx-arm64/" in closure["inputstream.ffmpegdirect"]
-    # the kodi.binary.* system import is NOT downloaded
-    assert not any(k.startswith("kodi.") for k in closure)
-
-
-def test_self_uninstall_removes_own_dir(boot):
-    """_self_uninstall() must delete its own add-on directory (the supported
-    Omega uninstall path: delete dir, then the restart de-registers it)."""
-    my_dir = boot.addons / "script.tony7bones.bootstrap"
-    my_dir.mkdir()
-    (my_dir / "addon.xml").write_text('<addon id="script.tony7bones.bootstrap"/>')
-    assert my_dir.exists()
-    boot.mod._self_uninstall()
-    assert not my_dir.exists(), "self-uninstall must remove its own add-on dir"
-
-
-def test_self_uninstall_only_touches_own_dir(boot):
-    """It must delete ONLY its own dir, never a sibling add-on."""
-    mine = boot.addons / "script.tony7bones.bootstrap"
-    other = boot.addons / "script.realdebrid"
-    mine.mkdir()
-    other.mkdir()
-    (other / "addon.xml").write_text('<addon id="script.realdebrid"/>')
-    boot.mod._self_uninstall()
-    assert not mine.exists()
-    assert other.exists(), "must not delete other add-ons"
-
-
-def test_self_uninstall_never_raises(boot, monkeypatch):
-    """A failure during self-uninstall must be swallowed (it runs last and must
-    not abort the run)."""
-    import shutil as _shutil
-
-    def boom(*a, **k):
-        raise OSError("permission denied")
-
-    monkeypatch.setattr(_shutil, "rmtree", boom)
-    mine = boot.addons / "script.tony7bones.bootstrap"
-    mine.mkdir()
-    boot.mod._self_uninstall()  # must not raise
 
 
 def test_run_self_uninstalls_at_end(boot):
@@ -805,7 +626,7 @@ def test_add_file_sources_helper_exists():
     assert "_add_file_sources()" in src, "helper must be invoked in run()"
     # Must run before the restart (Kodi caches sources.xml at startup).
     add_pos = src.rfind("_add_file_sources()")
-    restart_pos = src.rfind("_restart_kodi()")
+    restart_pos = src.rfind("restart_kodi(")
     assert add_pos != -1 and restart_pos != -1
     assert add_pos < restart_pos, "_add_file_sources() must come before the restart"
 
@@ -975,7 +796,7 @@ def test_trim_home_menu_helper_exists_and_wired_before_restart():
     assert "_trim_home_menu" in src, "helper must exist"
     assert "_trim_home_menu()" in src, "helper must be invoked in run()"
     trim_pos = src.rfind("_trim_home_menu()")
-    restart_pos = src.rfind("_restart_kodi()")
+    restart_pos = src.rfind("restart_kodi(")
     assert trim_pos != -1 and restart_pos != -1
     assert trim_pos < restart_pos, "_trim_home_menu() must come before the restart"
 
@@ -1124,3 +945,201 @@ def test_run_trims_home_menu(boot):
         assert bools.get(sid) == "true"
     for sid in _KEEP_IDS:
         assert sid not in bools
+
+
+# --------------------------------------------------------------------------- #
+# Shared-library wiring + one-shot video chaining (Option B / Phase 2)
+# --------------------------------------------------------------------------- #
+VIDEO_DEFAULT_PY = REPO_ROOT / "repo" / "script.tony7bones.video" / "default.py"
+
+
+def test_requires_the_shared_module():
+    """The manifest must declare the shared library as a required import so Kodi
+    auto-installs script.module.tony7bones when this Setup is installed."""
+    imp = _addon_root().find("requires/import[@addon='script.module.tony7bones']")
+    assert imp is not None, "must <import> script.module.tony7bones"
+    assert imp.get("version") == "1.0.0"
+
+
+def test_imports_from_shared_module():
+    """The duplicated machinery is gone — default.py imports it from the library."""
+    src = DEFAULT_PY.read_text()
+    assert "from tony7bones import" in src
+    # the moved helpers must NOT be redefined locally any more
+    assert "def _resolve_closure" not in src
+    assert "def _install_with_deps" not in src
+    assert "def _platform_tag" not in src
+    assert "def _self_uninstall" not in src
+    assert "def _restart_kodi" not in src
+
+
+def test_one_shot_prompt_is_front_loaded_and_defaults_no():
+    """The 'Also install Video Add-ons?' yes/no must come BEFORE any install and
+    default to No (opt-in) via DLG_YESNO_NO_BTN."""
+    src = DEFAULT_PY.read_text()
+    assert "Also install Video Add-ons after setup?" in src
+    assert "DLG_YESNO_NO_BTN" in src, "must default the prompt to No"
+    # the ask happens before the progress dialog / base install in run()
+    ask_pos = src.find("_ask_also_video()")
+    base_pos = src.find("_install_base(dialog)")
+    assert ask_pos != -1 and base_pos != -1 and ask_pos < base_pos
+
+
+def _install_video_setup_into(boot):
+    """Drop the REAL video default.py into the fixture's addons dir so the base
+    Setup's _load_video_module() can import it (it imports the shared library,
+    already on sys.path via the fixture)."""
+    vdir = boot.addons / "script.tony7bones.video"
+    vdir.mkdir(exist_ok=True)
+    (vdir / "default.py").write_text(VIDEO_DEFAULT_PY.read_text())
+    (vdir / "addon.xml").write_text('<addon id="script.tony7bones.video"/>')
+    # lay down a discoverable source repo so the video resolver finds an index
+    repo = boot.addons / "repository.fake"
+    repo.mkdir(exist_ok=True)
+    (repo / "addon.xml").write_text(
+        '<?xml version="1.0"?><addon id="repository.fake" version="1.0.0">'
+        '<extension point="xbmc.addon.repository"><dir minversion="21.0.0">'
+        "<info>https://fake.repo/zips/addons.xml</info>"
+        "<datadir>https://fake.repo/zips/</datadir>"
+        "</dir></extension></addon>"
+    )
+    return vdir
+
+
+def test_one_shot_no_runs_base_only(boot):
+    """Declining the video prompt = exactly today's base behaviour: no video apps,
+    no video line in the summary, one restart prompt."""
+    boot.state["also_video"] = False
+    boot.mod.run()
+    # base apps installed
+    for aid in boot.mod.ADDONS:
+        assert aid in boot.state["installed"]
+    # NO video apps touched
+    assert "plugin.video.pov" not in boot.state["installed"]
+    # summary has NO video line
+    _title, msg = boot.state["ok"][-1]
+    assert "Video add-ons:" not in msg
+    # exactly one restart prompt (the base end-of-setup one)
+    restart_prompts = [
+        m for _t, m in boot.state.get("yesno", []) if "needs to restart" in m
+    ]
+    assert len(restart_prompts) == 1
+
+
+def test_one_shot_yes_chains_video_install(boot):
+    """Choosing Yes + the default multiselect installs the base AND the selected
+    video apps in ONE run, with ONE combined summary and ONE restart."""
+    _install_video_setup_into(boot)
+    # the video resolver fetches an index from the discovered fake repo; serve a
+    # tiny one plus zips through the fixture's urlopen.
+    extra_index = {
+        "plugin.video.pov": ("6.0", [], "https://fake.repo/zips/x.zip", "r"),
+        "plugin.video.the-loop": (
+            "7.9",
+            ["plugin.video.dailymotion_com"],
+            "https://fake.repo/zips/x.zip",
+            "r",
+        ),
+        "plugin.video.sporthdme": ("0.1", [], "https://fake.repo/zips/x.zip", "r"),
+        "plugin.video.dailymotion_com": (
+            "1.0",
+            [],
+            "https://fake.repo/zips/x.zip",
+            "r",
+        ),
+    }
+
+    import urllib.request as _ur
+
+    _orig_urlopen = _ur.urlopen
+
+    def _vid_urlopen(req, timeout=None):
+        url = req.full_url if hasattr(req, "full_url") else req
+        if "fake.repo" in url and "addons.xml" in url:
+            parts = ['<?xml version="1.0"?>', "<addons>"]
+            for aid, (ver, deps, _u, _o) in extra_index.items():
+                parts.append(f'<addon id="{aid}" version="{ver}"><requires>')
+                for d in deps:
+                    parts.append(f'<import addon="{d}" version="1.0.0"/>')
+                parts.append("</requires></addon>")
+            parts.append("</addons>")
+            data = "".join(parts).encode()
+            return _FakeResp(_gzip.compress(data) if url.endswith(".gz") else data)
+        if "mirrors.kodi.tv" in url and "addons.xml" in url:
+            data = b'<?xml version="1.0"?><addons></addons>'
+            return _FakeResp(_gzip.compress(data) if url.endswith(".gz") else data)
+        if url.endswith(".zip") and "fake.repo" in url:
+            # video zips all share the 'x.zip' name, so extract every selected
+            # video id deterministically here.
+            for aid in extra_index:
+                boot.state["extracted"].add(aid)
+            buf = io.BytesIO()
+            with _zipfile.ZipFile(buf, "w") as z:
+                z.writestr("x/addon.xml", '<addon id="x"/>')
+            return _FakeResp(buf.getvalue())
+        # base apps + their index/zips go through the fixture's own urlopen
+        return _orig_urlopen(req, timeout=timeout)
+
+    _ur.urlopen = _vid_urlopen
+    try:
+        boot.state["also_video"] = True
+        boot.state["video_pick"] = [0, 1, 2]  # POV, The Loop, Sports HD
+        boot.mod.run()
+    finally:
+        _ur.urlopen = _orig_urlopen
+
+    s = boot.state
+    # base still installed
+    for aid in boot.mod.ADDONS:
+        assert aid in s["installed"], f"base {aid} missing"
+    # multiselect was shown up front
+    assert s.get("multiselect"), "the video multiselect must be shown"
+    _t, options, preselect = s["multiselect"][-1]
+    assert options == ["POV", "The Loop", "Sports HD", "Umbrella"]
+    assert preselect == [0, 1, 2]
+    # the chosen video apps installed
+    for aid in ("plugin.video.pov", "plugin.video.the-loop", "plugin.video.sporthdme"):
+        assert aid in s["installed"], f"video {aid} not installed"
+    # Dailymotion installed-but-disabled
+    assert "plugin.video.dailymotion_com" in s["installed"]
+    assert "plugin.video.dailymotion_com" in s["disabled"]
+    # ONE combined summary with both base and video counts
+    _title, msg = s["ok"][-1]
+    assert "Apps:" in msg and "Video add-ons:" in msg
+    # exactly ONE restart prompt for the whole run
+    restart_prompts = [m for _t, m in s.get("yesno", []) if "needs to restart" in m]
+    assert len(restart_prompts) == 1, "exactly one restart for the whole one-shot run"
+
+
+def test_one_shot_yes_removes_both_setup_tiles(boot):
+    """A chained run self-removes BOTH the base and the video Setup dirs, but
+    LEAVES the shared library module installed (it is a hidden dependency)."""
+    base_dir = boot.addons / "script.tony7bones.bootstrap"
+    base_dir.mkdir()
+    (base_dir / "addon.xml").write_text('<addon id="script.tony7bones.bootstrap"/>')
+    _install_video_setup_into(boot)
+
+    import urllib.request as _ur
+
+    _orig = _ur.urlopen
+
+    def _u(req, timeout=None):
+        url = req.full_url if hasattr(req, "full_url") else req
+        if "fake.repo" in url and "addons.xml" in url:
+            return _FakeResp(b'<?xml version="1.0"?><addons></addons>')
+        if "mirrors.kodi.tv" in url and "addons.xml" in url:
+            return _FakeResp(b'<?xml version="1.0"?><addons></addons>')
+        return _orig(req, timeout=timeout)
+
+    _ur.urlopen = _u
+    try:
+        boot.state["also_video"] = True
+        boot.state["video_pick"] = [0]
+        boot.mod.run()
+    finally:
+        _ur.urlopen = _orig
+
+    assert not base_dir.exists(), "base Setup tile must be removed"
+    assert not (boot.addons / "script.tony7bones.video").exists(), (
+        "chained video Setup tile must be removed too"
+    )

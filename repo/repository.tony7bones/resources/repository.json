@@ -140,6 +140,16 @@
     }
   },
   {
+    "id": "script.module.tony7bones",
+    "username": "tony7bones",
+    "repository": "tony7bones.github.io",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/repo/{id}/",
+    "assets": {
+      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/repo/{id}/{id}-{version}.zip"
+    }
+  },
+  {
     "id": "script.tony7bones.modv2.patch",
     "username": "tony7bones",
     "repository": "tony7bones.github.io",

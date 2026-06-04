@@ -4,64 +4,68 @@ Installs by add-on id only. No display-name labels.
 
 run():
   * extracts the repo installer zips (direct download)
-  * extracts first-party add-ons from our Pages (version resolved live)
   * installs each requested app together with its full dependency closure by
     direct download + extract, then registers + enables every add-on through
     Kodi's add-on manager so the apps actually function.
-  * finally removes ITSELF (run once, then disappear) so no Setup tile lingers
-    on the home screen — the end-of-setup restart de-registers it cleanly. It
-    stays in the Tony.7.Bones repo for one-tap reinstall whenever needed.
+  * adds the File-Manager sources, trims the Estuary home menu, then removes
+    ITSELF (run once, then disappear) so no Setup tile lingers on the home
+    screen — the end-of-setup restart de-registers it cleanly. It stays in the
+    Tony.7.Bones repo for one-tap reinstall whenever needed.
 
-Why not Kodi's InstallAddon builtin: on Omega it calls CAddonInstaller::
-InstallModal(..., CHOICE_YES), which (1) pops a blocking "Do you want to
-install X?" yes/no dialog and (2) runs the job as a *modal* job on the GUI
-thread. Driven from a script with no user at the keyboard that modal never
-returns — the GUI locks (the "Registering add-ons" freeze). There is no
-JSON-RPC install method on Omega either (the Addons namespace only exposes
-GetAddons / GetAddonDetails / SetAddonEnabled / ExecuteAddon). So we resolve
-the dependency closure ourselves from the repos' addons.xml and extract every
-zip directly, exactly the way build wizards do, then enable each add-on — which
-inserts it into Kodi's installed table and makes it runnable.
+The shared install machinery (HTTP fetch, addons.xml index load/resolve, zip
+extract, enable, self-uninstall, restart, platform detection) lives in the
+script.module.tony7bones library; this file holds only the base box's own
+configuration and the two base-only steps (file sources + Estuary home trim).
 
-No unknown-sources prompt: the script never toggles the unknown-sources
-setting. That GUI setting only gates Kodi's *install-from-zip* UI flow; it has
-no bearing on the direct-extract + Addons.SetAddonEnabled path used here, which
-registers and enables an add-on regardless of the setting. Flipping it
-false->true (the old behaviour) popped the blocking "Add-ons will be given
-access to personal data... Proceed?" warning, so it is deliberately left
-untouched — a real user running this setup never sees that dialog.
+Why not Kodi's InstallAddon builtin: on Omega it calls a *modal* installer on
+the GUI thread that pops a blocking yes/no and never returns when driven from a
+script — the GUI locks. So the library resolves the dependency closure itself
+from the repos' addons.xml and extracts every zip directly, then enables each
+add-on — which inserts it into Kodi's installed table and makes it runnable.
 
-Binary (platform-specific) add-ons — e.g. pvr.iptvsimple and the
-inputstream.* clients it needs — are not in the common omega/ datadir as
-plain zips. The official repo's addons.xml lists each binary add-on once per
-platform, every entry carrying a <platform> tag and a <path> pointing at the
-correct platform-suffixed zip (e.g. pvr.iptvsimple+osx-arm64/...). We detect
-this machine's Kodi platform string at runtime and pick the matching entry,
-so the right native build is downloaded on any OS/arch without hardcoding.
+No unknown-sources prompt: the script never toggles the unknown-sources setting
+(it has no bearing on the direct-extract + enable path used here).
+
+Binary (platform-specific) add-ons — e.g. pvr.iptvsimple and the inputstream.*
+clients it needs — are resolved per-platform: the library detects this machine's
+Kodi platform string at runtime and picks the matching official-repo entry.
+
+This Setup can optionally chain the Video Add-ons Setup: two prompts are
+FRONT-LOADED before any install (a yes/no, default No, then the video
+multiselect), and the whole run — base install plus the chosen video apps — runs
+unattended in this one script with a single combined summary and a single
+restart.
 
 No secrets are embedded in this script.
 """
 
-import gzip
-import json
 import os
-import re
-import urllib.request
-import zipfile
 from xml.etree import ElementTree as ET
 
 import xbmc
-import xbmcaddon
 import xbmcgui
 import xbmcvfs
+
+# Shared install library (script.module.tony7bones). All the generic machinery
+# lives here; this file keeps only the base box's configuration + base-only steps.
+from tony7bones import (
+    extract_zip,
+    install_with_deps,
+    restart_kodi,
+    self_uninstall,
+    update_local_addons,
+)
+from tony7bones import enable as _enable
+
+MY_ID = "script.tony7bones.bootstrap"
 
 REPO_BASE = "https://tony7bones.github.io/repo/repositories/"
 STATIC_BASE = "https://tony7bones.github.io/repo"
 
-# Add-on index (addons.xml / addons.xml.gz) + per-id datadir for the closure.
-# The two peno64 apps live in peno64; their module dependencies, the weather
-# add-on, and the binary PVR/inputstream clients all live in the official Kodi
-# repo. The resolver walks <requires>/<import> recursively across both.
+# Add-on index base urls for the closure. The two peno64 apps live in peno64;
+# their module dependencies, the weather add-on, and the binary PVR/inputstream
+# clients all live in the official Kodi repo. The library's resolver walks
+# <requires>/<import> recursively across both (peno64 first, official last).
 OFFICIAL_BASE = "https://mirrors.kodi.tv/addons/omega"
 PENO64_BASE = (
     "https://raw.githubusercontent.com/peno64/repository.peno64/master/repo/zips"
@@ -84,11 +88,8 @@ REPO_ZIPS = [
 ]
 
 # First-party add-on ids on our Pages — direct extract, version resolved live.
-# The Estuary MOD V2 patch (script.tony7bones.modv2.patch) is deliberately NOT
-# auto-installed: it only makes sense once a user adopts the Estuary MOD V2 skin.
-# It stays hosted in our repo (repo/script.tony7bones.modv2.patch/ and in
-# repo/addons.xml) so anyone who wants it can install it by hand. Leave this list
-# empty and run() will simply skip the first-party loop.
+# Deliberately empty (the Estuary MOD V2 patch is manual-only); run() simply
+# skips the first-party loop.
 FIRST_PARTY = []
 
 # Apps installed (with dependency closure) by direct extract, in order.
@@ -102,167 +103,16 @@ ADDONS = [
     "pvr.iptvsimple",
 ]
 
-# Dependency ids provided by the Kodi runtime itself — never downloaded.
-_SYSTEM_PREFIXES = ("xbmc.", "kodi.")
 
-
-def _is_installed(addon_id):
-    try:
-        xbmcaddon.Addon(addon_id)
-        return True
-    except RuntimeError:
-        return False
-
-
-def _platform_tag():
-    """Kodi's platform/arch tag for binary add-ons, e.g. 'osx-arm64'.
-
-    Mirrors the way the official repo names its platform-specific datadirs
-    (<id>+<platform>-<arch>/). Detected at runtime from os.uname()/os.name so
-    the correct native build is selected on any machine. Returns None on
-    platforms whose binaries are not served from this mirror (e.g. desktop
-    Linux, which ships binary add-ons via the OS package manager).
-    """
-    name = os.name
-    try:
-        sysname = os.uname().sysname.lower()
-        machine = os.uname().machine.lower()
-    except AttributeError:  # Windows has no os.uname()
-        sysname = ""
-        import platform as _platform
-
-        machine = _platform.machine().lower()
-
-    if sysname == "darwin":
-        arch = "arm64" if machine in ("arm64", "aarch64") else "x86_64"
-        return f"osx-{arch}"
-    if name == "nt" or sysname.startswith("win"):
-        # Kodi tags: windows-x86_64 (64-bit) / windows-i686 (32-bit).
-        return "windows-x86_64" if machine in ("amd64", "x86_64") else "windows-i686"
-    if "android" in sysname or os.environ.get("ANDROID_ROOT"):
-        return "android-aarch64" if machine in ("aarch64", "arm64") else "android-armv7"
-    # Linux/other: binaries come from the distro, not this mirror.
-    return None
-
-
-def _http_get(url, timeout=30):
-    """Fetch bytes, transparently gunzipping a .gz index."""
-    req = urllib.request.Request(url, headers={"User-Agent": "Kodi"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        data = r.read()
-    if url.endswith(".gz"):
-        data = gzip.decompress(data)
-    return data
-
-
-def _load_index(base, platform_tag=None):
-    """Return {id: (version, [dep_ids], path_or_None)} from a repo's addons.xml(.gz).
-
-    `path` is the add-on's relative download path when the manifest declares one
-    (binary add-ons do: e.g. 'pvr.iptvsimple+osx-arm64/pvr.iptvsimple-X.zip'),
-    otherwise None and the caller builds the conventional '<id>/<id>-<ver>.zip'
-    path. Binary add-ons appear once per platform; when `platform_tag` is given
-    we keep only the entry whose <platform> matches this machine, so the right
-    native build wins.
-    """
-    err = None
-    for name in ("addons.xml.gz", "addons.xml"):
-        try:
-            root = ET.fromstring(_http_get(f"{base}/{name}"))
-            out = {}
-            for a in root.findall("addon"):
-                aid = a.get("id")
-                # Skip imports flagged optional="true": Kodi's own installer
-                # treats those as on-demand (fetched only when actually needed
-                # at runtime), so resolving them into the install closure
-                # over-installs add-ons nothing actually requires (e.g.
-                # plugin.googledrive pulled via resolveurl). Match Kodi's
-                # behaviour and keep only required imports.
-                deps = [
-                    imp.get("addon")
-                    for imp in a.findall("requires/import")
-                    if (imp.get("optional") or "").lower() != "true"
-                    and imp.get("addon")
-                ]
-                meta = a.find("extension[@point='xbmc.addon.metadata']")
-                path = plat = None
-                if meta is not None:
-                    p = meta.find("path")
-                    path = p.text if p is not None else None
-                    pl = meta.find("platform")
-                    plat = pl.text if pl is not None else None
-                # A real per-arch entry tags an arch like "osx-arm64"; "all"
-                # (or any tag without a "-") is universal and always kept.
-                # Of the arch-specific duplicates, keep only this machine's.
-                is_arch = bool(plat) and "-" in plat
-                if is_arch and platform_tag and plat != platform_tag:
-                    continue
-                out[aid] = (a.get("version"), deps, path)
-            return out
-        except Exception as e:  # noqa: BLE001 - try the next index variant
-            err = e
-    xbmc.log(f"[tony7bones.bootstrap] index load failed {base}: {err}", xbmc.LOGERROR)
-    return {}
-
-
-def _resolve_closure(targets, indexes):
-    """Walk the dependency graph of `targets` across the given repo indexes.
-
-    `indexes` is an ordered list of (base_url, index_dict); the first repo that
-    declares an id wins. Returns an ordered list of (addon_id, zip_url) with
-    dependencies BEFORE the add-ons that need them, so extraction order is safe.
-    System imports (xbmc.* / kodi.*) are skipped — Kodi provides them. An entry
-    whose manifest carries an explicit <path> (binary add-ons) is downloaded
-    from that path; otherwise the conventional '<id>/<id>-<ver>.zip' is used.
-    """
-    resolved = {}  # id -> zip_url
-    order = []
-
-    def visit(aid):
-        if aid in resolved or aid.startswith(_SYSTEM_PREFIXES):
-            return
-        for base, idx in indexes:
-            if aid in idx:
-                ver, deps, path = idx[aid]
-                rel = path if path else f"{aid}/{aid}-{ver}.zip"
-                resolved[aid] = f"{base}/{rel}"
-                for dep in deps:  # deps first
-                    visit(dep)
-                order.append(aid)
-                return
-        xbmc.log(
-            f"[tony7bones.bootstrap] cannot resolve dependency: {aid}", xbmc.LOGERROR
-        )
-
-    for t in targets:
-        visit(t)
-    return [(aid, resolved[aid]) for aid in order]
-
-
-def _extract_zip(url, dialog, pct):
-    """Download a zip and extract it into addons/. Returns True on success."""
-    name = url.rsplit("/", 1)[-1]
-    dialog.update(pct, f"Installing {name}")
-    temp_path = xbmcvfs.translatePath("special://temp/" + name)
-    addons_path = xbmcvfs.translatePath("special://home/addons/")
-    ok = False
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Kodi"})
-        with urllib.request.urlopen(req, timeout=60) as r, open(temp_path, "wb") as f:
-            f.write(r.read())
-        with zipfile.ZipFile(temp_path, "r") as z:
-            z.extractall(addons_path)
-        ok = True
-    except Exception as e:  # noqa: BLE001 - one bad zip must not abort the run
-        xbmc.log(f"[tony7bones.bootstrap] Failed {name}: {e}", xbmc.LOGERROR)
-    finally:
-        if os.path.exists(temp_path):
-            os.remove(temp_path)
-    return ok
+def _log(msg, level=xbmc.LOGINFO):
+    xbmc.log(f"[{MY_ID}] {msg}", level)
 
 
 def _latest_zip_url(addon_id):
     """Resolve a first-party add-on's current zip URL from its static addon.xml."""
+    import re
+    import urllib.request
+
     base = f"{STATIC_BASE}/{addon_id}"
     try:
         with urllib.request.urlopen(f"{base}/addon.xml", timeout=15) as r:
@@ -271,67 +121,16 @@ def _latest_zip_url(addon_id):
         if m:
             return f"{base}/{addon_id}-{m.group(1)}.zip"
     except Exception as e:  # noqa: BLE001
-        xbmc.log(
-            f"[tony7bones.bootstrap] cannot resolve {addon_id}: {e}", xbmc.LOGERROR
-        )
+        _log(f"cannot resolve {addon_id}: {e}", xbmc.LOGERROR)
     return None
 
 
-def _enable(addon_id):
-    """Register + enable an add-on. SetAddonEnabled adds it to Kodi's installed
-    table, which is what makes a directly-extracted add-on actually runnable.
-    Works without the unknown-sources setting — that setting only gates the
-    install-from-zip GUI, not this direct-extract + enable path."""
-    xbmc.executeJSONRPC(
-        json.dumps(
-            {
-                "jsonrpc": "2.0",
-                "method": "Addons.SetAddonEnabled",
-                "params": {"addonid": addon_id, "enabled": True},
-                "id": 1,
-            }
-        )
-    )
-    xbmc.sleep(200)
-
-
-def _install_with_deps(addon_id, dialog):
-    """Install an app and its full dependency closure by direct extract.
-
-    No modal installer is used (InstallAddon would deadlock the GUI), so this
-    never freezes. The official index is loaded with this machine's platform
-    tag so binary add-ons (pvr.iptvsimple + inputstream.* clients) resolve to
-    the correct native build. After extracting the closure the caller rescans
-    local add-ons and enables each id, which registers them and makes them
-    function. Returns True once the app reports as installed.
-    """
-    if _is_installed(addon_id):
-        return True
-    plat = _platform_tag()
-    indexes = [
-        (PENO64_BASE, _load_index(PENO64_BASE)),
-        (OFFICIAL_BASE, _load_index(OFFICIAL_BASE, plat)),
-    ]
-    closure = _resolve_closure([addon_id], indexes)
-    if not any(aid == addon_id for aid, _ in closure):
-        return False  # could not even resolve the app itself
-    for aid, url in closure:
-        if _is_installed(aid):
-            continue
-        _extract_zip(url, dialog, 100)
-    # Rescan so Kodi sees the freshly extracted dirs, then enable the closure
-    # dependencies-first so each app's imports are satisfied when it is enabled.
-    xbmc.executebuiltin("UpdateLocalAddons()")
-    xbmc.sleep(2000)
-    for aid, _url in closure:
-        _enable(aid)
-    return _is_installed(addon_id)
-
-
-# File-Manager sources added to userdata/sources.xml (the <files> section).
+# --------------------------------------------------------------------------- #
+# File-Manager sources (base-only configuration + merge)
+# --------------------------------------------------------------------------- #
 # (display name, path). The second path is the Android/Fire Stick internal
-# storage dir — we try to create it (harmless no-op off Android) but always
-# add the source entry regardless.
+# storage dir — we try to create it (harmless no-op off Android) but always add
+# the source entry regardless.
 FILE_SOURCES = [
     ("Kodi home directory", "special://home"),
     ("Kodi sources directory", "/storage/emulated/0/kodi/"),
@@ -339,11 +138,7 @@ FILE_SOURCES = [
 
 
 def _sources_xml_path():
-    """Resolve the absolute path to userdata/sources.xml via xbmcvfs.
-
-    special://profile is the active profile's userdata dir (== userdata/ for the
-    master profile); sources.xml lives directly inside it. Fall back to the
-    home-relative path if needed."""
+    """Resolve the absolute path to userdata/sources.xml via xbmcvfs."""
     p = xbmcvfs.translatePath("special://profile/sources.xml")
     if not p:
         p = xbmcvfs.translatePath("special://home/userdata/sources.xml")
@@ -364,13 +159,12 @@ def _add_file_sources():
     """Add our File-Manager sources to userdata/sources.xml.
 
     Edits the <files> section in place: creates the file/structure if missing,
-    PRESERVES every existing source (Movies/Music/Pictures, a .tony7.bones
-    source, anything else), and DEDUPES on both name and path so a second run
-    adds nothing. For the Android internal-storage path we attempt mkdirs first
-    (guarded — it can't and won't succeed off Android, which is fine) but add
-    the source entry either way. Fully defensive: any error is logged and the
-    rest of setup continues. The end-of-setup restart is what makes Kodi pick up
-    the new sources (it caches sources.xml at startup)."""
+    PRESERVES every existing source, and DEDUPES on both name and path so a second
+    run adds nothing. For the Android internal-storage path we attempt mkdirs
+    first (guarded) but add the source entry either way. Fully defensive: any
+    error is logged and the rest of setup continues. The end-of-setup restart is
+    what makes Kodi pick up the new sources (it caches sources.xml at startup).
+    """
     try:
         xml_path = _sources_xml_path()
 
@@ -380,10 +174,7 @@ def _add_file_sources():
             try:
                 root = ET.parse(xml_path).getroot()
             except ET.ParseError as e:
-                xbmc.log(
-                    f"[tony7bones.bootstrap] sources.xml malformed, recreating: {e}",
-                    xbmc.LOGERROR,
-                )
+                _log(f"sources.xml malformed, recreating: {e}", xbmc.LOGERROR)
                 root = None
         if root is None or root.tag != "sources":
             root = ET.Element("sources")
@@ -413,9 +204,8 @@ def _add_file_sources():
                     if not xbmcvfs.exists(path):
                         xbmcvfs.mkdirs(path)
                 except Exception as e:  # noqa: BLE001 - non-Android: harmless
-                    xbmc.log(
-                        f"[tony7bones.bootstrap] mkdirs {path} skipped "
-                        f"(expected off Android): {e}",
+                    _log(
+                        f"mkdirs {path} skipped (expected off Android): {e}",
                         xbmc.LOGINFO,
                     )
             if name in have_names or path in have_paths:
@@ -429,49 +219,30 @@ def _add_file_sources():
             data = ET.tostring(root, encoding="unicode")
             with open(xml_path, "w", encoding="utf-8") as f:
                 f.write(data)
-            xbmc.log(
-                f"[tony7bones.bootstrap] added {added} file source(s) to {xml_path}",
-                xbmc.LOGINFO,
-            )
+            _log(f"added {added} file source(s) to {xml_path}", xbmc.LOGINFO)
         else:
-            xbmc.log(
-                "[tony7bones.bootstrap] file sources already present (no change)",
-                xbmc.LOGINFO,
-            )
+            _log("file sources already present (no change)", xbmc.LOGINFO)
     except Exception as e:  # noqa: BLE001 - never abort the rest of setup
-        xbmc.log(
-            f"[tony7bones.bootstrap] _add_file_sources failed (non-fatal): {e}",
-            xbmc.LOGERROR,
-        )
+        _log(f"_add_file_sources failed (non-fatal): {e}", xbmc.LOGERROR)
 
 
-# Estuary home/main-menu trim. Each home item in Estuary's xml/Home.xml is
-# gated by   <visible>!Skin.HasSetting(HomeMenuNo<X>Button)</visible>,  so
-# setting the matching skin BOOLEAN to true HIDES that item (verified by reading
-# the real skin's Home.xml on Kodi 21 Omega). We hide eight and leave the four
-# we keep (TV/Live TV, Add-ons/Programs, Favourites, Weather) untouched/visible.
+# --------------------------------------------------------------------------- #
+# Estuary home-menu trim (base-only configuration + merge)
+# --------------------------------------------------------------------------- #
+# Each home item in Estuary's xml/Home.xml is gated by
+#   <visible>!Skin.HasSetting(HomeMenuNo<X>Button)</visible>,
+# so setting the matching skin BOOLEAN true HIDES that item. We hide eight and
+# leave the four we keep (TV/Live TV, Add-ons/Programs, Favourites, Weather)
+# visible. Two ids per item: the camel-case ID the skin XML / Skin.SetBool use,
+# and the LOWERCASE id the skin persists into settings.xml. Skin.HasSetting() is
+# case-insensitive, so the skin reads either back.
 #
-# Two ids per item: the camel-case ID the skin's XML and Skin.SetBool use
-# (HomeMenuNoMovieButton) and the LOWERCASE id the active skin persists into
-# addon_data/skin.estuary/settings.xml (homemenunomoviebutton, type="bool",
-# value "true"/"false"). Skin.HasSetting() is case-insensitive, so the skin
-# reads either back. Note the SINGULAR forms the real skin uses: Movie (not
-# Movies), MusicVideo (not MusicVideos), TVShow; and that Add-ons is gated by
-# HomeMenuNoProgramsButton.
-#
-# Both mechanisms are applied, and this ordering matters (proven on the live
-# box): when the skin is loaded, Kodi holds skin booleans in MEMORY and REWRITES
-# settings.xml from memory on shutdown — so a file-only write is clobbered by the
-# end-of-setup restart. Skin.SetBool() sets the in-memory value, which the
-# shutdown then persists as "true", surviving the restart. The direct file merge
-# is kept as a belt-and-suspenders fallback (covers a not-yet-loaded skin and
-# guarantees the keys exist) and preserves every other existing skin setting.
+# Both mechanisms are applied: Skin.SetBool() sets the in-memory value (which the
+# shutdown persists, surviving the restart), and a direct settings.xml merge is
+# the belt-and-suspenders fallback (covers a not-yet-loaded skin, preserves all
+# other settings).
 ESTUARY_SKIN_ID = "skin.estuary"
 
-# (camel-case id for Skin.SetBool / skin XML, lowercase id for settings.xml),
-# for the eight items we HIDE. The four kept ids (HomeMenuNoTVButton,
-# HomeMenuNoProgramsButton, HomeMenuNoFavButton, HomeMenuNoWeatherButton) are
-# deliberately absent so they stay visible.
 ESTUARY_HIDE_SETTINGS = [
     ("HomeMenuNoMovieButton", "homemenunomoviebutton"),  # Movies
     ("HomeMenuNoTVShowButton", "homemenunotvshowbutton"),  # TV shows
@@ -494,39 +265,28 @@ def _estuary_settings_path():
 def _trim_home_menu_setbool():
     """Set the eight hide-booleans in the ACTIVE skin's live memory via
     Skin.SetBool. This is what survives the end-of-setup restart: Kodi rewrites
-    settings.xml from memory on shutdown, so the in-memory true persists. No-op
-    in effect off Estuary (the booleans simply aren't read by another skin)."""
+    settings.xml from memory on shutdown, so the in-memory true persists."""
     for camel, _low in ESTUARY_HIDE_SETTINGS:
-        # Skin.SetBool(<id>) with no value sets it true — exactly how Estuary's
-        # own "Main menu items" settings screen toggles each item off.
         xbmc.executebuiltin(f"Skin.SetBool({camel})")
 
 
 def _trim_home_menu_writefile():
     """Merge the eight hide-booleans (= true) into skin.estuary's settings.xml,
     creating the file/dir if missing and PRESERVING every other existing setting.
-    Belt-and-suspenders behind _trim_home_menu_setbool(): guarantees the keys
-    exist even if the skin was never loaded. Idempotent; updates in place."""
+    Belt-and-suspenders behind _trim_home_menu_setbool(). Idempotent."""
     xml_path = _estuary_settings_path()
     os.makedirs(os.path.dirname(xml_path), exist_ok=True)
 
-    # Parse the existing file, or start fresh. A malformed file is rebuilt.
     root = None
     if os.path.exists(xml_path):
         try:
             root = ET.parse(xml_path).getroot()
         except ET.ParseError as e:
-            xbmc.log(
-                f"[tony7bones.bootstrap] skin.estuary settings.xml malformed, "
-                f"recreating: {e}",
-                xbmc.LOGERROR,
-            )
+            _log(f"skin.estuary settings.xml malformed, recreating: {e}", xbmc.LOGERROR)
             root = None
     if root is None or root.tag != "settings":
         root = ET.Element("settings")
 
-    # Index existing <setting id=...> (case-insensitive) so we update in place
-    # and preserve everything else (other skin settings, the four kept ids).
     by_id = {
         (s.get("id") or "").lower(): s for s in root.findall("setting") if s.get("id")
     }
@@ -547,9 +307,8 @@ def _trim_home_menu_writefile():
 
     with open(xml_path, "w", encoding="utf-8") as f:
         f.write(ET.tostring(root, encoding="unicode"))
-    xbmc.log(
-        f"[tony7bones.bootstrap] _trim_home_menu: wrote 8 hide-bools "
-        f"({changed} changed) to {xml_path}",
+    _log(
+        f"_trim_home_menu: wrote 8 hide-bools ({changed} changed) to {xml_path}",
         xbmc.LOGINFO,
     )
 
@@ -558,16 +317,10 @@ def _trim_home_menu():
     """Trim the stock Estuary home menu to TV, Add-ons, Favourites, Weather.
 
     Hides the other eight items by forcing each Estuary HomeMenuNo<X>Button
-    boolean true. Applies BOTH mechanisms: Skin.SetBool (live in-memory value,
-    which Kodi persists on the end-of-setup restart — the part that actually
-    survives) and a direct settings.xml merge (fallback that guarantees the keys
-    exist and preserves all other skin settings).
-
-    Guard: only meaningful on the stock Estuary skin — when another skin is
-    active this is a safe no-op (it returns before touching anything). Idempotent
-    (re-running just re-asserts the eight values, never duplicating). Defensive:
-    any failure is logged and swallowed so it can never abort the rest of setup,
-    and it touches ONLY skin.estuary's settings — nothing else.
+    boolean true. Applies BOTH mechanisms (Skin.SetBool live value + a settings.xml
+    merge). Guard: only meaningful on the stock Estuary skin — when another skin
+    is active this is a safe no-op. Idempotent and defensive (any failure is
+    logged and swallowed; touches ONLY skin.estuary's settings).
     """
     try:
         skin = ""
@@ -576,8 +329,8 @@ def _trim_home_menu():
         except Exception:  # noqa: BLE001 - older/edge Kodi: treat as unknown
             skin = ""
         if skin and skin != ESTUARY_SKIN_ID:
-            xbmc.log(
-                f"[tony7bones.bootstrap] _trim_home_menu: active skin is {skin}, "
+            _log(
+                f"_trim_home_menu: active skin is {skin}, "
                 "not skin.estuary — skipping (no-op)",
                 xbmc.LOGINFO,
             )
@@ -585,113 +338,47 @@ def _trim_home_menu():
         _trim_home_menu_setbool()
         _trim_home_menu_writefile()
     except Exception as e:  # noqa: BLE001 - never abort the rest of setup
-        xbmc.log(
-            f"[tony7bones.bootstrap] _trim_home_menu failed (non-fatal): {e}",
-            xbmc.LOGERROR,
-        )
+        _log(f"_trim_home_menu failed (non-fatal): {e}", xbmc.LOGERROR)
 
 
-def _is_android():
-    """True when running on Android (incl. Fire Stick), where the app cannot
-    relaunch itself. Detected the same way as _platform_tag()."""
-    if os.environ.get("ANDROID_ROOT") or os.environ.get("ANDROID_DATA"):
-        return True
-    try:
-        return "android" in os.uname().sysname.lower()
-    except AttributeError:  # Windows
-        return False
+# --------------------------------------------------------------------------- #
+# Optional video chaining — front-loaded prompts (see video module for config)
+# --------------------------------------------------------------------------- #
+# Imported lazily inside run() so this base Setup still imports cleanly if the
+# video Setup is not installed; the prompts are shown BEFORE any install so the
+# whole run is unattended afterwards.
 
 
-def _self_uninstall():
-    """Remove the Setup add-on itself so it leaves no permanent home tile.
+def _ask_also_video():
+    """Front-loaded yes/no: 'Also install Video Add-ons after setup?'.
 
-    Kodi 21 Omega has NO uninstall path a script can call: there is no
-    UninstallAddon executebuiltin (only install/enable/disable/run exist) and no
-    JSON-RPC uninstall method (the Addons namespace exposes only GetAddons /
-    GetAddonDetails / SetAddonEnabled / ExecuteAddon). The supported mechanism is
-    therefore: delete our own add-on directory, then let the end-of-setup restart
-    finalise removal. On the next start Kodi's add-on scan (CAddonMgr::FindAddons)
-    skips the now-missing dir and AddonDatabase::SyncInstalled deletes the stale
-    rows ("DELETE FROM installed WHERE addonID=..." plus its update rules and any
-    repository entry) — so there is no dangling DB row and no "broken add-on".
-
-    Defensive by design: this runs only after everything else succeeded, never
-    raises (a failure here must not abort the run), and deletes ONLY this
-    add-on's own directory — nothing else.
-
-    Caveat: deleting a directory whose code is currently executing is fine on
-    macOS / Linux / Android (the inode stays alive until the interpreter
-    finishes; the path is just unlinked). On Windows the file is locked while
-    open and the rmtree can partially fail; the restart still de-registers the
-    add-on because SyncInstalled keys off addon.xml being absent — and even a
-    fully-intact dir left behind is merely re-registered, never "broken". The
-    target boxes (Fire Stick / Android, macOS, Linux) are unaffected.
+    DEFAULTS TO NO (opt-in): the No button is pre-focused via Kodi's
+    defaultbutton=DLG_YESNO_NO_BTN. Both the constant and the kwarg exist on
+    Kodi 21 Omega (verified on the box). We fall back gracefully on any older
+    Kodi that lacks either — a plain yesno whose No is the right-hand (default)
+    button. Returns True only if the user explicitly chose Yes.
     """
-    try:
-        my_id = "script.tony7bones.bootstrap"
-        my_dir = xbmcvfs.translatePath("special://home/addons/" + my_id)
-        # Hard guard: only ever delete OUR OWN add-on directory.
-        if os.path.basename(os.path.normpath(my_dir)) != my_id:
-            xbmc.log(
-                "[tony7bones.bootstrap] self-uninstall: refusing unexpected path "
-                f"{my_dir}",
-                xbmc.LOGERROR,
+    title = "Tony.7.Bones Setup"
+    msg = "Also install Video Add-ons after setup?"
+    no_btn = getattr(xbmcgui, "DLG_YESNO_NO_BTN", None)
+    if no_btn is not None:
+        try:
+            return bool(
+                xbmcgui.Dialog().yesno(
+                    title, msg, yeslabel="Yes", nolabel="No", defaultbutton=no_btn
+                )
             )
-            return
-        if os.path.isdir(my_dir):
-            import shutil
-
-            shutil.rmtree(my_dir, ignore_errors=True)
-            xbmc.log(
-                f"[tony7bones.bootstrap] self-uninstall: removed {my_dir}",
-                xbmc.LOGINFO,
-            )
-    except Exception as e:  # noqa: BLE001 - self-uninstall must never abort the run
-        xbmc.log(
-            f"[tony7bones.bootstrap] self-uninstall failed (non-fatal): {e}",
-            xbmc.LOGERROR,
-        )
+        except TypeError:
+            pass  # older Kodi without the defaultbutton kwarg — fall through
+    return bool(xbmcgui.Dialog().yesno(title, msg, yeslabel="Yes", nolabel="No"))
 
 
-def _restart_kodi():
-    """Restart Kodi the platform-correct way after setup completes.
-
-    A restart is required so Kodi fully loads every freshly extracted add-on
-    (avoids the Fire Stick end-of-setup freeze where half-registered add-ons
-    leave the UI wedged). The user always chooses Restart now / Later.
-
-    * Desktop (Windows / Linux / macOS): RestartApp() truly cycles the app.
-    * Android / Fire Stick: RestartApp() is unsupported and cannot relaunch the
-      app, so we ask the user to fully close and reopen Kodi, then Quit() on
-      confirmation for a clean exit they relaunch by hand.
-    """
-    if _is_android():
-        if xbmcgui.Dialog().yesno(
-            "Tony.7.Bones Setup",
-            "Setup is complete. Kodi must fully close and reopen to finish.\n\n"
-            "Close Kodi now? After it closes, open it again from your home "
-            "screen to finish setup.",
-            yeslabel="Close now",
-            nolabel="Later",
-        ):
-            xbmc.log("[tony7bones.bootstrap] restart: Android Quit()", xbmc.LOGINFO)
-            xbmc.executebuiltin("Quit()")
-        return
-
-    if xbmcgui.Dialog().yesno(
-        "Tony.7.Bones Setup",
-        "Setup is complete. Kodi needs to restart to finish.\n\nRestart now?",
-        yeslabel="Restart now",
-        nolabel="Later",
-    ):
-        xbmc.log("[tony7bones.bootstrap] restart: RestartApp()", xbmc.LOGINFO)
-        xbmc.executebuiltin("RestartApp()")
-
-
-def run():
-    dialog = xbmcgui.DialogProgress()
-    dialog.create("Tony.7.Bones Setup", "Starting setup...")
-
+def _install_base(dialog):
+    """Run the base install: repos + first-party + apps. Returns (repo_ok, fp_ok,
+    app_ok, canceled). Shares the progress dialog with the (optional) video stage
+    so the user sees one continuous progress bar. `canceled` is True if the user
+    cancelled the progress dialog mid-install (run() then aborts with no summary,
+    exactly today's behaviour)."""
     total = len(REPO_ZIPS) + len(FIRST_PARTY) + len(ADDONS) + 1
     step = 0
     repo_ok = fp_ok = app_ok = 0
@@ -699,24 +386,24 @@ def run():
     # 1. repos by direct extract
     for zip_name, _rid in REPO_ZIPS:
         step += 1
-        if _extract_zip(REPO_BASE + zip_name, dialog, int(step / total * 100)):
+        if extract_zip(REPO_BASE + zip_name, dialog, int(step / total * 100), _log):
             repo_ok += 1
         if dialog.iscanceled():
-            return dialog.close()
+            return repo_ok, fp_ok, app_ok, True
 
     # 2. first-party add-ons by direct extract
     for addon_id in FIRST_PARTY:
         step += 1
         url = _latest_zip_url(addon_id)
-        if url and _extract_zip(url, dialog, int(step / total * 100)):
+        if url and extract_zip(url, dialog, int(step / total * 100), _log):
             fp_ok += 1
         if dialog.iscanceled():
-            return dialog.close()
+            return repo_ok, fp_ok, app_ok, True
 
     # 3. register + enable the repos and first-party add-ons.
     step += 1
     dialog.update(int(step / total * 100), "Registering add-ons...")
-    xbmc.executebuiltin("UpdateLocalAddons()")
+    update_local_addons()
     xbmc.sleep(3000)
     for _zip_name, rid in REPO_ZIPS:
         if rid:
@@ -725,43 +412,120 @@ def run():
         _enable(addon_id)
 
     # 4. install each app with its dependency closure by direct extract.
-    #    No modal installer, so the GUI never freezes.
     for addon_id in ADDONS:
         step += 1
         dialog.update(int(step / total * 100), f"Installing {addon_id}")
-        if _install_with_deps(addon_id, dialog):
+        if install_with_deps(addon_id, dialog, [PENO64_BASE], OFFICIAL_BASE, _log):
             app_ok += 1
         if dialog.iscanceled():
-            return dialog.close()
+            return repo_ok, fp_ok, app_ok, True
+
+    return repo_ok, fp_ok, app_ok, False
+
+
+def run():
+    # Front-load the optional video chaining prompts BEFORE any install, so the
+    # rest of the run is unattended. Default is No (opt-in). If Yes, the video
+    # multiselect is shown up front and the selection captured; the actual video
+    # install happens after the base install, in this one script.
+    video = None  # the video Setup's default.py module, imported only if chosen
+    video_selected = []  # list of chosen video app ids
+    if _ask_also_video():
+        video = _load_video_module()
+        if video is not None:
+            labels = [label for label, _aid in video.APPS]
+            choices = xbmcgui.Dialog().multiselect(
+                "Video Add-ons Setup", labels, preselect=video.PRESELECT
+            )
+            # Cancelled/empty multiselect → run base only (today's behaviour).
+            if choices:
+                video_selected = [video.APPS[i][1] for i in choices]
+
+    dialog = xbmcgui.DialogProgress()
+    dialog.create("Tony.7.Bones Setup", "Starting setup...")
+
+    # --- base install ---
+    repo_ok, fp_ok, app_ok, canceled = _install_base(dialog)
+    if canceled:
+        # User cancelled the progress dialog mid-install: abort cleanly with NO
+        # summary, NO self-uninstall, NO restart (exactly today's behaviour). The
+        # partial install is harmless and re-running Setup completes it.
+        return dialog.close()
+
+    # --- optional video install (unattended, in this one script) ---
+    video_installed = video_total = 0
+    if video is not None and video_selected:
+        video_installed, video_total = _install_video(video, video_selected, dialog)
 
     dialog.close()
-    xbmcgui.Dialog().ok(
-        "Tony.7.Bones Setup",
-        f"Repos: {repo_ok}/{len(REPO_ZIPS)}\n"
-        f"Patches: {fp_ok}/{len(FIRST_PARTY)}\n"
-        f"Apps: {app_ok}/{len(ADDONS)}\n"
-        "Open Add-ons to finish any remaining setup.",
-    )
-    # Run once, then disappear: remove ourselves so no Setup tile lingers on the
-    # home screen. Done AFTER the summary and only after everything else ran; it
-    # never raises (so a failure here can't break the run) and deletes only our
-    # own add-on dir. The restart below de-registers us from the add-on DB.
-    _self_uninstall()
-    # Add our File-Manager sources (Kodi home + sources dirs) to sources.xml.
-    # Must run BEFORE the restart: Kodi caches sources.xml at startup, so the
-    # new entries only appear in File Manager after the end-of-setup restart.
+
+    # --- one combined summary ---
+    lines = [
+        f"Repos: {repo_ok}/{len(REPO_ZIPS)}",
+        f"Patches: {fp_ok}/{len(FIRST_PARTY)}",
+        f"Apps: {app_ok}/{len(ADDONS)}",
+    ]
+    if video_total:
+        lines.append(f"Video add-ons: {video_installed}/{video_total}")
+    lines.append("Open Add-ons to finish any remaining setup.")
+    xbmcgui.Dialog().ok("Tony.7.Bones Setup", "\n".join(lines))
+
+    # Run once, then disappear. Done AFTER the summary; never raises.
+    self_uninstall(MY_ID, _log)
+    # If we chained the Video Add-ons Setup, remove ITS tile too (the standalone
+    # video run removes itself; the chained run never reaches that code, so the
+    # base run cleans it up here). The shared library is a hidden module add-on
+    # and is deliberately LEFT installed. Guarded + never-raises by self_uninstall.
+    if video is not None and video_selected:
+        self_uninstall("script.tony7bones.video", _log)
+    # Add our File-Manager sources (Kodi home + sources dirs) — before the restart.
     _add_file_sources()
-    # Trim the stock Estuary home menu down to TV, Add-ons, Favourites, Weather.
-    # Must run BEFORE the restart: the restart is what makes Estuary re-read its
-    # settings.xml and drop the eight hidden items from the main menu.
+    # Trim the stock Estuary home menu — before the restart so Estuary re-reads it.
     _trim_home_menu()
-    # A restart finalises the freshly extracted add-ons AND finalises the
-    # self-removal (the startup scan drops the now-missing add-on from the DB).
-    # Platform-correct and prompt-driven so it never freezes (Fire Stick fix).
-    # If the user declines the restart the state is still sane: our files are
-    # gone, we stay enabled in the DB until the next start, and that next start
-    # cleans the row — there is no broken/half-state in between.
-    _restart_kodi()
+    # ONE restart finalises every freshly extracted add-on AND the self-removal.
+    restart_kodi("Tony.7.Bones Setup", _log)
+
+
+def _load_video_module():
+    """Import the installed Video Add-ons Setup's default.py as a module so its
+    config (APPS / PRESELECT / DISABLE_AFTER_INSTALL) and helpers can be reused.
+
+    Returns the module, or None if the video Setup is not installed on the box.
+    The video default.py is __main__-guarded, so importing it runs no install.
+    """
+    try:
+        import importlib.util
+
+        path = xbmcvfs.translatePath(
+            "special://home/addons/script.tony7bones.video/default.py"
+        )
+        if not os.path.isfile(path):
+            _log("video Setup not installed; running base only", xbmc.LOGINFO)
+            return None
+        spec = importlib.util.spec_from_file_location("video_setup", path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    except Exception as e:  # noqa: BLE001 - video chaining is best-effort
+        _log(f"could not load video Setup (running base only): {e}", xbmc.LOGERROR)
+        return None
+
+
+def _install_video(video, selected, dialog):
+    """Install the chosen video apps + closure via the video Setup's own logic,
+    sharing this run's progress dialog. Returns (installed_ok, total_selected).
+
+    Delegates to video.install_selected(), the standalone-and-chained entry point
+    the video module exposes, so the chained path and the standalone path run the
+    exact same code. No separate restart/self-uninstall happens here — the base
+    run owns the single restart and the video Setup's tile is removed by the base
+    run too (see run())."""
+    try:
+        installed_ok = video.install_selected(selected, dialog)
+        return installed_ok, len(selected)
+    except Exception as e:  # noqa: BLE001 - a video failure must not abort base
+        _log(f"video install failed (non-fatal): {e}", xbmc.LOGERROR)
+        return 0, len(selected)
 
 
 if __name__ == "__main__":
