@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="script.tony7bones.bootstrap"
        name="Tony.7.Bones Setup"
-       version="1.1.0"
+       version="1.1.1"
        provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
@@ -24,6 +24,6 @@
     <license>GPL-2.0-or-later</license>
     <summary lang="en_GB">Tony.7.Bones Kodi Setup</summary>
     <description lang="en_GB">Installs repositories and add-ons for a personal Kodi build.</description>
-    <news>One-shot setup: Setup can now also install the Video Add-ons in the same run. It asks up front (default No); if you say yes it shows the video picker before anything installs, then does the whole job unattended — base repos and apps plus the chosen video add-ons — with one combined summary and one restart. The shared install machinery now lives in a common library (script.module.tony7bones). (v1.0.23 trimmed the Estuary home menu to TV, Add-ons, Favourites, Weather. v1.0.22 added Kodi home + sources directories to File Manager. v1.0.21 skipped optional dependencies — no more pulling Google Drive / cloud resolvers you didn't ask for. v1.0.20 made Setup remove itself after a successful run.)</news>
+    <news>Fix the one-shot: video add-ons now actually install when chosen. If you say Yes to "Also install Video Add-ons?" on a fresh box, Setup now fetches the Video Add-ons Setup first (it was being skipped silently when not already installed), shows the picker, and installs your chosen apps — POV, The Loop, Sports HD — in the same run. If it ever can't load, the summary says so instead of silently dropping it. One-shot setup: Setup can now also install the Video Add-ons in the same run. It asks up front (default No); if you say yes it shows the video picker before anything installs, then does the whole job unattended — base repos and apps plus the chosen video add-ons — with one combined summary and one restart. The shared install machinery now lives in a common library (script.module.tony7bones). (v1.0.23 trimmed the Estuary home menu to TV, Add-ons, Favourites, Weather. v1.0.22 added Kodi home + sources directories to File Manager. v1.0.21 skipped optional dependencies — no more pulling Google Drive / cloud resolvers you didn't ask for. v1.0.20 made Setup remove itself after a successful run.)</news>
   </extension>
 </addon>

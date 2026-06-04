@@ -430,9 +430,21 @@ def run():
     # install happens after the base install, in this one script.
     video = None  # the video Setup's default.py module, imported only if chosen
     video_selected = []  # list of chosen video app ids
+    video_load_failed = False  # Yes was chosen but the video Setup couldn't load
     if _ask_also_video():
+        # The video chaining reuses the Video Add-ons Setup add-on's config and
+        # install logic, so that add-on must be present on the box to load it. On
+        # a fresh box the user has only installed our repo + run THIS base Setup,
+        # so script.tony7bones.video is usually NOT installed yet. Fetch it (and
+        # its shared library) by direct extract from our Pages repo BEFORE trying
+        # to load it — otherwise the prompt is answered Yes but the whole video
+        # step silently vanishes (the original one-shot bug). If it still can't be
+        # loaded we record that and surface it in the summary, never silently drop.
+        _ensure_video_setup_installed()
         video = _load_video_module()
-        if video is not None:
+        if video is None:
+            video_load_failed = True
+        else:
             labels = [label for label, _aid in video.APPS]
             choices = xbmcgui.Dialog().multiselect(
                 "Video Add-ons Setup", labels, preselect=video.PRESELECT
@@ -467,6 +479,10 @@ def run():
     ]
     if video_total:
         lines.append(f"Video add-ons: {video_installed}/{video_total}")
+    elif video_load_failed:
+        # Yes was chosen but the Video Add-ons Setup could not be installed/loaded
+        # — say so plainly instead of silently dropping the whole video step.
+        lines.append("Video add-ons: could not load Video Setup (skipped)")
     lines.append("Open Add-ons to finish any remaining setup.")
     xbmcgui.Dialog().ok("Tony.7.Bones Setup", "\n".join(lines))
 
@@ -484,6 +500,58 @@ def run():
     _trim_home_menu()
     # ONE restart finalises every freshly extracted add-on AND the self-removal.
     restart_kodi("Tony.7.Bones Setup", _log)
+
+
+VIDEO_ID = "script.tony7bones.video"
+MODULE_ID = "script.module.tony7bones"
+
+
+def _video_default_py_path():
+    """Absolute path to the installed Video Add-ons Setup's default.py."""
+    return xbmcvfs.translatePath(f"special://home/addons/{VIDEO_ID}/default.py")
+
+
+def _module_init_py_path():
+    """Absolute path to the installed shared library's package __init__.py."""
+    return xbmcvfs.translatePath(
+        f"special://home/addons/{MODULE_ID}/lib/tony7bones/__init__.py"
+    )
+
+
+def _ensure_video_setup_installed():
+    """Make sure the Video Add-ons Setup add-on (and its shared library) are on
+    the box so the one-shot can load and reuse them.
+
+    On a fresh box the user installs our repo and runs THIS base Setup; the Video
+    Add-ons Setup add-on is usually not installed yet. Without it _load_video_module()
+    returns None and the chosen video step silently vanishes (the one-shot bug).
+    So when the user opts into video we direct-extract script.tony7bones.video
+    (and script.module.tony7bones if missing) from our Pages repo — the same
+    download+extract+rescan+enable path the rest of Setup uses, no blocking
+    InstallAddon modal — then enable them. Idempotent: anything already present
+    is skipped. Defensive: any failure is logged and swallowed; _load_video_module()
+    then reports the load failure and run() surfaces it in the summary.
+    """
+    try:
+        # The shared library underpins the video module's imports — fetch it first
+        # if it is somehow absent (normally installed already as our dependency).
+        if not os.path.isfile(_module_init_py_path()):
+            url = _latest_zip_url(MODULE_ID)
+            if url:
+                extract_zip(url, None, 100, _log)
+        # The video Setup add-on itself.
+        if not os.path.isfile(_video_default_py_path()):
+            url = _latest_zip_url(VIDEO_ID)
+            if url:
+                _log(f"fetching {VIDEO_ID} for one-shot video chaining", xbmc.LOGINFO)
+                extract_zip(url, None, 100, _log)
+        # Rescan + enable so the freshly extracted dirs register and load.
+        update_local_addons()
+        xbmc.sleep(2000)
+        _enable(MODULE_ID)
+        _enable(VIDEO_ID)
+    except Exception as e:  # noqa: BLE001 - best-effort; _load_video_module reports
+        _log(f"_ensure_video_setup_installed failed (non-fatal): {e}", xbmc.LOGERROR)
 
 
 def _load_video_module():

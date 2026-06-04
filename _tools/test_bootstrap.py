@@ -1143,3 +1143,137 @@ def test_one_shot_yes_removes_both_setup_tiles(boot):
     assert not (boot.addons / "script.tony7bones.video").exists(), (
         "chained video Setup tile must be removed too"
     )
+
+
+# --------------------------------------------------------------------------- #
+# Regression: the one-shot video step must NOT silently vanish when the Video
+# Add-ons Setup add-on is not yet installed (the original production bug).
+#
+# On a fresh box the user installs our repo + runs THIS base Setup; the Video
+# Add-ons Setup add-on is usually NOT installed. The old code asked "Also install
+# Video Add-ons?", got Yes, then _load_video_module() returned None and the whole
+# video step disappeared with no prompt, no error, no summary line — exactly what
+# was reported from the Fire Stick run. run() must instead fetch the Video Setup
+# (via _ensure_video_setup_installed) before loading it, then run the picker and
+# the video install. These tests fail against the pre-fix code.
+# --------------------------------------------------------------------------- #
+def test_one_shot_yes_fetches_video_setup_when_absent(boot, monkeypatch):
+    """Yes + Video Setup NOT installed: run() must fetch it (so the picker and the
+    video install actually happen), not silently fall back to base-only."""
+    # Deliberately do NOT _install_video_setup_into(boot): the video add-on is
+    # absent, mirroring a fresh box. Lay down a discoverable source repo so the
+    # video resolver can build an index once the module is loaded.
+    repo = boot.addons / "repository.fake"
+    repo.mkdir(exist_ok=True)
+    (repo / "addon.xml").write_text(
+        '<?xml version="1.0"?><addon id="repository.fake" version="1.0.0">'
+        '<extension point="xbmc.addon.repository"><dir minversion="21.0.0">'
+        "<info>https://fake.repo/zips/addons.xml</info>"
+        "<datadir>https://fake.repo/zips/</datadir>"
+        "</dir></extension></addon>"
+    )
+
+    # The real _ensure_video_setup_installed() would download the video zip from
+    # Pages and extract it; here we stand in for that fetch by dropping the REAL
+    # video default.py into the addons dir, then call through. This proves run()
+    # invokes the fetch step AND that after it the module becomes loadable.
+    calls = {"ensure": 0}
+    real_ensure = boot.mod._ensure_video_setup_installed
+
+    def _fake_ensure():
+        calls["ensure"] += 1
+        vdir = boot.addons / "script.tony7bones.video"
+        vdir.mkdir(exist_ok=True)
+        (vdir / "default.py").write_text(VIDEO_DEFAULT_PY.read_text())
+        (vdir / "addon.xml").write_text('<addon id="script.tony7bones.video"/>')
+
+    monkeypatch.setattr(boot.mod, "_ensure_video_setup_installed", _fake_ensure)
+    assert real_ensure is not None  # the fix's helper must exist
+
+    extra_index = {
+        "plugin.video.pov": ("6.0", []),
+        "plugin.video.the-loop": ("7.9", ["plugin.video.dailymotion_com"]),
+        "plugin.video.sporthdme": ("0.1", []),
+        "plugin.video.dailymotion_com": ("1.0", []),
+    }
+
+    import urllib.request as _ur
+
+    _orig = _ur.urlopen
+
+    def _u(req, timeout=None):
+        url = req.full_url if hasattr(req, "full_url") else req
+        if "fake.repo" in url and "addons.xml" in url:
+            parts = ['<?xml version="1.0"?>', "<addons>"]
+            for aid, (ver, deps) in extra_index.items():
+                parts.append(f'<addon id="{aid}" version="{ver}"><requires>')
+                for d in deps:
+                    parts.append(f'<import addon="{d}" version="1.0.0"/>')
+                parts.append("</requires></addon>")
+            parts.append("</addons>")
+            return _FakeResp("".join(parts).encode())
+        if "mirrors.kodi.tv" in url and "addons.xml" in url:
+            return _FakeResp(b'<?xml version="1.0"?><addons></addons>')
+        if url.endswith(".zip") and "fake.repo" in url:
+            for aid in extra_index:
+                boot.state["extracted"].add(aid)
+            buf = io.BytesIO()
+            with _zipfile.ZipFile(buf, "w") as z:
+                z.writestr("x/addon.xml", '<addon id="x"/>')
+            return _FakeResp(buf.getvalue())
+        return _orig(req, timeout=timeout)
+
+    _ur.urlopen = _u
+    try:
+        boot.state["also_video"] = True
+        boot.state["video_pick"] = [0, 1, 2]
+        boot.mod.run()
+    finally:
+        _ur.urlopen = _orig
+
+    s = boot.state
+    # The fetch step must have been invoked (this is the heart of the fix).
+    assert calls["ensure"] == 1, "run() must fetch the Video Setup when it is absent"
+    # The picker must have been shown (it was silently skipped before the fix).
+    assert s.get("multiselect"), "the video picker must be shown after the fetch"
+    # The chosen video apps must actually install — not silently vanish.
+    for aid in ("plugin.video.pov", "plugin.video.the-loop", "plugin.video.sporthdme"):
+        assert aid in s["installed"], f"video {aid} must install on a fresh box"
+    # Combined summary names both base and video — never a base-only summary.
+    _title, msg = s["ok"][-1]
+    assert "Apps:" in msg and "Video add-ons:" in msg
+
+
+def test_one_shot_yes_surfaces_video_load_failure(boot, monkeypatch):
+    """If Yes is chosen but the Video Setup cannot be fetched/loaded, run() must
+    say so in the summary instead of silently dropping the whole video step (and
+    base install must still complete)."""
+    # No video add-on present, and the fetch is a no-op (simulating a failed
+    # download), so _load_video_module() returns None.
+    monkeypatch.setattr(boot.mod, "_ensure_video_setup_installed", lambda: None)
+    boot.state["also_video"] = True
+    boot.mod.run()
+
+    # base install still happened
+    for aid in boot.mod.ADDONS:
+        assert aid in boot.state["installed"]
+    # no picker (module never loaded) and the failure is surfaced, not silent
+    assert not boot.state.get("multiselect"), "no picker when the module won't load"
+    _title, msg = boot.state["ok"][-1]
+    assert "could not load" in msg.lower(), (
+        "a video load failure must be surfaced in the summary, not silently dropped"
+    )
+
+
+def test_ensure_video_setup_runs_before_self_uninstall_and_restart():
+    """Source-level ordering guard: the fetch step must be wired BEFORE the
+    self-uninstall + restart so the chained video install can run first."""
+    src = DEFAULT_PY.read_text()
+    ensure_pos = src.find("_ensure_video_setup_installed()")
+    install_video_pos = src.find("_install_video(")
+    uninstall_pos = src.find("self_uninstall(MY_ID")
+    restart_pos = src.find('restart_kodi("Tony.7.Bones Setup"')
+    assert ensure_pos != -1, "run() must call _ensure_video_setup_installed()"
+    assert ensure_pos < install_video_pos < uninstall_pos < restart_pos, (
+        "fetch -> video install -> self-uninstall -> restart ordering must hold"
+    )
