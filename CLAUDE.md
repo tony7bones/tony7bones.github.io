@@ -59,14 +59,15 @@ ruff check _tools/
 
 Test files map to what they cover (all tests import the add-on `default.py` under **mocked Kodi modules** — `run()` is `__main__`-guarded, so importing is side-effect-free, and the install/resolve logic is exercised directly with fake `xbmc*`):
 
-| Test file                | Covers                                                                  |
-| ------------------------ | ----------------------------------------------------------------------- |
-| `test_bootstrap.py`      | `script.tony7bones.bootstrap` (base Setup + the one-shot orchestration) |
-| `test_video.py`          | `script.tony7bones.video` (Video Add-ons Setup)                         |
-| `test_module.py`         | `script.module.tony7bones` (shared install library)                     |
-| `test_deploy.py`         | `deploy.py` / `release_lib.py` (sandbox end-to-end with a bare remote)  |
-| `test_check_versions.py` | the per-add-on version-bump gate                                        |
-| `test_generate_repo.py`  | the generator (zips, indexes, determinism)                              |
+| Test file                | Covers                                                                                                        |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| `test_bootstrap.py`      | `script.tony7bones.bootstrap` (base Setup + the one-shot orchestration)                                       |
+| `test_video.py`          | `script.tony7bones.video` (Video Add-ons Setup)                                                               |
+| `test_module.py`         | `script.module.tony7bones` (shared install library)                                                           |
+| `test_proxy.py`          | `repository.tony7bones` proxy engine (version math, manifest validators, tag/URL resolution, cache, platform) |
+| `test_deploy.py`         | `deploy.py` / `release_lib.py` (sandbox end-to-end with a bare remote)                                        |
+| `test_check_versions.py` | the per-add-on version-bump gate                                                                              |
+| `test_generate_repo.py`  | the generator (zips, indexes, determinism)                                                                    |
 
 ## Releasing
 
