@@ -310,6 +310,52 @@ def _install_with_deps(addon_id, dialog):
     return _is_installed(addon_id)
 
 
+def _is_android():
+    """True when running on Android (incl. Fire Stick), where the app cannot
+    relaunch itself. Detected the same way as _platform_tag()."""
+    if os.environ.get("ANDROID_ROOT") or os.environ.get("ANDROID_DATA"):
+        return True
+    try:
+        return "android" in os.uname().sysname.lower()
+    except AttributeError:  # Windows
+        return False
+
+
+def _restart_kodi():
+    """Restart Kodi the platform-correct way after setup completes.
+
+    A restart is required so Kodi fully loads every freshly extracted add-on
+    (avoids the Fire Stick end-of-setup freeze where half-registered add-ons
+    leave the UI wedged). The user always chooses Restart now / Later.
+
+    * Desktop (Windows / Linux / macOS): RestartApp() truly cycles the app.
+    * Android / Fire Stick: RestartApp() is unsupported and cannot relaunch the
+      app, so we ask the user to fully close and reopen Kodi, then Quit() on
+      confirmation for a clean exit they relaunch by hand.
+    """
+    if _is_android():
+        if xbmcgui.Dialog().yesno(
+            "Tony.7.Bones Setup",
+            "Setup is complete. Kodi must fully close and reopen to finish.\n\n"
+            "Close Kodi now? After it closes, open it again from your home "
+            "screen to finish setup.",
+            yeslabel="Close now",
+            nolabel="Later",
+        ):
+            xbmc.log("[tony7bones.bootstrap] restart: Android Quit()", xbmc.LOGINFO)
+            xbmc.executebuiltin("Quit()")
+        return
+
+    if xbmcgui.Dialog().yesno(
+        "Tony.7.Bones Setup",
+        "Setup is complete. Kodi needs to restart to finish.\n\nRestart now?",
+        yeslabel="Restart now",
+        nolabel="Later",
+    ):
+        xbmc.log("[tony7bones.bootstrap] restart: RestartApp()", xbmc.LOGINFO)
+        xbmc.executebuiltin("RestartApp()")
+
+
 def run():
     dialog = xbmcgui.DialogProgress()
     dialog.create("Tony.7.Bones Setup", "Starting setup...")
@@ -364,6 +410,9 @@ def run():
         f"Apps: {app_ok}/{len(ADDONS)}\n"
         "Open Add-ons to finish any remaining setup.",
     )
+    # A restart finalises the freshly extracted add-ons. Platform-correct and
+    # prompt-driven so it never freezes (the Fire Stick end-of-setup fix).
+    _restart_kodi()
 
 
 if __name__ == "__main__":

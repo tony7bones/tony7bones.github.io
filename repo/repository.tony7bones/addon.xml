@@ -10,7 +10,6 @@
             <datadir>http://127.0.0.1:61234/</datadir>
         </dir>
     </extension>
-    <extension point="xbmc.python.script" library="default.py"/>
     <extension point="xbmc.service" library="service.py"/>
     <extension point="xbmc.addon.metadata">
         <platform>all</platform>
@@ -23,6 +22,7 @@ v1.0.8: Rename repository to Tony.7.Bones Repo
         </news>
         <assets>
             <icon>icon.png</icon>
+            <fanart>fanart.jpg</fanart>
         </assets>
     </extension>
 </addon>

@@ -62,7 +62,7 @@ def test_addon_name_is_branded():
 
 def test_version_bumped_past_old():
     v = _addon_root().get("version")
-    assert rl.is_greater(v, "1.0.14"), f"version {v} must exceed the old 1.0.14"
+    assert rl.is_greater(v, "1.0.17"), f"version {v} must exceed the old 1.0.17"
 
 
 # --------------------------------------------------------------------------- #
@@ -191,6 +191,36 @@ def test_modv2_patch_is_host_provided():
 
 
 # --------------------------------------------------------------------------- #
+# End-of-setup restart flow (the Fire Stick end-freeze fix)
+# --------------------------------------------------------------------------- #
+def test_restart_flow_present_and_prompted():
+    """After the success summary the script must offer a platform-correct
+    restart via a yes/no prompt — never a silent or forced restart."""
+    src = DEFAULT_PY.read_text()
+    assert "_restart_kodi" in src, "restart helper must exist"
+    assert "_restart_kodi()" in src, "restart helper must be invoked in run()"
+    assert "yesno(" in src, "the restart must be user-confirmed (yesno)"
+
+
+def test_restart_is_platform_correct():
+    """Desktop uses RestartApp(); Android (which can't relaunch) uses Quit()
+    after telling the user to reopen Kodi by hand."""
+    src = DEFAULT_PY.read_text()
+    assert "RestartApp()" in src, "desktop restart must use RestartApp()"
+    assert "_is_android" in src, "must branch on Android (no RestartApp there)"
+    assert "Quit()" in src, "Android path must Quit() so the user can reopen"
+
+
+def test_restart_comes_after_success_summary():
+    """The restart prompt must follow the counts dialog, not replace it."""
+    src = DEFAULT_PY.read_text()
+    ok_pos = src.rfind("Open Add-ons to finish")
+    restart_pos = src.rfind("_restart_kodi()")
+    assert ok_pos != -1 and restart_pos != -1
+    assert restart_pos > ok_pos, "restart prompt must come after the summary dialog"
+
+
+# --------------------------------------------------------------------------- #
 # Runtime coverage — import default.py under mocked Kodi APIs and run it
 # --------------------------------------------------------------------------- #
 import gzip as _gzip  # noqa: E402
@@ -307,6 +337,11 @@ def boot(tmp_path, monkeypatch):
     class _Dialog:
         def ok(self, title, msg):
             state["ok"].append((title, msg))
+
+        def yesno(self, title, msg, **kwargs):
+            # Record the restart prompt; decline so run() never restarts in tests.
+            state.setdefault("yesno", []).append((title, msg))
+            return False
 
     xbmcgui.DialogProgress = _DP
     xbmcgui.Dialog = _Dialog
