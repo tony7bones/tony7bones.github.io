@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="script.tony7bones.bootstrap"
        name="Tony 7 Bones Setup"
-       version="1.0.10"
+       version="1.0.11"
        provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
@@ -16,6 +16,6 @@
     <license>GPL-2.0-or-later</license>
     <summary lang="en_GB">Tony 7 Bones Kodi Setup</summary>
     <description lang="en_GB">Installs repositories and add-ons for a personal Kodi build.</description>
-    <news>v1.0.10: Name reverted to "Tony 7 Bones Setup". Display-name labels removed (installs by add-on id only). Apps now install prompt-free via direct extract + dependency resolution — no InstallAddon dialogs.</news>
+    <news>v1.0.11: Resolve shared modules (script.module.requests, etc.) from the Kodi official repo first, so the Kodi-compatible version wins over any stale copy in a third-party repo.</news>
   </extension>
 </addon>

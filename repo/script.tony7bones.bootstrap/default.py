@@ -264,7 +264,9 @@ def run():
     # 4. build the add-on index and direct-extract each app + its dependencies
     step += 1
     dialog.update(int(step / total * 100), "Resolving add-ons...")
-    index = _build_index(repo_ids + [KODI_REPO])
+    # Kodi official repo FIRST so its Kodi-matched versions of shared modules
+    # (script.module.requests, etc.) win over any older copy in a third-party repo.
+    index = _build_index([KODI_REPO] + repo_ids)
     done, failed = set(), set()
     for addon_id in ADDONS:
         step += 1

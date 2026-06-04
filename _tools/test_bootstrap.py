@@ -490,6 +490,18 @@ def test_download_text_error_returns_empty(boot, monkeypatch):
     assert boot.mod._download_text("https://x/addons.xml") == ""
 
 
+def test_build_index_first_repo_wins_on_duplicate(boot, monkeypatch):
+    """Official repo (passed first) must win for a shared id like requests."""
+    feeds = {
+        "https://official": '<addons><addon id="script.module.requests" version="2.31.0"/></addons>',
+        "https://stale": '<addons><addon id="script.module.requests" version="1.0.0"/></addons>',
+    }
+    monkeypatch.setattr(boot.mod, "_repo_dirs", lambda rid: [(rid, rid)])
+    monkeypatch.setattr(boot.mod, "_download_text", lambda url: feeds[url])
+    index = boot.mod._build_index(["https://official", "https://stale"])
+    assert index["script.module.requests"] == ("2.31.0", "https://official", [])
+
+
 def test_install_tree_reports_unresolved(boot, monkeypatch):
     monkeypatch.setattr(boot.mod, "_extract_zip", lambda *a: True)
     done, failed = set(), set()
