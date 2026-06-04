@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="script.tony7bones.video"
        name="Video Add-ons Setup"
-       version="1.0.2"
+       version="1.0.3"
        provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
@@ -32,6 +32,6 @@
     </assets>
     <summary lang="en_GB">Install video add-ons from the Tony.7.Bones repos</summary>
     <description lang="en_GB">Pick which video add-ons to install (POV, The Loop, Sports HD, Umbrella). Each is installed with its full dependency closure, resolved live from the repositories already on this box, then enabled so it works straight away. Run the main Tony.7.Bones Setup first so the source repositories are present.</description>
-    <news>Fix POV and The Loop showing an empty menu / refusing to open. Installed add-ons are now stamped with their source repository (origin), the source repos are enabled, and Kodi restarts to finish — so the apps load their language strings and pass their origin check and actually browse content. Still skips optional dependencies (no Google Drive / cloud resolvers).</news>
+    <news>The Loop no longer installs Dailymotion. Dailymotion is dropped from The Loop's dependency closure and The Loop's manifest is patched so that import is optional — The Loop enables and browses normally with Dailymotion absent and no required-dependency lock. Only The Loop is affected (POV and Sports HD are unchanged). Note: a future Loop update can restore the Dailymotion requirement; re-run this setup to clear it again. Still stamps origins and skips optional dependencies (no Google Drive / cloud resolvers).</news>
   </extension>
 </addon>

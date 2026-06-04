@@ -544,6 +544,187 @@ def test_resolve_closure_skips_optional_dep(vid):
     assert not missing
 
 
+# --------------------------------------------------------------------------- #
+# Drop Dailymotion from The Loop (exclude from install + patch manifest)
+# --------------------------------------------------------------------------- #
+def test_exclude_for_app_drops_dailymotion_from_loop():
+    """The exclusion map must drop plugin.video.dailymotion_com for The Loop and
+    nothing else — POV / Sports HD / Umbrella keep their full closure."""
+    exclude = _assign("EXCLUDE_FOR_APP")
+    assert exclude.get("plugin.video.the-loop") == {"plugin.video.dailymotion_com"}
+    # Only The Loop is special-cased.
+    assert set(exclude) == {"plugin.video.the-loop"}
+
+
+def test_excluded_ids_flatten(vid):
+    """_EXCLUDED_IDS is the flat union of every excluded dep."""
+    assert "plugin.video.dailymotion_com" in vid.mod._EXCLUDED_IDS
+
+
+def test_resolve_closure_excludes_dailymotion(vid):
+    """Resolving The Loop must NOT pull plugin.video.dailymotion_com even though
+    The Loop declares it as a REQUIRED import — but every other required dep
+    (looptv, resolveurl, requests) is still resolved."""
+    raw = (
+        '<?xml version="1.0"?><addons>'
+        '<addon id="plugin.video.the-loop" version="7.9"><requires>'
+        '<import addon="plugin.video.looptv" version="1.0.0"/>'
+        '<import addon="script.module.resolveurl" version="1.0.0"/>'
+        '<import addon="plugin.video.dailymotion_com" version="1.0.0"/>'
+        "</requires></addon>"
+        '<addon id="plugin.video.looptv" version="1.0.0"><requires/></addon>'
+        '<addon id="script.module.resolveurl" version="5.1.0"><requires>'
+        '<import addon="script.module.requests" version="1.0.0"/>'
+        "</requires></addon>"
+        '<addon id="script.module.requests" version="2.31.0"><requires/></addon>'
+        # present in the repo (Dailymotion is on the official Kodi mirror) — must
+        # still be skipped because it is excluded for The Loop.
+        '<addon id="plugin.video.dailymotion_com" version="2.4.4"><requires/></addon>'
+        "</addons>"
+    ).encode("utf-8")
+    idx = vid.mod._parse_index(raw, "https://fake.repo/zips", origin="repository.loop")
+    closure, missing = vid.mod._resolve_closure(["plugin.video.the-loop"], idx)
+    ids = [aid for aid, _url, _origin in closure]
+    assert "plugin.video.the-loop" in ids
+    assert "plugin.video.looptv" in ids, "other required deps must stay"
+    assert "script.module.resolveurl" in ids
+    assert "script.module.requests" in ids
+    assert "plugin.video.dailymotion_com" not in ids, "Dailymotion must be excluded"
+    # Excluded ids are intentionally dropped, NOT reported as missing.
+    assert "plugin.video.dailymotion_com" not in missing
+    assert not missing
+
+
+def test_other_apps_not_affected_by_exclusion(vid):
+    """POV's closure is untouched by the Loop-only Dailymotion exclusion."""
+    raw = (
+        '<?xml version="1.0"?><addons>'
+        '<addon id="plugin.video.pov" version="6.0"><requires>'
+        '<import addon="script.module.requests" version="1.0.0"/>'
+        "</requires></addon>"
+        '<addon id="script.module.requests" version="2.31.0"><requires/></addon>'
+        "</addons>"
+    ).encode("utf-8")
+    idx = vid.mod._parse_index(raw, "https://fake.repo/zips", origin="repository.pov")
+    closure, missing = vid.mod._resolve_closure(["plugin.video.pov"], idx)
+    ids = [aid for aid, _url, _origin in closure]
+    assert ids == ["script.module.requests", "plugin.video.pov"] or set(ids) == {
+        "script.module.requests",
+        "plugin.video.pov",
+    }
+    assert not missing
+
+
+_LOOP_MANIFEST = (
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+    '<addon id="plugin.video.the-loop" name="The Loop" version="7.9">\n'
+    "  <requires>\n"
+    '    <import addon="xbmc.python" version="3.0.0" />\n'
+    '    <import addon="script.module.resolveurl"/>\n'
+    '    <import addon="script.module.pycryptodome" optional="true" />\n'
+    '    <import addon="plugin.video.looptv" />\n'
+    '    <import addon="plugin.video.dailymotion_com" />    \n'
+    "  </requires>\n"
+    '  <extension point="xbmc.python.pluginsource" library="default.py" />\n'
+    "</addon>\n"
+)
+
+
+def test_patch_optional_imports_marks_dailymotion_optional(vid):
+    """The Loop's dailymotion import becomes optional; every other line is kept."""
+    app = vid.addons / "plugin.video.the-loop"
+    app.mkdir()
+    (app / "addon.xml").write_text(_LOOP_MANIFEST)
+    vid.mod._patch_optional_imports(
+        "plugin.video.the-loop", {"plugin.video.dailymotion_com"}
+    )
+    out = (app / "addon.xml").read_text()
+    # The dailymotion import is now optional.
+    dm = [ln for ln in out.splitlines() if "dailymotion" in ln][0]
+    assert 'optional="true"' in dm, dm
+    # Parses as valid XML and Kodi sees the import as optional.
+    root = ET.fromstring(out)
+    imports = {
+        i.get("addon"): (i.get("optional") or "").lower()
+        for i in root.findall("requires/import")
+    }
+    assert imports["plugin.video.dailymotion_com"] == "true"
+    # Untouched: required imports stay required, the pre-existing optional stays.
+    assert imports["script.module.resolveurl"] != "true"
+    assert imports["plugin.video.looptv"] != "true"
+    assert imports["script.module.pycryptodome"] == "true"
+    assert imports["xbmc.python"] != "true"
+
+
+def test_patch_optional_imports_idempotent(vid):
+    """Running the patch twice is a no-op the second time (already optional)."""
+    app = vid.addons / "plugin.video.the-loop"
+    app.mkdir()
+    (app / "addon.xml").write_text(_LOOP_MANIFEST)
+    vid.mod._patch_optional_imports(
+        "plugin.video.the-loop", {"plugin.video.dailymotion_com"}
+    )
+    once = (app / "addon.xml").read_text()
+    vid.mod._patch_optional_imports(
+        "plugin.video.the-loop", {"plugin.video.dailymotion_com"}
+    )
+    twice = (app / "addon.xml").read_text()
+    assert once == twice, "second patch must not change the file"
+    # Exactly one optional="true" on the dailymotion import (no doubling).
+    dm = [ln for ln in twice.splitlines() if "dailymotion" in ln][0]
+    assert dm.count('optional="true"') == 1
+
+
+def test_patch_optional_imports_only_touches_named_app(vid):
+    """The patch edits only the named app's addon.xml — POV is left alone."""
+    pov = vid.addons / "plugin.video.pov"
+    pov.mkdir()
+    pov_xml = (
+        '<addon id="plugin.video.pov"><requires>'
+        '<import addon="plugin.video.dailymotion_com" />'
+        "</requires></addon>"
+    )
+    (pov / "addon.xml").write_text(pov_xml)
+    vid.mod._patch_optional_imports(
+        "plugin.video.the-loop", {"plugin.video.dailymotion_com"}
+    )
+    # POV untouched even though it (hypothetically) names dailymotion.
+    assert (pov / "addon.xml").read_text() == pov_xml
+
+
+def test_patch_optional_imports_missing_file_is_noop(vid):
+    """No addon.xml → no raise, no file created."""
+    vid.mod._patch_optional_imports(
+        "plugin.video.the-loop", {"plugin.video.dailymotion_com"}
+    )  # must not raise
+    assert not (vid.addons / "plugin.video.the-loop").exists()
+
+
+def test_install_closure_patches_loop_when_present(vid, monkeypatch):
+    """_install_closure calls the manifest patch for The Loop when it is in the
+    closure, and not for an app that is not."""
+    calls = []
+    monkeypatch.setattr(
+        vid.mod, "_patch_optional_imports", lambda app, ex: calls.append((app, ex))
+    )
+    closure = [
+        ("plugin.video.looptv", "https://r/looptv.zip", "repository.loop"),
+        ("plugin.video.the-loop", "https://r/the-loop.zip", "repository.loop"),
+    ]
+    vid.mod._install_closure(closure, None)
+    assert ("plugin.video.the-loop", {"plugin.video.dailymotion_com"}) in calls
+
+
+def test_install_closure_no_patch_without_loop(vid, monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        vid.mod, "_patch_optional_imports", lambda app, ex: calls.append(app)
+    )
+    closure = [("plugin.video.pov", "https://r/pov.zip", "repository.pov")]
+    vid.mod._install_closure(closure, None)
+    assert calls == [], "no Loop in closure → no manifest patch"
+
+
 def test_resolve_closure_reports_missing(vid):
     indexes = vid.mod._build_index(None)
     closure, missing = vid.mod._resolve_closure(["plugin.video.nope"], indexes)
