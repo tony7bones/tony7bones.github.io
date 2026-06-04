@@ -61,7 +61,7 @@ def test_addon_name_is_original():
 
 def test_version_bumped_past_old():
     v = _addon_root().get("version")
-    assert rl.is_greater(v, "1.0.11"), f"version {v} must exceed the old 1.0.11"
+    assert rl.is_greater(v, "1.0.12"), f"version {v} must exceed the old 1.0.12"
 
 
 # --------------------------------------------------------------------------- #
@@ -236,7 +236,7 @@ def boot(tmp_path, monkeypatch):
             return False
 
         def close(self):
-            pass
+            state["builtins"].append("DialogProgress.close")
 
     class _Dialog:
         def ok(self, title, msg):
@@ -320,16 +320,14 @@ def test_extract_zip_failure(boot, monkeypatch):
 
 # --- interactive installer units ------------------------------------------- #
 def test_install_interactive_uses_installaddon_builtin(boot):
-    dp = boot.mod.xbmcgui.DialogProgress()
-    assert boot.mod._install_interactive("script.ezmaintenanceplus", dp, 50)
+    assert boot.mod._install_interactive("script.ezmaintenanceplus")
     assert "InstallAddon(script.ezmaintenanceplus)" in boot.state["builtins"]
     assert "script.ezmaintenanceplus" in boot.state["installed"]
 
 
 def test_install_interactive_skips_already_installed(boot):
     boot.state["installed"].add("script.realdebrid")
-    dp = boot.mod.xbmcgui.DialogProgress()
-    assert boot.mod._install_interactive("script.realdebrid", dp, 50)
+    assert boot.mod._install_interactive("script.realdebrid")
     # already present → no InstallAddon prompt fired
     assert not any(b.startswith("InstallAddon(") for b in boot.state["builtins"])
 
@@ -337,8 +335,7 @@ def test_install_interactive_skips_already_installed(boot):
 def test_install_interactive_reports_failure_when_absent(boot, monkeypatch):
     # builtin that does NOT register the add-on → install never completes
     monkeypatch.setattr(boot.mod.xbmc, "executebuiltin", lambda *a, **k: None)
-    dp = boot.mod.xbmcgui.DialogProgress()
-    assert boot.mod._install_interactive("script.does.not.exist", dp, 50) is False
+    assert boot.mod._install_interactive("script.does.not.exist") is False
 
 
 def test_run_installs_apps_via_repo_installer(boot):
@@ -351,6 +348,12 @@ def test_run_installs_apps_via_repo_installer(boot):
     for aid in boot.mod.ADDONS:
         assert f"InstallAddon({aid})" in s["builtins"]
         assert aid in s["installed"]
+    # the progress dialog is closed BEFORE any InstallAddon — otherwise Kodi's
+    # installer dialog deadlocks behind it (the "Registering add-ons" freeze).
+    first_install = next(
+        i for i, b in enumerate(s["builtins"]) if b.startswith("InstallAddon(")
+    )
+    assert "DialogProgress.close" in s["builtins"][:first_install]
     # first-party patch still direct-extracted + enabled
     assert "script.tony7bones.modv2.patch" in s["installed"]
     assert s["ok"], "no completion dialog shown"

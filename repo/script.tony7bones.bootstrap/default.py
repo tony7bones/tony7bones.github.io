@@ -123,17 +123,18 @@ def _enable(addon_id):
     xbmc.sleep(200)
 
 
-def _install_interactive(addon_id, dialog, pct):
+def _install_interactive(addon_id):
     """Install an add-on via Kodi's own repo installer.
 
     InstallAddon resolves the dependency closure from the enabled repos and
-    registers everything the way Kodi expects, so the app actually runs. The
-    builtin is called with wait=True; afterwards we poll briefly for the add-on
-    to appear. Returns True once it is installed.
+    registers everything the way Kodi expects, so the app actually runs. It
+    shows Kodi's own install/dependency dialog, so NO DialogProgress may be open
+    when this is called — a foreground progress dialog deadlocks the installer.
+    The builtin is called with wait=True; afterwards we poll briefly for the
+    add-on to appear. Returns True once it is installed.
     """
     if _is_installed(addon_id):
         return True
-    dialog.update(pct, f"Installing {addon_id}")
     xbmc.executebuiltin(f"InstallAddon({addon_id})", True)
     for _ in range(30):
         if _is_installed(addon_id):
@@ -148,7 +149,7 @@ def run():
 
     _set_unknown_sources()
 
-    total = len(REPO_ZIPS) + len(FIRST_PARTY) + 2 + len(ADDONS)
+    total = len(REPO_ZIPS) + len(FIRST_PARTY) + 1
     step = 0
     repo_ok = fp_ok = app_ok = 0
 
@@ -180,22 +181,20 @@ def run():
         _enable(rid)
     for addon_id in FIRST_PARTY:
         _enable(addon_id)
-
-    step += 1
-    dialog.update(int(step / total * 100), "Refreshing repositories...")
     xbmc.executebuiltin("UpdateAddonRepos()")
     xbmc.sleep(8000)
 
-    # 4. install each app through Kodi's repo installer, one at a time
+    # 4. Close the progress dialog BEFORE installing apps — Kodi's interactive
+    #    installer shows its own dialogs, and a foreground DialogProgress
+    #    deadlocks it (the symptom: a freeze on "Registering add-ons").
+    dialog.close()
+
+    # 5. install each app through Kodi's repo installer, one at a time
     for addon_id in ADDONS:
-        step += 1
-        if _install_interactive(addon_id, dialog, int(step / total * 100)):
+        if _install_interactive(addon_id):
             _enable(addon_id)
             app_ok += 1
-        if dialog.iscanceled():
-            return dialog.close()
 
-    dialog.close()
     xbmcgui.Dialog().ok(
         "Tony 7 Bones Setup",
         f"Repos: {repo_ok}/{len(REPO_ZIPS)}\n"

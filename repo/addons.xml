@@ -27,7 +27,7 @@ v1.0.7: Repository listed at the root only (removed redundant repo/repositories/
             </assets>
         </extension>
     </addon>
-    <addon id="script.tony7bones.bootstrap" name="Tony 7 Bones Setup" version="1.0.12" provider-name="tony7bones">
+    <addon id="script.tony7bones.bootstrap" name="Tony 7 Bones Setup" version="1.0.13" provider-name="tony7bones">
         <requires>
             <import addon="xbmc.python" version="3.0.0" />
             <import addon="xbmc.addon" version="12.0.0" />
@@ -41,7 +41,7 @@ v1.0.7: Repository listed at the root only (removed redundant repo/repositories/
             <license>GPL-2.0-or-later</license>
             <summary lang="en_GB">Tony 7 Bones Kodi Setup</summary>
             <description lang="en_GB">Installs repositories and add-ons for a personal Kodi build.</description>
-            <news>v1.0.12: Install apps through Kodi's own repo installer (InstallAddon) instead of direct-extracting them, so add-ons register and actually run. Scope narrowed to EZ Maintenance+ and RealDebrid from the peno64 repo while the interactive flow is validated.</news>
+            <news>v1.0.13: Fix freeze at "Registering add-ons" — close the progress dialog before the interactive installs so Kodi's own InstallAddon dialog is no longer deadlocked behind it.</news>
         </extension>
     </addon>
     <addon id="script.tony7bones.modv2.patch" name="Estuary MOD V2 Patch" version="1.0.3" provider-name="tony7bones">
