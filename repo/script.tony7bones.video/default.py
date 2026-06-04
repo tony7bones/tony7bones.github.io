@@ -72,34 +72,24 @@ APPS = [
 # Indexes of APPS that start checked. POV, The Loop, Sports HD on; Umbrella off.
 PRESELECT = [0, 1, 2]
 
-# Per-app dependency exclusions: required imports we deliberately do NOT install,
-# keyed by the app that pulls them. The Loop declares plugin.video.dailymotion_com
-# as a REQUIRED import, but nobody here uses Dailymotion and it cannot be cleanly
-# uninstalled while The Loop marks it required (Kodi shows it as a needed dep and
-# refuses removal). We (a) drop it from the install closure so it is never put on
-# the box, and (b) patch The Loop's extracted addon.xml to mark that one import
-# optional="true" (see _patch_optional_imports) so Kodi treats it as on-demand —
-# The Loop then enables and browses with Dailymotion absent and no "required"
-# lock. Verified on Kodi 21 Omega: with the import optional and the add-on
-# missing, The Loop is enabled, not broken, and browses normally.
+# Add-ons to INSTALL normally but DISABLE once the run's installs are done.
+# The Loop declares plugin.video.dailymotion_com as a REQUIRED import, but nobody
+# here uses Dailymotion. Rather than exclude it (which leaves The Loop's required
+# dependency unsatisfied — a "required" lock that blocks clean removal and that a
+# Loop manifest patch only undoes until the next Loop update overwrites it), we
+# install Dailymotion as the normal required dep so The Loop's dependency check is
+# satisfied (no broken flag, no lock), then DISABLE it at the end of the run so it
+# never actually runs. A disabled-but-installed add-on stays satisfied as far as
+# The Loop is concerned and SURVIVES Loop auto-updates: the upstream manifest can
+# come and go, but Dailymotion remains installed (satisfying the require) and
+# disabled (never invoked) without any per-update re-patching.
 #
-# Scope guard: this map ONLY ever affects the listed app's own addon.xml. POV,
-# Sports HD and Umbrella are untouched, and only the dailymotion import line in
-# plugin.video.the-loop is rewritten — every other import is left exactly as is.
-#
-# Durability (honest): the patch lives in The Loop's INSTALLED addon.xml. When
-# The Loop auto-updates from repository.loop, Kodi extracts the new zip over the
-# add-on dir, overwriting our patch with the upstream manifest (Dailymotion
-# required again) and — because Dailymotion is available from the official Kodi
-# repo — re-pulls and re-locks it. This setup is re-runnable, so re-running it
-# restores the clean state. It is NOT a permanent removal; it is a clean install
-# that the next Loop *version* update will undo until this is run again.
-EXCLUDE_FOR_APP = {
-    "plugin.video.the-loop": {"plugin.video.dailymotion_com"},
-}
-
-# Flat set of every excluded id (any value above), for the closure walk.
-_EXCLUDED_IDS = {dep for deps in EXCLUDE_FOR_APP.values() for dep in deps}
+# Scope guard: only ids listed here are disabled, and only if they actually ended
+# up installed in this run (e.g. Dailymotion is present only when The Loop was
+# selected). Everything else — The Loop itself, POV, Sports HD, Umbrella — stays
+# enabled. Generic by design so more ids can be added later; for now it is just
+# Dailymotion.
+DISABLE_AFTER_INSTALL = {"plugin.video.dailymotion_com"}
 
 # The official Kodi repo index. Included LAST as a source for shared modules so a
 # script.module.* dep resolves to the Kodi-matched build when a third-party repo
@@ -380,24 +370,22 @@ def _resolve_closure(targets, index):
     Returns an ordered list of (addon_id, zip_url, origin) with dependencies
     BEFORE the add-ons that need them, so extraction order is safe. System
     imports (xbmc.* / kodi.*) are skipped. An add-on already installed on the
-    box is treated as satisfied (its subtree is not re-resolved). Ids in
-    _EXCLUDED_IDS (e.g. plugin.video.dailymotion_com, the unwanted required dep
-    of The Loop) are never resolved or installed — The Loop's manifest is patched
-    to mark that import optional so it enables without them (see EXCLUDE_FOR_APP
-    and _patch_optional_imports). Also returns the set of ids that could not be
-    resolved from any installed repo.
+    box is treated as satisfied (its subtree is not re-resolved). Optional
+    imports never enter the closure (they are dropped at parse time, see
+    _parse_index). Also returns the set of ids that could not be resolved from
+    any installed repo.
+
+    Note: required imports we do not want to RUN (e.g.
+    plugin.video.dailymotion_com for The Loop) are still installed here so the
+    requiring add-on's dependency check is satisfied — they are disabled after
+    install instead of excluded (see DISABLE_AFTER_INSTALL / _disable_after_install).
     """
     resolved = {}  # id -> (zip_url, origin)
     order = []
     missing = set()
 
     def visit(aid):
-        if (
-            aid in resolved
-            or aid in _EXCLUDED_IDS
-            or aid.startswith(_SYSTEM_PREFIXES)
-            or _is_installed(aid)
-        ):
+        if aid in resolved or aid.startswith(_SYSTEM_PREFIXES) or _is_installed(aid):
             return
         entry = index.get(aid)
         if entry is None:
@@ -519,87 +507,69 @@ def _set_origins(origins):
         _log(f"set_origins failed (non-fatal): {e}", xbmc.LOGERROR)
 
 
-def _patch_optional_imports(app_id, exclude_ids):
-    """Rewrite an installed app's addon.xml to mark each import in `exclude_ids`
-    optional="true", so Kodi no longer treats it as a required dependency.
+def _disable(addon_id):
+    """Disable an installed add-on via JSON-RPC (enabled=false).
 
-    The Loop declares plugin.video.dailymotion_com as a REQUIRED import. We do
-    not install it (see EXCLUDE_FOR_APP / _resolve_closure), and Kodi 21 Omega
-    will still enable The Loop with it absent — but it stays listed as a required
-    dependency, which blocks a clean uninstall and re-pulls it on update. Marking
-    that single import optional="true" makes Kodi treat it as on-demand: The Loop
-    enables and browses with Dailymotion absent and no "required" lock.
-
-    Surgical by design: we edit ONLY `app_id`'s own addon.xml, and within it only
-    the <import addon="..."> lines whose addon is in `exclude_ids` and that are
-    not already optional — every other import (resolveurl, looptv, jetextractors,
-    the real optional ones, etc.) is left byte-for-byte untouched. Done with a
-    line-anchored regex rather than an XML round-trip so we cannot accidentally
-    reformat or drop anything else in the file. Never raises: a failed patch must
-    not abort the run (The Loop still enables; the user can re-run).
-
-    NOTE (durability): this patches the INSTALLED manifest. The Loop's next
-    *version* update overwrites the whole add-on dir (manifest included) with the
-    upstream one, restoring the required Dailymotion import; re-run this setup to
-    reapply. See EXCLUDE_FOR_APP for the full tradeoff.
+    The add-on stays installed/registered — Kodi keeps it as a satisfied
+    dependency for anything that requires it — but it is never invoked.
     """
-    if not exclude_ids:
-        return
-    try:
-        import re  # noqa: PLC0415 - only needed here
+    xbmc.executeJSONRPC(
+        json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "method": "Addons.SetAddonEnabled",
+                "params": {"addonid": addon_id, "enabled": False},
+                "id": 1,
+            }
+        )
+    )
+    xbmc.sleep(200)
 
-        axml = xbmcvfs.translatePath("special://home/addons/" + app_id + "/addon.xml")
-        if not os.path.isfile(axml):
-            return
-        with open(axml, encoding="utf-8") as f:
-            text = f.read()
-        changed = False
-        for dep in exclude_ids:
-            # Match this dep's <import ...> tag only; skip it if already optional.
-            pattern = re.compile(
-                r'<import\s+addon="' + re.escape(dep) + r'"((?:(?!/?>).)*?)\s*/?>'
-            )
 
-            def _sub(m, _dep=dep):
-                nonlocal changed
-                attrs = m.group(1)
-                if "optional" in attrs:
-                    return m.group(0)  # already optional — leave untouched
-                changed = True
-                return f'<import addon="{_dep}"{attrs} optional="true" />'
+def _disable_after_install(installed_ids):
+    """Disable every id in DISABLE_AFTER_INSTALL that actually got installed.
 
-            text = pattern.sub(_sub, text)
-        if changed:
-            with open(axml, "w", encoding="utf-8") as f:
-                f.write(text)
-            _log(
-                f"patched {app_id}: marked {sorted(exclude_ids)} optional",
-                xbmc.LOGINFO,
-            )
-    except Exception as e:  # noqa: BLE001 - patch must not abort the run
-        _log(f"patch_optional_imports failed (non-fatal): {e}", xbmc.LOGERROR)
+    `installed_ids` is the set of ids present after the closure was extracted +
+    enabled. Only ids that ended up installed are disabled (e.g. Dailymotion is
+    present only when The Loop was selected), so a smaller selection never tries
+    to disable something that was never put on the box.
+
+    Why disable instead of exclude: the disabled add-on remains installed, which
+    satisfies the requiring add-on's REQUIRED dependency check (The Loop sees its
+    Dailymotion import as present and resolved — no broken flag, no "required"
+    lock) while the add-on itself never runs. This survives a Loop auto-update:
+    the upstream manifest can change, but Dailymotion stays installed-and-disabled
+    with no per-update re-patching needed.
+
+    Never raises: a failure here must not abort the run (everything is already
+    installed and enabled; only the optional disable step is best-effort).
+    """
+    for aid in sorted(DISABLE_AFTER_INSTALL):
+        if aid not in installed_ids:
+            continue
+        try:
+            _disable(aid)
+            _log(f"disabled after install: {aid}", xbmc.LOGINFO)
+        except Exception as e:  # noqa: BLE001 - one bad disable must not abort
+            _log(f"disable_after_install failed for {aid}: {e}", xbmc.LOGERROR)
 
 
 def _install_closure(closure, dialog):
-    """Extract every zip in `closure` (deps first), patch any app whose unwanted
-    required deps we excluded, rescan, enable each, then stamp every add-on's
-    origin with its source repo.
+    """Extract every zip in `closure` (deps first), rescan, enable each, stamp
+    every add-on's origin with its source repo, then disable any install-then-
+    disable ids that ended up installed.
 
     `closure` is a list of (addon_id, zip_url, origin). Returns the count of
     closure ids that report installed afterwards.
+
+    Order: extract -> enable all -> stamp origins -> disable the disable-list.
+    The requiring apps (The Loop, POV, Sports HD, Umbrella) stay enabled; only
+    ids in DISABLE_AFTER_INSTALL (Dailymotion) are disabled at the end.
     """
     for aid, url, _origin in closure:
         if _is_installed(aid):
             continue
         _extract_zip(url, dialog, 100)
-    # For every app that pulls an excluded required dep (e.g. The Loop ->
-    # Dailymotion), mark that import optional in the freshly extracted addon.xml
-    # BEFORE the rescan, so Kodi reads the patched manifest and enables the app
-    # without treating the absent dep as required.
-    closure_ids = {aid for aid, _u, _o in closure}
-    for app_id, exclude_ids in EXCLUDE_FOR_APP.items():
-        if app_id in closure_ids:
-            _patch_optional_imports(app_id, exclude_ids)
     # Rescan so Kodi sees the freshly extracted dirs, then enable the closure
     # dependencies-first so each app's imports are satisfied when enabled.
     xbmc.executebuiltin("UpdateLocalAddons()")
@@ -608,6 +578,11 @@ def _install_closure(closure, dialog):
         _enable(aid)
     # Stamp origins so the apps are not treated as "unknown source" orphans.
     _set_origins({aid: origin for aid, _url, origin in closure})
+    # Now that everything is extracted, enabled and origin-stamped, disable the
+    # install-then-disable ids (e.g. Dailymotion) that actually got installed —
+    # installed (so The Loop's required dep is satisfied) but never run.
+    installed_ids = {aid for aid, _url, _origin in closure if _is_installed(aid)}
+    _disable_after_install(installed_ids)
     return sum(1 for aid, _url, _origin in closure if _is_installed(aid))
 
 
