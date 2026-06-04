@@ -55,4 +55,24 @@ v1.0.9: Repo icon + fanart (Kodi diamond); repo is now a pure repository, no lon
             <platform>all</platform>
         </extension>
     </addon>
+    <addon id="script.tony7bones.video" name="Video Add-ons Setup" version="1.0.0" provider-name="tony7bones">
+        <requires>
+            <import addon="xbmc.python" version="3.0.0" />
+            <import addon="xbmc.addon" version="12.0.0" />
+        </requires>
+        <extension point="xbmc.python.script" library="default.py">
+            <provides>executable</provides>
+        </extension>
+        <extension point="xbmc.addon.metadata">
+            <platform>all</platform>
+            <language />
+            <license>GPL-2.0-or-later</license>
+            <assets>
+                <icon>icon.png</icon>
+            </assets>
+            <summary lang="en_GB">Install video add-ons from the Tony.7.Bones repos</summary>
+            <description lang="en_GB">Pick which video add-ons to install (POV, The Loop, Sports HD, Umbrella). Each is installed with its full dependency closure, resolved live from the repositories already on this box, then enabled so it works straight away. Run the main Tony.7.Bones Setup first so the source repositories are present.</description>
+            <news>Initial release: multiselect picker for POV, The Loop, Sports HD and Umbrella. Dependencies are resolved from the installed repositories and the official Kodi repo, installed prompt-free, and enabled. The picker self-removes after a successful run and can be reinstalled from the repo.</news>
+        </extension>
+    </addon>
 </addons>

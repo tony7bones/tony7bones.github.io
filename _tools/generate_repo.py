@@ -133,7 +133,11 @@ def _zip_is_stale(addon_dir: str, zip_path: str) -> bool:
     """Return True if any source file in addon_dir is newer than zip_path."""
     zip_mtime = os.path.getmtime(zip_path)
     root_index = os.path.join(addon_dir, "index.html")
-    for dirpath, _dirs, files in os.walk(addon_dir):
+    for dirpath, dirs, files in os.walk(addon_dir):
+        # __pycache__ is a build artefact (recreated whenever the script is
+        # imported, e.g. by the test suite); it must never affect staleness or
+        # land in the published zip — that would make the zip non-reproducible.
+        dirs[:] = [d for d in dirs if d != "__pycache__"]
         for fname in files:
             if fname.endswith(".zip") or os.path.join(dirpath, fname) == root_index:
                 continue
@@ -169,6 +173,10 @@ def process_addons(scan_dir: str) -> tuple[list[ET.Element], list[str]]:
             # breaks Kodi's version-based auto-upgrade and forces CI to commit.
             members = []
             for dirpath, dirs, files in os.walk(addon_dir):
+                # Drop build artefacts so the zip is reproducible (see
+                # _zip_is_stale): __pycache__ appears whenever default.py is
+                # imported (tests do this) and must never enter the zip.
+                dirs[:] = [d for d in dirs if d != "__pycache__"]
                 dirs.sort()
                 for fname in sorted(files):
                     if fname.endswith(".zip") or (
