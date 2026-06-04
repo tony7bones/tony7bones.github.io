@@ -63,7 +63,7 @@ def test_addon_name_is_branded():
 
 def test_version_bumped_past_old():
     v = _addon_root().get("version")
-    assert rl.is_greater(v, "1.0.21"), f"version {v} must exceed the old 1.0.21"
+    assert rl.is_greater(v, "1.0.22"), f"version {v} must exceed the old 1.0.22"
 
 
 # --------------------------------------------------------------------------- #
@@ -351,8 +351,12 @@ def boot(tmp_path, monkeypatch):
 
     xbmc = types.ModuleType("xbmc")
     xbmc.LOGERROR = 4
+    xbmc.LOGINFO = 1
     xbmc.log = lambda *a, **k: None
     xbmc.sleep = lambda ms: None
+    # Active skin — default to Estuary so _trim_home_menu() is exercised. Tests
+    # that need another skin monkeypatch this.
+    xbmc.getSkinDir = lambda: "skin.estuary"
 
     def _builtin(cmd, wait=False):
         state["builtins"].append(cmd)
@@ -496,8 +500,13 @@ def boot(tmp_path, monkeypatch):
     spec = importlib.util.spec_from_file_location("boot_default", DEFAULT_PY)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)  # run() is __main__-guarded, so this does not run it
+    estuary_settings = profile / "addon_data" / "skin.estuary" / "settings.xml"
     return types.SimpleNamespace(
-        mod=mod, state=state, addons=addons, sources_xml=sources_xml
+        mod=mod,
+        state=state,
+        addons=addons,
+        sources_xml=sources_xml,
+        estuary_settings=estuary_settings,
     )
 
 
@@ -925,3 +934,193 @@ def test_run_adds_file_sources(boot):
     entries = _files_sources(boot)
     assert _HOME in entries
     assert _SRC in entries
+
+
+# --------------------------------------------------------------------------- #
+# Estuary home-menu trim (hide 8 items; keep TV, Add-ons, Favourites, Weather)
+# --------------------------------------------------------------------------- #
+# The eight hide-ids and the four kept-ids, in the exact lowercase form Estuary
+# persists in addon_data/skin.estuary/settings.xml (verified on Kodi 21 Omega).
+_HIDE_IDS = [
+    "homemenunomoviebutton",
+    "homemenunotvshowbutton",
+    "homemenunomusicbutton",
+    "homemenunomusicvideobutton",
+    "homemenunoradiobutton",
+    "homemenunopicturesbutton",
+    "homemenunovideosbutton",
+    "homemenunogamesbutton",
+]
+_KEEP_IDS = [
+    "homemenunotvbutton",
+    "homemenunoprogramsbutton",
+    "homemenunofavbutton",
+    "homemenunoweatherbutton",
+]
+
+
+def _estuary_bools(boot):
+    """Return {id: text} for every <setting> in the Estuary settings.xml."""
+    root = ET.parse(boot.estuary_settings).getroot()
+    return {
+        (s.get("id") or "").lower(): (s.text or "").strip()
+        for s in root.findall("setting")
+    }
+
+
+def test_trim_home_menu_helper_exists_and_wired_before_restart():
+    """The helper must exist and be invoked in run() BEFORE the restart (the
+    restart is what makes Estuary re-read settings.xml)."""
+    src = DEFAULT_PY.read_text()
+    assert "_trim_home_menu" in src, "helper must exist"
+    assert "_trim_home_menu()" in src, "helper must be invoked in run()"
+    trim_pos = src.rfind("_trim_home_menu()")
+    restart_pos = src.rfind("_restart_kodi()")
+    assert trim_pos != -1 and restart_pos != -1
+    assert trim_pos < restart_pos, "_trim_home_menu() must come before the restart"
+
+
+# The eight camel-case ids the skin XML / Skin.SetBool use (the part that
+# survives the restart), and the four kept camel-case ids that must never be set.
+_HIDE_CAMEL = [
+    "HomeMenuNoMovieButton",
+    "HomeMenuNoTVShowButton",
+    "HomeMenuNoMusicButton",
+    "HomeMenuNoMusicVideoButton",
+    "HomeMenuNoRadioButton",
+    "HomeMenuNoPicturesButton",
+    "HomeMenuNoVideosButton",
+    "HomeMenuNoGamesButton",
+]
+_KEEP_CAMEL = [
+    "HomeMenuNoTVButton",
+    "HomeMenuNoProgramsButton",
+    "HomeMenuNoFavButton",
+    "HomeMenuNoWeatherButton",
+]
+
+
+def test_trim_home_menu_uses_setbool_for_active_skin(boot):
+    """It MUST set the live in-memory skin booleans via Skin.SetBool — that is
+    the only mechanism that survives the end-of-setup restart (Kodi rewrites
+    settings.xml from memory on shutdown, clobbering a file-only write). It must
+    SetBool exactly the eight hide-ids (camel-case) and never the four kept."""
+    boot.mod._trim_home_menu()
+    setbools = [b for b in boot.state["builtins"] if b.startswith("Skin.SetBool(")]
+    for cid in _HIDE_CAMEL:
+        assert f"Skin.SetBool({cid})" in setbools, f"must Skin.SetBool({cid})"
+    for cid in _KEEP_CAMEL:
+        assert f"Skin.SetBool({cid})" not in setbools, f"must NOT set kept {cid}"
+    assert len(setbools) == 8, f"exactly 8 SetBool calls expected, got {setbools}"
+
+
+def test_trim_home_menu_setbool_skipped_on_other_skin(boot, monkeypatch):
+    """Off Estuary, no Skin.SetBool is issued (the whole helper no-ops)."""
+    monkeypatch.setattr(boot.mod.xbmc, "getSkinDir", lambda: "skin.confluence")
+    boot.mod._trim_home_menu()
+    assert not any(b.startswith("Skin.SetBool(") for b in boot.state["builtins"])
+
+
+def test_trim_home_menu_writes_eight_hide_settings(boot):
+    """Creates the file and sets all eight hide-booleans to true."""
+    assert not boot.estuary_settings.exists()
+    boot.mod._trim_home_menu()
+    bools = _estuary_bools(boot)
+    for sid in _HIDE_IDS:
+        assert bools.get(sid) == "true", f"{sid} must be set true (hidden)"
+    # exactly the eight singular ids the real skin uses (Movie/MusicVideo/TVShow)
+    assert "homemenunomoviebutton" in bools and "homemenunomoviesbutton" not in bools
+    assert (
+        "homemenunomusicvideobutton" in bools
+        and "homemenunomusicvideosbutton" not in bools
+    )
+
+
+def test_trim_home_menu_does_not_set_the_four_kept(boot):
+    """The four kept items (TV, Add-ons, Favourites, Weather) must NOT be written
+    when starting from no file — they stay visible by their absence."""
+    boot.mod._trim_home_menu()
+    bools = _estuary_bools(boot)
+    for sid in _KEEP_IDS:
+        assert sid not in bools, f"{sid} must NOT be set (kept visible)"
+
+
+def test_trim_home_menu_preserves_existing_settings(boot):
+    """Existing unrelated skin settings — and a pre-existing kept-id set to
+    false — must survive untouched."""
+    boot.estuary_settings.parent.mkdir(parents=True)
+    boot.estuary_settings.write_text(
+        "<settings>"
+        '<setting id="homemenunofavbutton" type="bool">false</setting>'
+        '<setting id="no_fanart" type="bool">false</setting>'
+        '<setting id="HomeFanart.ext" type="string">.jpg</setting>'
+        "</settings>"
+    )
+    boot.mod._trim_home_menu()
+    bools = _estuary_bools(boot)
+    # unrelated settings preserved
+    assert bools.get("no_fanart") == "false"
+    root = ET.parse(boot.estuary_settings).getroot()
+    fanart = root.find("setting[@id='HomeFanart.ext']")
+    assert fanart is not None and (fanart.text or "") == ".jpg"
+    # the pre-existing kept-id stays false (not flipped to hide)
+    assert bools.get("homemenunofavbutton") == "false"
+    # and the eight hide-ids are now true
+    for sid in _HIDE_IDS:
+        assert bools.get(sid) == "true"
+
+
+def test_trim_home_menu_is_idempotent(boot):
+    """Running twice must not duplicate <setting> elements or change values."""
+    boot.mod._trim_home_menu()
+    boot.mod._trim_home_menu()
+    root = ET.parse(boot.estuary_settings).getroot()
+    ids = [s.get("id") for s in root.findall("setting")]
+    for sid in _HIDE_IDS:
+        assert ids.count(sid) == 1, f"{sid} duplicated on re-run"
+    bools = _estuary_bools(boot)
+    for sid in _HIDE_IDS:
+        assert bools.get(sid) == "true"
+
+
+def test_trim_home_menu_noop_on_other_skin(boot, monkeypatch):
+    """When the active skin is not Estuary, it must be a safe no-op (write
+    nothing)."""
+    monkeypatch.setattr(boot.mod.xbmc, "getSkinDir", lambda: "skin.confluence")
+    boot.mod._trim_home_menu()
+    assert not boot.estuary_settings.exists(), "must not write when skin != estuary"
+
+
+def test_trim_home_menu_recreates_malformed_file(boot):
+    """A corrupt settings.xml must be rebuilt, not crash the run."""
+    boot.estuary_settings.parent.mkdir(parents=True)
+    boot.estuary_settings.write_text("<settings><setting not closed")
+    boot.mod._trim_home_menu()  # must not raise
+    bools = _estuary_bools(boot)
+    for sid in _HIDE_IDS:
+        assert bools.get(sid) == "true"
+
+
+def test_trim_home_menu_never_raises(boot, monkeypatch):
+    """Any failure must be swallowed so it can't abort the rest of setup."""
+    real_open = open
+
+    def boom(path, *a, **k):
+        if str(path).endswith("settings.xml") and (
+            "w" in (a[0] if a else k.get("mode", ""))
+        ):
+            raise OSError("disk full")
+        return real_open(path, *a, **k)
+
+    monkeypatch.setattr("builtins.open", boom)
+    boot.mod._trim_home_menu()  # must not raise
+
+
+def test_run_trims_home_menu(boot):
+    """A full run must hide the eight Estuary home items."""
+    boot.mod.run()
+    bools = _estuary_bools(boot)
+    for sid in _HIDE_IDS:
+        assert bools.get(sid) == "true"
+    for sid in _KEEP_IDS:
+        assert sid not in bools

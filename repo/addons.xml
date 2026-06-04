@@ -27,7 +27,7 @@ v1.0.10: Repo now serves Video Add-ons Setup (script.tony7bones.video)
             </assets>
         </extension>
     </addon>
-    <addon id="script.tony7bones.bootstrap" name="Tony.7.Bones Setup" version="1.0.22" provider-name="tony7bones">
+    <addon id="script.tony7bones.bootstrap" name="Tony.7.Bones Setup" version="1.0.23" provider-name="tony7bones">
         <requires>
             <import addon="xbmc.python" version="3.0.0" />
             <import addon="xbmc.addon" version="12.0.0" />
@@ -41,7 +41,7 @@ v1.0.10: Repo now serves Video Add-ons Setup (script.tony7bones.video)
             <license>GPL-2.0-or-later</license>
             <summary lang="en_GB">Tony.7.Bones Kodi Setup</summary>
             <description lang="en_GB">Installs repositories and add-ons for a personal Kodi build.</description>
-            <news>Adds Kodi home + sources directories to File Manager. (v1.0.21 skipped optional dependencies — no more pulling Google Drive / cloud resolvers you didn't ask for. The installer now matches Kodi's own behaviour and resolves only required dependencies; optional imports stay on-demand. (v1.0.20 made Setup remove itself after a successful run. v1.0.19 stopped pinning Setup to the home screen and made the MOD V2 patch manual-only. v1.0.18 added the end-of-setup restart prompt.)</news>
+            <news>Trims the Estuary home menu to TV, Add-ons, Favourites, Weather. (v1.0.22 added Kodi home + sources directories to File Manager. v1.0.21 skipped optional dependencies — no more pulling Google Drive / cloud resolvers you didn't ask for. The installer now matches Kodi's own behaviour and resolves only required dependencies; optional imports stay on-demand. (v1.0.20 made Setup remove itself after a successful run. v1.0.19 stopped pinning Setup to the home screen and made the MOD V2 patch manual-only. v1.0.18 added the end-of-setup restart prompt.)</news>
         </extension>
     </addon>
     <addon id="script.tony7bones.modv2.patch" name="Estuary MOD V2 Patch" version="1.0.3" provider-name="tony7bones">

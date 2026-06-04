@@ -445,6 +445,152 @@ def _add_file_sources():
         )
 
 
+# Estuary home/main-menu trim. Each home item in Estuary's xml/Home.xml is
+# gated by   <visible>!Skin.HasSetting(HomeMenuNo<X>Button)</visible>,  so
+# setting the matching skin BOOLEAN to true HIDES that item (verified by reading
+# the real skin's Home.xml on Kodi 21 Omega). We hide eight and leave the four
+# we keep (TV/Live TV, Add-ons/Programs, Favourites, Weather) untouched/visible.
+#
+# Two ids per item: the camel-case ID the skin's XML and Skin.SetBool use
+# (HomeMenuNoMovieButton) and the LOWERCASE id the active skin persists into
+# addon_data/skin.estuary/settings.xml (homemenunomoviebutton, type="bool",
+# value "true"/"false"). Skin.HasSetting() is case-insensitive, so the skin
+# reads either back. Note the SINGULAR forms the real skin uses: Movie (not
+# Movies), MusicVideo (not MusicVideos), TVShow; and that Add-ons is gated by
+# HomeMenuNoProgramsButton.
+#
+# Both mechanisms are applied, and this ordering matters (proven on the live
+# box): when the skin is loaded, Kodi holds skin booleans in MEMORY and REWRITES
+# settings.xml from memory on shutdown — so a file-only write is clobbered by the
+# end-of-setup restart. Skin.SetBool() sets the in-memory value, which the
+# shutdown then persists as "true", surviving the restart. The direct file merge
+# is kept as a belt-and-suspenders fallback (covers a not-yet-loaded skin and
+# guarantees the keys exist) and preserves every other existing skin setting.
+ESTUARY_SKIN_ID = "skin.estuary"
+
+# (camel-case id for Skin.SetBool / skin XML, lowercase id for settings.xml),
+# for the eight items we HIDE. The four kept ids (HomeMenuNoTVButton,
+# HomeMenuNoProgramsButton, HomeMenuNoFavButton, HomeMenuNoWeatherButton) are
+# deliberately absent so they stay visible.
+ESTUARY_HIDE_SETTINGS = [
+    ("HomeMenuNoMovieButton", "homemenunomoviebutton"),  # Movies
+    ("HomeMenuNoTVShowButton", "homemenunotvshowbutton"),  # TV shows
+    ("HomeMenuNoMusicButton", "homemenunomusicbutton"),  # Music
+    ("HomeMenuNoMusicVideoButton", "homemenunomusicvideobutton"),  # Music videos
+    ("HomeMenuNoRadioButton", "homemenunoradiobutton"),  # Radio
+    ("HomeMenuNoPicturesButton", "homemenunopicturesbutton"),  # Pictures
+    ("HomeMenuNoVideosButton", "homemenunovideosbutton"),  # Videos
+    ("HomeMenuNoGamesButton", "homemenunogamesbutton"),  # Games
+]
+
+
+def _estuary_settings_path():
+    """Absolute path to skin.estuary's per-profile settings.xml."""
+    return xbmcvfs.translatePath(
+        "special://profile/addon_data/skin.estuary/settings.xml"
+    )
+
+
+def _trim_home_menu_setbool():
+    """Set the eight hide-booleans in the ACTIVE skin's live memory via
+    Skin.SetBool. This is what survives the end-of-setup restart: Kodi rewrites
+    settings.xml from memory on shutdown, so the in-memory true persists. No-op
+    in effect off Estuary (the booleans simply aren't read by another skin)."""
+    for camel, _low in ESTUARY_HIDE_SETTINGS:
+        # Skin.SetBool(<id>) with no value sets it true — exactly how Estuary's
+        # own "Main menu items" settings screen toggles each item off.
+        xbmc.executebuiltin(f"Skin.SetBool({camel})")
+
+
+def _trim_home_menu_writefile():
+    """Merge the eight hide-booleans (= true) into skin.estuary's settings.xml,
+    creating the file/dir if missing and PRESERVING every other existing setting.
+    Belt-and-suspenders behind _trim_home_menu_setbool(): guarantees the keys
+    exist even if the skin was never loaded. Idempotent; updates in place."""
+    xml_path = _estuary_settings_path()
+    os.makedirs(os.path.dirname(xml_path), exist_ok=True)
+
+    # Parse the existing file, or start fresh. A malformed file is rebuilt.
+    root = None
+    if os.path.exists(xml_path):
+        try:
+            root = ET.parse(xml_path).getroot()
+        except ET.ParseError as e:
+            xbmc.log(
+                f"[tony7bones.bootstrap] skin.estuary settings.xml malformed, "
+                f"recreating: {e}",
+                xbmc.LOGERROR,
+            )
+            root = None
+    if root is None or root.tag != "settings":
+        root = ET.Element("settings")
+
+    # Index existing <setting id=...> (case-insensitive) so we update in place
+    # and preserve everything else (other skin settings, the four kept ids).
+    by_id = {
+        (s.get("id") or "").lower(): s for s in root.findall("setting") if s.get("id")
+    }
+
+    changed = 0
+    for _camel, low in ESTUARY_HIDE_SETTINGS:
+        el = by_id.get(low)
+        if el is None:
+            el = ET.SubElement(root, "setting")
+            el.set("id", low)
+            el.set("type", "bool")
+            by_id[low] = el
+        elif not el.get("type"):
+            el.set("type", "bool")
+        if (el.text or "").strip().lower() != "true":
+            changed += 1
+        el.text = "true"
+
+    with open(xml_path, "w", encoding="utf-8") as f:
+        f.write(ET.tostring(root, encoding="unicode"))
+    xbmc.log(
+        f"[tony7bones.bootstrap] _trim_home_menu: wrote 8 hide-bools "
+        f"({changed} changed) to {xml_path}",
+        xbmc.LOGINFO,
+    )
+
+
+def _trim_home_menu():
+    """Trim the stock Estuary home menu to TV, Add-ons, Favourites, Weather.
+
+    Hides the other eight items by forcing each Estuary HomeMenuNo<X>Button
+    boolean true. Applies BOTH mechanisms: Skin.SetBool (live in-memory value,
+    which Kodi persists on the end-of-setup restart — the part that actually
+    survives) and a direct settings.xml merge (fallback that guarantees the keys
+    exist and preserves all other skin settings).
+
+    Guard: only meaningful on the stock Estuary skin — when another skin is
+    active this is a safe no-op (it returns before touching anything). Idempotent
+    (re-running just re-asserts the eight values, never duplicating). Defensive:
+    any failure is logged and swallowed so it can never abort the rest of setup,
+    and it touches ONLY skin.estuary's settings — nothing else.
+    """
+    try:
+        skin = ""
+        try:
+            skin = xbmc.getSkinDir() or ""
+        except Exception:  # noqa: BLE001 - older/edge Kodi: treat as unknown
+            skin = ""
+        if skin and skin != ESTUARY_SKIN_ID:
+            xbmc.log(
+                f"[tony7bones.bootstrap] _trim_home_menu: active skin is {skin}, "
+                "not skin.estuary — skipping (no-op)",
+                xbmc.LOGINFO,
+            )
+            return
+        _trim_home_menu_setbool()
+        _trim_home_menu_writefile()
+    except Exception as e:  # noqa: BLE001 - never abort the rest of setup
+        xbmc.log(
+            f"[tony7bones.bootstrap] _trim_home_menu failed (non-fatal): {e}",
+            xbmc.LOGERROR,
+        )
+
+
 def _is_android():
     """True when running on Android (incl. Fire Stick), where the app cannot
     relaunch itself. Detected the same way as _platform_tag()."""
@@ -605,6 +751,10 @@ def run():
     # Must run BEFORE the restart: Kodi caches sources.xml at startup, so the
     # new entries only appear in File Manager after the end-of-setup restart.
     _add_file_sources()
+    # Trim the stock Estuary home menu down to TV, Add-ons, Favourites, Weather.
+    # Must run BEFORE the restart: the restart is what makes Estuary re-read its
+    # settings.xml and drop the eight hidden items from the main menu.
+    _trim_home_menu()
     # A restart finalises the freshly extracted add-ons AND finalises the
     # self-removal (the startup scan drops the now-missing add-on from the DB).
     # Platform-correct and prompt-driven so it never freezes (Fire Stick fix).
