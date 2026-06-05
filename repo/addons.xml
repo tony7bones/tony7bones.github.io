@@ -61,7 +61,7 @@ v1.0.13: Rename repository to 'Tony.7.Bones repository' (naming convention)
             <news>v1.1.6: After copying your pvr.iptvsimple files, Setup now enforces TV group mode = Custom groups and points the custom-TV-groups file at customTVGroups-Network24.xml in instance-settings-1.xml (these add-on instance settings cannot be set via JSON-RPC). Idempotent and guarded. Device-file copies, weather/Sacramento/top-bar weather unchanged.</news>
         </extension>
     </addon>
-    <addon id="script.tony7bones.modv2.patch" name="Estuary MOD V2 Patch" version="1.0.5" provider-name="tony7bones">
+    <addon id="script.tony7bones.modv2.patch" name="Estuary MOD V2 Patch" version="1.0.6" provider-name="tony7bones">
         <requires>
             <import addon="xbmc.python" version="3.0.0" />
         </requires>
@@ -73,7 +73,7 @@ v1.0.13: Rename repository to 'Tony.7.Bones repository' (naming convention)
             <assets>
                 <icon>icon.png</icon>
             </assets>
-            <news>Match stock Estuary fonts: forces the Default (Noto Sans) fontset and neutralizes the Economica fontset so the UI renders Noto Sans even if Economica was selected.</news>
+            <news>Stop the system-information panel from popping up when the Settings/gear icon is focused on the home menu (still available via Settings &gt; System information).</news>
         </extension>
     </addon>
     <addon id="script.tony7bones.video" name="Video Add-ons Setup" version="1.1.0" provider-name="tony7bones">

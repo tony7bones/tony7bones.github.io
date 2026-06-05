@@ -32,6 +32,7 @@ ADDON_DIR = REPO_ROOT / "repo" / "script.tony7bones.modv2.patch"
 ADDON_XML = ADDON_DIR / "addon.xml"
 DEFAULT_PY = ADDON_DIR / "default.py"
 FONT_XML = ADDON_DIR / "resources" / "xml" / "Font.xml"
+HOME_XML = ADDON_DIR / "resources" / "xml" / "Home.xml"
 
 
 def _addon_root():
@@ -137,6 +138,59 @@ def test_other_fontsets_keep_their_fonts():
     default_end = text.find("</fontset>", default_start)
     default_block = text[default_start:default_end]
     assert "NotoSans-Regular.ttf" in default_block
+
+
+# --------------------------------------------------------------------------- #
+# Static contract — Home.xml system-info panel (group 18000) disabled
+# --------------------------------------------------------------------------- #
+def test_home_xml_is_in_files():
+    assert "Home.xml" in _assign("FILES"), "Home.xml must be in the FILES copy list"
+
+
+def test_home_xml_resource_exists():
+    assert HOME_XML.exists(), "must ship resources/xml/Home.xml"
+
+
+def _group_18000_block(text):
+    """Return the substring of Home.xml spanning the group id=18000 control,
+    from its opening tag to the matching close of that <control>."""
+    start = text.find('<control type="group" id="18000">')
+    assert start != -1, "group 18000 control not found in Home.xml"
+    # depth-track <control ...> / </control> to find this group's matching close
+    depth = 0
+    i = start
+    while i < len(text):
+        nxt_open = text.find("<control", i + 1)
+        nxt_close = text.find("</control>", i + 1)
+        if nxt_close == -1:
+            break
+        if nxt_open != -1 and nxt_open < nxt_close:
+            depth += 1
+            i = nxt_open
+        else:
+            if depth == 0:
+                return text[start : nxt_close + len("</control>")]
+            depth -= 1
+            i = nxt_close
+    raise AssertionError("matching </control> for group 18000 not found")
+
+
+def test_group_18000_system_info_panel_disabled():
+    """The MOD V2 system-information panel (group id=18000) must be hard-disabled
+    so it no longer pops up when the Settings/gear control (802) is focused on the
+    home menu. Its <visible> must be 'false' and must NOT reference Control.HasFocus(802)."""
+    text = HOME_XML.read_text(encoding="utf-8")
+    block = _group_18000_block(text)
+    # the group's own <visible> is the first <visible> in the block (before any
+    # nested child controls' visible conditions)
+    vis_start = block.find("<visible>")
+    assert vis_start != -1, "group 18000 must have a <visible> element"
+    vis_end = block.find("</visible>", vis_start)
+    visible = block[vis_start + len("<visible>") : vis_end].strip()
+    assert visible == "false", f"group 18000 <visible> must be 'false', got {visible!r}"
+    assert "Control.HasFocus(802)" not in block.split("</visible>", 1)[0], (
+        "group 18000's own visible condition must not reference Control.HasFocus(802)"
+    )
 
 
 # --------------------------------------------------------------------------- #
