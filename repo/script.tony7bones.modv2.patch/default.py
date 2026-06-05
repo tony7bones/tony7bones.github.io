@@ -24,6 +24,7 @@ FILES = [
     "script-globalsearch.xml",
     "script-script.module.kodi65-t9search.xml",
     "Font.xml",
+    "Settings.xml",
 ]
 
 

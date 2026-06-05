@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="script.tony7bones.modv2.patch"
        name="Estuary MOD V2 Patch"
-       version="1.0.7"
+       version="1.0.8"
        provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
@@ -14,6 +14,6 @@
     <assets>
       <icon>icon.png</icon>
     </assets>
-    <news>Add a "Enable Info Overlay on Settings focus" toggle under Settings &gt; Skin Settings &gt; Extras (below Enable Splash Screen) so you can re-enable the gear-focus system-info overlay if you want it; off by default.</news>
+    <news>Swap the positions of Media sources and Skin Settings in the gear Settings menu, so Skin Settings now sits in the first slot.</news>
   </extension>
 </addon>

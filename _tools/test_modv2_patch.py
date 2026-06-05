@@ -34,6 +34,7 @@ DEFAULT_PY = ADDON_DIR / "default.py"
 FONT_XML = ADDON_DIR / "resources" / "xml" / "Font.xml"
 HOME_XML = ADDON_DIR / "resources" / "xml" / "Home.xml"
 SKINSETTINGS_XML = ADDON_DIR / "resources" / "xml" / "SkinSettings.xml"
+SETTINGS_XML = ADDON_DIR / "resources" / "xml" / "Settings.xml"
 
 
 def _addon_root():
@@ -67,7 +68,7 @@ def test_addon_version_bumped():
     import release_lib as rl  # noqa: PLC0415
 
     v = _addon_root().get("version")
-    assert rl.is_greater(v, "1.0.6"), f"version {v} must exceed the prior 1.0.6"
+    assert rl.is_greater(v, "1.0.7"), f"version {v} must exceed the prior 1.0.7"
 
 
 def test_has_news():
@@ -273,6 +274,60 @@ def test_info_overlay_toggle_sits_below_enable_splash_screen():
     assert ids.index("520") == ids.index("503") + 1, (
         f"id 520 must immediately follow id 503; order was {ids}"
     )
+
+
+# --------------------------------------------------------------------------- #
+# Static contract — Settings.xml swaps Media sources / Skin Settings positions
+# --------------------------------------------------------------------------- #
+def test_settings_xml_is_in_files():
+    assert "Settings.xml" in _assign("FILES"), (
+        "Settings.xml must be in the FILES copy list"
+    )
+
+
+def test_settings_xml_resource_exists():
+    assert SETTINGS_XML.exists(), "must ship resources/xml/Settings.xml"
+
+
+def _settings_panel_items(root):
+    """Return the <item> elements of the gear Settings menu panel (id=9000)."""
+    for ctrl in root.iter("control"):
+        if ctrl.get("type") == "panel" and ctrl.get("id") == "9000":
+            content = ctrl.find("content")
+            assert content is not None, "panel 9000 must have a <content> block"
+            return list(content.findall("item"))
+    raise AssertionError("panel id=9000 not found in Settings.xml")
+
+
+def test_settings_skinsettings_before_media_sources():
+    """The two swapped entries must appear with Skin Settings BEFORE Media sources
+    in the panel: Skin Settings is ActivateWindow(SkinSettings); Media sources is
+    ActivateWindow(1120). Each must still keep its own label + icon intact."""
+    root = ET.parse(SETTINGS_XML).getroot()
+    items = _settings_panel_items(root)
+
+    def _index(onclick_text):
+        for i, item in enumerate(items):
+            oc = item.find("onclick")
+            if oc is not None and oc.text == onclick_text:
+                return i
+        raise AssertionError(f"no item with onclick {onclick_text!r}")
+
+    skin_idx = _index("ActivateWindow(SkinSettings)")
+    media_idx = _index("ActivateWindow(1120)")
+    assert skin_idx < media_idx, (
+        f"Skin Settings (idx {skin_idx}) must come before Media sources "
+        f"(idx {media_idx}) in the Settings panel"
+    )
+
+    # Skin Settings item keeps its label + skin icon; Media sources keeps its
+    # label + sources icon (actions did not get rewired onto wrong labels).
+    skin_item = items[skin_idx]
+    media_item = items[media_idx]
+    assert skin_item.find("label").text == "$LOCALIZE[10035]"
+    assert skin_item.find("icon").text == "icons/settings/skin.png"
+    assert media_item.find("label").text == "$LOCALIZE[20094]"
+    assert media_item.find("icon").text == "icons/settings/sources.png"
 
 
 # --------------------------------------------------------------------------- #
