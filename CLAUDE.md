@@ -27,6 +27,21 @@ Besides the proxy, the repo ships three first-party add-ons plus a manual-only s
 - `script.tony7bones.video` — "Video Add-ons Setup", the standalone video installer; its `install_selected()` is the shared entry point the base Setup chains.
 - `script.tony7bones.modv2.patch` — "Estuary MOD V2 Patch", run by hand after installing/updating `skin.estuary.modv2`.
 
+### What the base Setup does after installing (`script.tony7bones.bootstrap/default.py`)
+
+After the (optional video) install and before the single end-of-setup restart, `run()` applies a sequence of **base-box configuration** steps — each defensive (logged, never aborts the run), set before the restart so Kodi re-reads them:
+
+- `_add_file_sources()` — merge File-Manager sources into `sources.xml` (deduped).
+- `_trim_home_menu()` — hide all but TV / Add-ons / Favourites / Weather on stock Estuary via `Skin.SetBool` (the in-memory set is what survives the restart; a settings.xml merge backs it up).
+- `_configure_box()` — weather + interface prefs: provider → `weather.multi`, **location 1 → Sacramento** (written into weather.multi's `addon_data`; note `loc1_url` is the field weather.multi actually fetches by, NOT lat/lon), RSS ticker on, top-bar weather (`Skin.SetBool(show_weatherinfo)`), then `_copy_device_files()` + `_ensure_iptv_custom_tv_groups()`.
+
+**Device→userdata file convention.** `DEVICE_FILE_COPIES` copies user-placed files from the Fire Stick path `/storage/emulated/0/kodi/tony.7.bones/{rss,iptv}/…` into `userdata/` (RssFeeds.xml) and `userdata/addon_data/pvr.iptvsimple/…` (instance-settings-1.xml, channelGroups/customTVGroups-\*.xml). Each copy is **guarded** (no-ops if the source is absent, so desktop runs skip cleanly), **creates dest dirs, and overwrites**. The real copy only happens on the device; on the dev Mac only the guarded-skip path runs live — the copy logic is proven by unit tests, not live verification (state this honestly).
+
+**Two non-obvious Kodi constraints encoded here (don't relearn them the hard way):**
+
+- **pvr.iptvsimple _instance_ settings cannot be set via JSON-RPC** — `Settings.SetSettingValue` reaches only CORE Kodi settings. Instance settings (TV group mode, custom-groups file, m3u/EPG) live ONLY in `addon_data/pvr.iptvsimple/instance-settings-1.xml`; `_ensure_iptv_custom_tv_groups()` patches `tvGroupMode=2` (custom) + `customTvGroupsFile` there after the copy.
+- **Hiding a single PVR channel group (e.g. "All channels") is NOT automatable from Setup** — the flag is `channelgroups.bIsHidden` in the PVR DB (`userdata/Database/TV<N>.db`), and that row only exists AFTER pvr.iptvsimple syncs channels post-restart; no JSON-RPC/core setting toggles it. It stays a one-time manual step (PVR & Live TV → Channels → Group manager).
+
 The proxy serves add-ons from its **baked** `resources/repository.json` (read locally by `lib/service.py`), not `repo/addons.xml`. To add/change a served add-on, edit the single `repository.json` at `repo/repository.tony7bones/resources/` (for a mirrored third-party repo, drop its `addon.xml`/zip under `repo/hosted/<id>/` and point `asset_prefix` at `.../{ref}/repo/hosted/{id}/` with `"branch": "main"`) and release the proxy.
 
 > Detailed operating guidance lives in the playbooks and the agent skill:
