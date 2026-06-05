@@ -68,7 +68,7 @@ def test_addon_version_bumped():
     import release_lib as rl  # noqa: PLC0415
 
     v = _addon_root().get("version")
-    assert rl.is_greater(v, "1.0.7"), f"version {v} must exceed the prior 1.0.7"
+    assert rl.is_greater(v, "1.0.8"), f"version {v} must exceed the prior 1.0.8"
 
 
 def test_has_news():
@@ -343,6 +343,10 @@ def patch_env(tmp_path, monkeypatch):
         "ok": [],
         "log": [],
         "skin": "skin.estuary.modv2",
+        # default -1 (cancel) so the import-time run() is a clean no-op; tests
+        # set this to 0 (Apply) or 1 (Restore) before calling run() again.
+        "select": -1,
+        "select_calls": [],
     }
 
     home = tmp_path / "home"
@@ -390,6 +394,10 @@ def patch_env(tmp_path, monkeypatch):
         def ok(self, title, msg):
             state["ok"].append((title, msg))
 
+        def select(self, title, options):
+            state["select_calls"].append((title, list(options)))
+            return state["select"]
+
     xbmcgui.Dialog = _Dialog
 
     xbmcvfs = types.ModuleType("xbmcvfs")
@@ -424,6 +432,7 @@ def patch_env(tmp_path, monkeypatch):
 
 
 def test_run_forces_default_fontset_via_jsonrpc(patch_env):
+    patch_env.state["select"] = 0  # Apply patches
     patch_env.mod.run()
     calls = [_json.loads(s) for s in patch_env.state["jsonrpc"]]
     setting_calls = [
@@ -439,6 +448,7 @@ def test_run_forces_default_fontset_via_jsonrpc(patch_env):
 
 
 def test_run_copies_font_xml_into_skin(patch_env):
+    patch_env.state["select"] = 0  # Apply patches
     patch_env.mod.run()
     dst = patch_env.skin_xml / "Font.xml"
     assert dst.exists(), "Font.xml must be copied into the skin xml dir"
@@ -447,6 +457,7 @@ def test_run_copies_font_xml_into_skin(patch_env):
 
 
 def test_run_reloads_skin(patch_env):
+    patch_env.state["select"] = 0  # Apply patches
     patch_env.mod.run()
     assert any("ReloadSkin" in b for b in patch_env.state["builtins"])
 
@@ -458,3 +469,114 @@ def test_run_bails_on_wrong_skin(patch_env):
     assert not patch_env.state["jsonrpc"]
     assert not (patch_env.skin_xml / "Font.xml").exists()
     assert patch_env.state["ok"], "should show the Wrong Skin dialog"
+
+
+# --------------------------------------------------------------------------- #
+# Runtime behaviour — the launch chooser (Apply / Restore / Cancel)
+# --------------------------------------------------------------------------- #
+def test_run_presents_chooser(patch_env):
+    """run() must present a select() dialog offering Apply and Restore."""
+    patch_env.state["select"] = -1  # cancel, so nothing else happens
+    patch_env.mod.run()
+    assert patch_env.state["select_calls"], "run() must call Dialog().select(...)"
+    _title, options = patch_env.state["select_calls"][0]
+    assert options == ["Apply patches", "Restore original"]
+
+
+def test_run_apply_routes_to_apply_path(patch_env):
+    """choice 0 -> Apply: font forced, every FILES entry copied, .bak made."""
+    patch_env.state["select"] = 0
+    patch_env.mod.run()
+
+    # font forced via JSON-RPC
+    calls = [_json.loads(s) for s in patch_env.state["jsonrpc"]]
+    assert any(
+        c.get("params", {}).get("setting") == "lookandfeel.font" for c in calls
+    ), "Apply must force lookandfeel.font"
+
+    # every file copied + a .bak snapshot of the original made
+    for fname in _assign("FILES"):
+        dst = patch_env.skin_xml / fname
+        assert dst.exists(), f"{fname} must be copied on Apply"
+    assert any("ReloadSkin" in b for b in patch_env.state["builtins"])
+
+
+def test_run_cancel_does_nothing(patch_env):
+    """choice -1 (back) -> neither apply nor restore; no writes, no font call."""
+    patch_env.state["select"] = -1
+    patch_env.mod.run()
+    assert not patch_env.state["jsonrpc"], "cancel must not force the font"
+    # no skin files written
+    for fname in _assign("FILES"):
+        assert not (patch_env.skin_xml / fname).exists(), (
+            f"cancel must not write {fname}"
+        )
+    assert not patch_env.state["builtins"], "cancel must not ReloadSkin"
+    assert not patch_env.state["ok"], "cancel must show no summary dialog"
+
+
+def test_restore_patches_reverts_and_clears_baks(patch_env):
+    """restore_patches() copies each .bak back over the live file and removes
+    the .bak. Restored count == number of .bak files present."""
+    skin_xml = patch_env.skin_xml
+    files = _assign("FILES")
+
+    # lay down patched live files + matching .bak originals for a subset
+    backed = files[:3]
+    for fname in files:
+        (skin_xml / fname).write_text("PATCHED " + fname)
+    for fname in backed:
+        (skin_xml / (fname + ".bak")).write_text("ORIGINAL " + fname)
+
+    restored, failed, skipped = patch_env.mod.restore_patches(str(skin_xml))
+
+    assert restored == len(backed)
+    assert failed == 0
+    assert skipped == len(files) - len(backed)
+
+    for fname in backed:
+        # live file now equals the original, and the .bak is gone
+        assert (skin_xml / fname).read_text() == "ORIGINAL " + fname
+        assert not (skin_xml / (fname + ".bak")).exists()
+    # files without a .bak are left untouched (still patched)
+    for fname in files[3:]:
+        assert (skin_xml / fname).read_text() == "PATCHED " + fname
+
+
+def test_run_restore_routes_to_restore_path(patch_env):
+    """choice 1 -> Restore: live files reverted to their .bak originals, .bak
+    removed, font NOT touched, skin reloaded."""
+    skin_xml = patch_env.skin_xml
+    files = _assign("FILES")
+    for fname in files:
+        (skin_xml / fname).write_text("PATCHED " + fname)
+        (skin_xml / (fname + ".bak")).write_text("ORIGINAL " + fname)
+
+    patch_env.state["select"] = 1
+    patch_env.mod.run()
+
+    assert not patch_env.state["jsonrpc"], "restore must NOT touch lookandfeel.font"
+    for fname in files:
+        assert (skin_xml / fname).read_text() == "ORIGINAL " + fname
+        assert not (skin_xml / (fname + ".bak")).exists()
+    assert any("ReloadSkin" in b for b in patch_env.state["builtins"])
+    assert patch_env.state["ok"], "restore must show a summary dialog"
+
+
+def test_run_restore_nothing_to_restore(patch_env):
+    """choice 1 with no .bak files -> restored 0, no exceptions, no reload."""
+    patch_env.state["select"] = 1
+    patch_env.mod.run()
+    # nothing reverted, nothing reloaded
+    assert not any("ReloadSkin" in b for b in patch_env.state["builtins"])
+    assert patch_env.state["ok"], "should show the 'Nothing to Restore' dialog"
+    title, _msg = patch_env.state["ok"][0]
+    assert "Restore" in title
+
+
+def test_restore_patches_nothing_to_restore_no_exception(patch_env):
+    """restore_patches() with no .bak files present -> (0, 0, len(FILES))."""
+    restored, failed, skipped = patch_env.mod.restore_patches(str(patch_env.skin_xml))
+    assert restored == 0
+    assert failed == 0
+    assert skipped == len(_assign("FILES"))

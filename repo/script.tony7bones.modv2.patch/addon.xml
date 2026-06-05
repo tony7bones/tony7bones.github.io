@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="script.tony7bones.modv2.patch"
        name="Estuary MOD V2 Patch"
-       version="1.0.8"
+       version="1.0.9"
        provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
@@ -14,6 +14,6 @@
     <assets>
       <icon>icon.png</icon>
     </assets>
-    <news>Swap the positions of Media sources and Skin Settings in the gear Settings menu, so Skin Settings now sits in the first slot.</news>
+    <news>Running the add-on now asks: Apply patches or Restore original. Restore reverts Estuary MOD V2 to its unpatched state using the one-time backups.</news>
   </extension>
 </addon>
