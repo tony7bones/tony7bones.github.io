@@ -1372,61 +1372,142 @@ def test_run_configures_box(boot):
 
 
 # --------------------------------------------------------------------------- #
-# Custom RssFeeds.xml install (_install_rss_feeds, called from _configure_box).
-# The source is the device "Kodi sources directory" path; on the test host it
-# does not exist, so we monkeypatch RSSFEEDS_SRC to a real temp file to exercise
-# the copy path, and leave it unmapped to exercise the guarded-skip path.
+# Device → userdata file copies (DEVICE_FILE_COPIES / _copy_device_files, called
+# from _configure_box). The sources are device "Kodi sources directory" paths;
+# on the test host they do not exist, so we point DEVICE_FILE_COPIES at real temp
+# files to exercise the copy path, and leave them unmapped for the guarded-skip
+# path. Covers the custom RssFeeds.xml plus pvr.iptvsimple's instance settings
+# and custom TV channel groups (whose channelGroups/ dir must be auto-created).
 # --------------------------------------------------------------------------- #
-def _rss_dst_path(boot):
-    """Absolute (translated) path of the RssFeeds.xml destination."""
-    return boot.mod.xbmcvfs.translatePath(boot.mod.RSSFEEDS_DST)
+# special:// destinations of the three configured copies.
+_RSS_DST = "special://home/userdata/RssFeeds.xml"
+_IPTV_INSTANCE_DST = (
+    "special://home/userdata/addon_data/pvr.iptvsimple/instance-settings-1.xml"
+)
+_IPTV_GROUPS_DST = (
+    "special://home/userdata/addon_data/pvr.iptvsimple/channelGroups/"
+    "customTVGroups-Network24.xml"
+)
 
 
-def test_install_rss_feeds_copies_when_source_present(boot, monkeypatch, tmp_path):
+def _dst_path(boot, special):
+    """Absolute (translated) path of a special:// destination."""
+    return boot.mod.xbmcvfs.translatePath(special)
+
+
+def test_default_device_file_copies_are_the_three_expected(boot):
+    """The data-driven list must hold the RSS feed + the two pvr.iptvsimple files,
+    each to userdata/addon_data (private config never goes near the repo)."""
+    dsts = [d for _s, d in boot.mod.DEVICE_FILE_COPIES]
+    assert _RSS_DST in dsts
+    assert _IPTV_INSTANCE_DST in dsts
+    assert _IPTV_GROUPS_DST in dsts
+    assert len(boot.mod.DEVICE_FILE_COPIES) == 3
+    # Every source is a device path; every dest lives under userdata.
+    for src, dst in boot.mod.DEVICE_FILE_COPIES:
+        assert src.startswith("/storage/")
+        assert dst.startswith("special://home/userdata/")
+
+
+def _point_copies(boot, monkeypatch, tmp_path, mapping):
+    """Repoint DEVICE_FILE_COPIES so the given special:// dests read from temp
+    files (others get a guaranteed-missing source)."""
+    new = []
+    for src, dst in boot.mod.DEVICE_FILE_COPIES:
+        if dst in mapping:
+            new.append((str(mapping[dst]), dst))
+        else:
+            new.append((str(tmp_path / "missing" / os.path.basename(src)), dst))
+    monkeypatch.setattr(boot.mod, "DEVICE_FILE_COPIES", new)
+
+
+def test_copy_device_files_copies_rss_when_source_present(boot, monkeypatch, tmp_path):
     src = tmp_path / "RssFeeds.xml"
     src.write_text("<rssfeeds>CUSTOM</rssfeeds>")
-    monkeypatch.setattr(boot.mod, "RSSFEEDS_SRC", str(src))
-    boot.mod._install_rss_feeds()
-    dst = _rss_dst_path(boot)
+    _point_copies(boot, monkeypatch, tmp_path, {_RSS_DST: src})
+    boot.mod._copy_device_files()
+    dst = _dst_path(boot, _RSS_DST)
     assert os.path.exists(dst), "custom RssFeeds.xml must be copied to userdata"
     assert "CUSTOM" in open(dst).read()
 
 
-def test_install_rss_feeds_skips_when_source_missing(boot, monkeypatch, tmp_path):
-    missing = tmp_path / "does-not-exist" / "RssFeeds.xml"
-    monkeypatch.setattr(boot.mod, "RSSFEEDS_SRC", str(missing))
-    boot.mod._install_rss_feeds()  # guarded no-op
-    assert not os.path.exists(_rss_dst_path(boot)), "no copy when source absent"
+def test_copy_device_files_copies_iptv_instance_settings(boot, monkeypatch, tmp_path):
+    src = tmp_path / "instance-settings-1.xml"
+    src.write_text("<settings>INSTANCE</settings>")
+    _point_copies(boot, monkeypatch, tmp_path, {_IPTV_INSTANCE_DST: src})
+    boot.mod._copy_device_files()
+    dst = _dst_path(boot, _IPTV_INSTANCE_DST)
+    assert os.path.exists(dst), "instance-settings-1.xml must be copied to addon_data"
+    assert "INSTANCE" in open(dst).read()
+    # The addon_data/pvr.iptvsimple/ dir must have been created on the fresh box.
+    assert os.path.isdir(os.path.dirname(dst))
 
 
-def test_install_rss_feeds_overwrites_existing_destination(boot, monkeypatch, tmp_path):
-    # Seed an existing destination with default/old content.
-    dst = _rss_dst_path(boot)
-    os.makedirs(os.path.dirname(dst), exist_ok=True)
-    with open(dst, "w") as f:
-        f.write("<rssfeeds>DEFAULT</rssfeeds>")
-    src = tmp_path / "RssFeeds.xml"
-    src.write_text("<rssfeeds>CUSTOM</rssfeeds>")
-    monkeypatch.setattr(boot.mod, "RSSFEEDS_SRC", str(src))
-    boot.mod._install_rss_feeds()
-    content = open(dst).read()
-    assert "CUSTOM" in content and "DEFAULT" not in content, "must overwrite"
+def test_copy_device_files_copies_tv_groups_creating_channelgroups_dir(
+    boot, monkeypatch, tmp_path
+):
+    """The customTVGroups copy must auto-create the channelGroups/ subdir, which
+    does NOT exist on a fresh box, then land the file inside it."""
+    src = tmp_path / "customTVGroups-Network24.xml"
+    src.write_text("<groups>NET24</groups>")
+    _point_copies(boot, monkeypatch, tmp_path, {_IPTV_GROUPS_DST: src})
+    dst = _dst_path(boot, _IPTV_GROUPS_DST)
+    # Prove the channelGroups/ dir is absent before the copy runs.
+    assert not os.path.isdir(os.path.dirname(dst))
+    boot.mod._copy_device_files()
+    assert os.path.isdir(os.path.dirname(dst)), "channelGroups/ must be auto-created"
+    assert os.path.exists(dst) and "NET24" in open(dst).read()
 
 
-def test_install_rss_feeds_never_raises(boot, monkeypatch):
-    # Even if xbmcvfs.copy blows up, the step must swallow and continue.
+def test_copy_device_files_skips_when_source_missing(boot, monkeypatch, tmp_path):
+    # All sources point at non-existent files (the default /storage path stand-in).
+    _point_copies(boot, monkeypatch, tmp_path, {})
+    boot.mod._copy_device_files()  # guarded no-op
+    for special in (_RSS_DST, _IPTV_INSTANCE_DST, _IPTV_GROUPS_DST):
+        assert not os.path.exists(_dst_path(boot, special)), "no copy when src absent"
+
+
+def test_copy_device_files_overwrites_existing_destinations(
+    boot, monkeypatch, tmp_path
+):
+    # Seed each destination with old content, then copy custom content over it.
+    seeds = {
+        _RSS_DST: ("RssFeeds.xml", "<rssfeeds>CUSTOM</rssfeeds>"),
+        _IPTV_INSTANCE_DST: ("instance-settings-1.xml", "<settings>NEW</settings>"),
+        _IPTV_GROUPS_DST: ("customTVGroups-Network24.xml", "<groups>NEW</groups>"),
+    }
+    mapping = {}
+    for special, (fname, content) in seeds.items():
+        dst = _dst_path(boot, special)
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        with open(dst, "w") as f:
+            f.write("<x>DEFAULT</x>")
+        src = tmp_path / fname
+        src.write_text(content)
+        mapping[special] = src
+    _point_copies(boot, monkeypatch, tmp_path, mapping)
+    boot.mod._copy_device_files()
+    for special, (_fname, content) in seeds.items():
+        got = open(_dst_path(boot, special)).read()
+        assert content in got and "DEFAULT" not in got, f"must overwrite {special}"
+
+
+def test_copy_device_files_never_raises(boot, monkeypatch):
+    # Even if xbmcvfs.copy blows up for every entry, the step must swallow each
+    # error and continue through the rest of the list.
     def boom(*a, **k):
         raise RuntimeError("boom")
 
     monkeypatch.setattr(boot.mod.xbmcvfs, "exists", lambda p: True)
     monkeypatch.setattr(boot.mod.xbmcvfs, "copy", boom)
-    boot.mod._install_rss_feeds()  # must not raise
+    boot.mod._copy_device_files()  # must not raise
 
 
-def test_configure_box_default_source_missing_is_guarded(boot):
-    # With the real default RSSFEEDS_SRC (/storage/... Android path) the source
-    # cannot exist on the test host: _configure_box must still complete and apply
-    # the other settings without raising or copying anything.
+def test_configure_box_default_sources_missing_is_guarded(boot):
+    # With the real default /storage/... sources the files cannot exist on the
+    # test host: _configure_box must still complete and apply the other settings
+    # without raising or copying anything.
     boot.mod._configure_box()
-    assert not os.path.exists(_rss_dst_path(boot)), "no copy on desktop (guarded)"
+    for special in (_RSS_DST, _IPTV_INSTANCE_DST, _IPTV_GROUPS_DST):
+        assert not os.path.exists(_dst_path(boot, special)), "no copy on desktop"
     assert _settings_set(boot).get("weather.addon") == "weather.multi"

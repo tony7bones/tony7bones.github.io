@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="script.tony7bones.bootstrap"
        name="Tony.7.Bones Setup"
-       version="1.1.4"
+       version="1.1.5"
        provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
@@ -24,6 +24,6 @@
     <license>GPL-2.0-or-later</license>
     <summary lang="en_GB">Tony.7.Bones Kodi Setup</summary>
     <description lang="en_GB">Installs repositories and add-ons for a personal Kodi build.</description>
-    <news>v1.1.4: RSS news ticker is now ON, and Setup installs your custom RssFeeds.xml from the device (Kodi sources dir) over Kodi's default feeds when present (guarded — skips cleanly if not found). Weather provider/Sacramento location and Estuary top-bar weather unchanged.</news>
+    <news>v1.1.5: Setup now copies more of your device files into userdata when present — alongside the custom RssFeeds.xml it installs pvr.iptvsimple's instance-settings-1.xml and customTVGroups-Network24.xml (creating any missing folders). All copies are guarded: missing files are skipped cleanly. Weather/Sacramento/top-bar weather unchanged.</news>
   </extension>
 </addon>

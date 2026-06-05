@@ -363,13 +363,34 @@ WEATHER_LOCATION = {
 }
 SHOW_WEATHERINFO = "show_weatherinfo"  # Estuary skin bool: weather in the top bar
 
-# Custom RSS feeds. The user places their feed list on the device at the
-# Android/Fire-Stick "Kodi sources directory" path below (note the exact
-# "tony.7.bones" spelling); Setup copies it over Kodi's default RssFeeds.xml so
-# the home-screen news ticker shows the custom feeds. The file is USER-PROVIDED —
-# Setup never downloads or creates it; it only copies it when present.
-RSSFEEDS_SRC = "/storage/emulated/0/kodi/tony.7.bones/rss/RssFeeds.xml"
-RSSFEEDS_DST = "special://home/userdata/RssFeeds.xml"
+# Device → userdata file copies. The user places these files on the device under
+# the Android/Fire-Stick "Kodi sources directory" tree (note the exact
+# "tony.7.bones" spelling); Setup copies each one into Kodi's userdata over any
+# default. Every file is USER-PROVIDED — Setup never downloads or creates them; it
+# only copies each when present, overwriting the destination. They carry the
+# user's private config and land in userdata/addon_data ONLY, never the repo.
+#
+# Each entry is (source-on-device, destination special:// path):
+#   * the home-screen RSS news ticker feeds (over Kodi's default RssFeeds.xml)
+#   * pvr.iptvsimple's instance settings (the IPTV add-on is already installed by
+#     the base step, so addon_data/pvr.iptvsimple/ may need creating)
+#   * pvr.iptvsimple's custom TV channel groups (the channelGroups/ subdir won't
+#     exist on a fresh box — the copy creates it)
+DEVICE_FILE_COPIES = [
+    (
+        "/storage/emulated/0/kodi/tony.7.bones/rss/RssFeeds.xml",
+        "special://home/userdata/RssFeeds.xml",
+    ),
+    (
+        "/storage/emulated/0/kodi/tony.7.bones/iptv/instance-settings-1.xml",
+        "special://home/userdata/addon_data/pvr.iptvsimple/instance-settings-1.xml",
+    ),
+    (
+        "/storage/emulated/0/kodi/tony.7.bones/iptv/customTVGroups-Network24.xml",
+        "special://home/userdata/addon_data/pvr.iptvsimple/channelGroups/"
+        "customTVGroups-Network24.xml",
+    ),
+]
 
 
 def _set_setting(setting_id, value):
@@ -427,35 +448,51 @@ def _set_weather_location():
     _log(f"_configure_box: wrote Multi Weather location 1 to {xml_path}")
 
 
-def _install_rss_feeds():
-    """Copy the user's custom RssFeeds.xml over Kodi's default, if present.
+def _copy_one_device_file(src, dst_special):
+    """Copy a single USER-PROVIDED device file into userdata, guarded.
 
-    FROM the device "Kodi sources directory" (RSSFEEDS_SRC), TO Kodi's userdata
-    (RSSFEEDS_DST) — overwriting the default so the home ticker shows the custom
-    feeds. The file is USER-PROVIDED on the device; Setup never downloads/creates
-    it. GUARDED: if the source is absent (e.g. on desktop, or not yet placed) this
-    logs and skips — it never errors and never aborts the rest of setup. Overwrites
-    the destination if it already exists. Idempotent."""
-    try:
-        if not xbmcvfs.exists(RSSFEEDS_SRC):
+    FROM the device path `src`, TO the translated `dst_special` — creating the
+    destination directory if missing (fresh boxes lack addon_data/pvr.iptvsimple/
+    and its channelGroups/ subdir) and OVERWRITING the destination if it exists.
+    GUARDED: if the source is absent (e.g. on desktop, or the user hasn't placed
+    it) this logs and skips — it never errors. Idempotent."""
+    if not xbmcvfs.exists(src):
+        _log(
+            f"_configure_box: device file not found, skipping: {src}",
+            xbmc.LOGINFO,
+        )
+        return
+    dst = xbmcvfs.translatePath(dst_special)
+    # Create the destination directory tree if it doesn't exist yet.
+    dst_dir = os.path.dirname(dst)
+    if dst_dir and not xbmcvfs.exists(dst_dir):
+        xbmcvfs.mkdirs(dst_dir)
+    # xbmcvfs.copy overwrites an existing destination.
+    if xbmcvfs.copy(src, dst):
+        _log(f"_configure_box: copied device file {src} -> {dst}")
+    else:
+        _log(
+            f"_configure_box: xbmcvfs.copy reported failure copying {src} -> {dst}",
+            xbmc.LOGERROR,
+        )
+
+
+def _copy_device_files():
+    """Copy each USER-PROVIDED device file in DEVICE_FILE_COPIES into userdata.
+
+    Data-driven loop over (src, dst) pairs: the custom RSS feeds plus the
+    pvr.iptvsimple instance settings and custom TV channel groups. Each copy
+    creates its destination dir if missing, overwrites the destination if present,
+    and is GUARDED — a missing source (or any per-file error) is logged and
+    skipped, never aborting the rest of setup. Idempotent."""
+    for src, dst_special in DEVICE_FILE_COPIES:
+        try:
+            _copy_one_device_file(src, dst_special)
+        except Exception as e:  # noqa: BLE001 - one bad file must not abort the rest
             _log(
-                f"_configure_box: custom RssFeeds source not found, skipping: "
-                f"{RSSFEEDS_SRC}",
-                xbmc.LOGINFO,
-            )
-            return
-        dst = xbmcvfs.translatePath(RSSFEEDS_DST)
-        # xbmcvfs.copy overwrites an existing destination.
-        if xbmcvfs.copy(RSSFEEDS_SRC, dst):
-            _log(f"_configure_box: installed custom RssFeeds.xml -> {dst}")
-        else:
-            _log(
-                f"_configure_box: xbmcvfs.copy reported failure copying "
-                f"{RSSFEEDS_SRC} -> {dst}",
+                f"_copy_device_files: copy {src} failed (non-fatal): {e}",
                 xbmc.LOGERROR,
             )
-    except Exception as e:  # noqa: BLE001 - never abort the rest of setup
-        _log(f"_install_rss_feeds failed (non-fatal): {e}", xbmc.LOGERROR)
 
 
 def _configure_box():
@@ -463,15 +500,18 @@ def _configure_box():
       * weather provider  -> Multi Weather (weather.addon)
       * Multi Weather location 1 -> Sacramento, CA, US (name + coords)
       * RSS news ticker   -> ON (lookandfeel.enablerssfeeds)
-      * custom RssFeeds.xml -> installed from the device if present (guarded copy)
+      * device files      -> copied from the device into userdata if present
+        (guarded copies: custom RssFeeds.xml, plus pvr.iptvsimple's
+        instance-settings-1.xml and customTVGroups-Network24.xml — runs here
+        AFTER the base install, so pvr.iptvsimple already exists)
       * Estuary top bar   -> show weather info (Skin.SetBool, persists on restart)
     Defensive: any failure is logged and swallowed; never aborts the run."""
     try:
         _set_setting("weather.addon", WEATHER_ADDON)
         _set_setting("lookandfeel.enablerssfeeds", True)
         _set_weather_location()
-        # Install the user's custom RSS feeds (guarded; skips if not on device).
-        _install_rss_feeds()
+        # Copy the user's device files into userdata (guarded; skips any missing).
+        _copy_device_files()
         # The top-bar toggle is an Estuary skin bool; set it live so the restart
         # persists it (Kodi rewrites skin settings.xml from memory on shutdown).
         skin = ""
@@ -483,7 +523,7 @@ def _configure_box():
             xbmc.executebuiltin(f"Skin.SetBool({SHOW_WEATHERINFO})")
         _log(
             "_configure_box: weather provider/location set, RSS on, "
-            "custom feeds installed if present, top-bar weather on"
+            "device files copied if present, top-bar weather on"
         )
     except Exception as e:  # noqa: BLE001 - never abort the rest of setup
         _log(f"_configure_box failed (non-fatal): {e}", xbmc.LOGERROR)
