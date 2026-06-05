@@ -1277,3 +1277,83 @@ def test_ensure_video_setup_runs_before_self_uninstall_and_restart():
     assert ensure_pos < install_video_pos < uninstall_pos < restart_pos, (
         "fetch -> video install -> self-uninstall -> restart ordering must hold"
     )
+
+
+# --------------------------------------------------------------------------- #
+# Base box configuration (_configure_box): weather provider + Sacramento
+# location, RSS news ticker off, Estuary top-bar weather.
+# --------------------------------------------------------------------------- #
+def _settings_set(boot):
+    """{setting_id: value} from captured Settings.SetSettingValue JSON-RPC calls."""
+    out = {}
+    for s in boot.state["jsonrpc"]:
+        try:
+            d = _json.loads(s)
+        except ValueError:
+            continue
+        if d.get("method") == "Settings.SetSettingValue":
+            out[d["params"]["setting"]] = d["params"]["value"]
+    return out
+
+
+def test_configure_box_helper_exists_and_wired_before_restart():
+    src = DEFAULT_PY.read_text()
+    assert "_configure_box" in src and "_configure_box()" in src
+    cfg = src.rfind("_configure_box()")
+    restart = src.rfind("restart_kodi(")
+    assert cfg != -1 and restart != -1 and cfg < restart, (
+        "_configure_box() must run before the restart"
+    )
+
+
+def test_configure_box_sets_weather_provider(boot):
+    boot.mod._configure_box()
+    assert _settings_set(boot).get("weather.addon") == "weather.multi"
+
+
+def test_configure_box_disables_rss_feeds(boot):
+    boot.mod._configure_box()
+    assert _settings_set(boot).get("lookandfeel.enablerssfeeds") is False
+
+
+def test_configure_box_writes_sacramento_location(boot):
+    boot.mod._configure_box()
+    path = boot.mod._weather_multi_settings_path()
+    vals = {
+        s.get("id"): (s.text or "") for s in ET.parse(path).getroot().findall("setting")
+    }
+    assert vals.get("loc1_name") == "Sacramento, CA, US"
+    # loc1_url is the load-bearing field: weather.multi fetches the forecast from
+    # https://weather.yahoo.com/<loc1_url>; an empty url means no fetch at all.
+    assert vals.get("loc1_url") == "us/ca/sacramento", "fetch url must be written"
+    assert vals.get("loc1_lat") and vals.get("loc1_lon"), "coords must be written"
+
+
+def test_configure_box_sets_topbar_weather_skin_bool(boot):
+    boot.mod._configure_box()
+    assert "Skin.SetBool(show_weatherinfo)" in boot.state["builtins"]
+
+
+def test_configure_box_topbar_skipped_off_estuary_but_core_settings_apply(
+    boot, monkeypatch
+):
+    monkeypatch.setattr(boot.mod.xbmc, "getSkinDir", lambda: "skin.confluence")
+    boot.mod._configure_box()
+    assert "Skin.SetBool(show_weatherinfo)" not in boot.state["builtins"]
+    # Core (non-skin) settings still apply regardless of skin.
+    assert _settings_set(boot).get("weather.addon") == "weather.multi"
+
+
+def test_configure_box_never_raises(boot, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(boot.mod.xbmc, "executeJSONRPC", boom)
+    boot.mod._configure_box()  # must not raise
+
+
+def test_run_configures_box(boot):
+    boot.mod.run()
+    s = _settings_set(boot)
+    assert s.get("weather.addon") == "weather.multi"
+    assert s.get("lookandfeel.enablerssfeeds") is False

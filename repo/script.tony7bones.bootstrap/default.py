@@ -39,6 +39,7 @@ restart.
 No secrets are embedded in this script.
 """
 
+import json
 import os
 from xml.etree import ElementTree as ET
 
@@ -342,6 +343,110 @@ def _trim_home_menu():
 
 
 # --------------------------------------------------------------------------- #
+# Base box configuration — weather + interface preferences applied after the
+# install, before the restart. Each step is defensive (logged, never aborts).
+# --------------------------------------------------------------------------- #
+WEATHER_ADDON = "weather.multi"  # Multi Weather (installed in ADDONS)
+# Multi Weather fetches the forecast from https://weather.yahoo.com/<loc1_url>, so
+# loc1_url is the LOAD-BEARING field: with it empty the add-on logs "empty location
+# url" and clears its props (no fetch), regardless of name/lat/lon. The url format
+# the add-on itself writes is "<country>/<region>/<town>" lowercased with spaces
+# turned to dashes — for Sacramento that is "us/ca/sacramento". lat/lon are only
+# used by the optional Weatherbit/OpenWeatherMap providers (off by default) and the
+# name is just the display label. Pre-writing all four skips the interactive geocode
+# search (RunScript(weather.multi,loc1)).
+WEATHER_LOCATION = {
+    "loc1_name": "Sacramento, CA, US",
+    "loc1_url": "us/ca/sacramento",
+    "loc1_lat": "38.5816",
+    "loc1_lon": "-121.4944",
+}
+SHOW_WEATHERINFO = "show_weatherinfo"  # Estuary skin bool: weather in the top bar
+
+
+def _set_setting(setting_id, value):
+    """Set a core Kodi setting via JSON-RPC. Returns True on a clean OK."""
+    resp = xbmc.executeJSONRPC(
+        json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "method": "Settings.SetSettingValue",
+                "params": {"setting": setting_id, "value": value},
+                "id": 1,
+            }
+        )
+    )
+    return '"result":true' in (resp or "")
+
+
+def _weather_multi_settings_path():
+    """Absolute path to Multi Weather's per-profile settings.xml."""
+    return xbmcvfs.translatePath(
+        "special://profile/addon_data/weather.multi/settings.xml"
+    )
+
+
+def _set_weather_location():
+    """Pre-write Multi Weather location 1 (name + url + lat + lon) so it resolves
+    and fetches without the interactive geocode search. loc1_url is the field the
+    add-on actually fetches by (see WEATHER_LOCATION). Creates the file/dir if
+    missing and PRESERVES every other existing setting. Idempotent.
+
+    The file is written as version="2" (Kodi's current addon-settings on-disk
+    format, which the add-on's own setSetting* writes through); the add-on reads
+    settings by id regardless of the bundled resources/settings.xml schema version."""
+    xml_path = _weather_multi_settings_path()
+    os.makedirs(os.path.dirname(xml_path), exist_ok=True)
+    root = None
+    if os.path.exists(xml_path):
+        try:
+            root = ET.parse(xml_path).getroot()
+        except ET.ParseError:
+            root = None
+    if root is None or root.tag != "settings":
+        root = ET.Element("settings")
+        root.set("version", "2")
+    by_id = {s.get("id"): s for s in root.findall("setting") if s.get("id")}
+    for sid, val in WEATHER_LOCATION.items():
+        el = by_id.get(sid)
+        if el is None:
+            el = ET.SubElement(root, "setting")
+            el.set("id", sid)
+            by_id[sid] = el
+        el.text = val
+    with open(xml_path, "w", encoding="utf-8") as f:
+        f.write(ET.tostring(root, encoding="unicode"))
+    _log(f"_configure_box: wrote Multi Weather location 1 to {xml_path}")
+
+
+def _configure_box():
+    """Apply the base box's weather + interface preferences:
+      * weather provider  -> Multi Weather (weather.addon)
+      * Multi Weather location 1 -> Sacramento, CA, US (name + coords)
+      * RSS news ticker   -> OFF (lookandfeel.enablerssfeeds)
+      * Estuary top bar   -> show weather info (Skin.SetBool, persists on restart)
+    Defensive: any failure is logged and swallowed; never aborts the run."""
+    try:
+        _set_setting("weather.addon", WEATHER_ADDON)
+        _set_setting("lookandfeel.enablerssfeeds", False)
+        _set_weather_location()
+        # The top-bar toggle is an Estuary skin bool; set it live so the restart
+        # persists it (Kodi rewrites skin settings.xml from memory on shutdown).
+        skin = ""
+        try:
+            skin = xbmc.getSkinDir() or ""
+        except Exception:  # noqa: BLE001
+            skin = ""
+        if not skin or skin == ESTUARY_SKIN_ID:
+            xbmc.executebuiltin(f"Skin.SetBool({SHOW_WEATHERINFO})")
+        _log(
+            "_configure_box: weather provider/location set, RSS off, top-bar weather on"
+        )
+    except Exception as e:  # noqa: BLE001 - never abort the rest of setup
+        _log(f"_configure_box failed (non-fatal): {e}", xbmc.LOGERROR)
+
+
+# --------------------------------------------------------------------------- #
 # Optional video chaining — front-loaded prompts (see video module for config)
 # --------------------------------------------------------------------------- #
 # Imported lazily inside run() so this base Setup still imports cleanly if the
@@ -498,6 +603,8 @@ def run():
     _add_file_sources()
     # Trim the stock Estuary home menu — before the restart so Estuary re-reads it.
     _trim_home_menu()
+    # Weather provider + Sacramento location, RSS ticker off, top-bar weather on.
+    _configure_box()
     # ONE restart finalises every freshly extracted add-on AND the self-removal.
     restart_kodi("Tony.7.Bones Setup", _log)
 
