@@ -20,12 +20,12 @@ A release bumps the version in one place — `repo/repository.tony7bones/addon.x
 
 ### First-party add-ons (current)
 
-Besides the proxy, the repo ships three first-party add-ons plus a manual-only skin patch:
+Besides the proxy, the repo ships three first-party add-ons plus the Estuary MOD V2+ skin patch:
 
 - `script.module.tony7bones` — a Python **library** (`xbmc.python.module`, invisible on the home screen) holding the shared install machinery (HTTP fetch, addons.xml index load/parse/merge, the dependency-closure resolvers, zip extract, enable/disable, add-on `origin` stamping, source-repo enabling, self-uninstall, restart, platform detection). The two Setups `<requires>` it, so Kodi auto-installs it from the repo.
 - `script.tony7bones.bootstrap` — "Tony.7.Bones Setup", the one-tap base install; front-loads an optional video step (prompt + multiselect), runs unattended, one summary, one restart, then self-uninstalls.
 - `script.tony7bones.video` — "Video Add-ons Setup", the standalone video installer; its `install_selected()` is the shared entry point the base Setup chains.
-- `script.tony7bones.modv2.patch` — "Estuary MOD V2 Patch", run by hand after installing/updating `skin.estuary.modv2`.
+- `script.tony7bones.modv2plus` — "Estuary MOD V2+", the lean patch that customizes `skin.estuary.modv2` (gear-menu reorder, a "Tony.7.Bones MOD V2+" Skin Settings category with per-item toggles, crisp white nav wordmark, thin clock, Outline HD weather icons). Run by hand — it offers **Apply / Restore** (Restore confirms first) — after installing/updating the skin. Built FRESH from the current omega source each release; replaced the retired `script.tony7bones.modv2.patch`. Full dev cycle + lessons: `docs/playbooks/modv2plus-dev-cycle-and-lessons.md`.
 
 ### What the base Setup does after installing (`script.tony7bones.bootstrap/default.py`)
 
@@ -50,6 +50,8 @@ The proxy serves add-ons from its **baked** `resources/repository.json` (read lo
 > - `docs/playbooks/release-and-deploy.md` — the two release paths + the GitHub Pages skip-build gotcha + determinism.
 > - `docs/playbooks/local-kodi-verification.md` — drive the real local Kodi; **honest** verification (prove non-empty `GetDirectory` + rendered menu, not just "no ImportError").
 > - `docs/playbooks/one-shot-and-architecture.md` — the three-add-on architecture and the one-shot flow.
+> - `docs/playbooks/modv2plus-dev-cycle-and-lessons.md` — **MOD V2+ patch: the ADB-on-real-Fire-TV dev cycle + hard-won lessons** (Mac ≠ device; build from current omega; the `WeatherIcons` skin-string mechanism; default-on opt-out flags; logo wordmark-vs-mark; JSON-RPC limits; XBTF extraction; safety).
+> - `docs/playbooks/firetv-adb-dev.md` — command-level runbook for driving the Office Fire TV over ADB + JSON-RPC (`_tools/firetv.sh`).
 > - `.claude/skills/kodi-super-agent/SKILL.md` — distilled agent operating guide.
 > - `docs/plans/` — historical design docs (implemented).
 
@@ -87,7 +89,7 @@ Test files map to what they cover (all tests import the add-on `default.py` unde
 
 There are **two** release paths — pick the right one (full detail in `docs/playbooks/release-and-deploy.md`):
 
-- **A `script.*` / `script.module.*` add-on** (`script.module.tony7bones`, `script.tony7bones.bootstrap`, `script.tony7bones.video`, `script.tony7bones.modv2.patch`): bump its `repo/<id>/addon.xml` version (+ news), run `python3 _tools/generate_repo.py`, commit the regenerated files, `git push`. **Not** `deploy.py`. The pre-push hook enforces tests, ruff, generated-files freshness, version consistency on main, and a per-add-on version-bump (`check_versions.py`).
+- **A `script.*` / `script.module.*` add-on** (`script.module.tony7bones`, `script.tony7bones.bootstrap`, `script.tony7bones.video`, `script.tony7bones.modv2plus`): bump its `repo/<id>/addon.xml` version (+ news), run `python3 _tools/generate_repo.py`, commit the regenerated files, `git push`. **Not** `deploy.py`. The pre-push hook enforces tests, ruff, generated-files freshness, version consistency on main, and a per-add-on version-bump (`check_versions.py`).
 - **The repository add-on (`repository.tony7bones`)**: use the one-command release tool below.
 
 ### Releasing the repository add-on (`repository.tony7bones`)
@@ -139,7 +141,7 @@ main**. The old `.pre-commit-config.yaml` (pytest on commit) still works if inst
 
 | Path                      | Purpose                                                                                                                                                                                                                                                                                                                                                                    |
 | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `repo/<addon-id>/`        | Any dir with an `addon.xml` becomes a zip and is listed in `addons.xml`. Currently: `repository.tony7bones` (the virtual proxy), `script.module.tony7bones` (the shared LIBRARY), `script.tony7bones.bootstrap` (Tony.7.Bones Setup), `script.tony7bones.video` (Video Add-ons Setup), and `script.tony7bones.modv2.patch` (manual-only skin patch).                       |
+| `repo/<addon-id>/`        | Any dir with an `addon.xml` becomes a zip and is listed in `addons.xml`. Currently: `repository.tony7bones` (the virtual proxy), `script.module.tony7bones` (the shared LIBRARY), `script.tony7bones.bootstrap` (Tony.7.Bones Setup), `script.tony7bones.video` (Video Add-ons Setup), and `script.tony7bones.modv2plus` (Estuary MOD V2+ skin patch).                     |
 | `repo/repositories/`      | Stand-alone third-party repository installer zips. Not in `addons.xml` — Kodi installs them manually via file manager.                                                                                                                                                                                                                                                     |
 | `repo/scripts/`           | One-shot script zips. Not in `addons.xml` — installed manually.                                                                                                                                                                                                                                                                                                            |
 | `repo/media/`             | Images browsable from Kodi's file manager. `index.html` auto-generated.                                                                                                                                                                                                                                                                                                    |

@@ -30,13 +30,13 @@ The install URL is the site **root** and never changes:
 
 ## The add-ons
 
-| Add-on                          | Name in Kodi                | What it is                                                                                                          |
-| ------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `repository.tony7bones`         | Tony.7.Bones Repo           | The virtual proxy repository (runs the local `127.0.0.1:61234` server).                                             |
-| `script.module.tony7bones`      | Tony.7.Bones Shared Library | Python LIBRARY (`xbmc.python.module`) — the shared install machinery. Invisible on the home screen.                 |
-| `script.tony7bones.bootstrap`   | Tony.7.Bones Setup          | One-tap base setup (12 repos + base apps), with an optional front-loaded video step. Self-uninstalls after running. |
-| `script.tony7bones.video`       | Video Add-ons Setup         | Pick-and-install video add-ons (POV, The Loop, Sports HD, Umbrella). Self-uninstalls after running.                 |
-| `script.tony7bones.modv2.patch` | Estuary MOD V2 Patch        | Manual-only skin patch for `skin.estuary.modv2`.                                                                    |
+| Add-on                        | Name in Kodi                | What it is                                                                                                                                                                                  |
+| ----------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `repository.tony7bones`       | Tony.7.Bones Repo           | The virtual proxy repository (runs the local `127.0.0.1:61234` server).                                                                                                                     |
+| `script.module.tony7bones`    | Tony.7.Bones Shared Library | Python LIBRARY (`xbmc.python.module`) — the shared install machinery. Invisible on the home screen.                                                                                         |
+| `script.tony7bones.bootstrap` | Tony.7.Bones Setup          | One-tap base setup (12 repos + base apps), with an optional front-loaded video step. Self-uninstalls after running.                                                                         |
+| `script.tony7bones.video`     | Video Add-ons Setup         | Pick-and-install video add-ons (POV, The Loop, Sports HD, Umbrella). Self-uninstalls after running.                                                                                         |
+| `script.tony7bones.modv2plus` | Estuary MOD V2+             | Patch for `skin.estuary.modv2`: gear-menu reorder, a "Tony.7.Bones MOD V2+" settings category with per-item toggles, crisp white nav logo, thin clock, Outline HD weather. Apply / Restore. |
 
 ### One-tap setup
 
@@ -117,5 +117,9 @@ main agree and are tagged.
   verification.
 - `docs/playbooks/one-shot-and-architecture.md` — the three-add-on architecture and
   the one-shot flow.
+- `docs/playbooks/modv2plus-dev-cycle-and-lessons.md` — the MOD V2+ patch: the
+  ADB-on-real-Fire-TV development cycle + hard-won lessons.
+- `docs/playbooks/firetv-adb-dev.md` — driving the Fire TV over ADB + JSON-RPC
+  (`_tools/firetv.sh`).
 - `docs/plans/` — historical design docs (implemented).
 - `.claude/skills/kodi-super-agent/SKILL.md` — agent operating guide.
