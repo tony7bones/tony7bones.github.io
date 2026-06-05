@@ -5,16 +5,15 @@ Two layers, mirroring the other add-on tests:
 * Static contract — the manifest is well-formed (id / name / version / news), the
   script compiles, FILES is exactly the shipped XMLs (incl. Variables.xml), the
   loose media logo mapping is present and its source PNG ships. The shipped XMLs
-  carry the features: Home.xml gates the system-info overlay (default ON) on
-  !Skin.HasSetting(hide_system_info_overlay) AND Control.HasFocus(802) and
-  retargets both wordmark textures to the hi-res logo while leaving the MARK
-  controls (logo.png / LogoVar) untouched; SkinSettings.xml carries a new
-  "Tony.7.Bones MOD V2+" category (list 9000 item id=11) whose panel (grouplist
-  1100) holds the single "Enable System Info overlay" radiobutton toggling
-  hide_system_info_overlay (default ON), the old toggle is gone from Extras
-  (grouplist 500), and the scrollbar navigates into 1100 on HasFocus(11);
-  Variables.xml carries the HasFocus(11) help value; Settings.xml lists Skin
-  Settings before Media sources.
+  carry the features: Home.xml gates the system-info overlay (default HIDDEN) on
+  Skin.HasSetting(show_system_info_overlay) AND Control.HasFocus(802);
+  SkinSettings.xml carries a "Tony.7.Bones MOD V2+" category (list 9000 item
+  id=11) whose panel (grouplist 1100) holds a "Disable System Info overlay"
+  radiobutton toggling show_system_info_overlay (checked-by-default, overlay
+  hidden by default), plus the clock and nav-logo per-item toggles and the
+  in-tab Apply / Restore buttons; the weather texture is wired directly to the
+  Outline HD resource pack (no toggle). Variables.xml carries the HasFocus(11)
+  help value; Settings.xml lists Skin Settings before Media sources.
 
 * Runtime behaviour — default.py is imported under mocked Kodi modules. run() is
   __main__-guarded so importing is side-effect-free, but the module top-level
@@ -49,6 +48,10 @@ INCLUDES_XML = ADDON_DIR / "resources" / "xml" / "Includes.xml"
 VARIABLES_XML = ADDON_DIR / "resources" / "xml" / "Variables.xml"
 LOGO_PNG = ADDON_DIR / "resources" / "media" / "extras" / "logo-text-hires.png"
 WEATHER_STOCK_DIR = ADDON_DIR / "resources" / "media" / "extras" / "weather-stock"
+WEATHER_RESOURCE = "resource.images.weathericons.outline-hd"
+WEATHER_TEXTURE = (
+    "$INFO[Weather.FanartCode,resource://resource.images.weathericons.outline-hd/,.png]"
+)
 
 
 def test_includes_clock_label_uses_var():
@@ -70,46 +73,48 @@ def test_includes_clock_label_uses_var():
     assert "<font>font_clock</font>" in text, "clock must keep the font_clock font"
 
 
-def test_includes_weather_icon_uses_var():
-    """The top-right weather condition icon now routes through
-    $VAR[WeatherIconTextureVar] so the weather toggle can switch stock-white <->
-    MOD V2 colored. The raw weather-stock texture literal must no longer be
-    hard-wired in the control."""
+def test_includes_weather_icon_uses_outline_hd_resource():
+    """The top-right weather condition icon is now wired directly (no toggle) to
+    the official Outline HD weather resource pack. The old $VAR indirection and
+    the legacy stock/colored literals must be gone."""
     text = INCLUDES_XML.read_text(encoding="utf-8")
-    assert "<texture>$VAR[WeatherIconTextureVar]</texture>" in text, (
-        "weather icon texture must route through WeatherIconTextureVar"
+    assert "<texture>{}</texture>".format(WEATHER_TEXTURE) in text, (
+        "weather icon texture must point at the Outline HD resource pack"
     )
-    assert (
-        "<texture>$INFO[Weather.FanartCode,special://skin/extras/weather-stock/,.png]</texture>"
-        not in text
-    ), "the hard-wired weather-stock texture must be gone (moved into the $VAR)"
+    assert "$VAR[WeatherIconTextureVar]" not in text, (
+        "the WeatherIconTextureVar indirection must be gone from Includes.xml"
+    )
+    assert "extras/weather-stock/" not in text, (
+        "the legacy stock-white weather literal must be gone"
+    )
+    assert "special://skin/extras/weather/" not in text, (
+        "the legacy MOD V2 colored weather literal must be gone"
+    )
 
 
-def test_variables_weather_and_clock_vars_default_to_stock():
-    """WeatherIconTextureVar and ClockLabelVar exist and default (unset flag) to
-    the stock look, switching to the MOD V2 look only when the opt-in flag is
-    set."""
+def test_includes_no_weather_var_or_flag_remains():
+    """No WeatherIconTextureVar / weather_modv2_colored reference may remain
+    anywhere in the shipped XMLs — the toggle path is fully removed."""
+    for xml in (INCLUDES_XML, VARIABLES_XML, SKINSETTINGS_XML, HOME_XML):
+        text = xml.read_text(encoding="utf-8")
+        assert "WeatherIconTextureVar" not in text, (
+            f"WeatherIconTextureVar must be gone from {xml.name}"
+        )
+        assert "weather_modv2_colored" not in text, (
+            f"weather_modv2_colored must be gone from {xml.name}"
+        )
+
+
+def test_variables_clock_var_defaults_to_stock():
+    """ClockLabelVar exists and defaults (unset flag) to the stock thin time,
+    switching to the MOD V2 bold look only when the opt-in flag is set. The
+    weather variable must no longer exist."""
     root = ET.parse(VARIABLES_XML).getroot()
     by_name = {v.get("name"): v for v in root.iter("variable")}
 
-    wv = by_name.get("WeatherIconTextureVar")
-    assert wv is not None, "WeatherIconTextureVar must exist in Variables.xml"
-    vals = list(wv.findall("value"))
-    # the conditional (colored) value gates on the opt-in flag
-    colored = [
-        e.text
-        for e in vals
-        if e.get("condition") == "Skin.HasSetting(weather_modv2_colored)"
-    ]
-    assert colored == [
-        "$INFO[Weather.FanartCode,special://skin/extras/weather/,.png]"
-    ], f"colored weather value must gate on the flag, got {colored}"
-    # the default (last, unconditional) value is the stock-white set
-    assert vals[-1].get("condition") is None
-    assert (
-        vals[-1].text
-        == "$INFO[Weather.FanartCode,special://skin/extras/weather-stock/,.png]"
-    ), "WeatherIconTextureVar default must be the stock-white set"
+    assert "WeatherIconTextureVar" not in by_name, (
+        "WeatherIconTextureVar must be removed from Variables.xml"
+    )
 
     cv = by_name.get("ClockLabelVar")
     assert cv is not None, "ClockLabelVar must exist in Variables.xml"
@@ -128,35 +133,32 @@ def test_variables_weather_and_clock_vars_default_to_stock():
     )
 
 
-def test_weather_stock_icons_ship_and_nonempty():
-    """The stock-white weather icon set must ship as loose PNGs and include the
-    sunny condition (32.png) plus the na fallback."""
-    assert WEATHER_STOCK_DIR.is_dir(), "must ship resources/media/extras/weather-stock/"
-    pngs = sorted(p.name for p in WEATHER_STOCK_DIR.glob("*.png"))
-    assert pngs, "weather-stock must contain PNG icons"
-    assert "32.png" in pngs, "the sunny condition icon (32) must ship"
-    assert "na.png" in pngs, "the na fallback icon must ship"
-    for p in WEATHER_STOCK_DIR.glob("*.png"):
-        assert p.stat().st_size > 0, f"{p.name} must be non-empty"
+def test_weather_stock_icons_removed():
+    """The bundled stock-white weather icon set is no longer shipped — the
+    official Outline HD resource pack replaces it."""
+    assert not WEATHER_STOCK_DIR.exists(), (
+        "resources/media/extras/weather-stock/ must be removed"
+    )
 
 
-def test_media_dirs_maps_weather_stock():
-    media_dirs = _assign("MEDIA_DIRS")
-    matches = [
-        (src, dst)
-        for (src, dst) in media_dirs
-        if dst.replace("\\", "/") == "extras/weather-stock"
-        and src.replace("\\", "/") == "resources/media/extras/weather-stock"
-    ]
-    assert len(matches) == 1, (
-        f"expected one weather-stock dir mapping, got {media_dirs}"
+def test_addon_requires_outline_hd_weather_pack():
+    """addon.xml <requires> imports the Outline HD weather resource so Kodi
+    auto-installs it from the official repo for real users."""
+    root = _addon_root()
+    imports = [imp.get("addon") for imp in root.iter("import")]
+    assert WEATHER_RESOURCE in imports, (
+        f"addon.xml must import {WEATHER_RESOURCE}, got imports: {imports}"
     )
-    # the dst must be the skin ROOT's extras/ (special://skin/extras/), NOT
-    # media/extras/ — Includes.xml uses special://skin/extras/weather-stock/.
-    _src, dst = matches[0]
-    assert not dst.replace("\\", "/").startswith("media/"), (
-        f"weather-stock dst must be skin-root extras/, not media/extras/: {dst}"
-    )
+
+
+def test_no_media_dirs_in_default():
+    """MEDIA_DIRS (the weather-stock dir copy) must be gone from default.py along
+    with its apply/restore helpers."""
+    text = DEFAULT_PY.read_text()
+    assert "MEDIA_DIRS" not in text, "MEDIA_DIRS must be removed from default.py"
+    assert "weather-stock" not in text, "no weather-stock reference may remain"
+    assert "apply_media_dirs" not in text, "apply_media_dirs must be removed"
+    assert "restore_media_dirs" not in text, "restore_media_dirs must be removed"
 
 
 def _addon_root():
@@ -185,9 +187,9 @@ def test_addon_name():
     assert _addon_root().get("name") == "Estuary MOD V2+"
 
 
-def test_addon_version_floor_1_2_0():
+def test_addon_version_floor_1_3_0():
     parts = tuple(int(p) for p in _addon_root().get("version").split("."))
-    assert parts >= (1, 2, 0), "version must be at least 1.2.0"
+    assert parts >= (1, 3, 0), "version must be at least 1.3.0"
 
 
 def test_no_provides_executable():
@@ -275,17 +277,17 @@ def _group_18000_own_visible(text):
     return block[vis_start + len("<visible>") : vis_end].strip()
 
 
-def test_home_overlay_gated_on_optout_toggle_and_focus():
-    """The system-info overlay is now default ON via an OPT-OUT flag: it shows
-    unless hide_system_info_overlay is set, and only on gear focus. The old
-    opt-in flag (enable_info_overlay) must be gone."""
+def test_home_overlay_gated_on_optin_toggle_and_focus():
+    """The system-info overlay is now default HIDDEN via an OPT-IN flag: it shows
+    only when show_system_info_overlay is set, and only on gear focus. The old
+    opt-out flag (hide_system_info_overlay) must be gone."""
     visible = _group_18000_own_visible(HOME_XML.read_text(encoding="utf-8"))
     assert visible != "false", f"group 18000 must not be hard-disabled, got {visible!r}"
-    assert "!Skin.HasSetting(hide_system_info_overlay)" in visible, (
-        f"overlay must gate (default ON) on the opt-out flag, got {visible!r}"
+    assert "Skin.HasSetting(show_system_info_overlay)" in visible, (
+        f"overlay must gate (default hidden) on the opt-in flag, got {visible!r}"
     )
-    assert "enable_info_overlay" not in visible, (
-        f"the old opt-in flag must be gone, got {visible!r}"
+    assert "hide_system_info_overlay" not in visible, (
+        f"the old opt-out flag must be gone, got {visible!r}"
     )
     assert "Control.HasFocus(802)" in visible, (
         f"overlay must gate on gear focus, got {visible!r}"
@@ -449,19 +451,29 @@ def _find_list(root, lid):
 
 
 def test_skinsettings_old_overlay_toggle_removed_from_extras():
-    """The opt-in enable_info_overlay radiobutton must be gone from Extras
-    (grouplist 500) — and from the whole file (the new opt-out flag replaces it)."""
+    """The old opt-in/opt-out overlay radiobuttons must be gone from Extras
+    (grouplist 500) — and from the whole file (the new toggle lives in the
+    Tony.7.Bones MOD V2+ panel)."""
     root = ET.parse(SKINSETTINGS_XML).getroot()
     grouplist = _find_grouplist(root, "500")
     stale = [
         ctrl
         for ctrl in grouplist.iter("control")
         if ctrl.get("type") == "radiobutton"
-        and ctrl.findtext("onclick") == "Skin.ToggleSetting(enable_info_overlay)"
+        and ctrl.findtext("onclick")
+        in (
+            "Skin.ToggleSetting(enable_info_overlay)",
+            "Skin.ToggleSetting(hide_system_info_overlay)",
+            "Skin.ToggleSetting(show_system_info_overlay)",
+        )
     ]
-    assert not stale, "the old enable_info_overlay toggle must be gone from Extras"
-    assert "enable_info_overlay" not in SKINSETTINGS_XML.read_text(encoding="utf-8"), (
+    assert not stale, "no overlay toggle may remain in Extras (grouplist 500)"
+    text = SKINSETTINGS_XML.read_text(encoding="utf-8")
+    assert "enable_info_overlay" not in text, (
         "no enable_info_overlay reference may remain in SkinSettings.xml"
+    )
+    assert "hide_system_info_overlay" not in text, (
+        "no hide_system_info_overlay reference may remain in SkinSettings.xml"
     )
 
 
@@ -486,8 +498,9 @@ def test_skinsettings_new_category_item_is_last():
 
 def test_skinsettings_new_panel_holds_the_overlay_toggle():
     """The new panel (grouplist 1100) is gated on HasFocus(11) and holds exactly
-    one 'Enable System Info overlay' radiobutton that toggles the opt-out flag
-    hide_system_info_overlay and is checked (ON) by default."""
+    one 'Disable System Info overlay' radiobutton that toggles the opt-in flag
+    show_system_info_overlay and is CHECKED by default (overlay hidden by
+    default, i.e. "Disable" is on unless the flag is set)."""
     root = ET.parse(SKINSETTINGS_XML).getroot()
     panel = _find_grouplist(root, "1100")
     assert panel.findtext("visible") == "Container(9000).HasFocus(11)", (
@@ -497,30 +510,30 @@ def test_skinsettings_new_panel_holds_the_overlay_toggle():
         ctrl
         for ctrl in panel.iter("control")
         if ctrl.get("type") == "radiobutton"
-        and ctrl.findtext("onclick") == "Skin.ToggleSetting(hide_system_info_overlay)"
+        and ctrl.findtext("onclick") == "Skin.ToggleSetting(show_system_info_overlay)"
     ]
     assert len(toggles) == 1, (
-        f"expected exactly one hide_system_info_overlay toggle in panel 1100, "
+        f"expected exactly one show_system_info_overlay toggle in panel 1100, "
         f"found {len(toggles)}"
     )
     ctrl = toggles[0]
-    assert ctrl.findtext("label") == "Enable System Info overlay"
-    # default ON: opt-out flag -> checked unless the flag is set
-    assert ctrl.findtext("selected") == "!Skin.HasSetting(hide_system_info_overlay)"
+    assert ctrl.findtext("label") == "Disable System Info overlay"
+    # default checked: "Disable" is on (overlay hidden) unless the flag is set
+    assert ctrl.findtext("selected") == "!Skin.HasSetting(show_system_info_overlay)"
 
 
 @pytest.mark.parametrize(
     "flag,label",
     [
-        ("weather_modv2_colored", "Stock weather icons (white)"),
         ("clock_modv2_bold", "Stock clock (thin)"),
         ("wordmark_modv2_original", "Stock nav logo (white)"),
     ],
 )
-def test_skinsettings_panel_has_the_three_new_toggles(flag, label):
-    """Panel 1100 carries each new opt-out toggle: it toggles the opt-in flag and
+def test_skinsettings_panel_has_the_clock_and_logo_toggles(flag, label):
+    """Panel 1100 carries each opt-out toggle: it toggles the opt-in flag and
     is checked (selected) by default, i.e. selected = !Skin.HasSetting(<flag>) so
-    the stock look is on unless the user opts into the MOD V2 look."""
+    the stock look is on unless the user opts into the MOD V2 look. The weather
+    toggle is gone (weather is now the fixed Outline HD set)."""
     root = ET.parse(SKINSETTINGS_XML).getroot()
     panel = _find_grouplist(root, "1100")
     toggles = [
@@ -681,14 +694,6 @@ def patch_env(tmp_path, monkeypatch):
         )
     for rel_src, _rel_dst in _assign("MEDIA"):
         (addon_path / rel_src).write_bytes((ADDON_DIR / rel_src).read_bytes())
-    # seed the real shipped MEDIA_DIRS so apply copies genuine bytes
-    for rel_src, _rel_dst in _assign("MEDIA_DIRS"):
-        src_dir = ADDON_DIR / rel_src
-        dst_dir = addon_path / rel_src
-        dst_dir.mkdir(parents=True, exist_ok=True)
-        for f in src_dir.glob("*"):
-            if f.is_file():
-                (dst_dir / f.name).write_bytes(f.read_bytes())
 
     xbmc = types.ModuleType("xbmc")
     xbmc.LOGERROR = 4
@@ -764,16 +769,6 @@ def test_run_apply_copies_files_and_media(patch_env):
     logo = patch_env.skin_root / "media" / "extras" / "logo-text-hires.png"
     assert logo.exists(), "the hi-res wordmark must be copied into the skin media dir"
     assert logo.read_bytes() == LOGO_PNG.read_bytes()
-    # the whole weather-stock dir is copied into <skin>/extras/weather-stock
-    # (skin root, where special://skin/extras/ resolves — NOT media/extras/)
-    dst_weather = patch_env.skin_root / "extras" / "weather-stock"
-    assert dst_weather.is_dir(), "weather-stock dir must be copied on Apply"
-    copied = sorted(p.name for p in dst_weather.glob("*.png"))
-    shipped = sorted(p.name for p in WEATHER_STOCK_DIR.glob("*.png"))
-    assert copied == shipped, "every weather-stock icon must be copied"
-    assert (dst_weather / "32.png").read_bytes() == (
-        WEATHER_STOCK_DIR / "32.png"
-    ).read_bytes()
     assert any("ReloadSkin" in b for b in patch_env.state["builtins"])
     # The reload must be automatic: a non-blocking notification, never a modal
     # ok() that waits for a click before reloading.
@@ -851,10 +846,6 @@ def test_run_restore_reverts_xml_and_removes_loose_png(patch_env):
     logo = patch_env.skin_root / "media" / "extras" / "logo-text-hires.png"
     logo.parent.mkdir(parents=True, exist_ok=True)
     logo.write_bytes(b"PNGDATA")
-    # a weather-stock dir present (as if Apply had placed it)
-    weather = patch_env.skin_root / "extras" / "weather-stock"
-    weather.mkdir(parents=True, exist_ok=True)
-    (weather / "32.png").write_bytes(b"WEATHERPNG")
 
     patch_env.state["select"] = 1
     patch_env.mod.run()
@@ -863,7 +854,6 @@ def test_run_restore_reverts_xml_and_removes_loose_png(patch_env):
         assert (skin_xml / fname).read_text() == "ORIGINAL " + fname
         assert not (skin_xml / (fname + ".bak")).exists()
     assert not logo.exists(), "the loose hi-res wordmark must be removed on Restore"
-    assert not weather.exists(), "the weather-stock dir must be removed on Restore"
     assert any("ReloadSkin" in b for b in patch_env.state["builtins"])
     # Clean restore auto-reloads via a non-blocking notification (no modal ok()).
     assert not patch_env.state["ok"], (
@@ -895,35 +885,3 @@ def test_restore_patches_nothing_to_restore_no_exception(patch_env):
     assert restored == 0
     assert failed == 0
     assert skipped == len(_assign("FILES"))
-
-
-def test_apply_media_dirs_copies_whole_dir(patch_env):
-    applied, failed = patch_env.mod.apply_media_dirs(str(patch_env.skin_root))
-    assert applied == len(_assign("MEDIA_DIRS"))
-    assert failed == 0
-    dst = patch_env.skin_root / "extras" / "weather-stock"
-    copied = sorted(p.name for p in dst.glob("*.png"))
-    shipped = sorted(p.name for p in WEATHER_STOCK_DIR.glob("*.png"))
-    assert copied == shipped
-
-
-def test_restore_media_dirs_handles_missing_dir(patch_env):
-    """restore_media_dirs() with no dir present -> (0 removed, 0 failed, 1 skipped)."""
-    removed, failed, skipped = patch_env.mod.restore_media_dirs(
-        str(patch_env.skin_root)
-    )
-    assert removed == 0
-    assert failed == 0
-    assert skipped == len(_assign("MEDIA_DIRS"))
-
-
-def test_restore_media_dirs_removes_present_dir(patch_env):
-    weather = patch_env.skin_root / "extras" / "weather-stock"
-    weather.mkdir(parents=True, exist_ok=True)
-    (weather / "32.png").write_bytes(b"x")
-    removed, failed, skipped = patch_env.mod.restore_media_dirs(
-        str(patch_env.skin_root)
-    )
-    assert removed == 1
-    assert failed == 0
-    assert not weather.exists()

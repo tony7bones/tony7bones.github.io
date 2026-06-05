@@ -2550,7 +2550,7 @@
 						<height>50</height>
 						<fadetime>300</fadetime>
 						<aspectratio aligny="center" align="left">keep</aspectratio>
-						<texture>$VAR[WeatherIconTextureVar]</texture>
+						<texture>$INFO[Weather.FanartCode,resource://resource.images.weathericons.outline-hd/,.png]</texture>
 						<visible>Skin.HasSetting(show_weatherinfo) + Weather.IsFetched + ![String.IsEqual(Weather.FanartCode,na)]</visible>
 					</control>
 					<control type="label">

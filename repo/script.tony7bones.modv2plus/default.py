@@ -34,26 +34,6 @@ MEDIA = [
     ),
 ]
 
-# Loose media DIRECTORIES copied wholesale into the skin. Each entry maps a
-# source dir (relative to ADDON_PATH) to a destination dir (relative to the skin
-# root). These are NEW directories in the skin (no .bak); Restore deletes them
-# entirely. Used for the stock-white weather condition icon set that replaces
-# MOD V2's own coloured extras/weather/ art (we point Includes.xml at
-# extras/weather-stock/ so MOD V2's set is left untouched and Restore is clean).
-#
-# NOTE the destination is the skin ROOT's extras/ (NOT media/extras/): the
-# Includes.xml texture uses special://skin/extras/weather-stock/, which Kodi
-# resolves against the skin root — that's where MOD V2's own extras/weather/
-# lives. (The logo MEDIA entry above lands under media/extras/ because Home.xml
-# texture refs are resolved relative to the skin's media/ dir; special://skin/ is
-# the skin root. Two different bases — don't conflate them.)
-MEDIA_DIRS = [
-    (
-        "resources/media/extras/weather-stock",
-        "extras/weather-stock",
-    ),
-]
-
 
 def apply_patches(skin_xml):
     """Copy each XML in FILES into the skin's xml/ dir.
@@ -180,74 +160,6 @@ def restore_media(skin_root):
     return removed, failed, skipped
 
 
-def apply_media_dirs(skin_root):
-    """Copy each loose MEDIA_DIRS source directory into the skin (NEW dirs — no
-    .bak). The destination dir is created/refreshed and the source contents are
-    copied in, overwriting. Each entry is handled defensively. Returns
-    (applied, failed) counted in directories.
-    """
-    applied = 0
-    failed = 0
-
-    for rel_src, rel_dst in MEDIA_DIRS:
-        src = os.path.join(ADDON_PATH, *rel_src.split("/"))
-        dst = os.path.join(skin_root, *rel_dst.split("/"))
-
-        try:
-            os.makedirs(dst, exist_ok=True)
-            count = 0
-            for name in os.listdir(src):
-                s = os.path.join(src, name)
-                if os.path.isfile(s):
-                    shutil.copy2(s, os.path.join(dst, name))
-                    count += 1
-            applied += 1
-            xbmc.log(
-                "[mod v2+] applied media dir {} ({} files)".format(rel_dst, count),
-                xbmc.LOGINFO,
-            )
-        except Exception as e:
-            xbmc.log(
-                "[mod v2+] failed media dir {}: {}".format(rel_dst, e), xbmc.LOGERROR
-            )
-            failed += 1
-
-    return applied, failed
-
-
-def restore_media_dirs(skin_root):
-    """Remove the loose MEDIA_DIRS directories we added (they didn't exist
-    originally). A missing dir is treated as already-removed (skipped). Each
-    entry is handled defensively. Returns (removed, failed, skipped) in dirs.
-    """
-    removed = 0
-    failed = 0
-    skipped = 0
-
-    for _rel_src, rel_dst in MEDIA_DIRS:
-        dst = os.path.join(skin_root, *rel_dst.split("/"))
-
-        try:
-            if os.path.isdir(dst):
-                shutil.rmtree(dst)
-                removed += 1
-                xbmc.log("[mod v2+] removed media dir {}".format(rel_dst), xbmc.LOGINFO)
-            else:
-                skipped += 1
-                xbmc.log(
-                    "[mod v2+] media dir {} absent, skipped".format(rel_dst),
-                    xbmc.LOGINFO,
-                )
-        except Exception as e:
-            xbmc.log(
-                "[mod v2+] failed removing media dir {}: {}".format(rel_dst, e),
-                xbmc.LOGERROR,
-            )
-            failed += 1
-
-    return removed, failed, skipped
-
-
 def run():
     if xbmc.getSkinDir() != SKIN_ID:
         xbmcgui.Dialog().ok(
@@ -292,10 +204,8 @@ def run():
 def _apply(skin_root, skin_xml):
     applied, failed = apply_patches(skin_xml)
     media_applied, media_failed = apply_media(skin_root)
-    dirs_applied, dirs_failed = apply_media_dirs(skin_root)
 
-    media_applied += dirs_applied
-    total_failed = failed + media_failed + dirs_failed
+    total_failed = failed + media_failed
     if total_failed > 0:
         xbmcgui.Dialog().ok(
             "Partly Applied",
@@ -319,10 +229,6 @@ def _apply(skin_root, skin_xml):
 def _restore(skin_root, skin_xml):
     restored, failed, _skipped = restore_patches(skin_xml)
     media_removed, media_failed, _media_skipped = restore_media(skin_root)
-    dirs_removed, dirs_failed, _dirs_skipped = restore_media_dirs(skin_root)
-
-    media_removed += dirs_removed
-    media_failed += dirs_failed
 
     if restored == 0 and media_removed == 0:
         xbmcgui.Dialog().ok(

@@ -13,9 +13,11 @@ no AI attribution anywhere. `script.*` changes ship via `generate_repo.py` + pus
 - [ ] **Settings menu order toggle** — "Skin Settings first", default ON; off = stock order. _Harder_ (list item order isn't cleanly conditional).
 - [ ] Re-skin the MOD V2+ add-on icon to reflect the "+" branding (currently reuses the old patch icon).
 - [ ] Consider a localized strings.po for our category labels/help (currently literal text).
+- [ ] Create a distinct `drop/` folder at the repo root — a staging area for incoming files/assets. _Purpose/usage to confirm._
 
 ## Done (shipped)
 
+- [x] **1.3.0** — System Info overlay now hidden by default: the panel toggle is renamed "Disable System Info overlay" (`show_system_info_overlay`, checked-by-default so the overlay is off), Home.xml group 18000 gates on `Skin.HasSetting(show_system_info_overlay) + Control.HasFocus(802)`. Weather icons are now the official Outline HD set with no toggle: `addon.xml` `<requires>` imports `resource.images.weathericons.outline-hd` (auto-installed from the official Kodi repo), Includes.xml wires the weather `<texture>` directly to `resource://resource.images.weathericons.outline-hd/`. Removed the dead weather toggle path entirely: the "Stock weather icons (white)" radiobutton, `WeatherIconTextureVar`, the `weather_modv2_colored` flag, the `MEDIA_DIRS` weather-stock copy in default.py, and the bundled `resources/media/extras/weather-stock/` icon set. Kept the clock + nav-logo toggles and the logo MEDIA entry.
 - [x] **1.2.0** — each tweak is now a per-item toggle in the "Tony.7.Bones MOD V2+" category, all defaulting to the stock look we ship: weather icons (`weather_modv2_colored`, off=stock white via `WeatherIconTextureVar`), clock (`clock_modv2_bold`, off=thin via `ClockLabelVar`), nav wordmark (`wordmark_modv2_original`, off=stock white hi-res; two stacked variants per logo group). Plus in-tab "Apply Tony.7.Bones tweaks" / "Restore stock MOD V2" buttons (default.py routes `apply`/`restore` argv). System Info overlay toggle unchanged.
 - [x] **1.1.0** — "Tony.7.Bones MOD V2+" Skin Settings category (last); System Info overlay toggle moved there, renamed, defaults ON.
 - [x] **1.0.4** — top-right weather icons swapped to stock white (49 icons extracted from stock `Textures.xbt`).

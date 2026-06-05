@@ -489,12 +489,9 @@
 		<value>icons/logo-text.png</value>
 	</variable>
 	<!-- Tony.7.Bones MOD V2+ toggles. Each defaults to the stock look we ship.
-	     weather_modv2_colored set -> MOD V2's colored set (extras/weather/);
-	     unset (default) -> our stock-white set (extras/weather-stock/). -->
-	<variable name="WeatherIconTextureVar">
-		<value condition="Skin.HasSetting(weather_modv2_colored)">$INFO[Weather.FanartCode,special://skin/extras/weather/,.png]</value>
-		<value>$INFO[Weather.FanartCode,special://skin/extras/weather-stock/,.png]</value>
-	</variable>
+	     Weather icons are now the official Outline HD set (no toggle): the texture
+	     is wired directly in Includes.xml to
+	     resource://resource.images.weathericons.outline-hd/. -->
 	<!-- clock_modv2_bold set -> MOD V2's bold time; unset (default) -> stock thin. -->
 	<variable name="ClockLabelVar">
 		<value condition="Skin.HasSetting(clock_modv2_bold)">[B]$INFO[System.Time][/B]</value>

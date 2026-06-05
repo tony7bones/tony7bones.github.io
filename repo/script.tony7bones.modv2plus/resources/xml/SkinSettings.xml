@@ -1677,16 +1677,10 @@
 					<shadowcolor>black</shadowcolor>
 				</control>
 				<control type="radiobutton" id="1101">
-					<label>Enable System Info overlay</label>
+					<label>Disable System Info overlay</label>
 					<include>DefaultSettingButton</include>
-					<onclick>Skin.ToggleSetting(hide_system_info_overlay)</onclick>
-					<selected>!Skin.HasSetting(hide_system_info_overlay)</selected>
-				</control>
-				<control type="radiobutton" id="1102">
-					<label>Stock weather icons (white)</label>
-					<include>DefaultSettingButton</include>
-					<onclick>Skin.ToggleSetting(weather_modv2_colored)</onclick>
-					<selected>!Skin.HasSetting(weather_modv2_colored)</selected>
+					<onclick>Skin.ToggleSetting(show_system_info_overlay)</onclick>
+					<selected>!Skin.HasSetting(show_system_info_overlay)</selected>
 				</control>
 				<control type="radiobutton" id="1103">
 					<label>Stock clock (thin)</label>
