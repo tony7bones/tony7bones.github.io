@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="script.tony7bones.modv2plus"
        name="Estuary MOD V2+"
-       version="1.0.0"
+       version="1.0.1"
        provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
@@ -14,6 +14,6 @@
     <assets>
       <icon>icon.png</icon>
     </assets>
-    <news>Initial release: Skin Settings above Media sources, opt-in Settings-focus info overlay (default off), and a sharper high-res white navigation wordmark. Built fresh from the Omega MOD V2 source.</news>
+    <news>Apply/Restore now reload the skin automatically (a non-blocking notification replaces the old dialog that waited for an OK click before reloading).</news>
   </extension>
 </addon>

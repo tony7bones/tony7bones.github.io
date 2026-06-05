@@ -69,8 +69,8 @@ def test_addon_name():
     assert _addon_root().get("name") == "Estuary MOD V2+"
 
 
-def test_addon_version_is_1_0_0():
-    assert _addon_root().get("version") == "1.0.0"
+def test_addon_version_is_1_0_1():
+    assert _addon_root().get("version") == "1.0.1"
 
 
 def test_no_provides_executable():
@@ -306,11 +306,15 @@ def patch_env(tmp_path, monkeypatch):
         def ok(self, title, msg):
             state["ok"].append((title, msg))
 
+        def notification(self, title, msg, icon=None, ms=None):
+            state.setdefault("notify", []).append((title, msg))
+
         def select(self, title, options):
             state["select_calls"].append((title, list(options)))
             return state["select"]
 
     xbmcgui.Dialog = _Dialog
+    xbmcgui.NOTIFICATION_INFO = "info"
 
     xbmcvfs = types.ModuleType("xbmcvfs")
     xbmcvfs.translatePath = lambda p: p.replace("special://home/", str(home) + "/")
@@ -351,6 +355,12 @@ def test_run_apply_copies_files_and_media(patch_env):
     assert logo.exists(), "the hi-res wordmark must be copied into the skin media dir"
     assert logo.read_bytes() == LOGO_PNG.read_bytes()
     assert any("ReloadSkin" in b for b in patch_env.state["builtins"])
+    # The reload must be automatic: a non-blocking notification, never a modal
+    # ok() that waits for a click before reloading.
+    assert not patch_env.state["ok"], (
+        "Apply success must not show a blocking ok() dialog"
+    )
+    assert patch_env.state.get("notify"), "Apply success must show a notification"
 
 
 def test_run_cancel_does_nothing(patch_env):
@@ -394,7 +404,11 @@ def test_run_restore_reverts_xml_and_removes_loose_png(patch_env):
         assert not (skin_xml / (fname + ".bak")).exists()
     assert not logo.exists(), "the loose hi-res wordmark must be removed on Restore"
     assert any("ReloadSkin" in b for b in patch_env.state["builtins"])
-    assert patch_env.state["ok"], "restore must show a summary dialog"
+    # Clean restore auto-reloads via a non-blocking notification (no modal ok()).
+    assert not patch_env.state["ok"], (
+        "clean restore must not show a blocking ok() dialog"
+    )
+    assert patch_env.state.get("notify"), "restore must show a notification"
 
 
 def test_run_restore_nothing_to_restore(patch_env):

@@ -200,11 +200,13 @@ def _apply(skin_root, skin_xml):
         )
         return
 
-    xbmcgui.Dialog().ok(
-        "Applied",
-        "{} files + {} media applied.[CR]Reloading skin...".format(
-            applied, media_applied
-        ),
+    # Non-blocking: notify and reload immediately. A modal ok() here would block
+    # the reload until the user clicked it (while claiming to be reloading).
+    xbmcgui.Dialog().notification(
+        "Estuary MOD V2+",
+        "Applied {} files + {} media — reloading skin".format(applied, media_applied),
+        xbmcgui.NOTIFICATION_INFO,
+        4000,
     )
     xbmc.executebuiltin("ReloadSkin()")
 
@@ -221,17 +223,22 @@ def _restore(skin_root, skin_xml):
         return
 
     total_failed = failed + media_failed
-    note = (
-        "[CR]{} could not be reverted — check the Kodi log.".format(total_failed)
-        if total_failed
-        else ""
-    )
-    xbmcgui.Dialog().ok(
-        "Original Restored",
-        "Restored {} files, removed {} media.{}[CR]Reloading skin...".format(
-            restored, media_removed, note
-        ),
-    )
+    if total_failed:
+        # Blocking only when there's a failure the user should read.
+        xbmcgui.Dialog().ok(
+            "Original Restored",
+            "Restored {} files, removed {} media.[CR]{} could not be reverted "
+            "— check the Kodi log.".format(restored, media_removed, total_failed),
+        )
+    else:
+        xbmcgui.Dialog().notification(
+            "Estuary MOD V2+",
+            "Restored {} files, removed {} media — reloading skin".format(
+                restored, media_removed
+            ),
+            xbmcgui.NOTIFICATION_INFO,
+            4000,
+        )
     xbmc.executebuiltin("ReloadSkin()")
 
 
