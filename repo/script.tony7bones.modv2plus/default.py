@@ -1,5 +1,6 @@
 import os
 import shutil
+import sys
 import xbmc
 import xbmcgui
 import xbmcaddon
@@ -263,6 +264,18 @@ def run():
             "Failed",
             "{} not found.[CR]Install it first, then run this script.".format(SKIN_ID),
         )
+        return
+
+    # Direct-action routing: RunScript(...,apply) / RunScript(...,restore) run the
+    # matching path straight away (used by the in-tab Apply / Restore buttons in
+    # the "Tony.7.Bones MOD V2+" Skin Settings category). With no/unknown arg we
+    # fall back to the interactive chooser.
+    arg = sys.argv[1].strip().lower() if len(sys.argv) > 1 and sys.argv[1] else ""
+    if arg == "apply":
+        _apply(skin_root, skin_xml)
+        return
+    if arg == "restore":
+        _restore(skin_root, skin_xml)
         return
 
     choice = xbmcgui.Dialog().select(

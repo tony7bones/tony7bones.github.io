@@ -51,33 +51,81 @@ LOGO_PNG = ADDON_DIR / "resources" / "media" / "extras" / "logo-text-hires.png"
 WEATHER_STOCK_DIR = ADDON_DIR / "resources" / "media" / "extras" / "weather-stock"
 
 
-def test_includes_clock_is_not_bold():
-    """The top-right clock must render in the thin Roboto clock font like stock —
-    MOD V2's [B]...[/B] bold wrapper around the time is removed, and the control
-    still uses font_clock."""
+def test_includes_clock_label_uses_var():
+    """The top-right clock label now routes through $VAR[ClockLabelVar] so the
+    Tony.7.Bones MOD V2+ clock toggle can switch stock-thin <-> MOD V2 bold. The
+    raw bold/plain literals must no longer be hard-wired in the clock control, and
+    the control still uses font_clock."""
     text = INCLUDES_XML.read_text(encoding="utf-8")
-    assert "<label>$INFO[System.Time]</label>" in text, "clock label must be plain"
-    assert "[B]$INFO[System.Time][/B]" not in text, (
-        "the bold clock wrapper must be gone"
+    assert "<label>$VAR[ClockLabelVar]</label>" in text, (
+        "clock label must route through ClockLabelVar"
+    )
+    # the hard-wired literals are gone from the control (they live in the $VAR now)
+    assert "<label>$INFO[System.Time]</label>" not in text, (
+        "the plain literal clock label must be gone (moved into ClockLabelVar)"
+    )
+    assert "<label>[B]$INFO[System.Time][/B]</label>" not in text, (
+        "the bold literal clock label must not be hard-wired"
     )
     assert "<font>font_clock</font>" in text, "clock must keep the font_clock font"
 
 
-def test_includes_weather_icons_point_at_stock_white_set():
-    """The top-right weather condition icon must resolve from the stock-white
-    extras/weather-stock/ set, not MOD V2's coloured extras/weather/ set. The
-    clock de-bold fix must remain in place."""
+def test_includes_weather_icon_uses_var():
+    """The top-right weather condition icon now routes through
+    $VAR[WeatherIconTextureVar] so the weather toggle can switch stock-white <->
+    MOD V2 colored. The raw weather-stock texture literal must no longer be
+    hard-wired in the control."""
     text = INCLUDES_XML.read_text(encoding="utf-8")
-    assert (
-        "$INFO[Weather.FanartCode,special://skin/extras/weather-stock/,.png]" in text
-    ), "weather icon must point at the stock-white weather-stock set"
-    assert "special://skin/extras/weather/," not in text, (
-        "MOD V2's coloured weather/ prefix must be gone"
+    assert "<texture>$VAR[WeatherIconTextureVar]</texture>" in text, (
+        "weather icon texture must route through WeatherIconTextureVar"
     )
-    # the clock de-bold fix from 1.0.3 stays intact
-    assert "<label>$INFO[System.Time]</label>" in text
-    assert "[B]$INFO[System.Time][/B]" not in text
-    assert "<font>font_clock</font>" in text
+    assert (
+        "<texture>$INFO[Weather.FanartCode,special://skin/extras/weather-stock/,.png]</texture>"
+        not in text
+    ), "the hard-wired weather-stock texture must be gone (moved into the $VAR)"
+
+
+def test_variables_weather_and_clock_vars_default_to_stock():
+    """WeatherIconTextureVar and ClockLabelVar exist and default (unset flag) to
+    the stock look, switching to the MOD V2 look only when the opt-in flag is
+    set."""
+    root = ET.parse(VARIABLES_XML).getroot()
+    by_name = {v.get("name"): v for v in root.iter("variable")}
+
+    wv = by_name.get("WeatherIconTextureVar")
+    assert wv is not None, "WeatherIconTextureVar must exist in Variables.xml"
+    vals = list(wv.findall("value"))
+    # the conditional (colored) value gates on the opt-in flag
+    colored = [
+        e.text
+        for e in vals
+        if e.get("condition") == "Skin.HasSetting(weather_modv2_colored)"
+    ]
+    assert colored == [
+        "$INFO[Weather.FanartCode,special://skin/extras/weather/,.png]"
+    ], f"colored weather value must gate on the flag, got {colored}"
+    # the default (last, unconditional) value is the stock-white set
+    assert vals[-1].get("condition") is None
+    assert (
+        vals[-1].text
+        == "$INFO[Weather.FanartCode,special://skin/extras/weather-stock/,.png]"
+    ), "WeatherIconTextureVar default must be the stock-white set"
+
+    cv = by_name.get("ClockLabelVar")
+    assert cv is not None, "ClockLabelVar must exist in Variables.xml"
+    cvals = list(cv.findall("value"))
+    bold = [
+        e.text
+        for e in cvals
+        if e.get("condition") == "Skin.HasSetting(clock_modv2_bold)"
+    ]
+    assert bold == ["[B]$INFO[System.Time][/B]"], (
+        f"bold clock value must gate on the flag, got {bold}"
+    )
+    assert cvals[-1].get("condition") is None
+    assert cvals[-1].text == "$INFO[System.Time]", (
+        "ClockLabelVar default must be the stock thin time"
+    )
 
 
 def test_weather_stock_icons_ship_and_nonempty():
@@ -137,9 +185,9 @@ def test_addon_name():
     assert _addon_root().get("name") == "Estuary MOD V2+"
 
 
-def test_addon_version_floor_1_1_0():
+def test_addon_version_floor_1_2_0():
     parts = tuple(int(p) for p in _addon_root().get("version").split("."))
-    assert parts >= (1, 1, 0), "version must be at least 1.1.0"
+    assert parts >= (1, 2, 0), "version must be at least 1.2.0"
 
 
 def test_no_provides_executable():
@@ -244,16 +292,91 @@ def test_home_overlay_gated_on_optout_toggle_and_focus():
     )
 
 
-def test_home_both_wordmarks_point_at_hires():
-    """Both the fallback (icons/logo-text.png) and main ($VAR[LogoTextVar])
-    wordmark textures must now be the loose hi-res logo, and neither original
-    reference may remain."""
+def test_home_stock_wordmark_variants_point_at_hires():
+    """The DEFAULT (stock) wordmark variant in each of the two logo groups uses
+    the loose hi-res white logo. There are exactly two such hi-res textures (one
+    per group), each gated to show when the MOD V2 original flag is NOT set."""
     text = HOME_XML.read_text(encoding="utf-8")
     assert text.count("<texture>extras/logo-text-hires.png</texture>") == 2, (
-        "expected exactly two wordmark textures retargeted to the hi-res logo"
+        "expected exactly two stock hi-res wordmark textures (one per group)"
     )
-    assert "icons/logo-text.png" not in text, "old fallback wordmark must be gone"
-    assert "$VAR[LogoTextVar]" not in text, "old main wordmark VAR must be gone"
+
+
+def test_home_wordmark_toggle_provides_modv2_original_variants():
+    """The wordmark toggle adds a MOD V2 ORIGINAL variant to each group, gated to
+    show only when Skin.HasSetting(wordmark_modv2_original): the fallback group
+    restores icons/logo-text.png and the main group restores $VAR[LogoTextVar]."""
+    text = HOME_XML.read_text(encoding="utf-8")
+    # both original textures reappear, but only inside the gated original variants
+    assert "<texture>icons/logo-text.png</texture>" in text, (
+        "fallback original wordmark (icons/logo-text.png) must be present as a variant"
+    )
+    assert "<texture>$VAR[LogoTextVar]</texture>" in text, (
+        "main original wordmark ($VAR[LogoTextVar]) must be present as a variant"
+    )
+    # every line referencing either original texture must be inside an original
+    # variant — i.e. the file must gate all wordmark images on the flag
+    blocks = _all_wordmark_control_blocks(text)
+    for block in blocks:
+        assert "wordmark_modv2_original" in block, (
+            f"each wordmark control must gate on the toggle flag, got: {block!r}"
+        )
+
+
+def _all_wordmark_control_blocks(text):
+    """Return every <control type="image"> block carrying a wordmark texture —
+    the two stock hi-res variants plus the two MOD V2 original variants (4)."""
+    blocks = []
+    needles = (
+        "extras/logo-text-hires.png",
+        "<texture>icons/logo-text.png</texture>",
+        "<texture>$VAR[LogoTextVar]</texture>",
+    )
+    seen = set()
+    for needle in needles:
+        pos = 0
+        while True:
+            hit = text.find(needle, pos)
+            if hit == -1:
+                break
+            start = text.rfind('<control type="image">', 0, hit)
+            end = text.find("</control>", hit)
+            assert start != -1 and end != -1, "malformed wordmark control block"
+            if start not in seen:
+                seen.add(start)
+                blocks.append(text[start : end + len("</control>")])
+            pos = end + 1
+    return blocks
+
+
+def test_home_wordmark_variant_count_and_visibility():
+    """Each group carries exactly two wordmark variants: a stock one visible when
+    the flag is unset, and a MOD V2 original visible when the flag is set. Four
+    wordmark image controls total, two stock + two original, balanced."""
+    text = HOME_XML.read_text(encoding="utf-8")
+    blocks = _all_wordmark_control_blocks(text)
+    assert len(blocks) == 4, f"expected four wordmark variants, found {len(blocks)}"
+    stock = [b for b in blocks if "!Skin.HasSetting(wordmark_modv2_original)" in b]
+    original = [
+        b
+        for b in blocks
+        if "wordmark_modv2_original" in b
+        and "!Skin.HasSetting(wordmark_modv2_original)" not in b
+    ]
+    assert len(stock) == 2, f"expected two stock wordmark variants, got {len(stock)}"
+    assert len(original) == 2, (
+        f"expected two MOD V2 original wordmark variants, got {len(original)}"
+    )
+    # the original variants restore the MOD V2 heights (36 fallback / 50 main)
+    heights = sorted(
+        h
+        for b in original
+        for h in ("36", "50")
+        if "<height>{}</height>".format(h) in b
+    )
+    assert heights == ["36", "50"], (
+        f"original variants must use MOD V2 heights 36 and 50, got {heights}"
+    )
 
 
 def test_home_mark_controls_untouched():
@@ -384,6 +507,58 @@ def test_skinsettings_new_panel_holds_the_overlay_toggle():
     assert ctrl.findtext("label") == "Enable System Info overlay"
     # default ON: opt-out flag -> checked unless the flag is set
     assert ctrl.findtext("selected") == "!Skin.HasSetting(hide_system_info_overlay)"
+
+
+@pytest.mark.parametrize(
+    "flag,label",
+    [
+        ("weather_modv2_colored", "Stock weather icons (white)"),
+        ("clock_modv2_bold", "Stock clock (thin)"),
+        ("wordmark_modv2_original", "Stock nav logo (white)"),
+    ],
+)
+def test_skinsettings_panel_has_the_three_new_toggles(flag, label):
+    """Panel 1100 carries each new opt-out toggle: it toggles the opt-in flag and
+    is checked (selected) by default, i.e. selected = !Skin.HasSetting(<flag>) so
+    the stock look is on unless the user opts into the MOD V2 look."""
+    root = ET.parse(SKINSETTINGS_XML).getroot()
+    panel = _find_grouplist(root, "1100")
+    toggles = [
+        ctrl
+        for ctrl in panel.iter("control")
+        if ctrl.get("type") == "radiobutton"
+        and ctrl.findtext("onclick") == "Skin.ToggleSetting({})".format(flag)
+    ]
+    assert len(toggles) == 1, (
+        f"expected exactly one {flag} toggle in panel 1100, found {len(toggles)}"
+    )
+    ctrl = toggles[0]
+    assert ctrl.findtext("label") == label, (
+        f"{flag} toggle label must be {label!r}, got {ctrl.findtext('label')!r}"
+    )
+    assert ctrl.findtext("selected") == "!Skin.HasSetting({})".format(flag), (
+        f"{flag} toggle must default ON (stock): selected = !Skin.HasSetting({flag})"
+    )
+
+
+def test_skinsettings_panel_has_apply_and_restore_buttons():
+    """Panel 1100 carries two buttons that run the add-on directly: an Apply
+    button (RunScript ...,apply) and a Restore button (RunScript ...,restore)."""
+    root = ET.parse(SKINSETTINGS_XML).getroot()
+    panel = _find_grouplist(root, "1100")
+    buttons = {
+        ctrl.findtext("onclick"): ctrl.findtext("label")
+        for ctrl in panel.iter("control")
+        if ctrl.get("type") == "button"
+    }
+    assert (
+        buttons.get("RunScript(script.tony7bones.modv2plus,apply)")
+        == "Apply Tony.7.Bones tweaks"
+    ), f"missing/incorrect Apply button, got buttons: {buttons}"
+    assert (
+        buttons.get("RunScript(script.tony7bones.modv2plus,restore)")
+        == "Restore stock MOD V2"
+    ), f"missing/incorrect Restore button, got buttons: {buttons}"
 
 
 def test_skinsettings_scrollbar_navigates_into_new_panel():
@@ -561,6 +736,10 @@ def patch_env(tmp_path, monkeypatch):
     spec = importlib.util.spec_from_file_location("modv2plus_default", DEFAULT_PY)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)  # run() is __main__-guarded -> no side effects
+    # Default to the no-arg invocation (interactive chooser path); arg-routing
+    # tests override mod.sys.argv themselves. Without this, run() would read
+    # pytest's own argv and misbehave.
+    monkeypatch.setattr(mod.sys, "argv", ["default.py"])
     return types.SimpleNamespace(
         mod=mod, state=state, skin_root=skin_root, skin_xml=skin_xml
     )
@@ -602,6 +781,42 @@ def test_run_apply_copies_files_and_media(patch_env):
         "Apply success must not show a blocking ok() dialog"
     )
     assert patch_env.state.get("notify"), "Apply success must show a notification"
+
+
+def test_run_apply_arg_skips_chooser_and_applies(patch_env, monkeypatch):
+    """RunScript(...,apply) applies directly without showing the chooser."""
+    monkeypatch.setattr(patch_env.mod.sys, "argv", ["default.py", "apply"])
+    patch_env.mod.run()
+    assert not patch_env.state["select_calls"], (
+        "apply arg must NOT pop the interactive chooser"
+    )
+    for fname in _assign("FILES"):
+        assert (patch_env.skin_xml / fname).exists(), f"{fname} must be applied"
+    assert any("ReloadSkin" in b for b in patch_env.state["builtins"])
+
+
+def test_run_restore_arg_skips_chooser_and_restores(patch_env, monkeypatch):
+    """RunScript(...,restore) restores directly without showing the chooser."""
+    skin_xml = patch_env.skin_xml
+    for fname in _assign("FILES"):
+        (skin_xml / fname).write_text("PATCHED " + fname)
+        (skin_xml / (fname + ".bak")).write_text("ORIGINAL " + fname)
+    monkeypatch.setattr(patch_env.mod.sys, "argv", ["default.py", "restore"])
+    patch_env.mod.run()
+    assert not patch_env.state["select_calls"], (
+        "restore arg must NOT pop the interactive chooser"
+    )
+    for fname in _assign("FILES"):
+        assert (skin_xml / fname).read_text() == "ORIGINAL " + fname
+    assert any("ReloadSkin" in b for b in patch_env.state["builtins"])
+
+
+def test_run_unknown_arg_falls_back_to_chooser(patch_env, monkeypatch):
+    """An unrecognised arg falls back to the interactive chooser (here cancelled)."""
+    monkeypatch.setattr(patch_env.mod.sys, "argv", ["default.py", "bogus"])
+    patch_env.state["select"] = -1
+    patch_env.mod.run()
+    assert patch_env.state["select_calls"], "unknown arg must fall back to chooser"
 
 
 def test_run_cancel_does_nothing(patch_env):

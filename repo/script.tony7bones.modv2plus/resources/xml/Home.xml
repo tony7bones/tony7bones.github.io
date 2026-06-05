@@ -2396,6 +2396,8 @@
 					<visible>Skin.HasSetting(EnableGradientColor)</visible>
 					<visible>!$EXP[ChristmasTheme] + !$EXP[HalloweenTheme] + !$EXP[PreEasterTheme] + !$EXP[EasterTheme] + !$EXP[ValentineTheme]</visible>
 				</control>
+				<!-- Tony.7.Bones MOD V2+ nav wordmark toggle (fallback group).
+				     Default (flag unset) = our stock white hi-res wordmark. -->
 				<control type="image">
 					<left>40</left>
 					<top>8</top>
@@ -2403,7 +2405,17 @@
 					<width>192</width>
 					<height>39</height>
 					<texture>extras/logo-text-hires.png</texture>
-					<visible>!Skin.HasSetting(MinimizeMainMenu)</visible>
+					<visible>!Skin.HasSetting(MinimizeMainMenu) + !Skin.HasSetting(wordmark_modv2_original)</visible>
+				</control>
+				<!-- MOD V2 original wordmark (icons/logo-text.png, height 36). -->
+				<control type="image">
+					<left>40</left>
+					<top>10</top>
+					<aspectratio>keep</aspectratio>
+					<width>192</width>
+					<height>36</height>
+					<texture>icons/logo-text.png</texture>
+					<visible>!Skin.HasSetting(MinimizeMainMenu) + Skin.HasSetting(wordmark_modv2_original)</visible>
 				</control>
 			</control>
 			<control type="group">
@@ -2459,6 +2471,8 @@
 					<texture colordiffuse="$VAR[LogoColorVar]">$VAR[LogoVar]</texture>
 					<visible>!$EXP[ChristmasTheme] + !$EXP[HalloweenTheme] + !$EXP[PreEasterTheme] + !$EXP[EasterTheme] + !$EXP[ValentineTheme]</visible>
 				</control>
+				<!-- Tony.7.Bones MOD V2+ nav wordmark toggle (main group).
+				     Default (flag unset) = our stock white hi-res wordmark. -->
 				<control type="image">
 					<left>55</left>
 					<top>8</top>
@@ -2466,7 +2480,17 @@
 					<width>202</width>
 					<height>39</height>
 					<texture>extras/logo-text-hires.png</texture>
-					<visible>!Skin.HasSetting(MinimizeMainMenu)</visible>
+					<visible>!Skin.HasSetting(MinimizeMainMenu) + !Skin.HasSetting(wordmark_modv2_original)</visible>
+				</control>
+				<!-- MOD V2 original wordmark ($VAR[LogoTextVar], height 50). -->
+				<control type="image">
+					<left>55</left>
+					<top>4</top>
+					<aspectratio>keep</aspectratio>
+					<width>202</width>
+					<height>50</height>
+					<texture>$VAR[LogoTextVar]</texture>
+					<visible>!Skin.HasSetting(MinimizeMainMenu) + Skin.HasSetting(wordmark_modv2_original)</visible>
 				</control>
 			</control>
 			<control type="label">

@@ -1682,6 +1682,34 @@
 					<onclick>Skin.ToggleSetting(hide_system_info_overlay)</onclick>
 					<selected>!Skin.HasSetting(hide_system_info_overlay)</selected>
 				</control>
+				<control type="radiobutton" id="1102">
+					<label>Stock weather icons (white)</label>
+					<include>DefaultSettingButton</include>
+					<onclick>Skin.ToggleSetting(weather_modv2_colored)</onclick>
+					<selected>!Skin.HasSetting(weather_modv2_colored)</selected>
+				</control>
+				<control type="radiobutton" id="1103">
+					<label>Stock clock (thin)</label>
+					<include>DefaultSettingButton</include>
+					<onclick>Skin.ToggleSetting(clock_modv2_bold)</onclick>
+					<selected>!Skin.HasSetting(clock_modv2_bold)</selected>
+				</control>
+				<control type="radiobutton" id="1104">
+					<label>Stock nav logo (white)</label>
+					<include>DefaultSettingButton</include>
+					<onclick>Skin.ToggleSetting(wordmark_modv2_original)</onclick>
+					<selected>!Skin.HasSetting(wordmark_modv2_original)</selected>
+				</control>
+				<control type="button" id="1105">
+					<label>Apply Tony.7.Bones tweaks</label>
+					<include>DefaultSettingButton</include>
+					<onclick>RunScript(script.tony7bones.modv2plus,apply)</onclick>
+				</control>
+				<control type="button" id="1106">
+					<label>Restore stock MOD V2</label>
+					<include>DefaultSettingButton</include>
+					<onclick>RunScript(script.tony7bones.modv2plus,restore)</onclick>
+				</control>
 			</control>
 			<control type="image">
 				<description>Dialog Header image</description>

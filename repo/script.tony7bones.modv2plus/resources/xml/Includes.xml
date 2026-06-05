@@ -2492,7 +2492,7 @@
 						<height>200</height>
 						<width>auto</width>
 						<align>right</align>
-						<label>$INFO[System.Time]</label>
+						<label>$VAR[ClockLabelVar]</label>
 					</control>
 				</control>
 				<control type="grouplist">
@@ -2550,7 +2550,7 @@
 						<height>50</height>
 						<fadetime>300</fadetime>
 						<aspectratio aligny="center" align="left">keep</aspectratio>
-						<texture>$INFO[Weather.FanartCode,special://skin/extras/weather-stock/,.png]</texture>
+						<texture>$VAR[WeatherIconTextureVar]</texture>
 						<visible>Skin.HasSetting(show_weatherinfo) + Weather.IsFetched + ![String.IsEqual(Weather.FanartCode,na)]</visible>
 					</control>
 					<control type="label">
