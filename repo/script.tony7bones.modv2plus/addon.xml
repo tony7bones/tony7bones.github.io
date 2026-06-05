@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="script.tony7bones.modv2plus"
        name="Estuary MOD V2+"
-       version="1.3.0"
+       version="1.3.1"
        provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
@@ -15,6 +15,6 @@
     <assets>
       <icon>icon.png</icon>
     </assets>
-    <news>System Info overlay now hidden by default (toggle renamed "Disable System Info overlay"). Weather icons now default to the Outline HD set (resource.images.weathericons.outline-hd).</news>
+    <news>Outline HD weather icons now apply to the home weather widget too (Apply sets MOD V2's WeatherIcons skin strings, not just the top bar). Restore now asks for confirmation first.</news>
   </extension>
 </addon>

@@ -201,6 +201,40 @@ def run():
     # choice == -1 (cancelled / back) -> do nothing
 
 
+def set_weather_icons():
+    """Point MOD V2's weather widgets (home tab + top bar) at the Outline HD set.
+
+    MOD V2 resolves its weather icons through the Skin.String(WeatherIcons.path)
+    / WeatherIcons.name pair — the same strings its built-in icon picker sets;
+    when they're empty it falls back to the .default pack (the bug). Setting them
+    drives the home weather widget AND the top-bar condition icon. Defensive:
+    logged, never aborts the run.
+    """
+    try:
+        xbmc.executebuiltin(
+            "Skin.SetString(WeatherIcons.path,"
+            "resource://resource.images.weathericons.outline-hd/)"
+        )
+        xbmc.executebuiltin(
+            "Skin.SetString(WeatherIcons.name,Weather Icons - Outline HD)"
+        )
+        xbmc.log("[mod v2+] weather icons -> Outline HD", xbmc.LOGINFO)
+    except Exception as e:
+        xbmc.log("[mod v2+] failed setting weather icons: {}".format(e), xbmc.LOGERROR)
+
+
+def reset_weather_icons():
+    """Clear the weather-icon skin strings so MOD V2 reverts to its default pack."""
+    try:
+        xbmc.executebuiltin("Skin.Reset(WeatherIcons.path)")
+        xbmc.executebuiltin("Skin.Reset(WeatherIcons.name)")
+        xbmc.log("[mod v2+] weather icons reset", xbmc.LOGINFO)
+    except Exception as e:
+        xbmc.log(
+            "[mod v2+] failed resetting weather icons: {}".format(e), xbmc.LOGERROR
+        )
+
+
 def _apply(skin_root, skin_xml):
     applied, failed = apply_patches(skin_xml)
     media_applied, media_failed = apply_media(skin_root)
@@ -223,10 +257,17 @@ def _apply(skin_root, skin_xml):
         xbmcgui.NOTIFICATION_INFO,
         4000,
     )
+    set_weather_icons()
     xbmc.executebuiltin("ReloadSkin()")
 
 
 def _restore(skin_root, skin_xml):
+    if not xbmcgui.Dialog().yesno(
+        "Restore stock MOD V2",
+        "This reverts all Tony.7.Bones tweaks and restores the original "
+        "MOD V2 skin files.[CR]Continue?",
+    ):
+        return
     restored, failed, _skipped = restore_patches(skin_xml)
     media_removed, media_failed, _media_skipped = restore_media(skin_root)
 
@@ -254,6 +295,7 @@ def _restore(skin_root, skin_xml):
             xbmcgui.NOTIFICATION_INFO,
             4000,
         )
+    reset_weather_icons()
     xbmc.executebuiltin("ReloadSkin()")
 
 

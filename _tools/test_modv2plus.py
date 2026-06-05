@@ -187,9 +187,9 @@ def test_addon_name():
     assert _addon_root().get("name") == "Estuary MOD V2+"
 
 
-def test_addon_version_floor_1_3_0():
+def test_addon_version_floor_1_3_1():
     parts = tuple(int(p) for p in _addon_root().get("version").split("."))
-    assert parts >= (1, 3, 0), "version must be at least 1.3.0"
+    assert parts >= (1, 3, 1), "version must be at least 1.3.1"
 
 
 def test_no_provides_executable():
@@ -678,6 +678,8 @@ def patch_env(tmp_path, monkeypatch):
         "skin": "skin.estuary.modv2",
         "select": -1,
         "select_calls": [],
+        "yesno": True,
+        "yesno_calls": [],
     }
 
     home = tmp_path / "home"
@@ -723,6 +725,10 @@ def patch_env(tmp_path, monkeypatch):
         def select(self, title, options):
             state["select_calls"].append((title, list(options)))
             return state["select"]
+
+        def yesno(self, title, msg, *a, **k):
+            state["yesno_calls"].append((title, msg))
+            return state["yesno"]
 
     xbmcgui.Dialog = _Dialog
     xbmcgui.NOTIFICATION_INFO = "info"
@@ -776,6 +782,14 @@ def test_run_apply_copies_files_and_media(patch_env):
         "Apply success must not show a blocking ok() dialog"
     )
     assert patch_env.state.get("notify"), "Apply success must show a notification"
+    # Apply points MOD V2's weather widgets at the Outline HD set via skin strings.
+    assert any(
+        "Skin.SetString(WeatherIcons.path" in b and "outline-hd" in b
+        for b in patch_env.state["builtins"]
+    ), "Apply must set WeatherIcons.path to the Outline HD pack"
+    assert any(
+        "Skin.SetString(WeatherIcons.name" in b for b in patch_env.state["builtins"]
+    ), "Apply must set WeatherIcons.name"
 
 
 def test_run_apply_arg_skips_chooser_and_applies(patch_env, monkeypatch):
@@ -860,6 +874,10 @@ def test_run_restore_reverts_xml_and_removes_loose_png(patch_env):
         "clean restore must not show a blocking ok() dialog"
     )
     assert patch_env.state.get("notify"), "restore must show a notification"
+    # Restore clears the weather-icon skin strings (back to MOD V2 default).
+    assert any(
+        "Skin.Reset(WeatherIcons.path)" in b for b in patch_env.state["builtins"]
+    ), "Restore must reset WeatherIcons.path"
 
 
 def test_run_restore_nothing_to_restore(patch_env):
@@ -870,6 +888,24 @@ def test_run_restore_nothing_to_restore(patch_env):
     assert patch_env.state["ok"], "should show the 'Nothing to Restore' dialog"
     title, _msg = patch_env.state["ok"][0]
     assert "Restore" in title
+
+
+def test_run_restore_asks_confirmation_and_cancels(patch_env):
+    """Restore must prompt for confirmation; answering No reverts nothing."""
+    skin_xml = patch_env.skin_xml
+    for fname in _assign("FILES"):
+        (skin_xml / fname).write_text("PATCHED " + fname)
+        (skin_xml / (fname + ".bak")).write_text("ORIGINAL " + fname)
+    patch_env.state["select"] = 1
+    patch_env.state["yesno"] = False  # user declines the confirmation
+    patch_env.mod.run()
+    assert patch_env.state["yesno_calls"], "Restore must ask for confirmation"
+    for fname in _assign("FILES"):
+        assert (skin_xml / fname).read_text() == "PATCHED " + fname, (
+            "declining the confirm must NOT revert files"
+        )
+        assert (skin_xml / (fname + ".bak")).exists()
+    assert not any("ReloadSkin" in b for b in patch_env.state["builtins"])
 
 
 def test_restore_media_handles_missing_png(patch_env):
