@@ -3,13 +3,18 @@
 Two layers, mirroring the other add-on tests:
 
 * Static contract — the manifest is well-formed (id / name / version / news), the
-  script compiles, FILES is exactly the three shipped XMLs, the loose media logo
-  mapping is present and its source PNG ships. The shipped XMLs carry the three
-  features: Home.xml gates the info overlay on Skin.HasSetting(enable_info_overlay)
-  AND Control.HasFocus(802) and retargets both wordmark textures to the hi-res
-  logo while leaving the MARK controls (logo.png / LogoVar) untouched;
-  SkinSettings.xml ships exactly one enable_info_overlay radiobutton in grouplist
-  500; Settings.xml lists Skin Settings before Media sources.
+  script compiles, FILES is exactly the shipped XMLs (incl. Variables.xml), the
+  loose media logo mapping is present and its source PNG ships. The shipped XMLs
+  carry the features: Home.xml gates the system-info overlay (default ON) on
+  !Skin.HasSetting(hide_system_info_overlay) AND Control.HasFocus(802) and
+  retargets both wordmark textures to the hi-res logo while leaving the MARK
+  controls (logo.png / LogoVar) untouched; SkinSettings.xml carries a new
+  "Tony.7.Bones MOD V2+" category (list 9000 item id=11) whose panel (grouplist
+  1100) holds the single "Enable System Info overlay" radiobutton toggling
+  hide_system_info_overlay (default ON), the old toggle is gone from Extras
+  (grouplist 500), and the scrollbar navigates into 1100 on HasFocus(11);
+  Variables.xml carries the HasFocus(11) help value; Settings.xml lists Skin
+  Settings before Media sources.
 
 * Runtime behaviour — default.py is imported under mocked Kodi modules. run() is
   __main__-guarded so importing is side-effect-free, but the module top-level
@@ -41,6 +46,7 @@ HOME_XML = ADDON_DIR / "resources" / "xml" / "Home.xml"
 SKINSETTINGS_XML = ADDON_DIR / "resources" / "xml" / "SkinSettings.xml"
 SETTINGS_XML = ADDON_DIR / "resources" / "xml" / "Settings.xml"
 INCLUDES_XML = ADDON_DIR / "resources" / "xml" / "Includes.xml"
+VARIABLES_XML = ADDON_DIR / "resources" / "xml" / "Variables.xml"
 LOGO_PNG = ADDON_DIR / "resources" / "media" / "extras" / "logo-text-hires.png"
 WEATHER_STOCK_DIR = ADDON_DIR / "resources" / "media" / "extras" / "weather-stock"
 
@@ -131,9 +137,9 @@ def test_addon_name():
     assert _addon_root().get("name") == "Estuary MOD V2+"
 
 
-def test_addon_version_floor_1_0_4():
+def test_addon_version_floor_1_1_0():
     parts = tuple(int(p) for p in _addon_root().get("version").split("."))
-    assert parts >= (1, 0, 4), "version must be at least 1.0.4"
+    assert parts >= (1, 1, 0), "version must be at least 1.1.0"
 
 
 def test_no_provides_executable():
@@ -161,6 +167,7 @@ def test_files_is_exactly_the_shipped_xml():
         "SkinSettings.xml",
         "Settings.xml",
         "Includes.xml",
+        "Variables.xml",
     ]
 
 
@@ -220,11 +227,17 @@ def _group_18000_own_visible(text):
     return block[vis_start + len("<visible>") : vis_end].strip()
 
 
-def test_home_overlay_gated_on_toggle_and_focus():
+def test_home_overlay_gated_on_optout_toggle_and_focus():
+    """The system-info overlay is now default ON via an OPT-OUT flag: it shows
+    unless hide_system_info_overlay is set, and only on gear focus. The old
+    opt-in flag (enable_info_overlay) must be gone."""
     visible = _group_18000_own_visible(HOME_XML.read_text(encoding="utf-8"))
     assert visible != "false", f"group 18000 must not be hard-disabled, got {visible!r}"
-    assert "Skin.HasSetting(enable_info_overlay)" in visible, (
-        f"overlay must gate on the toggle, got {visible!r}"
+    assert "!Skin.HasSetting(hide_system_info_overlay)" in visible, (
+        f"overlay must gate (default ON) on the opt-out flag, got {visible!r}"
+    )
+    assert "enable_info_overlay" not in visible, (
+        f"the old opt-in flag must be gone, got {visible!r}"
     )
     assert "Control.HasFocus(802)" in visible, (
         f"overlay must gate on gear focus, got {visible!r}"
@@ -296,31 +309,137 @@ def test_home_wordmark_height_balances_with_mark():
 
 
 # --------------------------------------------------------------------------- #
-# Static contract — SkinSettings.xml (Extras toggle in grouplist 500)
+# Static contract — SkinSettings.xml (new Tony.7.Bones MOD V2+ category)
 # --------------------------------------------------------------------------- #
-def _find_grouplist_500(root):
+def _find_grouplist(root, gid):
     for ctrl in root.iter("control"):
-        if ctrl.get("type") == "grouplist" and ctrl.get("id") == "500":
+        if ctrl.get("type") == "grouplist" and ctrl.get("id") == gid:
             return ctrl
-    raise AssertionError("grouplist id=500 not found in SkinSettings.xml")
+    raise AssertionError(f"grouplist id={gid} not found in SkinSettings.xml")
 
 
-def test_skinsettings_has_exactly_one_overlay_toggle_in_grouplist_500():
+def _find_list(root, lid):
+    for ctrl in root.iter("control"):
+        if ctrl.get("type") == "list" and ctrl.get("id") == lid:
+            return ctrl
+    raise AssertionError(f"list id={lid} not found in SkinSettings.xml")
+
+
+def test_skinsettings_old_overlay_toggle_removed_from_extras():
+    """The opt-in enable_info_overlay radiobutton must be gone from Extras
+    (grouplist 500) — and from the whole file (the new opt-out flag replaces it)."""
     root = ET.parse(SKINSETTINGS_XML).getroot()
-    grouplist = _find_grouplist_500(root)
-    matches = [
+    grouplist = _find_grouplist(root, "500")
+    stale = [
         ctrl
         for ctrl in grouplist.iter("control")
         if ctrl.get("type") == "radiobutton"
         and ctrl.findtext("onclick") == "Skin.ToggleSetting(enable_info_overlay)"
     ]
-    assert len(matches) == 1, (
-        f"expected exactly one enable_info_overlay radiobutton in grouplist 500, "
-        f"found {len(matches)}"
+    assert not stale, "the old enable_info_overlay toggle must be gone from Extras"
+    assert "enable_info_overlay" not in SKINSETTINGS_XML.read_text(encoding="utf-8"), (
+        "no enable_info_overlay reference may remain in SkinSettings.xml"
     )
-    ctrl = matches[0]
-    assert ctrl.findtext("label") == "Enable Info Overlay on Settings focus"
-    assert ctrl.findtext("selected") == "Skin.HasSetting(enable_info_overlay)"
+
+
+def test_skinsettings_new_category_item_is_last():
+    """List 9000 gains item id=11 'Tony.7.Bones MOD V2+' as the LAST item."""
+    root = ET.parse(SKINSETTINGS_XML).getroot()
+    lst = _find_list(root, "9000")
+    content = lst.find("content")
+    assert content is not None, "list 9000 must have a <content>"
+    items = list(content.findall("item"))
+    assert items, "list 9000 must have items"
+    last = items[-1]
+    assert last.get("id") == "11", (
+        f"the new category must be the LAST item, got id={last.get('id')!r}"
+    )
+    assert last.findtext("label") == "Tony.7.Bones MOD V2+"
+    # the height must have been bumped to reveal the 11th row
+    assert lst.findtext("height") == "770", (
+        "list 9000 height must be bumped to 770 to reveal the 11th row"
+    )
+
+
+def test_skinsettings_new_panel_holds_the_overlay_toggle():
+    """The new panel (grouplist 1100) is gated on HasFocus(11) and holds exactly
+    one 'Enable System Info overlay' radiobutton that toggles the opt-out flag
+    hide_system_info_overlay and is checked (ON) by default."""
+    root = ET.parse(SKINSETTINGS_XML).getroot()
+    panel = _find_grouplist(root, "1100")
+    assert panel.findtext("visible") == "Container(9000).HasFocus(11)", (
+        "panel 1100 must be gated on the new category's HasFocus(11)"
+    )
+    toggles = [
+        ctrl
+        for ctrl in panel.iter("control")
+        if ctrl.get("type") == "radiobutton"
+        and ctrl.findtext("onclick") == "Skin.ToggleSetting(hide_system_info_overlay)"
+    ]
+    assert len(toggles) == 1, (
+        f"expected exactly one hide_system_info_overlay toggle in panel 1100, "
+        f"found {len(toggles)}"
+    )
+    ctrl = toggles[0]
+    assert ctrl.findtext("label") == "Enable System Info overlay"
+    # default ON: opt-out flag -> checked unless the flag is set
+    assert ctrl.findtext("selected") == "!Skin.HasSetting(hide_system_info_overlay)"
+
+
+def test_skinsettings_scrollbar_navigates_into_new_panel():
+    """The scrollbar (id=60) must route left/right to panel 1100 on HasFocus(11),
+    and show on the new panel (its visible OR-list includes Control.IsVisible(1100))."""
+    root = ET.parse(SKINSETTINGS_XML).getroot()
+    scrollbar = None
+    for ctrl in root.iter("control"):
+        if ctrl.get("type") == "scrollbar" and ctrl.get("id") == "60":
+            scrollbar = ctrl
+            break
+    assert scrollbar is not None, "scrollbar id=60 not found"
+
+    onleft = [
+        e.text
+        for e in scrollbar.findall("onleft")
+        if e.get("condition") == "Container(9000).HasFocus(11)"
+    ]
+    onright = [
+        e.text
+        for e in scrollbar.findall("onright")
+        if e.get("condition") == "Container(9000).HasFocus(11)"
+    ]
+    assert onleft == ["1100"], (
+        f"scrollbar onleft for HasFocus(11) must be 1100: {onleft}"
+    )
+    assert onright == ["1100"], (
+        f"scrollbar onright for HasFocus(11) must be 1100: {onright}"
+    )
+    assert "Control.IsVisible(1100)" in (scrollbar.findtext("visible") or ""), (
+        "scrollbar must be visible on the new panel"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Static contract — Variables.xml (help text for the new category)
+# --------------------------------------------------------------------------- #
+def test_variables_has_help_for_new_category():
+    """Variables.xml ships and SkinSettingsHelpTextVar carries a HasFocus(11)
+    value so the new category renders correct (not stale) help."""
+    assert VARIABLES_XML.exists(), "Variables.xml must ship"
+    root = ET.parse(VARIABLES_XML).getroot()
+    var = None
+    for v in root.iter("variable"):
+        if v.get("name") == "SkinSettingsHelpTextVar":
+            var = v
+            break
+    assert var is not None, "SkinSettingsHelpTextVar not found in Variables.xml"
+    values = [
+        e.text
+        for e in var.findall("value")
+        if e.get("condition") == "Container(9000).HasFocus(11)"
+    ]
+    assert values == ["Tony.7.Bones MOD V2+ settings"], (
+        f"help text for the new category must be set, got {values}"
+    )
 
 
 # --------------------------------------------------------------------------- #

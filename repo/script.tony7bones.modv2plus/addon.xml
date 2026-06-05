@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="script.tony7bones.modv2plus"
        name="Estuary MOD V2+"
-       version="1.0.4"
+       version="1.1.0"
        provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
@@ -9,11 +9,11 @@
   <extension point="xbmc.python.script" library="default.py"/>
   <extension point="xbmc.addon.metadata">
     <summary lang="en_GB">Lean enhancements for Estuary MOD V2</summary>
-    <description lang="en_GB">A small, non-destructive set of enhancements for skin.estuary.modv2 (Estuary MOD V2), built fresh against the Omega release. Reorders the gear Settings menu so Skin Settings sits above Media sources, adds an opt-in info overlay on Settings focus (off by default, toggled in Skin Settings &gt; Extras), and sharpens the navigation wordmark with a crisp high-resolution white logo. Run after installing or updating skin.estuary.modv2. Apply and Restore are both available — original files are backed up once and never overwritten, and Restore reverts every change cleanly.</description>
+    <description lang="en_GB">A small, non-destructive set of enhancements for skin.estuary.modv2 (Estuary MOD V2), built fresh against the Omega release. Reorders the gear Settings menu so Skin Settings sits above Media sources, adds a dedicated "Tony.7.Bones MOD V2+" Skin Settings category that is home to our tweaks (currently the System Info overlay toggle, on by default), and sharpens the navigation wordmark with a crisp high-resolution white logo. Run after installing or updating skin.estuary.modv2. Apply and Restore are both available — original files are backed up once and never overwritten, and Restore reverts every change cleanly.</description>
     <platform>all</platform>
     <assets>
       <icon>icon.png</icon>
     </assets>
-    <news>Top-right weather icons now match stock Estuary (white) instead of MOD V2's coloured set.</news>
+    <news>New "Tony.7.Bones MOD V2+" Skin Settings category (home for our tweaks); the System Info overlay toggle moved there, renamed, and now defaults ON.</news>
   </extension>
 </addon>

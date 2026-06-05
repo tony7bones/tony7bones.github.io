@@ -748,12 +748,6 @@
 					<selected>!Skin.HasSetting(EnableSplashScreen) + String.IsEqual(Window(home).property(lookandfeel.startupaction),0)</selected>
 					<enable>String.IsEqual(Window(home).property(lookandfeel.startupaction),0)</enable>
 				</control>
-				<control type="radiobutton" id="520">
-					<label>Enable Info Overlay on Settings focus</label>
-					<include>DefaultSettingButton</include>
-					<onclick>Skin.ToggleSetting(enable_info_overlay)</onclick>
-					<selected>Skin.HasSetting(enable_info_overlay)</selected>
-				</control>
 				<control type="radiobutton" id="504">
 					<label>$LOCALIZE[31640]</label>
 					<include>DefaultSettingButton</include>
@@ -1660,6 +1654,35 @@
 					<selected>!Skin.HasSetting(enable_settingswidget)</selected>
 				</control>
 			</control>
+			<control type="grouplist" id="1100">
+				<top>168</top>
+				<left>0</left>
+				<right>0</right>
+				<bottom>142</bottom>
+				<onleft>9000</onleft>
+				<onright>60</onright>
+				<onup>1100</onup>
+				<ondown>1100</ondown>
+				<pagecontrol>60</pagecontrol>
+				<visible>Container(9000).HasFocus(11)</visible>
+				<control type="label" id="100111">
+					<textoffsetx>45</textoffsetx>
+					<top>0</top>
+					<height>80</height>
+					<label>Tony.7.Bones MOD V2+</label>
+					<align>center</align>
+					<aligny>center</aligny>
+					<font>font28_title</font>
+					<textcolor>grey</textcolor>
+					<shadowcolor>black</shadowcolor>
+				</control>
+				<control type="radiobutton" id="1101">
+					<label>Enable System Info overlay</label>
+					<include>DefaultSettingButton</include>
+					<onclick>Skin.ToggleSetting(hide_system_info_overlay)</onclick>
+					<selected>!Skin.HasSetting(hide_system_info_overlay)</selected>
+				</control>
+			</control>
 			<control type="image">
 				<description>Dialog Header image</description>
 				<left>0</left>
@@ -1689,7 +1712,7 @@
 				<left>0</left>
 				<top>168</top>
 				<width>470</width>
-				<height>700</height>
+				<height>770</height>
 				<onleft>10000</onleft>
 				<onright>10000</onright>
 				<onup>9000</onup>
@@ -1752,6 +1775,9 @@
 					<item id="8">
 						<label>$LOCALIZE[31273]</label>
 					</item>
+					<item id="11">
+						<label>Tony.7.Bones MOD V2+</label>
+					</item>
 				</content>
 			</control>
 		</control>
@@ -1786,12 +1812,14 @@
 				<onright condition="Container(9000).HasFocus(8)">300</onright>
 				<onright condition="Container(9000).HasFocus(9)">200</onright>
 				<onright condition="Container(9000).HasFocus(10)">100</onright>
+				<onleft condition="Container(9000).HasFocus(11)">1100</onleft>
+				<onright condition="Container(9000).HasFocus(11)">1100</onright>
 				<animation effect="fade" start="0" end="100" time="200" delay="300">Visible</animation>
 				<animation effect="fade" start="100" end="0" time="200">Hidden</animation>
 				<animation effect="fade" start="0" end="100" delay="300" time="320">WindowOpen</animation>
 				<animation effect="fade" start="100" end="0" time="150">WindowClose</animation>
 				<hitrect x="0" y="0" w="80" h="2160" />
-				<visible>Control.IsVisible(100) | Control.IsVisible(200) | Control.IsVisible(300) | Control.IsVisible(500) | Control.IsVisible(600) | Control.IsVisible(700) | Control.IsVisible(900) | Control.IsVisible(1000)</visible>
+				<visible>Control.IsVisible(100) | Control.IsVisible(200) | Control.IsVisible(300) | Control.IsVisible(500) | Control.IsVisible(600) | Control.IsVisible(700) | Control.IsVisible(900) | Control.IsVisible(1000) | Control.IsVisible(1100)</visible>
 			</control>
 		</control>
 		<include content="TopBar">
