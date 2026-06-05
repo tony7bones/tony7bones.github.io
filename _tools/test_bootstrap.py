@@ -1506,8 +1506,149 @@ def test_copy_device_files_never_raises(boot, monkeypatch):
 def test_configure_box_default_sources_missing_is_guarded(boot):
     # With the real default /storage/... sources the files cannot exist on the
     # test host: _configure_box must still complete and apply the other settings
-    # without raising or copying anything.
+    # without raising or copying anything. The two USER-PROVIDED-ONLY copies (RSS
+    # feeds + custom TV groups) must NOT appear. The instance-settings file is the
+    # exception: the IPTV custom-groups enforce step creates it from scratch on a
+    # fresh box (no device file needed), so it is expected to exist with the keys.
     boot.mod._configure_box()
-    for special in (_RSS_DST, _IPTV_INSTANCE_DST, _IPTV_GROUPS_DST):
+    for special in (_RSS_DST, _IPTV_GROUPS_DST):
         assert not os.path.exists(_dst_path(boot, special)), "no copy on desktop"
+    inst = _dst_path(boot, _IPTV_INSTANCE_DST)
+    assert os.path.exists(inst), "enforce step creates instance-settings on a fresh box"
+    got = _read_instance_settings(boot)
+    assert got["tvGroupMode"] == "2"
+    assert got["customTvGroupsFile"].endswith("customTVGroups-Network24.xml")
     assert _settings_set(boot).get("weather.addon") == "weather.multi"
+
+
+# --------------------------------------------------------------------------- #
+# IPTV custom-TV-groups instance-settings keys (1a/1b). These are pvr.iptvsimple
+# INSTANCE settings — they live ONLY in instance-settings-1.xml (JSON-RPC's
+# Settings.SetSettingValue cannot reach add-on instance settings), so the Setup
+# enforces them by writing that file directly, after the device-file copy.
+# --------------------------------------------------------------------------- #
+
+
+def _read_instance_settings(boot):
+    """Parse instance-settings-1.xml and return {id: text} for its <setting>s."""
+    path = _dst_path(boot, boot.mod.IPTV_INSTANCE_SETTINGS_SPECIAL)
+    root = ET.parse(path).getroot()
+    return {s.get("id"): (s.text or "") for s in root.findall("setting")}
+
+
+def test_ensure_iptv_groups_constants_match_schema():
+    """The enforced values must be the schema's CUSTOM_GROUPS enum (2) and a
+    channelGroups path pointing at the Network24 file we copy."""
+    boot_src = DEFAULT_PY.read_text()
+    assert 'IPTV_TV_GROUP_MODE_CUSTOM = "2"' in boot_src
+    assert "tvGroupMode" in boot_src
+    assert "customTvGroupsFile" in boot_src
+    assert "customTVGroups-Network24.xml" in boot_src
+
+
+def test_ensure_iptv_groups_creates_file_when_absent(boot):
+    """On a fresh box with no copied instance-settings file, the step creates one
+    with both keys correct (and the addon_data dir)."""
+    path = _dst_path(boot, boot.mod.IPTV_INSTANCE_SETTINGS_SPECIAL)
+    assert not os.path.exists(path)
+    boot.mod._ensure_iptv_custom_tv_groups()
+    got = _read_instance_settings(boot)
+    assert got["tvGroupMode"] == "2"
+    assert got["customTvGroupsFile"].endswith("customTVGroups-Network24.xml")
+    assert "channelGroups" in got["customTvGroupsFile"]
+
+
+def test_ensure_iptv_groups_patches_copied_file(boot):
+    """When the user's instance-settings-1.xml was copied with the DEFAULT
+    tvGroupMode=0 + example file, the step rewrites both keys and preserves the
+    other settings (e.g. m3uUrl)."""
+    path = _dst_path(boot, boot.mod.IPTV_INSTANCE_SETTINGS_SPECIAL)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write(
+            '<settings version="2">'
+            '<setting id="m3uUrl">http://example/list.m3u</setting>'
+            '<setting id="tvGroupMode" default="true">0</setting>'
+            '<setting id="customTvGroupsFile" default="true">'
+            "special://userdata/addon_data/pvr.iptvsimple/channelGroups/"
+            "customTVGroups-example.xml</setting>"
+            "</settings>"
+        )
+    boot.mod._ensure_iptv_custom_tv_groups()
+    got = _read_instance_settings(boot)
+    assert got["tvGroupMode"] == "2"
+    assert got["customTvGroupsFile"].endswith("customTVGroups-Network24.xml")
+    # Unrelated user settings survive untouched.
+    assert got["m3uUrl"] == "http://example/list.m3u"
+    # The default="true" flag is dropped on the keys we now override.
+    root = ET.parse(path).getroot()
+    for s in root.findall("setting"):
+        if s.get("id") in ("tvGroupMode", "customTvGroupsFile"):
+            assert s.get("default") is None
+
+
+def test_ensure_iptv_groups_respects_user_value_when_already_custom(boot):
+    """If the copied file already sets tvGroupMode=2 + the Network24 file, the
+    step is a no-op (no rewrite needed) and the values stay correct."""
+    path = _dst_path(boot, boot.mod.IPTV_INSTANCE_SETTINGS_SPECIAL)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    good_file = boot.mod.IPTV_CUSTOM_TV_GROUPS_FILE_VALUE
+    with open(path, "w") as f:
+        f.write(
+            '<settings version="2">'
+            '<setting id="tvGroupMode">2</setting>'
+            f'<setting id="customTvGroupsFile">{good_file}</setting>'
+            "</settings>"
+        )
+    before = open(path).read()
+    boot.mod._ensure_iptv_custom_tv_groups()
+    got = _read_instance_settings(boot)
+    assert got["tvGroupMode"] == "2"
+    assert got["customTvGroupsFile"] == good_file
+    # No-op: content unchanged byte-for-byte.
+    assert open(path).read() == before
+
+
+def test_ensure_iptv_groups_recreates_malformed_file(boot):
+    """A malformed instance-settings file is replaced with a valid one carrying
+    both keys, never raising."""
+    path = _dst_path(boot, boot.mod.IPTV_INSTANCE_SETTINGS_SPECIAL)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write("<settings><not-closed>")
+    boot.mod._ensure_iptv_custom_tv_groups()
+    got = _read_instance_settings(boot)
+    assert got["tvGroupMode"] == "2"
+    assert got["customTvGroupsFile"].endswith("customTVGroups-Network24.xml")
+
+
+def test_ensure_iptv_groups_is_idempotent(boot):
+    """Two runs converge — second run changes nothing."""
+    boot.mod._ensure_iptv_custom_tv_groups()
+    path = _dst_path(boot, boot.mod.IPTV_INSTANCE_SETTINGS_SPECIAL)
+    first = open(path).read()
+    boot.mod._ensure_iptv_custom_tv_groups()
+    assert open(path).read() == first
+
+
+def test_ensure_iptv_groups_never_raises(boot, monkeypatch):
+    """Any write failure is swallowed (never aborts the rest of setup)."""
+
+    def boom(*a, **k):
+        raise RuntimeError("boom")
+
+    # makedirs is the first filesystem op in the step — make it explode.
+    monkeypatch.setattr(boot.mod.os, "makedirs", boom)
+    boot.mod._ensure_iptv_custom_tv_groups()  # must not raise
+
+
+def test_ensure_iptv_groups_wired_into_configure_box_after_copy():
+    """_configure_box must call the enforce step, and AFTER the device-file copy
+    (so it patches the copied file rather than being overwritten by it)."""
+    src = DEFAULT_PY.read_text()
+    assert "_ensure_iptv_custom_tv_groups()" in src
+    copy_at = src.find("_copy_device_files()", src.find("def _configure_box"))
+    ensure_at = src.find(
+        "_ensure_iptv_custom_tv_groups()", src.find("def _configure_box")
+    )
+    assert 0 < copy_at < ensure_at, "enforce step must run after the copy"

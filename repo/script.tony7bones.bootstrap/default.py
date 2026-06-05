@@ -495,6 +495,125 @@ def _copy_device_files():
             )
 
 
+# --------------------------------------------------------------------------- #
+# pvr.iptvsimple instance-settings keys (1a/1b — TV custom groups)
+# --------------------------------------------------------------------------- #
+# pvr.iptvsimple stores its per-instance config in
+#   addon_data/pvr.iptvsimple/instance-settings-1.xml
+# (a <settings version="2"> file keyed by setting id). These two keys make the
+# add-on serve the user's custom TV channel groups instead of "all channels":
+#
+#   * tvGroupMode = 2   -> "Custom groups" (schema enum: 0=ALL, 1=SOME, 2=CUSTOM,
+#     confirmed in resources/instance-settings.xml, option label 30038)
+#   * customTvGroupsFile -> the channelGroups/ file we copy from the device
+#
+# These are ADD-ON INSTANCE settings: Kodi's JSON-RPC Settings.SetSettingValue
+# reaches only CORE settings (system.*, weather.*, …) and has no method for
+# per-instance PVR add-on settings — so the only way to set them is to write the
+# instance-settings file directly. We already COPY the user's file here; this
+# step then ENFORCES the two keys on top of whatever was copied, so the box ends
+# up correct even if the user's file omits or mis-sets them. If the copied file
+# already has them, it's a no-op. The path uses the same special://userdata form
+# the add-on itself writes (it resolves to the same channelGroups/ dir as the
+# copy destination).
+IPTV_INSTANCE_SETTINGS_SPECIAL = (
+    "special://home/userdata/addon_data/pvr.iptvsimple/instance-settings-1.xml"
+)
+IPTV_TV_GROUP_MODE_KEY = "tvGroupMode"
+IPTV_TV_GROUP_MODE_CUSTOM = "2"  # schema enum: 2 == CUSTOM_GROUPS
+IPTV_CUSTOM_TV_GROUPS_FILE_KEY = "customTvGroupsFile"
+IPTV_CUSTOM_TV_GROUPS_FILE_VALUE = (
+    "special://userdata/addon_data/pvr.iptvsimple/channelGroups/"
+    "customTVGroups-Network24.xml"
+)
+
+
+def _set_instance_setting(root, setting_id, value):
+    """Ensure <setting id="setting_id"> in `root` has exactly `value`.
+
+    Updates the element in place if present (and drops the default="true" flag,
+    since we're now overriding the default), creates it if missing. Returns True
+    if anything changed, so the caller can skip a no-op write. Mirrors how Kodi's
+    own settings writer stamps a user-set value."""
+    el = None
+    for s in root.findall("setting"):
+        if s.get("id") == setting_id:
+            el = s
+            break
+    changed = False
+    if el is None:
+        el = ET.SubElement(root, "setting")
+        el.set("id", setting_id)
+        changed = True
+    # A user-set value is no longer the schema default.
+    if el.get("default") is not None:
+        el.attrib.pop("default", None)
+        changed = True
+    if (el.text or "") != value:
+        el.text = value
+        changed = True
+    return changed
+
+
+def _ensure_iptv_custom_tv_groups():
+    """Enforce TV-group-mode=Custom + the custom-TV-groups file path in
+    pvr.iptvsimple's instance-settings-1.xml (1a/1b).
+
+    Runs AFTER _copy_device_files() (which may have copied the user's own
+    instance-settings-1.xml). Reads the file if present, else starts a fresh
+    <settings version="2"> tree, then ensures the two keys are correct and writes
+    back only if something changed. The destination dir is created if absent (a
+    fresh box without the copied file). Idempotent and fully defensive: any
+    failure is logged and swallowed — never aborts the rest of setup. These keys
+    cannot be set via JSON-RPC (it does not reach add-on instance settings), so a
+    direct file write is the only mechanism."""
+    try:
+        xml_path = xbmcvfs.translatePath(IPTV_INSTANCE_SETTINGS_SPECIAL)
+        os.makedirs(os.path.dirname(xml_path), exist_ok=True)
+
+        root = None
+        if os.path.exists(xml_path):
+            try:
+                root = ET.parse(xml_path).getroot()
+            except ET.ParseError as e:
+                _log(
+                    f"_ensure_iptv_custom_tv_groups: instance-settings-1.xml "
+                    f"malformed, recreating: {e}",
+                    xbmc.LOGERROR,
+                )
+                root = None
+        if root is None or root.tag != "settings":
+            root = ET.Element("settings")
+            root.set("version", "2")
+
+        changed = _set_instance_setting(
+            root, IPTV_TV_GROUP_MODE_KEY, IPTV_TV_GROUP_MODE_CUSTOM
+        )
+        changed = (
+            _set_instance_setting(
+                root,
+                IPTV_CUSTOM_TV_GROUPS_FILE_KEY,
+                IPTV_CUSTOM_TV_GROUPS_FILE_VALUE,
+            )
+            or changed
+        )
+
+        if changed:
+            with open(xml_path, "w", encoding="utf-8") as f:
+                f.write(ET.tostring(root, encoding="unicode"))
+            _log(
+                "_ensure_iptv_custom_tv_groups: set tvGroupMode=2 + "
+                f"customTvGroupsFile in {xml_path}"
+            )
+        else:
+            _log("_ensure_iptv_custom_tv_groups: keys already correct (no change)")
+    except Exception as e:  # noqa: BLE001 - never abort the rest of setup
+        _log(
+            f"_ensure_iptv_custom_tv_groups failed (non-fatal): {e}",
+            xbmc.LOGERROR,
+        )
+
+
 def _configure_box():
     """Apply the base box's weather + interface preferences:
       * weather provider  -> Multi Weather (weather.addon)
@@ -504,6 +623,8 @@ def _configure_box():
         (guarded copies: custom RssFeeds.xml, plus pvr.iptvsimple's
         instance-settings-1.xml and customTVGroups-Network24.xml — runs here
         AFTER the base install, so pvr.iptvsimple already exists)
+      * IPTV custom groups -> enforce tvGroupMode=Custom + the custom-TV-groups
+        file path in pvr.iptvsimple's instance-settings-1.xml (after the copy)
       * Estuary top bar   -> show weather info (Skin.SetBool, persists on restart)
     Defensive: any failure is logged and swallowed; never aborts the run."""
     try:
@@ -512,6 +633,8 @@ def _configure_box():
         _set_weather_location()
         # Copy the user's device files into userdata (guarded; skips any missing).
         _copy_device_files()
+        # Enforce IPTV custom-TV-groups keys on top of the copied file (1a/1b).
+        _ensure_iptv_custom_tv_groups()
         # The top-bar toggle is an Estuary skin bool; set it live so the restart
         # persists it (Kodi rewrites skin settings.xml from memory on shutdown).
         skin = ""

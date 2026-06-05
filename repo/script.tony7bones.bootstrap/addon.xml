@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="script.tony7bones.bootstrap"
        name="Tony.7.Bones Setup"
-       version="1.1.5"
+       version="1.1.6"
        provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
@@ -24,6 +24,6 @@
     <license>GPL-2.0-or-later</license>
     <summary lang="en_GB">Tony.7.Bones Kodi Setup</summary>
     <description lang="en_GB">Installs repositories and add-ons for a personal Kodi build.</description>
-    <news>v1.1.5: Setup now copies more of your device files into userdata when present — alongside the custom RssFeeds.xml it installs pvr.iptvsimple's instance-settings-1.xml and customTVGroups-Network24.xml (creating any missing folders). All copies are guarded: missing files are skipped cleanly. Weather/Sacramento/top-bar weather unchanged.</news>
+    <news>v1.1.6: After copying your pvr.iptvsimple files, Setup now enforces TV group mode = Custom groups and points the custom-TV-groups file at customTVGroups-Network24.xml in instance-settings-1.xml (these add-on instance settings cannot be set via JSON-RPC). Idempotent and guarded. Device-file copies, weather/Sacramento/top-bar weather unchanged.</news>
   </extension>
 </addon>
