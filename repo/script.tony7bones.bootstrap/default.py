@@ -363,6 +363,14 @@ WEATHER_LOCATION = {
 }
 SHOW_WEATHERINFO = "show_weatherinfo"  # Estuary skin bool: weather in the top bar
 
+# Custom RSS feeds. The user places their feed list on the device at the
+# Android/Fire-Stick "Kodi sources directory" path below (note the exact
+# "tony.7.bones" spelling); Setup copies it over Kodi's default RssFeeds.xml so
+# the home-screen news ticker shows the custom feeds. The file is USER-PROVIDED —
+# Setup never downloads or creates it; it only copies it when present.
+RSSFEEDS_SRC = "/storage/emulated/0/kodi/tony.7.bones/rss/RssFeeds.xml"
+RSSFEEDS_DST = "special://home/userdata/RssFeeds.xml"
+
 
 def _set_setting(setting_id, value):
     """Set a core Kodi setting via JSON-RPC. Returns True on a clean OK."""
@@ -419,17 +427,51 @@ def _set_weather_location():
     _log(f"_configure_box: wrote Multi Weather location 1 to {xml_path}")
 
 
+def _install_rss_feeds():
+    """Copy the user's custom RssFeeds.xml over Kodi's default, if present.
+
+    FROM the device "Kodi sources directory" (RSSFEEDS_SRC), TO Kodi's userdata
+    (RSSFEEDS_DST) — overwriting the default so the home ticker shows the custom
+    feeds. The file is USER-PROVIDED on the device; Setup never downloads/creates
+    it. GUARDED: if the source is absent (e.g. on desktop, or not yet placed) this
+    logs and skips — it never errors and never aborts the rest of setup. Overwrites
+    the destination if it already exists. Idempotent."""
+    try:
+        if not xbmcvfs.exists(RSSFEEDS_SRC):
+            _log(
+                f"_configure_box: custom RssFeeds source not found, skipping: "
+                f"{RSSFEEDS_SRC}",
+                xbmc.LOGINFO,
+            )
+            return
+        dst = xbmcvfs.translatePath(RSSFEEDS_DST)
+        # xbmcvfs.copy overwrites an existing destination.
+        if xbmcvfs.copy(RSSFEEDS_SRC, dst):
+            _log(f"_configure_box: installed custom RssFeeds.xml -> {dst}")
+        else:
+            _log(
+                f"_configure_box: xbmcvfs.copy reported failure copying "
+                f"{RSSFEEDS_SRC} -> {dst}",
+                xbmc.LOGERROR,
+            )
+    except Exception as e:  # noqa: BLE001 - never abort the rest of setup
+        _log(f"_install_rss_feeds failed (non-fatal): {e}", xbmc.LOGERROR)
+
+
 def _configure_box():
     """Apply the base box's weather + interface preferences:
       * weather provider  -> Multi Weather (weather.addon)
       * Multi Weather location 1 -> Sacramento, CA, US (name + coords)
-      * RSS news ticker   -> OFF (lookandfeel.enablerssfeeds)
+      * RSS news ticker   -> ON (lookandfeel.enablerssfeeds)
+      * custom RssFeeds.xml -> installed from the device if present (guarded copy)
       * Estuary top bar   -> show weather info (Skin.SetBool, persists on restart)
     Defensive: any failure is logged and swallowed; never aborts the run."""
     try:
         _set_setting("weather.addon", WEATHER_ADDON)
-        _set_setting("lookandfeel.enablerssfeeds", False)
+        _set_setting("lookandfeel.enablerssfeeds", True)
         _set_weather_location()
+        # Install the user's custom RSS feeds (guarded; skips if not on device).
+        _install_rss_feeds()
         # The top-bar toggle is an Estuary skin bool; set it live so the restart
         # persists it (Kodi rewrites skin settings.xml from memory on shutdown).
         skin = ""
@@ -440,7 +482,8 @@ def _configure_box():
         if not skin or skin == ESTUARY_SKIN_ID:
             xbmc.executebuiltin(f"Skin.SetBool({SHOW_WEATHERINFO})")
         _log(
-            "_configure_box: weather provider/location set, RSS off, top-bar weather on"
+            "_configure_box: weather provider/location set, RSS on, "
+            "custom feeds installed if present, top-bar weather on"
         )
     except Exception as e:  # noqa: BLE001 - never abort the rest of setup
         _log(f"_configure_box failed (non-fatal): {e}", xbmc.LOGERROR)
@@ -603,7 +646,8 @@ def run():
     _add_file_sources()
     # Trim the stock Estuary home menu — before the restart so Estuary re-reads it.
     _trim_home_menu()
-    # Weather provider + Sacramento location, RSS ticker off, top-bar weather on.
+    # Weather provider + Sacramento location, RSS ticker on (custom feeds if
+    # present), top-bar weather on.
     _configure_box()
     # ONE restart finalises every freshly extracted add-on AND the self-removal.
     restart_kodi("Tony.7.Bones Setup", _log)

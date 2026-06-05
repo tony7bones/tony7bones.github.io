@@ -464,8 +464,20 @@ def boot(tmp_path, monkeypatch):
         os.makedirs(p, exist_ok=True)
         return True
 
+    def _copy(src, dst):
+        # Mimic xbmcvfs.copy: overwrite the destination, return bool success.
+        import shutil
+
+        try:
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.copyfile(src, dst)
+            return True
+        except OSError:
+            return False
+
     xbmcvfs.exists = _exists
     xbmcvfs.mkdirs = _mkdirs
+    xbmcvfs.copy = _copy
 
     for nm, mod in (
         ("xbmc", xbmc),
@@ -1311,9 +1323,9 @@ def test_configure_box_sets_weather_provider(boot):
     assert _settings_set(boot).get("weather.addon") == "weather.multi"
 
 
-def test_configure_box_disables_rss_feeds(boot):
+def test_configure_box_enables_rss_feeds(boot):
     boot.mod._configure_box()
-    assert _settings_set(boot).get("lookandfeel.enablerssfeeds") is False
+    assert _settings_set(boot).get("lookandfeel.enablerssfeeds") is True
 
 
 def test_configure_box_writes_sacramento_location(boot):
@@ -1356,4 +1368,65 @@ def test_run_configures_box(boot):
     boot.mod.run()
     s = _settings_set(boot)
     assert s.get("weather.addon") == "weather.multi"
-    assert s.get("lookandfeel.enablerssfeeds") is False
+    assert s.get("lookandfeel.enablerssfeeds") is True
+
+
+# --------------------------------------------------------------------------- #
+# Custom RssFeeds.xml install (_install_rss_feeds, called from _configure_box).
+# The source is the device "Kodi sources directory" path; on the test host it
+# does not exist, so we monkeypatch RSSFEEDS_SRC to a real temp file to exercise
+# the copy path, and leave it unmapped to exercise the guarded-skip path.
+# --------------------------------------------------------------------------- #
+def _rss_dst_path(boot):
+    """Absolute (translated) path of the RssFeeds.xml destination."""
+    return boot.mod.xbmcvfs.translatePath(boot.mod.RSSFEEDS_DST)
+
+
+def test_install_rss_feeds_copies_when_source_present(boot, monkeypatch, tmp_path):
+    src = tmp_path / "RssFeeds.xml"
+    src.write_text("<rssfeeds>CUSTOM</rssfeeds>")
+    monkeypatch.setattr(boot.mod, "RSSFEEDS_SRC", str(src))
+    boot.mod._install_rss_feeds()
+    dst = _rss_dst_path(boot)
+    assert os.path.exists(dst), "custom RssFeeds.xml must be copied to userdata"
+    assert "CUSTOM" in open(dst).read()
+
+
+def test_install_rss_feeds_skips_when_source_missing(boot, monkeypatch, tmp_path):
+    missing = tmp_path / "does-not-exist" / "RssFeeds.xml"
+    monkeypatch.setattr(boot.mod, "RSSFEEDS_SRC", str(missing))
+    boot.mod._install_rss_feeds()  # guarded no-op
+    assert not os.path.exists(_rss_dst_path(boot)), "no copy when source absent"
+
+
+def test_install_rss_feeds_overwrites_existing_destination(boot, monkeypatch, tmp_path):
+    # Seed an existing destination with default/old content.
+    dst = _rss_dst_path(boot)
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    with open(dst, "w") as f:
+        f.write("<rssfeeds>DEFAULT</rssfeeds>")
+    src = tmp_path / "RssFeeds.xml"
+    src.write_text("<rssfeeds>CUSTOM</rssfeeds>")
+    monkeypatch.setattr(boot.mod, "RSSFEEDS_SRC", str(src))
+    boot.mod._install_rss_feeds()
+    content = open(dst).read()
+    assert "CUSTOM" in content and "DEFAULT" not in content, "must overwrite"
+
+
+def test_install_rss_feeds_never_raises(boot, monkeypatch):
+    # Even if xbmcvfs.copy blows up, the step must swallow and continue.
+    def boom(*a, **k):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(boot.mod.xbmcvfs, "exists", lambda p: True)
+    monkeypatch.setattr(boot.mod.xbmcvfs, "copy", boom)
+    boot.mod._install_rss_feeds()  # must not raise
+
+
+def test_configure_box_default_source_missing_is_guarded(boot):
+    # With the real default RSSFEEDS_SRC (/storage/... Android path) the source
+    # cannot exist on the test host: _configure_box must still complete and apply
+    # the other settings without raising or copying anything.
+    boot.mod._configure_box()
+    assert not os.path.exists(_rss_dst_path(boot)), "no copy on desktop (guarded)"
+    assert _settings_set(boot).get("weather.addon") == "weather.multi"
