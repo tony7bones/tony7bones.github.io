@@ -84,6 +84,7 @@ Test files map to what they cover (all tests import the add-on `default.py` unde
 | `test_deploy.py`         | `deploy.py` / `release_lib.py` (sandbox end-to-end with a bare remote)                                        |
 | `test_check_versions.py` | the per-add-on version-bump gate                                                                              |
 | `test_generate_repo.py`  | the generator (zips, indexes, determinism)                                                                    |
+| `test_modv2plus.py`      | `script.tony7bones.modv2plus` (Estuary MOD V2+ patch — Apply/Restore, XML patch, backup/restore)              |
 
 ## Releasing
 
@@ -152,7 +153,7 @@ main**. The old `.pre-commit-config.yaml` (pytest on commit) still works if inst
 
 ### Source files — `_tools/repo-sources/`
 
-Reference copies of `addon.xml` / scripts for the installer and the two `script.tony7bones.*` add-ons, kept for rebuilding a zip by hand. They are **not** read by the generator and are not the source of truth for a release — the canonical add-on source is `repo/repository.tony7bones/` on `main`. `_tools/make_custom_m3u.py` is unrelated IPTV tooling.
+Reference copies of `addon.xml` / scripts for the installer and the two `script.tony7bones.*` add-ons, kept for rebuilding a zip by hand. They are **not** read by the generator and are not the source of truth for a release — the canonical add-on source is `repo/repository.tony7bones/` on `main`. `_tools/make_custom_m3u.py` is unrelated IPTV tooling, and `_tools/firetv.sh` is the Fire TV ADB + JSON-RPC dev helper (see `docs/playbooks/firetv-adb-dev.md`).
 
 ### Generated files
 
