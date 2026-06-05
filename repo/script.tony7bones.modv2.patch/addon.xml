@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="script.tony7bones.modv2.patch"
        name="Estuary MOD V2 Patch"
-       version="1.0.3"
+       version="1.0.4"
        provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
@@ -11,5 +11,9 @@
     <summary lang="en_GB">Apply tony7bones logo and breadcrumb fixes to Estuary MOD V2</summary>
     <description lang="en_GB">Replaces the MOD V2 logo with the standard Estuary wordmark (vendor_logo.png) and restores section labels in the top bar. Run this after installing or updating skin.estuary.modv2. Safe to re-run — original files are backed up once and never overwritten.</description>
     <platform>all</platform>
+    <assets>
+      <icon>icon.png</icon>
+    </assets>
+    <news>Adds a branded add-on icon.</news>
   </extension>
 </addon>
