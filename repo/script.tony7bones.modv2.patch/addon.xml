@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="script.tony7bones.modv2.patch"
        name="Estuary MOD V2 Patch"
-       version="1.0.4"
+       version="1.0.5"
        provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
@@ -14,6 +14,6 @@
     <assets>
       <icon>icon.png</icon>
     </assets>
-    <news>Adds a branded add-on icon.</news>
+    <news>Match stock Estuary fonts: forces the Default (Noto Sans) fontset and neutralizes the Economica fontset so the UI renders Noto Sans even if Economica was selected.</news>
   </extension>
 </addon>
