@@ -69,8 +69,8 @@ def test_addon_name():
     assert _addon_root().get("name") == "Estuary MOD V2+"
 
 
-def test_addon_version_is_1_0_1():
-    assert _addon_root().get("version") == "1.0.1"
+def test_addon_version_is_1_0_2():
+    assert _addon_root().get("version") == "1.0.2"
 
 
 def test_no_provides_executable():
@@ -189,6 +189,42 @@ def test_home_no_colordiffuse_on_hires_wordmark():
     for line in HOME_XML.read_text(encoding="utf-8").splitlines():
         if "extras/logo-text-hires.png" in line:
             assert "colordiffuse" not in line, f"wordmark must be plain white: {line!r}"
+
+
+def _wordmark_control_blocks(text):
+    """Return each <control type="image"> block that carries the hi-res wordmark
+    texture (there are exactly two — the main and the fallback logo groups)."""
+    blocks = []
+    needle = "extras/logo-text-hires.png"
+    pos = 0
+    while True:
+        hit = text.find(needle, pos)
+        if hit == -1:
+            break
+        start = text.rfind('<control type="image">', 0, hit)
+        end = text.find("</control>", hit)
+        assert start != -1 and end != -1, "malformed wordmark control block"
+        blocks.append(text[start : end + len("</control>")])
+        pos = end + 1
+    return blocks
+
+
+def test_home_wordmark_height_balances_with_mark():
+    """The wordmark cap-height must be sized to balance the 56px Kodi mark (~0.7x,
+    matching stock Estuary), not fill its box at the old 50/36 heights that made
+    the text overpower the mark. Both wordmark controls render at height 39."""
+    text = HOME_XML.read_text(encoding="utf-8")
+    blocks = _wordmark_control_blocks(text)
+    assert len(blocks) == 2, f"expected two wordmark controls, found {len(blocks)}"
+    for block in blocks:
+        assert "<height>39</height>" in block, (
+            f"wordmark must be sized to balance the mark (height 39), got: {block!r}"
+        )
+        # the old, overpowering heights must be gone from the wordmark controls
+        assert "<height>50</height>" not in block
+        assert "<height>36</height>" not in block
+        # aspectratio=keep is preserved so width auto-follows (no distortion)
+        assert "<aspectratio>keep</aspectratio>" in block
 
 
 # --------------------------------------------------------------------------- #

@@ -2398,10 +2398,10 @@
 				</control>
 				<control type="image">
 					<left>40</left>
-					<top>10</top>
+					<top>8</top>
 					<aspectratio>keep</aspectratio>
 					<width>192</width>
-					<height>36</height>
+					<height>39</height>
 					<texture>extras/logo-text-hires.png</texture>
 					<visible>!Skin.HasSetting(MinimizeMainMenu)</visible>
 				</control>
@@ -2461,10 +2461,10 @@
 				</control>
 				<control type="image">
 					<left>55</left>
-					<top>4</top>
+					<top>8</top>
 					<aspectratio>keep</aspectratio>
 					<width>202</width>
-					<height>50</height>
+					<height>39</height>
 					<texture>extras/logo-text-hires.png</texture>
 					<visible>!Skin.HasSetting(MinimizeMainMenu)</visible>
 				</control>

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="script.tony7bones.modv2plus"
        name="Estuary MOD V2+"
-       version="1.0.1"
+       version="1.0.2"
        provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
@@ -14,6 +14,6 @@
     <assets>
       <icon>icon.png</icon>
     </assets>
-    <news>Apply/Restore now reload the skin automatically (a non-blocking notification replaces the old dialog that waited for an OK click before reloading).</news>
+    <news>Balance the nav wordmark size with the Kodi mark (the "KODI" cap-height now matches the mark height and is vertically centred, like stock Estuary).</news>
   </extension>
 </addon>
