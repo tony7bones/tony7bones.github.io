@@ -33,6 +33,7 @@ ADDON_XML = ADDON_DIR / "addon.xml"
 DEFAULT_PY = ADDON_DIR / "default.py"
 FONT_XML = ADDON_DIR / "resources" / "xml" / "Font.xml"
 HOME_XML = ADDON_DIR / "resources" / "xml" / "Home.xml"
+SKINSETTINGS_XML = ADDON_DIR / "resources" / "xml" / "SkinSettings.xml"
 
 
 def _addon_root():
@@ -66,7 +67,7 @@ def test_addon_version_bumped():
     import release_lib as rl  # noqa: PLC0415
 
     v = _addon_root().get("version")
-    assert rl.is_greater(v, "1.0.4"), f"version {v} must exceed the prior 1.0.4"
+    assert rl.is_greater(v, "1.0.6"), f"version {v} must exceed the prior 1.0.6"
 
 
 def test_has_news():
@@ -175,21 +176,102 @@ def _group_18000_block(text):
     raise AssertionError("matching </control> for group 18000 not found")
 
 
-def test_group_18000_system_info_panel_disabled():
-    """The MOD V2 system-information panel (group id=18000) must be hard-disabled
-    so it no longer pops up when the Settings/gear control (802) is focused on the
-    home menu. Its <visible> must be 'false' and must NOT reference Control.HasFocus(802)."""
-    text = HOME_XML.read_text(encoding="utf-8")
+def _group_18000_own_visible(text):
+    """Return the group id=18000 control's OWN <visible> condition (the first
+    <visible> in its block, before any nested child controls' conditions)."""
     block = _group_18000_block(text)
-    # the group's own <visible> is the first <visible> in the block (before any
-    # nested child controls' visible conditions)
     vis_start = block.find("<visible>")
     assert vis_start != -1, "group 18000 must have a <visible> element"
     vis_end = block.find("</visible>", vis_start)
-    visible = block[vis_start + len("<visible>") : vis_end].strip()
-    assert visible == "false", f"group 18000 <visible> must be 'false', got {visible!r}"
-    assert "Control.HasFocus(802)" not in block.split("</visible>", 1)[0], (
-        "group 18000's own visible condition must not reference Control.HasFocus(802)"
+    return block[vis_start + len("<visible>") : vis_end].strip()
+
+
+def test_group_18000_visible_gated_on_toggle():
+    """As of 1.0.7 the MOD V2 system-information panel (group id=18000) is no
+    longer hard-disabled. Its visibility is now gated on the gear focus AND the
+    user toggle: it shows only when control 802 is focused and the
+    enable_info_overlay skin setting is on. So its OWN <visible> must reference
+    both Control.HasFocus(802) and Skin.HasSetting(enable_info_overlay), and must
+    NOT be a bare 'false'."""
+    text = HOME_XML.read_text(encoding="utf-8")
+    visible = _group_18000_own_visible(text)
+    assert visible != "false", (
+        f"group 18000 <visible> must no longer be 'false', got {visible!r}"
+    )
+    assert "Control.HasFocus(802)" in visible, (
+        f"group 18000 <visible> must gate on Control.HasFocus(802), got {visible!r}"
+    )
+    assert "Skin.HasSetting(enable_info_overlay)" in visible, (
+        "group 18000 <visible> must gate on Skin.HasSetting(enable_info_overlay), "
+        f"got {visible!r}"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Static contract — SkinSettings.xml ships the Extras toggle
+# --------------------------------------------------------------------------- #
+def test_skinsettings_xml_is_in_files():
+    assert "SkinSettings.xml" in _assign("FILES"), (
+        "SkinSettings.xml must be in the FILES copy list"
+    )
+
+
+def test_skinsettings_xml_resource_exists():
+    assert SKINSETTINGS_XML.exists(), "must ship resources/xml/SkinSettings.xml"
+
+
+def _find_grouplist_500(root):
+    """Return the <control type='grouplist' id='500'> element, searched anywhere."""
+    for ctrl in root.iter("control"):
+        if ctrl.get("type") == "grouplist" and ctrl.get("id") == "500":
+            return ctrl
+    raise AssertionError("grouplist id=500 not found in SkinSettings.xml")
+
+
+def test_skinsettings_has_info_overlay_toggle_in_grouplist_500():
+    """Exactly one radiobutton in the Extras grouplist (id=500) must drive the
+    enable_info_overlay setting with the literal label, sitting inside group 500."""
+    root = ET.parse(SKINSETTINGS_XML).getroot()
+    grouplist = _find_grouplist_500(root)
+
+    matches = []
+    for ctrl in grouplist.iter("control"):
+        if ctrl.get("type") != "radiobutton":
+            continue
+        onclick = ctrl.find("onclick")
+        if (
+            onclick is not None
+            and onclick.text == "Skin.ToggleSetting(enable_info_overlay)"
+        ):
+            matches.append(ctrl)
+
+    assert len(matches) == 1, (
+        f"expected exactly one enable_info_overlay radiobutton in grouplist 500, "
+        f"found {len(matches)}"
+    )
+    ctrl = matches[0]
+    label = ctrl.find("label")
+    assert (
+        label is not None and label.text == "Enable Info Overlay on Settings focus"
+    ), (
+        f"toggle label must be the literal text, got {label.text if label is not None else None!r}"
+    )
+    selected = ctrl.find("selected")
+    assert (
+        selected is not None and selected.text == "Skin.HasSetting(enable_info_overlay)"
+    ), "toggle must reflect its state via Skin.HasSetting(enable_info_overlay)"
+
+
+def test_info_overlay_toggle_sits_below_enable_splash_screen():
+    """The toggle (id=520) must appear immediately after the Enable Splash Screen
+    radiobutton (id=503) within the Extras grouplist."""
+    root = ET.parse(SKINSETTINGS_XML).getroot()
+    grouplist = _find_grouplist_500(root)
+    children = list(grouplist)
+    ids = [c.get("id") for c in children]
+    assert "503" in ids and "520" in ids, f"expected ids 503 and 520, got {ids}"
+    assert ids.index("520") == ids.index("503") + 1, (
+        f"id 520 must immediately follow id 503; order was {ids}"
     )
 
 

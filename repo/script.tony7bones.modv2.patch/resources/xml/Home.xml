@@ -1128,7 +1128,7 @@
 				<control type="group" id="18000">
 					<animation effect="slide" end="502,0" time="300" tween="sine" easing="inout" condition="Skin.HasSetting(HideMainMenuWithWidgets) + !Skin.HasSetting(MinimizeMainMenu)">Conditional</animation>
 					<animation effect="slide" end="135,0" time="300" tween="sine" easing="inout" condition="Skin.HasSetting(HideMainMenuWithWidgets) + Skin.HasSetting(MinimizeMainMenu)">Conditional</animation>
-					<visible>false</visible>
+					<visible>Control.HasFocus(802) + Skin.HasSetting(enable_info_overlay)</visible>
 					<include>OpenClose_Right</include>
 					<include>Visible_Right</include>
 					<include content="Visible_Right_Delayed">

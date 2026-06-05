@@ -16,6 +16,7 @@ SKIN_ID = "skin.estuary.modv2"
 
 FILES = [
     "Home.xml",
+    "SkinSettings.xml",
     "Includes.xml",
     "DialogButtonMenu.xml",
     "LoginScreen.xml",
