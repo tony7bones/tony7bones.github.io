@@ -61,7 +61,7 @@ v1.0.14: Add Estuary MOD V2+; retire the old MOD V2 patch
             <news>v1.1.6: After copying your pvr.iptvsimple files, Setup now enforces TV group mode = Custom groups and points the custom-TV-groups file at customTVGroups-Network24.xml in instance-settings-1.xml (these add-on instance settings cannot be set via JSON-RPC). Idempotent and guarded. Device-file copies, weather/Sacramento/top-bar weather unchanged.</news>
         </extension>
     </addon>
-    <addon id="script.tony7bones.modv2plus" name="Estuary MOD V2+" version="1.0.2" provider-name="tony7bones">
+    <addon id="script.tony7bones.modv2plus" name="Estuary MOD V2+" version="1.0.3" provider-name="tony7bones">
         <requires>
             <import addon="xbmc.python" version="3.0.0" />
         </requires>
@@ -73,7 +73,7 @@ v1.0.14: Add Estuary MOD V2+; retire the old MOD V2 patch
             <assets>
                 <icon>icon.png</icon>
             </assets>
-            <news>Balance the nav wordmark size with the Kodi mark (the "KODI" cap-height now matches the mark height and is vertically centred, like stock Estuary).</news>
+            <news>Top-right clock now matches stock Estuary — removed MOD V2's bold tags so it renders in the thin Roboto clock font instead of faux-bold.</news>
         </extension>
     </addon>
     <addon id="script.tony7bones.video" name="Video Add-ons Setup" version="1.1.0" provider-name="tony7bones">

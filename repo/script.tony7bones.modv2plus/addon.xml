@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="script.tony7bones.modv2plus"
        name="Estuary MOD V2+"
-       version="1.0.2"
+       version="1.0.3"
        provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
@@ -14,6 +14,6 @@
     <assets>
       <icon>icon.png</icon>
     </assets>
-    <news>Balance the nav wordmark size with the Kodi mark (the "KODI" cap-height now matches the mark height and is vertically centred, like stock Estuary).</news>
+    <news>Top-right clock now matches stock Estuary — removed MOD V2's bold tags so it renders in the thin Roboto clock font instead of faux-bold.</news>
   </extension>
 </addon>

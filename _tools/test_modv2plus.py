@@ -40,7 +40,20 @@ DEFAULT_PY = ADDON_DIR / "default.py"
 HOME_XML = ADDON_DIR / "resources" / "xml" / "Home.xml"
 SKINSETTINGS_XML = ADDON_DIR / "resources" / "xml" / "SkinSettings.xml"
 SETTINGS_XML = ADDON_DIR / "resources" / "xml" / "Settings.xml"
+INCLUDES_XML = ADDON_DIR / "resources" / "xml" / "Includes.xml"
 LOGO_PNG = ADDON_DIR / "resources" / "media" / "extras" / "logo-text-hires.png"
+
+
+def test_includes_clock_is_not_bold():
+    """The top-right clock must render in the thin Roboto clock font like stock —
+    MOD V2's [B]...[/B] bold wrapper around the time is removed, and the control
+    still uses font_clock."""
+    text = INCLUDES_XML.read_text(encoding="utf-8")
+    assert "<label>$INFO[System.Time]</label>" in text, "clock label must be plain"
+    assert "[B]$INFO[System.Time][/B]" not in text, (
+        "the bold clock wrapper must be gone"
+    )
+    assert "<font>font_clock</font>" in text, "clock must keep the font_clock font"
 
 
 def _addon_root():
@@ -69,8 +82,8 @@ def test_addon_name():
     assert _addon_root().get("name") == "Estuary MOD V2+"
 
 
-def test_addon_version_is_1_0_2():
-    assert _addon_root().get("version") == "1.0.2"
+def test_addon_version_is_1_0_3():
+    assert _addon_root().get("version") == "1.0.3"
 
 
 def test_no_provides_executable():
@@ -92,8 +105,13 @@ def test_default_py_compiles():
 # --------------------------------------------------------------------------- #
 # Static contract — FILES / MEDIA
 # --------------------------------------------------------------------------- #
-def test_files_is_exactly_the_three_xml():
-    assert _assign("FILES") == ["Home.xml", "SkinSettings.xml", "Settings.xml"]
+def test_files_is_exactly_the_shipped_xml():
+    assert _assign("FILES") == [
+        "Home.xml",
+        "SkinSettings.xml",
+        "Settings.xml",
+        "Includes.xml",
+    ]
 
 
 def test_media_maps_the_loose_logo():

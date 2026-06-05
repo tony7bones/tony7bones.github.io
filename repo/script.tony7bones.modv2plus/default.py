@@ -18,6 +18,7 @@ FILES = [
     "Home.xml",
     "SkinSettings.xml",
     "Settings.xml",
+    "Includes.xml",
 ]
 
 # Loose media assets copied to a path OUTSIDE xml/. Each entry maps a source
