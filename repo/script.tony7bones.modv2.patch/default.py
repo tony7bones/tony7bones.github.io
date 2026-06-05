@@ -25,6 +25,7 @@ FILES = [
     "script-script.module.kodi65-t9search.xml",
     "Font.xml",
     "Settings.xml",
+    "View_55_WideList.xml",
 ]
 
 

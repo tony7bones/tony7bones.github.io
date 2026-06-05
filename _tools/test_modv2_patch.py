@@ -35,6 +35,7 @@ FONT_XML = ADDON_DIR / "resources" / "xml" / "Font.xml"
 HOME_XML = ADDON_DIR / "resources" / "xml" / "Home.xml"
 SKINSETTINGS_XML = ADDON_DIR / "resources" / "xml" / "SkinSettings.xml"
 SETTINGS_XML = ADDON_DIR / "resources" / "xml" / "Settings.xml"
+WIDELIST_XML = ADDON_DIR / "resources" / "xml" / "View_55_WideList.xml"
 
 
 def _addon_root():
@@ -68,7 +69,7 @@ def test_addon_version_bumped():
     import release_lib as rl  # noqa: PLC0415
 
     v = _addon_root().get("version")
-    assert rl.is_greater(v, "1.0.8"), f"version {v} must exceed the prior 1.0.8"
+    assert rl.is_greater(v, "1.0.9"), f"version {v} must exceed the prior 1.0.9"
 
 
 def test_has_news():
@@ -328,6 +329,90 @@ def test_settings_skinsettings_before_media_sources():
     assert skin_item.find("icon").text == "icons/settings/skin.png"
     assert media_item.find("label").text == "$LOCALIZE[20094]"
     assert media_item.find("icon").text == "icons/settings/sources.png"
+
+
+# --------------------------------------------------------------------------- #
+# Static contract — View_55_WideList.xml addon-browser label fix
+# --------------------------------------------------------------------------- #
+def test_widelist_xml_is_in_files():
+    assert "View_55_WideList.xml" in _assign("FILES"), (
+        "View_55_WideList.xml must be in the FILES copy list"
+    )
+
+
+def test_widelist_xml_resource_exists():
+    assert WIDELIST_XML.exists(), "must ship resources/xml/View_55_WideList.xml"
+
+
+def _addons_layout(tag):
+    """Return the addons-conditioned <focusedlayout>/<itemlayout> element.
+
+    Selects the layout whose condition is exactly the addons content gate
+    (``Container.Content(addons)``) so we never match the movies/tvshows/songs/
+    files/etc. layouts in the same file.
+    """
+    root = ET.parse(WIDELIST_XML).getroot()
+    matches = [
+        el
+        for el in root.iter(tag)
+        if (el.get("condition") or "").strip() == "Container.Content(addons)"
+    ]
+    assert len(matches) == 1, (
+        f"expected exactly one addons-conditioned <{tag}>, found {len(matches)}"
+    )
+    return matches[0]
+
+
+@pytest.mark.parametrize("tag", ["focusedlayout", "itemlayout"])
+def test_addons_layout_group_offset_removed(tag):
+    """The bug: the addons focusedlayout/itemlayout wrapped its row controls in a
+    <control type="group"> carrying a <top>40</top> offset. With the row only 80px
+    tall and the label centered, that +40 pushed the centered label to the row's
+    bottom clip -> invisible. The fix zeroes that wrapping group's offset.
+
+    Assert against the SPECIFIC addons layout block (not a global string search):
+    the layout's direct child group's own <top> must be 0, and must NOT be 40.
+    """
+    layout = _addons_layout(tag)
+    # the wrapping group is the layout's direct child group control
+    groups = [c for c in layout if c.tag == "control" and c.get("type") == "group"]
+    assert len(groups) == 1, (
+        f"addons <{tag}> should wrap its row in exactly one group, found {len(groups)}"
+    )
+    group = groups[0]
+    # the group's OWN <top> (direct child, not a nested control's <top>)
+    own_top = group.find("top")
+    assert own_top is not None, "wrapping group must declare its own <top>"
+    assert own_top.text.strip() == "0", (
+        f"addons {tag} group <top> must be 0 (was the offending 40), "
+        f"got {own_top.text!r}"
+    )
+    assert own_top.text.strip() != "40", "the +40 offset must be gone"
+
+
+@pytest.mark.parametrize("tag", ["focusedlayout", "itemlayout"])
+def test_addons_layout_label_present(tag):
+    """Sanity: the add-on NAME label control is still present inside the addons
+    layout (we fixed geometry, not removed the label)."""
+    layout = _addons_layout(tag)
+    labels = [
+        c
+        for c in layout.iter("control")
+        if c.get("type") == "label"
+        and (c.findtext("label") or "").strip() == "$INFO[ListItem.Label]"
+    ]
+    assert labels, f"addons <{tag}> must keep the ListItem.Label name control"
+
+
+def test_widelist_only_addons_offsets_changed():
+    """Defensive: the ONLY <top>40</top> occurrences in the original MOD V2 file
+    were the two addons group offsets, so the shipped file must contain none —
+    proving we did not leave the offending offset anywhere and did not introduce
+    a new one in the non-addons layouts."""
+    text = WIDELIST_XML.read_text(encoding="utf-8")
+    assert "<top>40</top>" not in text, (
+        "no <top>40</top> offset should remain in the shipped View_55_WideList.xml"
+    )
 
 
 # --------------------------------------------------------------------------- #
