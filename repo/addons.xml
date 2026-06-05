@@ -61,19 +61,19 @@ v1.0.13: Rename repository to 'Tony.7.Bones repository' (naming convention)
             <news>v1.1.6: After copying your pvr.iptvsimple files, Setup now enforces TV group mode = Custom groups and points the custom-TV-groups file at customTVGroups-Network24.xml in instance-settings-1.xml (these add-on instance settings cannot be set via JSON-RPC). Idempotent and guarded. Device-file copies, weather/Sacramento/top-bar weather unchanged.</news>
         </extension>
     </addon>
-    <addon id="script.tony7bones.modv2.patch" name="Estuary MOD V2 Patch" version="1.0.10" provider-name="tony7bones">
+    <addon id="script.tony7bones.modv2plus" name="Estuary MOD V2+" version="1.0.0" provider-name="tony7bones">
         <requires>
             <import addon="xbmc.python" version="3.0.0" />
         </requires>
         <extension point="xbmc.python.script" library="default.py" />
         <extension point="xbmc.addon.metadata">
-            <summary lang="en_GB">Apply tony7bones logo and breadcrumb fixes to Estuary MOD V2</summary>
-            <description lang="en_GB">Replaces the MOD V2 logo with the standard Estuary wordmark (vendor_logo.png) and restores section labels in the top bar. Run this after installing or updating skin.estuary.modv2. Safe to re-run — original files are backed up once and never overwritten.</description>
+            <summary lang="en_GB">Lean enhancements for Estuary MOD V2</summary>
+            <description lang="en_GB">A small, non-destructive set of enhancements for skin.estuary.modv2 (Estuary MOD V2), built fresh against the Omega release. Reorders the gear Settings menu so Skin Settings sits above Media sources, adds an opt-in info overlay on Settings focus (off by default, toggled in Skin Settings &gt; Extras), and sharpens the navigation wordmark with a crisp high-resolution white logo. Run after installing or updating skin.estuary.modv2. Apply and Restore are both available — original files are backed up once and never overwritten, and Restore reverts every change cleanly.</description>
             <platform>all</platform>
             <assets>
                 <icon>icon.png</icon>
             </assets>
-            <news>Fix invisible add-on names in MOD V2's Add-on Browser (Home &gt; Add-ons): the list labels were pushed off the visible row by a layout offset.</news>
+            <news>Initial release: Skin Settings above Media sources, opt-in Settings-focus info overlay (default off), and a sharper high-res white navigation wordmark. Built fresh from the Omega MOD V2 source.</news>
         </extension>
     </addon>
     <addon id="script.tony7bones.video" name="Video Add-ons Setup" version="1.1.0" provider-name="tony7bones">

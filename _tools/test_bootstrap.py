@@ -129,9 +129,9 @@ def test_patch_is_first_party_direct_extract():
     """The MOD V2 patch must NOT be auto-installed by the setup. It is neither in
     the first-party direct-extract list nor in the apps list — a user installs it
     by hand only if they adopt the Estuary MOD V2 skin. It stays HOST-provided
-    (see test_modv2_patch_is_host_provided)."""
-    assert "script.tony7bones.modv2.patch" not in _assign("FIRST_PARTY")
-    assert "script.tony7bones.modv2.patch" not in _assign("ADDONS")
+    (see test_modv2plus_is_host_provided)."""
+    assert "script.tony7bones.modv2plus" not in _assign("FIRST_PARTY")
+    assert "script.tony7bones.modv2plus" not in _assign("ADDONS")
 
 
 def test_first_party_is_empty():
@@ -217,10 +217,10 @@ def test_success_dialog_does_not_overclaim():
     assert "{repo_ok}" in src and "{app_ok}" in src
 
 
-def test_modv2_patch_is_host_provided():
+def test_modv2plus_is_host_provided():
     """The patch must exist in the host addons.xml and be served statically."""
     addons = (REPO_ROOT / "repo" / "addons.xml").read_text()
-    assert 'id="script.tony7bones.modv2.patch"' in addons
+    assert 'id="script.tony7bones.modv2plus"' in addons
 
 
 # --------------------------------------------------------------------------- #
@@ -510,7 +510,7 @@ def boot(tmp_path, monkeypatch):
         url = _url_of(req)
         if url.endswith("addon.xml"):
             return _FakeResp(
-                b'<addon id="script.tony7bones.modv2.patch" version="1.0.3"/>'
+                b'<addon id="script.tony7bones.modv2plus" version="1.0.0"/>'
             )
         if url.endswith("addons.xml") or url.endswith("addons.xml.gz"):
             data = _index_xml()
@@ -558,10 +558,10 @@ def test_no_unknown_sources_jsonrpc_during_run(boot):
 
 
 def test_latest_zip_url_resolves_live_version(boot):
-    url = boot.mod._latest_zip_url("script.tony7bones.modv2.patch")
+    url = boot.mod._latest_zip_url("script.tony7bones.modv2plus")
     assert url == (
-        "https://tony7bones.github.io/repo/script.tony7bones.modv2.patch/"
-        "script.tony7bones.modv2.patch-1.0.3.zip"
+        "https://tony7bones.github.io/repo/script.tony7bones.modv2plus/"
+        "script.tony7bones.modv2plus-1.0.0.zip"
     )
 
 
@@ -570,7 +570,7 @@ def test_latest_zip_url_handles_error(boot, monkeypatch):
         raise OSError("no net")
 
     monkeypatch.setattr(urllib.request, "urlopen", boom)
-    assert boot.mod._latest_zip_url("script.tony7bones.modv2.patch") is None
+    assert boot.mod._latest_zip_url("script.tony7bones.modv2plus") is None
 
 
 def test_run_installs_apps_without_modal(boot):
@@ -591,8 +591,8 @@ def test_run_installs_apps_without_modal(boot):
     assert "pvr.iptvsimple" in s["installed"]
     assert "inputstream.ffmpegdirect" in s["installed"]  # binary dep of the PVR
     # the MOD V2 patch is NO LONGER auto-installed (opt-in only)
-    assert "script.tony7bones.modv2.patch" not in s["installed"]
-    assert "script.tony7bones.modv2.patch" not in s["extracted"]
+    assert "script.tony7bones.modv2plus" not in s["installed"]
+    assert "script.tony7bones.modv2plus" not in s["extracted"]
     assert s["ok"], "no completion dialog shown"
     _title, msg = s["ok"][-1]
     assert "Repos:" in msg and "Patches:" in msg and "Apps:" in msg
