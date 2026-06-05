@@ -42,6 +42,7 @@ SKINSETTINGS_XML = ADDON_DIR / "resources" / "xml" / "SkinSettings.xml"
 SETTINGS_XML = ADDON_DIR / "resources" / "xml" / "Settings.xml"
 INCLUDES_XML = ADDON_DIR / "resources" / "xml" / "Includes.xml"
 LOGO_PNG = ADDON_DIR / "resources" / "media" / "extras" / "logo-text-hires.png"
+WEATHER_STOCK_DIR = ADDON_DIR / "resources" / "media" / "extras" / "weather-stock"
 
 
 def test_includes_clock_is_not_bold():
@@ -54,6 +55,54 @@ def test_includes_clock_is_not_bold():
         "the bold clock wrapper must be gone"
     )
     assert "<font>font_clock</font>" in text, "clock must keep the font_clock font"
+
+
+def test_includes_weather_icons_point_at_stock_white_set():
+    """The top-right weather condition icon must resolve from the stock-white
+    extras/weather-stock/ set, not MOD V2's coloured extras/weather/ set. The
+    clock de-bold fix must remain in place."""
+    text = INCLUDES_XML.read_text(encoding="utf-8")
+    assert (
+        "$INFO[Weather.FanartCode,special://skin/extras/weather-stock/,.png]" in text
+    ), "weather icon must point at the stock-white weather-stock set"
+    assert "special://skin/extras/weather/," not in text, (
+        "MOD V2's coloured weather/ prefix must be gone"
+    )
+    # the clock de-bold fix from 1.0.3 stays intact
+    assert "<label>$INFO[System.Time]</label>" in text
+    assert "[B]$INFO[System.Time][/B]" not in text
+    assert "<font>font_clock</font>" in text
+
+
+def test_weather_stock_icons_ship_and_nonempty():
+    """The stock-white weather icon set must ship as loose PNGs and include the
+    sunny condition (32.png) plus the na fallback."""
+    assert WEATHER_STOCK_DIR.is_dir(), "must ship resources/media/extras/weather-stock/"
+    pngs = sorted(p.name for p in WEATHER_STOCK_DIR.glob("*.png"))
+    assert pngs, "weather-stock must contain PNG icons"
+    assert "32.png" in pngs, "the sunny condition icon (32) must ship"
+    assert "na.png" in pngs, "the na fallback icon must ship"
+    for p in WEATHER_STOCK_DIR.glob("*.png"):
+        assert p.stat().st_size > 0, f"{p.name} must be non-empty"
+
+
+def test_media_dirs_maps_weather_stock():
+    media_dirs = _assign("MEDIA_DIRS")
+    matches = [
+        (src, dst)
+        for (src, dst) in media_dirs
+        if dst.replace("\\", "/") == "extras/weather-stock"
+        and src.replace("\\", "/") == "resources/media/extras/weather-stock"
+    ]
+    assert len(matches) == 1, (
+        f"expected one weather-stock dir mapping, got {media_dirs}"
+    )
+    # the dst must be the skin ROOT's extras/ (special://skin/extras/), NOT
+    # media/extras/ — Includes.xml uses special://skin/extras/weather-stock/.
+    _src, dst = matches[0]
+    assert not dst.replace("\\", "/").startswith("media/"), (
+        f"weather-stock dst must be skin-root extras/, not media/extras/: {dst}"
+    )
 
 
 def _addon_root():
@@ -82,8 +131,9 @@ def test_addon_name():
     assert _addon_root().get("name") == "Estuary MOD V2+"
 
 
-def test_addon_version_is_1_0_3():
-    assert _addon_root().get("version") == "1.0.3"
+def test_addon_version_floor_1_0_4():
+    parts = tuple(int(p) for p in _addon_root().get("version").split("."))
+    assert parts >= (1, 0, 4), "version must be at least 1.0.4"
 
 
 def test_no_provides_executable():
@@ -337,6 +387,14 @@ def patch_env(tmp_path, monkeypatch):
         )
     for rel_src, _rel_dst in _assign("MEDIA"):
         (addon_path / rel_src).write_bytes((ADDON_DIR / rel_src).read_bytes())
+    # seed the real shipped MEDIA_DIRS so apply copies genuine bytes
+    for rel_src, _rel_dst in _assign("MEDIA_DIRS"):
+        src_dir = ADDON_DIR / rel_src
+        dst_dir = addon_path / rel_src
+        dst_dir.mkdir(parents=True, exist_ok=True)
+        for f in src_dir.glob("*"):
+            if f.is_file():
+                (dst_dir / f.name).write_bytes(f.read_bytes())
 
     xbmc = types.ModuleType("xbmc")
     xbmc.LOGERROR = 4
@@ -408,6 +466,16 @@ def test_run_apply_copies_files_and_media(patch_env):
     logo = patch_env.skin_root / "media" / "extras" / "logo-text-hires.png"
     assert logo.exists(), "the hi-res wordmark must be copied into the skin media dir"
     assert logo.read_bytes() == LOGO_PNG.read_bytes()
+    # the whole weather-stock dir is copied into <skin>/extras/weather-stock
+    # (skin root, where special://skin/extras/ resolves — NOT media/extras/)
+    dst_weather = patch_env.skin_root / "extras" / "weather-stock"
+    assert dst_weather.is_dir(), "weather-stock dir must be copied on Apply"
+    copied = sorted(p.name for p in dst_weather.glob("*.png"))
+    shipped = sorted(p.name for p in WEATHER_STOCK_DIR.glob("*.png"))
+    assert copied == shipped, "every weather-stock icon must be copied"
+    assert (dst_weather / "32.png").read_bytes() == (
+        WEATHER_STOCK_DIR / "32.png"
+    ).read_bytes()
     assert any("ReloadSkin" in b for b in patch_env.state["builtins"])
     # The reload must be automatic: a non-blocking notification, never a modal
     # ok() that waits for a click before reloading.
@@ -449,6 +517,10 @@ def test_run_restore_reverts_xml_and_removes_loose_png(patch_env):
     logo = patch_env.skin_root / "media" / "extras" / "logo-text-hires.png"
     logo.parent.mkdir(parents=True, exist_ok=True)
     logo.write_bytes(b"PNGDATA")
+    # a weather-stock dir present (as if Apply had placed it)
+    weather = patch_env.skin_root / "extras" / "weather-stock"
+    weather.mkdir(parents=True, exist_ok=True)
+    (weather / "32.png").write_bytes(b"WEATHERPNG")
 
     patch_env.state["select"] = 1
     patch_env.mod.run()
@@ -457,6 +529,7 @@ def test_run_restore_reverts_xml_and_removes_loose_png(patch_env):
         assert (skin_xml / fname).read_text() == "ORIGINAL " + fname
         assert not (skin_xml / (fname + ".bak")).exists()
     assert not logo.exists(), "the loose hi-res wordmark must be removed on Restore"
+    assert not weather.exists(), "the weather-stock dir must be removed on Restore"
     assert any("ReloadSkin" in b for b in patch_env.state["builtins"])
     # Clean restore auto-reloads via a non-blocking notification (no modal ok()).
     assert not patch_env.state["ok"], (
@@ -488,3 +561,35 @@ def test_restore_patches_nothing_to_restore_no_exception(patch_env):
     assert restored == 0
     assert failed == 0
     assert skipped == len(_assign("FILES"))
+
+
+def test_apply_media_dirs_copies_whole_dir(patch_env):
+    applied, failed = patch_env.mod.apply_media_dirs(str(patch_env.skin_root))
+    assert applied == len(_assign("MEDIA_DIRS"))
+    assert failed == 0
+    dst = patch_env.skin_root / "extras" / "weather-stock"
+    copied = sorted(p.name for p in dst.glob("*.png"))
+    shipped = sorted(p.name for p in WEATHER_STOCK_DIR.glob("*.png"))
+    assert copied == shipped
+
+
+def test_restore_media_dirs_handles_missing_dir(patch_env):
+    """restore_media_dirs() with no dir present -> (0 removed, 0 failed, 1 skipped)."""
+    removed, failed, skipped = patch_env.mod.restore_media_dirs(
+        str(patch_env.skin_root)
+    )
+    assert removed == 0
+    assert failed == 0
+    assert skipped == len(_assign("MEDIA_DIRS"))
+
+
+def test_restore_media_dirs_removes_present_dir(patch_env):
+    weather = patch_env.skin_root / "extras" / "weather-stock"
+    weather.mkdir(parents=True, exist_ok=True)
+    (weather / "32.png").write_bytes(b"x")
+    removed, failed, skipped = patch_env.mod.restore_media_dirs(
+        str(patch_env.skin_root)
+    )
+    assert removed == 1
+    assert failed == 0
+    assert not weather.exists()
