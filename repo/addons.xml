@@ -1,6 +1,6 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <addons>
-    <addon id="repository.tony7bones" name="Tony.7.Bones repository" provider-name="Tony.7.Bones" version="1.0.12">
+    <addon id="repository.tony7bones" name="Tony.7.Bones repository" provider-name="Tony.7.Bones" version="1.0.13">
         <requires>
             <import addon="xbmc.python" version="3.0.0" />
         </requires>
@@ -19,7 +19,7 @@
             <summary lang="en">Welcome to Tony.7.Bones repository. Enjoy!</summary>
             <description lang="en">Welcome to Tony.7.Bones repository. Enjoy!</description>
             <news>
-v1.0.12: Single-branch migration: proxy fetches all entries (incl. mirrored third-party repos) from main; self-update reads main addon.xml
+v1.0.13: Rename repository to 'Tony.7.Bones repository' (naming convention)
         </news>
             <assets>
                 <icon>icon.png</icon>
