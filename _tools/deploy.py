@@ -233,29 +233,37 @@ def deploy(args) -> int:
         if sha256(gen_zip) != sha256(root_zip):
             raise RuntimeError("root zip is not byte-identical to the generated zip")
 
-        # 3. root index link -> new zip
+        # 3. prune stale root installer zips — only the current zip (the one
+        #    index.html links to) is ever needed at the root; older versioned
+        #    zips just clutter the Kodi file-manager listing. The deletions are
+        #    staged by `git add -A` below and undone by the rollback on failure.
+        for stale in rl.stale_root_zips(os.listdir(REPO), nxt):
+            os.remove(os.path.join(REPO, stale))
+            print(f"  pruned stale root zip ....... {stale}")
+
+        # 4. root index link -> new zip
         write(ROOT_INDEX, rl.rewrite_index_link(read(ROOT_INDEX), nxt))
 
-        # 4. commit main
+        # 5. commit main
         git("add", "-A")
         git("commit", "-m", f"Release {tag}\n\n{args.news}")
 
-        # 5. determinism gate: regenerate; the tree must stay clean
+        # 6. determinism gate: regenerate; the tree must stay clean
         run_generator()
         if git("status", "--porcelain"):
             raise RuntimeError(
                 "generator is non-deterministic: regeneration produced a diff"
             )
 
-        # 6. tag the main release commit
+        # 7. tag the main release commit
         git("tag", "-a", tag, "-m", f"Release {tag}")
 
-        # 7. version-consistency gate BEFORE pushing
+        # 8. version-consistency gate BEFORE pushing
         ok, info, cproblems = cc.check(REPO)
         if not ok:
             raise RuntimeError("consistency gate failed: " + "; ".join(cproblems))
 
-        # 8. publish (main + tag together)
+        # 9. publish (main + tag together)
         if args.no_push:
             print(f"\n--no-push: committed + tagged {tag} locally. To publish:")
             print(f"  git push --atomic origin main {tag}")

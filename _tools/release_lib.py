@@ -77,6 +77,24 @@ def tag_name(version: str) -> str:
     return f"v{version}"
 
 
+def stale_root_zips(filenames, keep_version: str) -> list[str]:
+    """Given root-dir filenames, return the repository.tony7bones-*.zip names to
+    remove: every versioned installer zip except the one for ``keep_version``.
+
+    The install URL is the repo root and Kodi installs whatever filename
+    index.html links to, so only the current zip is ever needed at the root;
+    older versioned zips are pure clutter in the Kodi file-manager listing.
+    """
+    keep = zip_name(keep_version)
+    out = []
+    for name in filenames:
+        if name == keep:
+            continue
+        if _ZIP_RE.fullmatch(name):
+            out.append(name)
+    return out
+
+
 # --------------------------------------------------------------------------- #
 # File-content transforms (take text, return text)
 # --------------------------------------------------------------------------- #

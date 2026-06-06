@@ -90,6 +90,27 @@ def test_tag_name():
     assert rl.tag_name("1.0.8") == "v1.0.8"
 
 
+def test_stale_root_zips_keeps_only_current():
+    names = [
+        "repository.tony7bones-1.0.12.zip",
+        "repository.tony7bones-1.0.13.zip",
+        "repository.tony7bones-1.0.14.zip",
+        "index.html",
+        "style.css",
+        "repository.umbrella-2.2.6.zip",  # third-party, must never be touched
+    ]
+    stale = rl.stale_root_zips(names, "1.0.14")
+    assert stale == [
+        "repository.tony7bones-1.0.12.zip",
+        "repository.tony7bones-1.0.13.zip",
+    ]
+
+
+def test_stale_root_zips_noop_when_only_current_present():
+    names = ["repository.tony7bones-1.0.14.zip", "index.html"]
+    assert rl.stale_root_zips(names, "1.0.14") == []
+
+
 # ============================================================================ #
 # Unit tests — file-content transforms
 # ============================================================================ #
@@ -307,6 +328,12 @@ def test_system_full_deploy_happy_path(sandbox):
     )
     assert rl.version_from_index(_show(repo, "main", "index.html")) == "1.0.1"
     assert (repo / "repository.tony7bones-1.0.1.zip").exists()
+    # the superseded root installer zip is pruned (working tree + committed)
+    assert not (repo / "repository.tony7bones-1.0.0.zip").exists()
+    assert (
+        "repository.tony7bones-1.0.0.zip"
+        not in _git(repo, "ls-tree", "--name-only", "main").stdout
+    )
     # there is no virtual-repo branch
     assert _git(repo, "branch", "--list", "virtual-repo").stdout.strip() == ""
 
