@@ -1,0 +1,26 @@
+#!/bin/sh
+# Auto-build on commit, so the whole workflow is: edit dropbox/ -> commit -> push.
+#
+#   1. Keep the current root repository.tony7bones-*.zip mirrored into
+#      dropbox/repositories/ (pruning any older copy), so the proxy installer is
+#      browsable alongside the other repos.
+#   2. Mirror dropbox/ -> repo/ and rebuild the indexes (generate_repo.py).
+#   3. Stage the result so the commit is complete and the pre-push gate passes.
+#
+# generate_repo.py is deterministic/idempotent, so on a commit that didn't touch
+# dropbox/ this is a no-op beyond staging what you already changed.
+set -e
+cd "$(git rev-parse --show-toplevel)"
+
+# 1. sync the proxy installer zip into the browsable repositories/ folder
+zip=$(ls -1 repository.tony7bones-*.zip 2>/dev/null | head -n1 || true)
+if [ -n "$zip" ]; then
+  rm -f dropbox/repositories/repository.tony7bones-*.zip
+  cp "$zip" dropbox/repositories/
+fi
+
+# 2. mirror dropbox/ -> repo/ + build indexes
+python3 _tools/generate_repo.py >/dev/null
+
+# 3. stage everything so "commit" captures the synced result
+git add -A
