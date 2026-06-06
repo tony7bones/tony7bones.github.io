@@ -108,10 +108,13 @@ def test_manifest_lists_the_module():
     assert "script.module.tony7bones" in by_id
     entry = by_id["script.module.tony7bones"]
     ref = by_id["script.tony7bones.bootstrap"]
-    # Mirror the bootstrap entry's shape (same host/branch/url template).
+    # Mirror the bootstrap entry's shape (same host/branch/url template). The
+    # branch is a deployment detail (main pre-cutover, dist after) — assert the
+    # two entries agree rather than hard-coding a value, so this stays correct
+    # across the dist cutover and any future rollback.
     assert entry["username"] == ref["username"]
     assert entry["repository"] == ref["repository"]
-    assert entry["branch"] == ref["branch"] == "main"
+    assert entry["branch"] == ref["branch"]
     assert "{id}-{version}.zip" in entry["assets"]["zip"]
 
 
