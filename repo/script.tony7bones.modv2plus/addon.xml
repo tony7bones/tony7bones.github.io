@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="script.tony7bones.modv2plus"
        name="Estuary MOD V2+"
-       version="1.3.2"
+       version="1.3.3"
        provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
@@ -15,6 +15,6 @@
     <assets>
       <icon>icon.png</icon>
     </assets>
-    <news>Apply now turns on the top-bar weather/temp readout (MOD V2 leaves it off on a fresh skin), so a freshly-patched box shows the weather below the clock. Restore turns it back off.</news>
+    <news>Home menu trimmed: removes Music, Music Videos, Radio, Games, Pictures, Videos (ships a trimmed skinshortcuts default and rebuilds the menu from it). Restore reverts to the full default menu.</news>
   </extension>
 </addon>

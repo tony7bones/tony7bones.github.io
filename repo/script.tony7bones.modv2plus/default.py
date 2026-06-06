@@ -160,6 +160,111 @@ def restore_media(skin_root):
     return removed, failed, skipped
 
 
+def _clear_skinshortcuts_cache():
+    """Delete script.skinshortcuts' built data for this skin so it re-seeds the
+    home menu from our shipped shortcuts/mainmenu.DATA.xml default.
+
+    Removes every file under special://profile/addon_data/script.skinshortcuts/
+    whose name starts with the skin id (the built menu DATA + properties + hash).
+    This wipes any user menu customizations — intended for our opinionated default;
+    Restore reverts it by rebuilding from the restored full default. Defensive:
+    a missing dir is fine, each removal is logged, failures never abort the run.
+    Returns the number of files removed.
+    """
+    removed = 0
+    try:
+        cache_dir = translatePath("special://profile/addon_data/script.skinshortcuts/")
+        if not os.path.isdir(cache_dir):
+            xbmc.log(
+                "[mod v2+] skinshortcuts cache dir absent, nothing to clear",
+                xbmc.LOGINFO,
+            )
+            return 0
+        for name in os.listdir(cache_dir):
+            if not name.startswith(SKIN_ID):
+                continue
+            path = os.path.join(cache_dir, name)
+            try:
+                if os.path.isfile(path):
+                    os.remove(path)
+                    removed += 1
+                    xbmc.log(
+                        "[mod v2+] cleared skinshortcuts {}".format(name),
+                        xbmc.LOGINFO,
+                    )
+            except Exception as e:
+                xbmc.log(
+                    "[mod v2+] failed clearing skinshortcuts {}: {}".format(name, e),
+                    xbmc.LOGERROR,
+                )
+    except Exception as e:
+        xbmc.log(
+            "[mod v2+] failed clearing skinshortcuts cache: {}".format(e),
+            xbmc.LOGERROR,
+        )
+    return removed
+
+
+def apply_home_menu(skin_root):
+    """Install our trimmed home menu over the skin's skinshortcuts default.
+
+    Copies resources/shortcuts/mainmenu.DATA.xml -> <skin_root>/shortcuts/
+    mainmenu.DATA.xml, taking a one-time mainmenu.DATA.xml.bak of the original
+    first (creating the shortcuts dir if needed), then clears skinshortcuts' built
+    data so the menu re-seeds from our trimmed default. Defensive: logged, never
+    aborts the run. Returns True if the default was copied.
+    """
+    src = os.path.join(ADDON_PATH, "resources", "shortcuts", "mainmenu.DATA.xml")
+    dst_dir = os.path.join(skin_root, "shortcuts")
+    dst = os.path.join(dst_dir, "mainmenu.DATA.xml")
+    bak = dst + ".bak"
+
+    try:
+        os.makedirs(dst_dir, exist_ok=True)
+        if os.path.exists(dst) and not os.path.exists(bak):
+            shutil.copy2(dst, bak)
+        shutil.copy2(src, dst)
+        xbmc.log(
+            "[mod v2+] applied home menu (trimmed mainmenu.DATA.xml)", xbmc.LOGINFO
+        )
+        _clear_skinshortcuts_cache()
+        return True
+    except Exception as e:
+        xbmc.log("[mod v2+] failed applying home menu: {}".format(e), xbmc.LOGERROR)
+        return False
+
+
+def restore_home_menu(skin_root):
+    """Revert the home menu to the skin's original full default.
+
+    If a mainmenu.DATA.xml.bak snapshot exists, copy it back over
+    mainmenu.DATA.xml and remove the .bak, then clear skinshortcuts' built data
+    so the menu rebuilds from the restored full default. Defensive: logged, never
+    aborts the run. Returns True if a backup was restored.
+    """
+    dst = os.path.join(skin_root, "shortcuts", "mainmenu.DATA.xml")
+    bak = dst + ".bak"
+
+    restored = False
+    try:
+        if os.path.exists(bak):
+            shutil.copy2(bak, dst)
+            os.remove(bak)
+            restored = True
+            xbmc.log(
+                "[mod v2+] restored home menu (original mainmenu.DATA.xml)",
+                xbmc.LOGINFO,
+            )
+        else:
+            xbmc.log("[mod v2+] no home-menu backup, skipped restore", xbmc.LOGINFO)
+    except Exception as e:
+        xbmc.log("[mod v2+] failed restoring home menu: {}".format(e), xbmc.LOGERROR)
+    # Clear the built data regardless so the menu rebuilds from whatever default
+    # is now in place (restored original, or the skin's own if no backup existed).
+    _clear_skinshortcuts_cache()
+    return restored
+
+
 def run():
     if xbmc.getSkinDir() != SKIN_ID:
         xbmcgui.Dialog().ok(
@@ -282,6 +387,7 @@ def _apply(skin_root, skin_xml):
         4000,
     )
     apply_skin_settings()
+    apply_home_menu(skin_root)
     xbmc.executebuiltin("ReloadSkin()")
 
 
@@ -320,6 +426,7 @@ def _restore(skin_root, skin_xml):
             4000,
         )
     reset_skin_settings()
+    restore_home_menu(skin_root)
     xbmc.executebuiltin("ReloadSkin()")
 
 

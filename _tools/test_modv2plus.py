@@ -47,6 +47,9 @@ SETTINGS_XML = ADDON_DIR / "resources" / "xml" / "Settings.xml"
 INCLUDES_XML = ADDON_DIR / "resources" / "xml" / "Includes.xml"
 VARIABLES_XML = ADDON_DIR / "resources" / "xml" / "Variables.xml"
 LOGO_PNG = ADDON_DIR / "resources" / "media" / "extras" / "logo-text-hires.png"
+MAINMENU_DATA = ADDON_DIR / "resources" / "shortcuts" / "mainmenu.DATA.xml"
+HOME_MENU_REMOVED = ("music", "musicvideos", "radio", "games", "pictures", "video")
+HOME_MENU_KEPT = ("movies", "tvshows", "livetv", "addons", "favorites", "weather")
 WEATHER_STOCK_DIR = ADDON_DIR / "resources" / "media" / "extras" / "weather-stock"
 WEATHER_RESOURCE = "resource.images.weathericons.outline-hd"
 WEATHER_TEXTURE = (
@@ -187,9 +190,9 @@ def test_addon_name():
     assert _addon_root().get("name") == "Estuary MOD V2+"
 
 
-def test_addon_version_floor_1_3_2():
+def test_addon_version_floor_1_3_3():
     parts = tuple(int(p) for p in _addon_root().get("version").split("."))
-    assert parts >= (1, 3, 2), "version must be at least 1.3.2"
+    assert parts >= (1, 3, 3), "version must be at least 1.3.3"
 
 
 def test_no_provides_executable():
@@ -236,6 +239,80 @@ def test_media_maps_the_loose_logo():
 def test_logo_png_resource_exists():
     assert LOGO_PNG.exists(), "must ship resources/media/extras/logo-text-hires.png"
     assert LOGO_PNG.stat().st_size > 0
+
+
+# --------------------------------------------------------------------------- #
+# Static contract — trimmed home menu (skinshortcuts default)
+# --------------------------------------------------------------------------- #
+def test_mainmenu_data_ships_and_parses():
+    """The trimmed skinshortcuts default ships and is well-formed XML."""
+    assert MAINMENU_DATA.exists(), "must ship resources/shortcuts/mainmenu.DATA.xml"
+    root = ET.parse(MAINMENU_DATA).getroot()
+    assert root.tag == "shortcuts"
+
+
+def test_mainmenu_data_drops_the_six_items():
+    """The trimmed default must contain NONE of the 6 removed defaultIDs while
+    keeping movies / tvshows / livetv / addons / favorites / weather."""
+    root = ET.parse(MAINMENU_DATA).getroot()
+    ids = {s.findtext("defaultID") for s in root.findall("shortcut")}
+    for removed in HOME_MENU_REMOVED:
+        assert removed not in ids, (
+            f"{removed} must be removed from the trimmed home menu, got {sorted(ids)}"
+        )
+    for kept in HOME_MENU_KEPT:
+        assert kept in ids, (
+            f"{kept} must remain in the trimmed home menu, got {sorted(ids)}"
+        )
+
+
+def test_default_defines_home_menu_helpers():
+    """default.py defines apply_home_menu / restore_home_menu /
+    _clear_skinshortcuts_cache, and _apply / _restore call the apply / restore
+    helpers respectively."""
+    src = DEFAULT_PY.read_text()
+    tree = ast.parse(src)
+    funcs = {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)}
+    for name in (
+        "apply_home_menu",
+        "restore_home_menu",
+        "_clear_skinshortcuts_cache",
+    ):
+        assert name in funcs, f"default.py must define {name}()"
+
+    def _calls_within(func_name):
+        body = next(
+            n
+            for n in tree.body
+            if isinstance(n, ast.FunctionDef) and n.name == func_name
+        )
+        return {
+            c.func.id
+            for c in ast.walk(body)
+            if isinstance(c, ast.Call) and isinstance(c.func, ast.Name)
+        }
+
+    assert "apply_home_menu" in _calls_within("_apply"), (
+        "_apply must call apply_home_menu"
+    )
+    assert "restore_home_menu" in _calls_within("_restore"), (
+        "_restore must call restore_home_menu"
+    )
+
+
+def test_clear_skinshortcuts_targets_skin_and_addon():
+    """_clear_skinshortcuts_cache must target script.skinshortcuts' addon_data
+    and filter on the skin id skin.estuary.modv2."""
+    src = DEFAULT_PY.read_text()
+    assert "addon_data/script.skinshortcuts" in src, (
+        "cache clear must target script.skinshortcuts addon_data"
+    )
+    # the skin id is referenced via the SKIN_ID constant; confirm it is the
+    # modv2 skin and that the clear filters file names by it.
+    assert 'SKIN_ID = "skin.estuary.modv2"' in src
+    assert "name.startswith(SKIN_ID)" in src, (
+        "cache clear must filter files by the skin id prefix"
+    )
 
 
 def test_force_default_fontset_removed():
@@ -689,6 +766,7 @@ def patch_env(tmp_path, monkeypatch):
     skin_xml.mkdir(parents=True)
     (addon_path / "resources" / "xml").mkdir(parents=True)
     (addon_path / "resources" / "media" / "extras").mkdir(parents=True)
+    (addon_path / "resources" / "shortcuts").mkdir(parents=True)
     # seed the real shipped FILES + media so apply copies genuine bytes
     for fname in _assign("FILES"):
         (addon_path / "resources" / "xml" / fname).write_bytes(
@@ -696,6 +774,12 @@ def patch_env(tmp_path, monkeypatch):
         )
     for rel_src, _rel_dst in _assign("MEDIA"):
         (addon_path / rel_src).write_bytes((ADDON_DIR / rel_src).read_bytes())
+    # seed the trimmed skinshortcuts default so apply_home_menu copies real bytes
+    (addon_path / "resources" / "shortcuts" / "mainmenu.DATA.xml").write_bytes(
+        MAINMENU_DATA.read_bytes()
+    )
+    # a profile dir so _clear_skinshortcuts_cache has a real path to scan
+    (home / "userdata" / "addon_data" / "script.skinshortcuts").mkdir(parents=True)
 
     xbmc = types.ModuleType("xbmc")
     xbmc.LOGERROR = 4
@@ -734,7 +818,9 @@ def patch_env(tmp_path, monkeypatch):
     xbmcgui.NOTIFICATION_INFO = "info"
 
     xbmcvfs = types.ModuleType("xbmcvfs")
-    xbmcvfs.translatePath = lambda p: p.replace("special://home/", str(home) + "/")
+    xbmcvfs.translatePath = lambda p: p.replace(
+        "special://home/", str(home) + "/"
+    ).replace("special://profile/", str(home / "userdata") + "/")
 
     for nm, mod in (
         ("xbmc", xbmc),
@@ -775,6 +861,10 @@ def test_run_apply_copies_files_and_media(patch_env):
     logo = patch_env.skin_root / "media" / "extras" / "logo-text-hires.png"
     assert logo.exists(), "the hi-res wordmark must be copied into the skin media dir"
     assert logo.read_bytes() == LOGO_PNG.read_bytes()
+    # the trimmed home menu is copied into the skin's shortcuts dir
+    menu = patch_env.skin_root / "shortcuts" / "mainmenu.DATA.xml"
+    assert menu.exists(), "the trimmed home menu must be copied on Apply"
+    assert menu.read_bytes() == MAINMENU_DATA.read_bytes()
     assert any("ReloadSkin" in b for b in patch_env.state["builtins"])
     # The reload must be automatic: a non-blocking notification, never a modal
     # ok() that waits for a click before reloading.
