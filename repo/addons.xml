@@ -1,6 +1,6 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <addons>
-    <addon id="repository.tony7bones" name="Tony.7.Bones repository" provider-name="Tony.7.Bones" version="2.0.0">
+    <addon id="repository.tony7bones" name="Tony.7.Bones repository" provider-name="Tony.7.Bones" version="2.1.0">
         <requires>
             <import addon="xbmc.python" version="3.0.0" />
         </requires>
@@ -19,7 +19,7 @@
             <summary lang="en">Welcome to Tony.7.Bones repository. Enjoy!</summary>
             <description lang="en">Welcome to Tony.7.Bones repository. Enjoy!</description>
             <news>
-v2.0.0: Adopt single-digit version scheme (clean reset from 1.0.14)
+v2.1.0: Serve tony7bones-hosted add-ons from the dist branch
         </news>
             <assets>
                 <icon>icon.png</icon>
