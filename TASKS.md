@@ -14,6 +14,7 @@ no AI attribution anywhere. `script.*` changes ship via `generate_repo.py` + pus
 - [ ] Re-skin the MOD V2+ add-on icon to reflect the "+" branding (currently reuses the old patch icon).
 - [ ] Consider a localized strings.po for our category labels/help (currently literal text).
 - [ ] Create a distinct `drop/` folder at the repo root — a staging area for incoming files/assets. _Purpose/usage to confirm._
+- [ ] **Automate IPTV from `.env`** — _deferred._ Plan: [docs/plans/iptv-automation.md](docs/plans/iptv-automation.md). For now IPTV stays **device-file based** (bootstrap copies hand-placed `instance-settings-1.xml` + `customTVGroups` from the device into Kodi userdata). Revisit when ready to drive it from `.env` (`IPTV_NAME/USER/PASSWORD/M3U/EPG`) — secret outputs must stay gitignored, never in the public repo.
 - [ ] **Delete the retained `dist` branch** (`origin/dist`) — leftover from the reverted dist-branch experiment. The proxy now serves from `main` (v2.2.0); `dist` is kept only as a safety net for any fleet box still on the old 2.1.0 (whose baked manifest points at `dist`). Those boxes auto-upgrade to 2.2.0 → `main` on their next update check. Once all boxes are confirmed on 2.2.0, delete `origin/dist`.
 
 ## Done (shipped)
