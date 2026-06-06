@@ -282,14 +282,20 @@ def generate_asset_indexes() -> None:
 
 
 def sync_dropbox() -> None:
-    """Mirror the dropbox/ canvas into repo/ so Kodi serves exactly its content.
+    """Mirror the dropbox/ canvas into repo/ for Kodi.
 
-    dropbox/ holds only human-authored content (no index.html / checksums). Each
-    dropbox/<folder> is copied verbatim into repo/<folder> (the served, browsable
-    location); the index.html is generated into repo/ afterwards, never into
-    dropbox/. A served content folder that dropbox no longer owns is removed, so
-    deleting something from dropbox/ removes it from what Kodi sees. Add-on dirs
-    (those with an addon.xml) and the hosted/ mirror tree are left untouched.
+    dropbox/ is the human canvas (no index.html / checksums). index.html is
+    generated into repo/ only — never into dropbox/. The canvas is mirrored two
+    ways:
+
+      * repo/dropbox/  — an EXACT 1:1 mirror of the WHOLE canvas (every file and
+        folder, including loose files at the dropbox/ root). This is the clean
+        view Kodi's file manager points at: what you put in dropbox/ is exactly
+        what Kodi shows — nothing else, no machine folders.
+      * repo/<folder>/ — each canvas SUBFOLDER is also mirrored to the repo top
+        level so existing fetch paths keep working (the bootstrap downloads repo
+        installer zips from repo/repositories/, etc.). Add-on dirs (with an
+        addon.xml) and the hosted/ tree are never touched.
     """
     # Derived from REPO_DIR (not a module constant) so tests that monkeypatch
     # REPO_DIR stay sandboxed: with no sibling dropbox/, this is a clean no-op.
@@ -301,25 +307,32 @@ def sync_dropbox() -> None:
         for d in os.listdir(dropbox_dir)
         if os.path.isdir(os.path.join(dropbox_dir, d))
     }
-    # Mirror each dropbox folder into repo/ (exact: wipe + recopy; the index is
-    # regenerated afterwards by the index generators).
+    # Per-folder mirror to the repo top level (keeps the bootstrap/proxy paths).
     for d in sorted(owned):
         dst = os.path.join(REPO_DIR, d)
         if os.path.isdir(dst):
             shutil.rmtree(dst)
         shutil.copytree(os.path.join(dropbox_dir, d), dst)
         print(f"dropbox/{d} -> repo/{d}")
-    # Drop served content folders dropbox no longer owns (not add-ons, not hosted).
+    # Drop top-level content folders the canvas no longer owns (not add-ons, not
+    # hosted/, not the repo/dropbox browse view).
     for d in os.listdir(REPO_DIR):
         p = os.path.join(REPO_DIR, d)
         if (
             os.path.isdir(p)
-            and d != "hosted"
+            and d not in ("hosted", "dropbox")
             and d not in owned
             and not os.path.exists(os.path.join(p, "addon.xml"))
         ):
             shutil.rmtree(p)
             print(f"removed repo/{d} (not in dropbox)")
+    # The clean 1:1 browse view Kodi points at — the whole canvas verbatim,
+    # loose root files included. index.html is added here by the index pass.
+    served = os.path.join(REPO_DIR, "dropbox")
+    if os.path.isdir(served):
+        shutil.rmtree(served)
+    shutil.copytree(dropbox_dir, served)
+    print("dropbox/ -> repo/dropbox/ (1:1 browse view)")
 
 
 def generate() -> None:

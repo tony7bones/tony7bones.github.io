@@ -532,6 +532,7 @@ def test_dropbox_sync_mirrors_canvas_drops_unowned_and_keeps_canvas_clean(
     (canvas / "repositories" / "repository.x-1.0.0.zip").write_bytes(b"zip")
     (canvas / "iptv").mkdir()
     (canvas / "iptv" / "groups.xml").write_bytes(b"<x/>")
+    (canvas / "note.txt").write_bytes(b"hi")  # a LOOSE root file — must mirror too
 
     monkeypatch.setattr(gr, "REPO_DIR", str(repo))
     monkeypatch.setattr(gr, "REPOS_DIR", str(repo / "repositories"))
@@ -540,20 +541,28 @@ def test_dropbox_sync_mirrors_canvas_drops_unowned_and_keeps_canvas_clean(
 
     gr.generate()
 
-    # canvas content mirrored into repo/
+    # per-folder mirror to the repo top level (keeps bootstrap/proxy paths)
     assert (repo / "repositories" / "repository.x-1.0.0.zip").read_bytes() == b"zip"
     assert (repo / "iptv" / "groups.xml").read_bytes() == b"<x/>"
-    # index.html generated into repo/, never into the canvas
-    assert (repo / "repositories" / "index.html").exists()
-    assert (repo / "iptv" / "index.html").exists()
+
+    # the clean 1:1 browse view: EXACT mirror of the whole canvas, root file included
+    assert (repo / "dropbox" / "note.txt").read_bytes() == b"hi"
+    assert (
+        repo / "dropbox" / "repositories" / "repository.x-1.0.0.zip"
+    ).read_bytes() == b"zip"
+    assert (repo / "dropbox" / "iptv" / "groups.xml").read_bytes() == b"<x/>"
+    # index.html generated into the served view, never into the canvas
+    assert (repo / "dropbox" / "index.html").exists()
+    assert (repo / "dropbox" / "repositories" / "index.html").exists()
+    assert not (canvas / "index.html").exists()
     assert not (canvas / "repositories" / "index.html").exists()
-    assert not (canvas / "iptv" / "index.html").exists()
     # canvas stays exactly what we authored — nothing added
     assert {p.name for p in canvas.rglob("*") if p.is_file()} == {
         "repository.x-1.0.0.zip",
         "groups.xml",
+        "note.txt",
     }
-    # served folder the canvas no longer owns is dropped; add-on dir untouched
+    # a top-level folder the canvas no longer owns is dropped; add-on dir untouched
     assert not (repo / "scripts").exists()
     assert (repo / "plugin.hello" / "addon.xml").exists()
 
