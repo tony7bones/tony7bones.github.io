@@ -132,6 +132,18 @@ after cloning:
 git config core.hooksPath .githooks
 ```
 
+The hook runs `python3 -m pytest` and `ruff` with the bare interpreter on PATH, so
+those deps must be importable by that `python3` or the hook fails closed (blocking
+legitimate pushes). On a fresh clone install them once — on an externally-managed
+(PEP 668) Homebrew/macOS python this is:
+
+```bash
+python3 -m pip install --user --break-system-packages pytest ruff
+```
+
+If they're missing, the hook can't validate and a red-test release can reach `main`
+(CI only catches it post-push). Re-run after a python **minor** upgrade (new user-site).
+
 CI (`generate_repo.yml`) re-runs the same checks as a backstop and **never commits to
 main**. The old `.pre-commit-config.yaml` (pytest on commit) still works if installed.
 
