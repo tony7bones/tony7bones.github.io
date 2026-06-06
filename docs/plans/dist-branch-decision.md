@@ -94,7 +94,22 @@ shape, and (critically) no change to the install URL
    QA-approved).** The publisher workflow `.github/workflows/publish-dist.yml`
    runs on every content change to `main` (and on demand) and keeps `dist`
    current. Operating guide: [../playbooks/dist-branch-publisher.md](../playbooks/dist-branch-publisher.md).
-2. Verify the proxy works off `dist` on a throwaway version. — pending (Stage 2)
+2. **Verify the proxy works off `dist` — ✅ largely DONE (Stage 2, QA-approved).**
+   Two offline proofs against a throwaway `dist`-pointed config (the real
+   `repository.json` is never touched):
+   - **2a (engine):** flipping all 12 tony7bones entries to `dist` yields a
+     **byte-identical `addons.xml`** + matching md5 vs `main`; all 8 `{ref}`-based
+     zips download byte-identical; the proxy reads its own self-update version
+     (2.0.0) from `dist`.
+   - **2b (real HTTP server):** the proxy's actual serving stack
+     (`httpserver`+`routes`+`repository`, same wiring as `service.py`) on a live
+     localhost socket serves `/addons.xml` (12 addons), `/addons.xml.md5`, and
+     streamed zips from `dist`, and 404s correctly.
+   - **2c (live local Kodi) — still pending**: drive the real local Kodi proxy
+     (`127.0.0.1:61234`) pointed at `dist` and prove a non-empty `GetDirectory` +
+     rendered menu (per `../playbooks/local-kodi-verification.md`). This is the
+     last verification gate before cutover. Note: 2a/2b prove equivalence _while
+     `dist` mirrors `main`_; the Stage 1 publisher is what keeps them in sync.
 3. Flip the proxy to read `dist` (a normal, versioned proxy release). — pending
    (Stage 3, the first live-affecting step)
 4. Only then remove the generated clutter from `main` so it becomes the clean
