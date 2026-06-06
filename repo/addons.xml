@@ -1,6 +1,6 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <addons>
-    <addon id="repository.tony7bones" name="Tony.7.Bones repository" provider-name="Tony.7.Bones" version="1.0.14">
+    <addon id="repository.tony7bones" name="Tony.7.Bones repository" provider-name="Tony.7.Bones" version="2.0.0">
         <requires>
             <import addon="xbmc.python" version="3.0.0" />
         </requires>
@@ -19,7 +19,7 @@
             <summary lang="en">Welcome to Tony.7.Bones repository. Enjoy!</summary>
             <description lang="en">Welcome to Tony.7.Bones repository. Enjoy!</description>
             <news>
-v1.0.14: Add Estuary MOD V2+; retire the old MOD V2 patch
+v2.0.0: Adopt single-digit version scheme (clean reset from 1.0.14)
         </news>
             <assets>
                 <icon>icon.png</icon>
