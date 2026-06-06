@@ -1,143 +1,216 @@
-# Drop-Folder Feasibility — Session Notes
+# Model B — One Source of Truth (`dropbox/` → `repo/`)
 
-> Status: **exploration / not implemented.** This captures the feasibility
-> discussion so it can be reviewed before any code changes. Nothing in the repo
-> has been changed.
+> Status: **APPROVED — ready to execute.** Decided spec, hardened by a three-lens
+> review (Kodi / architecture / QA) and the owner's decisions. No repo changes
+> yet — this is the agreed plan; execution begins on the owner's "go."
+>
+> **Decisions locked:** Full Model B · source of truth = `dropbox/` at repo root ·
+> compiled output = `repo/` (committed, generated) · build from `dropbox/`.
+>
+> **When ready, pull the trigger here →** start at **Step 0** in
+> [Sequencing](#sequencing) and proceed in order; each step is independently
+> CI-clean and pushed only after the local gates pass. The **byte-identity
+> migration gate** (P0 #1) is the hard go/no-go: post-migration `repo/` must be
+> byte-identical to today's `repo/`, or live Kodi installs break.
 
-## The idea
+## The model
 
-Today the Kodi file-manager view under `repo/` shows five folders — `iptv/`,
-`media/`, `repositories/`, `rss/`, `scripts/`. It works fine for Kodi, but as a
-**human mental model** it isn't true to life: it carries wiring noise and forces
-the author to know "which folder does this thing go in, and what do I run after."
+Two folders, one rule each:
 
-The goal: a **clean, content-representative drop folder**. An end user drops a
-file or folder and doesn't worry about wiring logistics. The script + CI do the
-heavy lifting — classifying the dropped content and wiring it so Kodi serves it
-correctly.
+|                                                               | **`dropbox/`** — source of truth                                   | **`repo/`** — compiled output                            |
+| ------------------------------------------------------------- | ------------------------------------------------------------------ | -------------------------------------------------------- |
+| Lives at                                                      | repo root                                                          | repo root (as today)                                     |
+| Contains                                                      | **only** human-authored content, organized however the human likes | a full copy of `dropbox/` **+** every generated artifact |
+| Generated junk (`index.html`, `addons.xml`, `.sha256`, zips)? | **NEVER**                                                          | yes — all of it                                          |
+| Who edits it                                                  | the human, freely                                                  | the build, only — never hand-edited                      |
+| Who looks at it                                               | the human                                                          | Kodi / Pages / CI                                        |
+| Committed to git?                                             | yes                                                                | yes (see below — it must be)                             |
 
-## What `repo/` actually is today
+The human works **only** in `dropbox/`. Everything they see there is meaningful —
+no index pages, no checksums, no machine clutter, no "why is this here?" The
+build compiles `dropbox/ → repo/`, injecting all the junk into the **copy**. The
+pristine source is never written to by the system.
 
-`repo/` is **two things wearing one coat**: the Kodi-servable layout *and* the
-place a human authors content. On disk it mixes five different categories:
+This is the real fix for the old "`repo/` is two things wearing one coat"
+problem: we **split the coat** — pristine source in, fully-generated output out.
 
-| What's in `repo/`                                                                 | Category                  | Who edits it       |
-| --------------------------------------------------------------------------------- | ------------------------- | ------------------ |
-| `addons.xml`, `.sha256`, `.md5`                                                   | generated metadata        | the script         |
-| `repository.tony7bones/`, `script.module.tony7bones/`, `script.tony7bones.*/`     | first-party add-on source | you, as code       |
-| `hosted/`                                                                          | proxy mirror trees        | by hand, carefully |
-| `repositories/`, `scripts/`, `media/`, `iptv/`, `rss/`                            | **drop content**          | drop-and-forget    |
-| `index.html` (hand-crafted)                                                       | the Kodi browse view      | you, manually      |
+## Why `repo/` must stay committed (not a gitignored build artifact)
 
-**Key seam:** the file-manager view (the 5 folders) is *not* a reflection of
-disk — it's whatever the **hand-crafted `repo/index.html` links to**. The add-on
-source dirs, `hosted/`, and metadata are all served by Pages but invisible in the
-browse view because nothing links them. The "view" is already decoupled from
-storage — which is exactly the seam the drop-folder idea needs.
+The virtual proxy fetches add-on metadata and zips **live at runtime** from
+`raw.githubusercontent.com/<user>/<repo>/main/repo/...` — both the first-party
+add-on zips and the `hosted/<id>/` third-party mirror trees (driven by
+`repository.json`, all entries `branch: main`, `asset_prefix` ending in
+`/repo/...`). Those byte paths must physically exist in the committed `main`
+tree or **every installed Kodi box breaks**.
 
-> Note: `repo/index.html` is already drifted — it points at
-> `repository.tony7bones-1.0.5.zip`, which no longer exists. A generated index
-> would remove this whole class of manual error.
+Therefore `repo/` is **committed generated output**, not a Pages-built artifact.
+Consequence: a `dropbox/` change produces a "doubled diff" (the source change +
+the regenerated `repo/`). That's inherent and acceptable — reviewers read the
+`dropbox/` half; the `repo/` half is derived and verified by CI. GitHub Pages
+keeps serving `main` directly (no new deploy machinery), and the constant install
+URL is preserved.
 
-## Verdict: feasible, and the repo is well-positioned for it
+## What moves into `dropbox/` (Full Model B)
 
-Every content type **carries its own identity inside the bytes** — no manifest,
-no naming convention, no human wiring required:
+Everything human-authored, **source form only** (no generated zips/indexes):
 
-| You drop…                                  | How the script knows what it is (content sniff)                                    | Where it wires to                                  |
-| ------------------------------------------ | --------------------------------------------------------------------------------- | -------------------------------------------------- |
-| a folder with `addon.xml`                  | `<extension point="…">` → `xbmc.addon.repository` / `xbmc.python.script` / `pluginsource` | add-on → `addons.xml` + zip                 |
-| a `.zip`                                   | **peek inside**, read its `addon.xml` extension point                             | repository zip → `repositories/`; script zip → `scripts/` |
-| `.jpg/.png/.svg…`                          | file extension                                                                    | `media/`                                           |
-| `RssFeeds.xml`                             | root element `<rss>`                                                              | `rss/`                                             |
-| `customTVGroups-*.xml`, `instance-settings*.xml` | filename pattern + root element                                             | `iptv/`                                            |
-| anything else                              | fallback                                                                          | a generic browsable asset folder                   |
+- **First-party add-on source** — `dropbox/repository.tony7bones/`,
+  `script.module.tony7bones/`, `script.tony7bones.bootstrap/`,
+  `script.tony7bones.video/`, `script.tony7bones.modv2plus/` (their `addon.xml`,
+  `default.py`, `lib/`, `resources/` — including the proxy's authored
+  `resources/repository.json` — but **not** the built `*.zip` or per-addon
+  `index.html`).
+- **`hosted/` mirror trees** — the hand-curated third-party `addon.xml` + zips.
+- **Third-party installer zips** — the `repositories/` and `scripts/` content.
+- **Assets** — `media/`, `iptv/`, `rss/` content (the human's structure).
 
-The one distinction the current generator makes by **folder location** (is this
-zip a "repository" or a "script"?) is exactly the distinction a zip's inner
-`addon.xml` already answers. So **routing-by-content** replaces
-**routing-by-where-you-happened-to-put-it**. That's the whole trick.
+The human may organize freely. The build interprets a **few reserved
+conventions** (intuitive, not "wiring noise"):
 
-## Two design models
+- a folder containing an `addon.xml` is an **add-on** → built into a zip +
+  listed in `addons.xml`;
+- `hosted/` is a **mirror tree** → copied through, not zipped/indexed as add-ons
+  (today's `_SPECIAL_DIRS` behavior);
+- everything else is **browsable content** → copied through + given Kodi indexes.
 
-### Model A — `drop/` as a staging inbox (router)
+(No extension-point sniffing / type-routing — the human owns structure; the build
+only needs "is this an add-on dir or not," which the generator already detects.)
 
-You drop into `drop/`. `generate_repo.py` sniffs each item, **moves** it to its
-canonical `repo/<area>/` home, regenerates indexes, and rewrites `repo/index.html`
-from the actual areas present. `drop/` ends empty.
+## What `repo/` becomes (100% generated)
 
-- **Pros:** smallest change; existing `repo/` layout and the proxy untouched;
-  fully testable with the existing determinism harness.
-- **Cons:** the "drop" is transient (git shows a move), so it's a convenience
-  inbox, not a persistent human view.
+A deterministic compile of `dropbox/`:
 
-### Model B — `drop/` as the source of truth (compiler)
+1. **Mirror** `dropbox/ → repo/` (content copied verbatim).
+2. **Build add-on zips** for every dir with an `addon.xml`
+   (existing reproducible-zip logic: 1980 timestamps, sorted members,
+   `__pycache__` excluded).
+3. **Generate** `addons.xml` + `.sha256` + `.md5`.
+4. **Generate** a Kodi-browsable `index.html` for every folder
+   (href == text, trailing slash on dirs, relative hrefs, **no dates**),
+   including a generated `repo/index.html` browse landing (no install-URL line).
+5. **Preserve** `hosted/` as a pass-through mirror.
 
-`drop/` *is* where content lives, organized for humans (e.g.
-`drop/third-party-repos/`, `drop/scripts/`, `drop/branding/`, `drop/iptv/`). The
-Kodi `repo/` content areas become **pure build output** — generated, never
-hand-touched. The generator compiles `drop/ → repo/`.
+`repo/` is never hand-edited again. The old "`repo/index.html` is hand-crafted,
+never overwrite" guard is removed — it's now generated like everything else.
 
-- **Pros:** truest realization of "clean drop folder that represents its
-  content"; kills drift (e.g. the stale `script.tony7bones.bootstrap-1.0.5.zip`
-  duplicate currently rotting in `repo/scripts/`).
-- **Cons:** bigger change to layout and CI.
+## The build pipeline
 
-In **both** models the first-party add-on source dirs stay put — they're *code*,
-not drops, so they live outside `drop/` either way. And in both, `repo/index.html`
-becomes **generated from what's actually there**.
+The build is essentially **today's `generate_repo.py` logic with an
+input/output split**: read from `dropbox/`, write to `repo/`, instead of
+operating in place. That keeps the proven, deterministic machinery and minimizes
+new surface area.
 
-## How CI fits — and the one hard constraint
+```text
+dropbox/ (pristine source, committed)
+   │   generate_repo.py  (mirror + build zips + indexes + addons.xml)
+   ▼
+repo/ (committed generated output)  ──Pages/raw.githubusercontent──▶ Kodi
+```
 
-CI here **never commits**; it runs `generate_repo.py` and fails if the tree isn't
-clean (`git status --porcelain`). That's the backbone for "CI does the
-deployment," but it imposes a non-negotiable rule on the drop pipeline:
+CI rule is unchanged and is the determinism backstop: run the build, then
+`git status --porcelain` must be empty. So the compile must be **deterministic
+and idempotent** — same `dropbox/` ⇒ byte-identical `repo/`, every time, on any
+machine. (Reuse the existing dateless-index + fixed-timestamp-zip discipline; the
+mirror copy is content-only, and git tracks content not mtime, so copies stay
+clean.)
 
-> The transform must be **deterministic and idempotent** — running it twice
-> produces zero diff.
+## Release interaction (`deploy.py`)
 
-This already governs the zips (fixed 1980 timestamps, sorted members,
-`__pycache__` excluded). A drop router must obey the same discipline: a stable
-destination for every input, no timestamp/order churn, and "already-routed" must
-be a clean no-op. This is where the real engineering goes — a naive `shutil.move`
-would make CI flag stale files on every push.
+`deploy.py` stays the release path for `repository.tony7bones`, re-pointed at the
+new source:
 
-**Resulting flow:** drop file → run `generate_repo.py` locally → commit → push →
-CI re-runs the identical transform and verifies it matches → Pages serves. No new
-deployment machinery needed; it rides the rails that already exist.
+- It bumps the version in **`dropbox/repository.tony7bones/addon.xml`** (the
+  authored source), then runs the `dropbox/ → repo/` build.
+- The four version-bearing locations become: **`dropbox/` addon.xml (source)**,
+  **root installer zip filename**, **root `index.html` link**, **git tag**. The
+  generated `repo/repository.tony7bones/addon.xml` is now a _derived copy_;
+  `check_consistency.py` verifies it equals the source rather than treating it as
+  an independent location.
+- The **root `/index.html`** and the **root `repository.tony7bones-X.Y.Z.zip`**
+  stay at the repo root (NOT inside `dropbox/` or `repo/`), still owned by
+  `deploy.py`, still the constant install URL. The root zip is built from
+  `dropbox/repository.tony7bones/` source.
+- `script.*` add-ons still release via the build + commit + push (not
+  `deploy.py`); they now bump their `dropbox/<id>/addon.xml` and the build
+  regenerates `repo/`.
 
-## Honest limits (what won't fully automate)
+## Safety rules (P0 — enforced in code AND tested)
 
-- **`hosted/` and the proxy's `repository.json`** are genuinely more than a drop:
-  adding a served third-party repo needs an `asset_prefix` + branch entry in
-  `repository.json`. A drop could *stage* the `addon.xml`/zip, but the manifest
-  edit is semantic. Keep it out of scope, or make it a guided "drop + one-line
-  manifest" step — not magic.
-- **`repository.tony7bones` releases** ride `deploy.py` (version-sync + tag +
-  Pages build) — untouched by any of this.
-- **IPTV/RSS detection** is the most heuristic (filename + root-element); a truly
-  novel config file may need a fallback bucket. Better to route ambiguous items
-  to a visible `unsorted/` than to guess wrong silently.
-- A `.zip` with **no inner `addon.xml`** (a plain asset archive) has no add-on
-  identity — it needs a default rule.
+1. **Byte-identity on migration** — the first `dropbox/ → repo/` build must
+   produce `repo/` **byte-identical** to today's committed `repo/` (same add-on
+   zips especially). A changed same-version zip silently breaks Kodi upgrades.
+   This is the migration's hard acceptance gate.
+2. The build **never writes the root `/index.html`** (that's `deploy.py`'s) and
+   never changes the constant install URL.
+3. The build **never writes into `dropbox/`** (source is read-only to the system).
+4. `hosted/` is preserved at `repo/hosted/<id>/` byte-for-byte so the proxy's
+   `raw.githubusercontent` fetches keep resolving.
+5. Determinism: build twice ⇒ zero git diff (the CI gate).
 
-## Recommendation
+## Migration (one-time, history-preserving, byte-identical)
 
-**Model A is the low-risk 80%** and should ship first: a `drop/` inbox + a
-content-sniffing router inside `generate_repo.py`, with a generated
-`repo/index.html`. It delivers "drop a file, don't think about wiring"
-immediately, fixes the broken hand-maintained index, and is fully testable. Model
-B is the same router pointed the other way — easy to evolve into once the sniffing
-is proven.
+1. **Pre-clean** the known rot first so we don't migrate garbage: delete the
+   stale tracked zips `repo/scripts/script.tony7bones.bootstrap-1.0.5.zip` and
+   `repo/scripts/script.tony7bones.modv2.patch-1.0.2.zip` (retired add-on),
+   regenerate, commit.
+2. **`git mv`** the human-authored source out of `repo/` into `dropbox/`
+   (add-on source dirs, `hosted/`, `repositories/`, `scripts/`, `media/`,
+   `iptv/`, `rss/`), preserving history. Leave generated artifacts behind to be
+   re-emitted.
+3. **Implement the input/output split** in `generate_repo.py` (read `dropbox/`,
+   write `repo/`).
+4. **Build**, then assert `repo/` is byte-identical to the pre-migration `repo/`
+   (P0 gate #1) — proving zero behavior change for live installs.
+5. **Re-point `deploy.py` / `check_consistency.py`** at the new source locations.
+6. **Update CI + pre-push** to build from `dropbox/` and keep the
+   `git status --porcelain` determinism check.
 
-## Open decisions (to settle before building)
+## Sequencing
 
-1. **Model A vs B vs design-doc-only** — staging inbox, source-of-truth, or just
-   review the write-up first.
-2. **Drop UX** — a single flat `drop/` folder (script fans items out by type), or
-   human-named subfolders (`drop/third-party-repos/`, `drop/scripts/`,
-   `drop/branding/`, `drop/iptv/`) where the folder is a hint and content sniffing
-   confirms, or dropping straight into the live Kodi/Pages browse area (more
-   ambitious, needs further assessment).
-3. **Ambiguity handling** — confirm the "route to visible `unsorted/` rather than
-   guess" policy.
+- **Step 0 — pre-clean** (rot zips + regenerate). Standalone, low-risk.
+- **Step 1 — input/output split** in the generator (build `dropbox/ → repo/`),
+  behind a flag/no-op until `dropbox/` exists; full determinism tests.
+- **Step 2 — migrate** source into `dropbox/` via `git mv`; assert byte-identical
+  `repo/` output (P0 gate).
+- **Step 3 — re-point release tooling** (`deploy.py`, `check_consistency.py`) and
+  the version-location model.
+- **Step 4 — generated `repo/index.html`** (remove the never-overwrite guard) +
+  wire the build/determinism check into `.githooks/pre-push` and CI.
+
+Each step independently CI-clean and pushed only after the local gates pass.
+
+## Test matrix & acceptance
+
+New `_tools/test_build.py` (mirrors `test_generate_repo.py` conventions) with a
+`_snapshot_tree(root) -> {path: bytes}` oracle (mtime-excluded):
+
+- **Determinism/idempotency:** build twice ⇒ byte-identical `repo/`; empty/absent
+  `dropbox/` is a safe no-op; build is machine-independent (no mtime/date leak).
+- **Compile correctness:** every add-on dir in `dropbox/` → a deterministic zip +
+  an `addons.xml` entry in `repo/`; `hosted/` mirrored verbatim; every folder gets
+  a Kodi-format `index.html`; `repo/index.html` lists present areas, no dates, no
+  install-URL line.
+- **Byte-identity migration gate:** post-migration `repo/` == pre-migration
+  `repo/` (the live-install safety proof).
+- **Release:** `deploy.py` bumps `dropbox/` source, four version locations agree,
+  root zip + root index synced, tag correct, root `/index.html` untouched by the
+  build.
+- **Safety negatives (P0):** build never writes `dropbox/`; never writes root
+  `/index.html`; never changes a `hosted/` byte.
+- **Regression:** existing generator behavior preserved; `test_deploy.py` /
+  consistency gate green.
+
+**Acceptance:** all of the above pass; `ruff` clean; on the real repo, build →
+`git status` empty, build again → still empty; byte-identity gate proven; a
+deliberately-broken `dropbox/` fails at pre-push, before any push.
+
+## Open sub-decisions (settle during Step 1)
+
+1. **`dropbox/` internal conventions doc** — a short README _in `dropbox/`_ (the
+   one permitted "meta" file) describing the few reserved conventions (addon.xml =
+   add-on, `hosted/` = mirror), so the human never wonders. Confirm wanted.
+2. **Old-version installer-zip accumulation** in `repositories/`/`scripts/`:
+   keep-all (surface duplicates in the build log) vs. keep-latest. Leaning:
+   surface in log, prune deliberately (consistent with the root-zip cleanup).
+3. **Doubled-diff ergonomics** — optionally have CI/PR view collapse `repo/` diffs
+   (generated) to keep human review focused on `dropbox/`. Nice-to-have.
