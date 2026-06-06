@@ -22,6 +22,13 @@ from dataclasses import dataclass
 
 ADDON_ID = "repository.tony7bones"
 
+# Single-digit-per-component version scheme: each of MAJOR.MINOR.PATCH is 0-9,
+# with rollover on bump. This is deliberately NOT enforced inside parse_version
+# (the live baseline is the legacy 1.0.14, and is_greater must keep comparing
+# against it during the transition to 2.0.0). The rule lives only in the
+# is_single_digit validator and the gates that call it.
+MAX_COMPONENT = 9
+
 _VERSION_RE = re.compile(r"^\d+\.\d+\.\d+$")
 _ADDON_VERSION_RE = re.compile(r'(<addon\b[^>]*?\bversion=")([^"]*)(")')
 _ZIP_RE = re.compile(re.escape(ADDON_ID) + r"-(\d+\.\d+\.\d+)\.zip")
@@ -43,16 +50,53 @@ def format_version(parts: tuple[int, int, int]) -> str:
     return ".".join(str(x) for x in parts)
 
 
+def is_single_digit(version: str) -> bool:
+    """True iff `version` parses AND every component is 0-9 (<= MAX_COMPONENT).
+
+    parse_version stays lenient (it accepts 1.0.14); the single-digit rule is
+    enforced only here and at the gates that call this.
+    """
+    try:
+        parts = parse_version(version)
+    except (ValueError, TypeError):
+        return False
+    return all(c <= MAX_COMPONENT for c in parts)
+
+
 def bump(version: str, level: str = "patch") -> str:
-    """Return the next version after `version` at the given level."""
+    """Return the next version after `version` at the given level, with rollover.
+
+    Each component is kept in 0-9: a patch carry rolls into minor, a minor carry
+    rolls into major. Overflowing major (past 9.9.9) exhausts the version space
+    and raises ValueError.
+    """
     a, b, c = parse_version(version)
     if level == "patch":
-        return format_version((a, b, c + 1))
-    if level == "minor":
-        return format_version((a, b + 1, 0))
-    if level == "major":
-        return format_version((a + 1, 0, 0))
-    raise ValueError(f"unknown bump level: {level!r}")
+        c += 1
+        if c > MAX_COMPONENT:
+            c = 0
+            b += 1
+        if b > MAX_COMPONENT:
+            b = 0
+            a += 1
+    elif level == "minor":
+        b += 1
+        c = 0
+        if b > MAX_COMPONENT:
+            b = 0
+            a += 1
+    elif level == "major":
+        a += 1
+        b = 0
+        c = 0
+    else:
+        raise ValueError(f"unknown bump level: {level!r}")
+    if a > MAX_COMPONENT:
+        raise ValueError(
+            f"version ceiling reached: cannot bump {version!r} past 9.9.9 "
+            "(single-digit version space exhausted)"
+        )
+    return format_version((a, b, c))
 
 
 def is_greater(new: str, old: str) -> bool:
@@ -165,6 +209,11 @@ class DeployPlan:
 
     def __post_init__(self) -> None:
         parse_version(self.version)  # fail fast on a bad version
+        if not is_single_digit(self.version):
+            raise ValueError(
+                f"version {self.version!r} is not single-digit "
+                "(each of MAJOR.MINOR.PATCH must be 0-9)"
+            )
 
     @property
     def main_addon_version(self) -> str:

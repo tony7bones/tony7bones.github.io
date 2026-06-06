@@ -91,6 +91,50 @@ def test_ignores_generated_zip_and_index(tmp_path):
     assert r.returncode == 0, r.stdout + r.stderr
 
 
+def _seed_base_version(repo, version):
+    """Advance the add-on (and origin/main baseline) to `version` cleanly."""
+    (repo / "repo" / "plugin.test" / "addon.xml").write_text(
+        f'<addon id="plugin.test" version="{version}"/>\n'
+    )
+    (repo / "repo" / "plugin.test" / "default.py").write_text(f"# base {version}\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", f"base {version}")
+    base = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    _run(
+        ["git", "-C", str(repo), "update-ref", "refs/remotes/origin/main", base],
+        cwd=repo,
+    )
+
+
+def test_rejects_double_digit_bump(tmp_path):
+    """A hand-edited 1.0.9 -> 1.0.10 bump is rejected (component >= 10)."""
+    repo = _scaffold(tmp_path)
+    _seed_base_version(repo, "1.0.9")
+    (repo / "repo" / "plugin.test" / "default.py").write_text("# changed\n")
+    (repo / "repo" / "plugin.test" / "addon.xml").write_text(
+        '<addon id="plugin.test" version="1.0.10"/>\n'
+    )
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "double-digit bump")
+    r = _check(repo)
+    assert r.returncode == 1
+    assert "single-digit" in r.stdout
+
+
+def test_allows_clean_rollover_bump(tmp_path):
+    """A 1.0.9 -> 1.1.0 rollover bump is accepted."""
+    repo = _scaffold(tmp_path)
+    _seed_base_version(repo, "1.0.9")
+    (repo / "repo" / "plugin.test" / "default.py").write_text("# changed\n")
+    (repo / "repo" / "plugin.test" / "addon.xml").write_text(
+        '<addon id="plugin.test" version="1.1.0"/>\n'
+    )
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "rollover bump")
+    r = _check(repo)
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
 def test_skips_when_no_origin(tmp_path):
     repo = _scaffold(tmp_path, with_origin=False)
     (repo / "repo" / "plugin.test" / "default.py").write_text("# changed\n")

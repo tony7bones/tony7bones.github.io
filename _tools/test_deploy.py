@@ -68,6 +68,71 @@ def test_is_greater_true_and_false():
 
 
 # ============================================================================ #
+# Unit tests — single-digit-per-component scheme (rollover bump + validator)
+# ============================================================================ #
+
+
+@pytest.mark.parametrize(
+    "start,expected",
+    [
+        ("1.1.3", "1.1.4"),  # plain patch
+        ("1.0.9", "1.1.0"),  # patch carries into minor
+        ("1.9.9", "2.0.0"),  # patch carries all the way into major
+    ],
+)
+def test_bump_patch_rollover(start, expected):
+    assert rl.bump(start) == expected
+
+
+@pytest.mark.parametrize(
+    "start,expected",
+    [
+        ("1.3.7", "1.4.0"),  # plain minor (patch reset)
+        ("1.9.0", "2.0.0"),  # minor carries into major
+    ],
+)
+def test_bump_minor_rollover(start, expected):
+    assert rl.bump(start, "minor") == expected
+
+
+def test_bump_major_rollover():
+    assert rl.bump("2.1.1", "major") == "3.0.0"
+
+
+def test_bump_patch_ceiling_raises():
+    with pytest.raises(ValueError, match="ceiling"):
+        rl.bump("9.9.9")
+
+
+def test_bump_major_ceiling_raises():
+    with pytest.raises(ValueError, match="9.9.9"):
+        rl.bump("9.9.9", "major")
+
+
+def test_is_greater_across_rollover():
+    assert rl.is_greater("1.1.0", "1.0.9")
+    assert rl.is_greater("2.0.0", "1.9.9")
+    # the legacy baseline (1.0.14) still parses and compares — parse_version is
+    # deliberately NOT tightened, so the transition to 2.0.0 keeps working.
+    assert rl.is_greater("2.0.0", "1.0.14")
+
+
+@pytest.mark.parametrize("v", ["0.0.0", "9.9.9", "1.1.0"])
+def test_is_single_digit_true(v):
+    assert rl.is_single_digit(v)
+
+
+@pytest.mark.parametrize("v", ["10.0.0", "1.10.0", "1.0.10"])
+def test_is_single_digit_false(v):
+    assert not rl.is_single_digit(v)
+
+
+def test_is_single_digit_false_on_garbage():
+    assert not rl.is_single_digit("1.0")
+    assert not rl.is_single_digit(None)
+
+
+# ============================================================================ #
 # Unit tests — filename / tag construction
 # ============================================================================ #
 
@@ -199,6 +264,16 @@ def test_deployplan_tag_format():
 def test_deployplan_rejects_bad_version():
     with pytest.raises(ValueError):
         rl.DeployPlan("1.0")
+
+
+def test_deployplan_rejects_double_digit_component():
+    with pytest.raises(ValueError, match="single-digit"):
+        rl.DeployPlan("1.0.10")
+
+
+def test_deployplan_accepts_ceiling():
+    # 9.9.9 is the legal ceiling — it must remain a valid single-digit version.
+    assert rl.DeployPlan("9.9.9").version == "9.9.9"
 
 
 def test_deployplan_single_source_of_truth():
@@ -384,6 +459,18 @@ def test_system_lower_version_refused(sandbox):
     repo, _ = sandbox
     r = _deploy(repo, "--version", "0.9.0", "--news", "x", check=False)
     assert r.returncode != 0
+
+
+def test_system_double_digit_version_refused(sandbox):
+    """An explicit non-single-digit --version is refused with no mutation."""
+    repo, _ = sandbox
+    before = _git(repo, "rev-parse", "main").stdout.strip()
+    r = _deploy(repo, "--version", "1.0.10", "--news", "x", check=False)
+    assert r.returncode != 0
+    assert "single-digit" in (r.stdout + r.stderr)
+    # nothing mutated locally
+    assert _git(repo, "rev-parse", "main").stdout.strip() == before
+    assert _git(repo, "tag", "-l", "v1.0.10").stdout.strip() == ""
 
 
 def test_system_dry_run_changes_nothing(sandbox):

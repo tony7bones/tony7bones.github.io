@@ -114,9 +114,18 @@ def current_version() -> str:
 def compute_next(args, cur: str) -> str:
     if args.version:
         rl.parse_version(args.version)
+        if not rl.is_single_digit(args.version):
+            raise SystemExit(
+                "PRE-FLIGHT FAILED:\n"
+                f"  - version {args.version} is not single-digit "
+                "(each of MAJOR.MINOR.PATCH must be 0-9)"
+            )
         return args.version
     level = "major" if args.major else "minor" if args.minor else "patch"
-    return rl.bump(cur, level)
+    try:
+        return rl.bump(cur, level)
+    except ValueError as exc:
+        raise SystemExit(f"PRE-FLIGHT FAILED:\n  - {exc}") from exc
 
 
 def preflight(nxt: str, cur: str) -> list[str]:
@@ -126,6 +135,11 @@ def preflight(nxt: str, cur: str) -> list[str]:
     if git("status", "--porcelain"):
         problems.append("working tree is not clean")
     problems.extend(_behind_origin())
+    if not rl.is_single_digit(nxt):
+        problems.append(
+            f"next version {nxt} is not single-digit "
+            "(each of MAJOR.MINOR.PATCH must be 0-9)"
+        )
     if not rl.is_greater(nxt, cur):
         problems.append(
             f"next version {nxt} is not greater than current {cur} "

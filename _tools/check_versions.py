@@ -73,6 +73,16 @@ def check(base_ref: str = BASE_REF):
         with open(os.path.join(path, "addon.xml"), encoding="utf-8") as fh:
             cur_ver = rl.read_addon_version(fh.read())
         base_ver = rl.read_addon_version(base_xml.stdout)
+        # Range-check the NEW (current) version only. base_ver is read from
+        # origin/main and may be the legacy 1.0.14, which parse_version (and
+        # is_greater below) still accept; only the version being introduced must
+        # obey the single-digit-per-component rule.
+        if not rl.is_single_digit(cur_ver):
+            problems.append(
+                f"{name}: version {cur_ver} is not single-digit "
+                "(each component must be 0-9)"
+            )
+            continue
         if rl.is_greater(cur_ver, base_ver):
             info.append(f"{name}: {base_ver} -> {cur_ver} (bumped)")
         else:

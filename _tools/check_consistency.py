@@ -92,6 +92,16 @@ def check(repo: str) -> tuple[bool, dict, list[str]]:
     info = gather(repo)
     problems: list[str] = []
 
+    # Enforce the single-digit-per-component scheme on the version that will
+    # ship. 9.9.9 is the legal ceiling and remains valid; only a component >= 10
+    # is rejected. Append a problem instead of raising so the gate reports
+    # cleanly rather than crashing.
+    if not rl.is_single_digit(info["main_addon"]):
+        problems.append(
+            f"main addon version {info['main_addon']} is not single-digit "
+            "(each of MAJOR.MINOR.PATCH must be 0-9)"
+        )
+
     versions = {info["main_addon"], info["index"]}
     if len(versions) != 1:
         problems.append(
