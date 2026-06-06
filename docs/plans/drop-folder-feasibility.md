@@ -1,5 +1,12 @@
 # Model B — One Source of Truth (`dropbox/` → `repo/`)
 
+> **SUPERSEDED (2026-06-06).** A live spike confirmed a simpler approach —
+> a clean `main` branch plus a CI-built `dist` branch — which avoids the
+> problems the amendments below try to patch. See
+> [dist-branch-decision.md](dist-branch-decision.md) for the chosen direction.
+> This document is kept for history and for the still-useful Kodi findings in
+> the amendments section.
+
 > Status: **APPROVED IN DIRECTION — blocking amendments pending (do not execute
 > as written).** Decided spec, hardened by a three-lens review (Kodi /
 > architecture / QA) and the owner's decisions, then re-reviewed by a second
@@ -347,7 +354,7 @@ down** before any code.
 ### Confirmed by the panel (de-risks execution)
 
 - **Zip arcname is provably location-independent.** `arcname =
-  relpath(fpath, dirname(addon_dir))` depends only on the add-on's basename, so
+relpath(fpath, dirname(addon_dir))` depends only on the add-on's basename, so
   `repo/ → dropbox/` does not perturb member paths **provided the split only
   re-points the scan root and leaves the arcname math alone**. Add a test
   asserting member paths have no `dropbox/`/`repo/` prefix and the built zip hash
