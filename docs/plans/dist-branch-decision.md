@@ -120,10 +120,19 @@ shape, and (critically) no change to the install URL
      `dist`). Provenance proven by the `/dist/` fetch URLs in the log, not just
      byte-equality. Note: 2a/2b/2c prove equivalence _while `dist` mirrors
      `main`_; the Stage 1 publisher is what keeps them in sync.
-3. Flip the proxy to read `dist` (a normal, versioned proxy release). — pending
-   (Stage 3, the first live-affecting step)
-4. Only then remove the generated clutter from `main` so it becomes the clean
-   drop box. — pending (Stage 4)
+3. **Flip the proxy to read `dist` — ✅ DONE (Stage 3, LIVE, QA-approved).**
+   Shipped as proxy **v2.1.0** via `deploy.py`: the 12 tony7bones-hosted entries
+   in the committed `repository.json` now carry `"branch": "dist"` (the 5 external
+   entries untouched). Live full-system test on real Kodi 21.3 confirmed the
+   shipped 2.1.0 artifact serves the 12 from `dist` and the 5 externals from
+   their own repos, 0 errors. Self-update reaches installed boxes via the
+   branch-independent Pages root zip; runbook: [../playbooks/dist-cutover-runbook.md](../playbooks/dist-cutover-runbook.md).
+   _Note: the cutover initially broke a stale unit test (hard-coded `branch ==
+"main"`); fixed in a follow-up (CI green at `94e8bbd`). The `v2.1.0` tag points
+   at the release commit `6b49de0` (runtime correct); the test-only fix is one
+   commit later._
+4. Remove the generated clutter from `main` so it becomes the clean drop box. —
+   pending (Stage 4)
 
 Each stage is reversible, and the `safety/pre-dist-spike-ce5ae11` tag is the
 backstop for the whole effort.

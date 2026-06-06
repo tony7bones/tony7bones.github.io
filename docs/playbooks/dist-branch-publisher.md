@@ -79,5 +79,8 @@ These are deliberately deferred to the stage where the proxy is repointed at
 - **Stage 2 — prove the proxy serves off `dist`**: ✅ DONE, QA-approved —
   engine (2a) + real HTTP server (2b) + LIVE Kodi 21.3 Omega (2c, log shows
   `Using ref dist` + `/dist/` fetches at 200, rendered repo menu).
-- **Stage 3 — cutover** (repoint proxy at `dist`, versioned release): pending.
+- **Stage 3 — cutover** (repoint proxy at `dist`, versioned release): ✅ DONE,
+  LIVE as proxy **v2.1.0**, QA full-system-test approved (real Kodi 21.3 serves
+  the 12 hosted from `dist`, 5 externals untouched). Runbook:
+  [dist-cutover-runbook.md](dist-cutover-runbook.md).
 - **Stage 4 — clean `main`** (remove generated clutter): pending.
