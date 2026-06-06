@@ -190,9 +190,20 @@ def test_addon_name():
     assert _addon_root().get("name") == "Estuary MOD V2+"
 
 
-def test_addon_version_floor_1_3_3():
+def test_addon_version_floor_1_3_4():
     parts = tuple(int(p) for p in _addon_root().get("version").split("."))
-    assert parts >= (1, 3, 3), "version must be at least 1.3.3"
+    assert parts >= (1, 3, 4), "version must be at least 1.3.4"
+
+
+def test_no_copy2_uses_content_only_copies():
+    """default.py must use shutil.copyfile (content-only), NOT shutil.copy2 — copy2's
+    copystat (os.utime/os.chmod) raises OSError on Fire OS 8 / Android 11 sdcardfs
+    *after* writing bytes, which made Apply mis-count copies as failed."""
+    text = DEFAULT_PY.read_text()
+    assert "shutil.copy2(" not in text, (
+        "use shutil.copyfile, not copy2 (Android sdcardfs)"
+    )
+    assert "shutil.copyfile(" in text, "file copies must use shutil.copyfile"
 
 
 def test_no_provides_executable():

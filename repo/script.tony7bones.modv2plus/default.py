@@ -41,6 +41,12 @@ def apply_patches(skin_xml):
     The original is snapshotted once as ``<file>.bak`` before the first
     overwrite. Each file is handled defensively: a failure is logged and never
     aborts the run. Returns (applied, failed).
+
+    NB: use ``shutil.copyfile`` (content only), NOT ``copy2``. On Fire OS 8 /
+    Android 11 the skin lives on an sdcardfs/FUSE volume where copy2's copystat
+    (os.utime / os.chmod) raises OSError(EPERM) *after* the bytes are written —
+    which made every copy count as "failed", tripping the "Partly Applied" early
+    return before the menu-trim + skin-settings steps. copyfile skips copystat.
     """
     applied = 0
     failed = 0
@@ -52,8 +58,8 @@ def apply_patches(skin_xml):
 
         try:
             if os.path.exists(dst) and not os.path.exists(bak):
-                shutil.copy2(dst, bak)
-            shutil.copy2(src, dst)
+                shutil.copyfile(dst, bak)
+            shutil.copyfile(src, dst)
             applied += 1
             xbmc.log("[mod v2+] applied {}".format(fname), xbmc.LOGINFO)
         except Exception as e:
@@ -78,7 +84,7 @@ def apply_media(skin_root):
 
         try:
             os.makedirs(os.path.dirname(dst), exist_ok=True)
-            shutil.copy2(src, dst)
+            shutil.copyfile(src, dst)
             applied += 1
             xbmc.log("[mod v2+] applied media {}".format(rel_dst), xbmc.LOGINFO)
         except Exception as e:
@@ -106,7 +112,7 @@ def restore_patches(skin_xml):
 
         try:
             if os.path.exists(bak):
-                shutil.copy2(bak, dst)
+                shutil.copyfile(bak, dst)
                 os.remove(bak)
                 restored += 1
                 xbmc.log("[mod v2+] restored {}".format(fname), xbmc.LOGINFO)
@@ -222,8 +228,8 @@ def apply_home_menu(skin_root):
     try:
         os.makedirs(dst_dir, exist_ok=True)
         if os.path.exists(dst) and not os.path.exists(bak):
-            shutil.copy2(dst, bak)
-        shutil.copy2(src, dst)
+            shutil.copyfile(dst, bak)
+        shutil.copyfile(src, dst)
         xbmc.log(
             "[mod v2+] applied home menu (trimmed mainmenu.DATA.xml)", xbmc.LOGINFO
         )
@@ -248,7 +254,7 @@ def restore_home_menu(skin_root):
     restored = False
     try:
         if os.path.exists(bak):
-            shutil.copy2(bak, dst)
+            shutil.copyfile(bak, dst)
             os.remove(bak)
             restored = True
             xbmc.log(

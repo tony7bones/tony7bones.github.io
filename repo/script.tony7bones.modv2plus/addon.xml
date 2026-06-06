@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="script.tony7bones.modv2plus"
        name="Estuary MOD V2+"
-       version="1.3.3"
+       version="1.3.4"
        provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
@@ -15,6 +15,6 @@
     <assets>
       <icon>icon.png</icon>
     </assets>
-    <news>Home menu trimmed: removes Music, Music Videos, Radio, Games, Pictures, Videos (ships a trimmed skinshortcuts default and rebuilds the menu from it). Restore reverts to the full default menu.</news>
+    <news>Fix: Apply no longer reports "Partly Applied" on Fire OS 8 / Android 11 (Firestick 4K Max). Skin files now copy with content-only writes (shutil.copyfile), avoiding the sdcardfs chmod/utime error that made copies count as failed and skipped the menu-trim + skin-settings steps.</news>
   </extension>
 </addon>
