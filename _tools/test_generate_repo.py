@@ -513,9 +513,9 @@ def test_generate_asset_indexes_skips_special_and_addon_dirs(tmp_path, monkeypat
 
 
 # ---------------------------------------------------------------------------
-# sync_kodibox — kodibox/ is the human canvas; the build mirrors it into repo/
+# sync_dropbox — dropbox/ is the human canvas; the build mirrors it into repo/
 # ---------------------------------------------------------------------------
-def test_kodibox_sync_mirrors_canvas_drops_unowned_and_keeps_canvas_clean(
+def test_dropbox_sync_mirrors_canvas_drops_unowned_and_keeps_canvas_clean(
     tmp_path, monkeypatch
 ):
     repo = tmp_path / "repo"
@@ -526,8 +526,8 @@ def test_kodibox_sync_mirrors_canvas_drops_unowned_and_keeps_canvas_clean(
     (repo / "scripts").mkdir()
     (repo / "scripts" / "old.zip").write_bytes(b"old")
 
-    # the canvas: a sibling of repo/ (sync derives kodibox from REPO_DIR/..)
-    canvas = tmp_path / "kodibox"
+    # the canvas: a sibling of repo/ (sync derives dropbox from REPO_DIR/..)
+    canvas = tmp_path / "dropbox"
     (canvas / "repositories").mkdir(parents=True)
     (canvas / "repositories" / "repository.x-1.0.0.zip").write_bytes(b"zip")
     (canvas / "iptv").mkdir()
@@ -558,14 +558,14 @@ def test_kodibox_sync_mirrors_canvas_drops_unowned_and_keeps_canvas_clean(
     assert (repo / "plugin.hello" / "addon.xml").exists()
 
 
-def test_kodibox_sync_noop_without_canvas(tmp_path, monkeypatch):
-    """No sibling kodibox/ -> sync is a clean no-op (real-repo tests stay sandboxed)."""
+def test_dropbox_sync_noop_without_canvas(tmp_path, monkeypatch):
+    """No sibling dropbox/ -> sync is a clean no-op (real-repo tests stay sandboxed)."""
     repo = tmp_path / "repo"
     repo.mkdir()
     (repo / "repositories").mkdir()
     (repo / "repositories" / "keep.zip").write_bytes(b"zip")
     monkeypatch.setattr(gr, "REPO_DIR", str(repo))
 
-    gr.sync_kodibox()
+    gr.sync_dropbox()
 
     assert (repo / "repositories" / "keep.zip").exists()

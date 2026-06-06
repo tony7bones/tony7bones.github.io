@@ -30,9 +30,9 @@ your account to the world.
 - `.env` is already gitignored (just fixed). It stays local only.
 - Every secret-bearing OUTPUT (the curated m3u, `instance-settings-1.xml`) must
   be written to a **gitignored** local/staging location, never under `repo/` or
-  `kodibox/`.
+  `dropbox/`.
 - Only **non-secret** IPTV data may live in the repo: the channel-**group names**
-  (`customTVGroups-*.xml` — already public in `kodibox/iptv/`) and the curation
+  (`customTVGroups-*.xml` — already public in `dropbox/iptv/`) and the curation
   logic (`make_custom_m3u.py`).
 
 This is the single most important rule in this plan.
@@ -44,7 +44,7 @@ This is the single most important rule in this plan.
   `network24_custom.m3u` (parent dir, not committed). It filters to 3 groups
   (`USA ENTERTAINMENT`, `USA NEWS/WEATHER`, `PPV EVENTS`), relabels them, fixes
   caps/abbreviations, alpha-sorts two of them.
-- `kodibox/iptv/customTVGroups-Network24.xml` — the custom channel groups
+- `dropbox/iptv/customTVGroups-Network24.xml` — the custom channel groups
   (public, just names) the bootstrap installs.
 - `repo/script.tony7bones.bootstrap/default.py` — on install, **copies** user-
   placed device files into Kodi userdata:
@@ -71,7 +71,7 @@ A new `_tools/build_iptv.py` that reads `.env` and produces everything:
    no longer needs a hand-written one).
 4. **Reuse** the public `customTVGroups-*.xml` for group names (no secret).
 5. **Write all secret outputs to a gitignored staging dir** (e.g. `iptv-build/`,
-   added to `.gitignore`), never into `repo/`/`kodibox/`.
+   added to `.gitignore`), never into `repo/`/`dropbox/`.
 
 Then the generated files reach the device by the SAME mechanism as today (the
 bootstrap's device-file copy) — or, optionally, pushed straight to the box over
@@ -81,7 +81,7 @@ ADB via `_tools/firetv.sh`.
 .env  ──build_iptv.py──▶  iptv-build/ (gitignored, secret)
                             ├─ <name>_custom.m3u          (curated playlist)
                             └─ instance-settings-1.xml    (m3u + EPG + groups)
-                          + repo/kodibox customTVGroups   (public group names)
+                          + repo/dropbox customTVGroups   (public group names)
                                    │
                                    ▼  (device copy or ADB push)
                           Kodi pvr.iptvsimple on the box
@@ -127,6 +127,6 @@ ADB via `_tools/firetv.sh`.
 - `.env` and every secret output (`iptv-build/`, the curated m3u,
   instance-settings) are gitignored — a negative test asserts none appear in
   `git status` / the committed tree.
-- No provider URL, username, or password ever lands under `repo/`, `kodibox/`,
+- No provider URL, username, or password ever lands under `repo/`, `dropbox/`,
   or on GitHub Pages.
 - Existing tests + the generate/consistency gates stay green.
