@@ -3,12 +3,20 @@ name: Publish dist branch
 # The "translator": compiles the source on main into the generated output and
 # publishes it to the `dist` branch, which the proxy will eventually fetch from.
 #
-# PHASE 1a: manual trigger only (workflow_dispatch). Nothing reads `dist` yet,
-# so running this is invisible to the live site and to installed Kodi boxes.
-# Auto-on-push is a deliberate later phase.
+# PHASE 1b: runs automatically on every push to main that changes served
+# content (repo/**, _tools/**, index.html), and still on-demand via the manual
+# button. Nothing reads `dist` yet, so this remains invisible to the live site
+# and to installed Kodi boxes — `dist` is just kept continuously up to date.
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "repo/**"
+      - "_tools/**"
+      - "index.html"
 
 permissions:
   contents: write
