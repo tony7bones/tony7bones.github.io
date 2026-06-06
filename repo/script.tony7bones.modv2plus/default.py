@@ -201,14 +201,20 @@ def run():
     # choice == -1 (cancelled / back) -> do nothing
 
 
-def set_weather_icons():
-    """Point MOD V2's weather widgets (home tab + top bar) at the Outline HD set.
+def apply_skin_settings():
+    """Apply our MOD V2 skin-setting defaults (the parts that aren't shipped files).
 
-    MOD V2 resolves its weather icons through the Skin.String(WeatherIcons.path)
-    / WeatherIcons.name pair — the same strings its built-in icon picker sets;
-    when they're empty it falls back to the .default pack (the bug). Setting them
-    drives the home weather widget AND the top-bar condition icon. Defensive:
-    logged, never aborts the run.
+    - Weather icons -> the Outline HD pack via Skin.String(WeatherIcons.path) /
+      WeatherIcons.name (the strings MOD V2's own picker sets; empty -> .default).
+    - Top-bar weather/temp readout ON (`show_weatherinfo`) — MOD V2 leaves it OFF
+      on a fresh skin, so a freshly-patched box shows the weather below the clock.
+    - Splash screen OFF and seasonal Themes OFF. Both are MOD V2 **opt-out** flags
+      (the toggles read `!Skin.HasSetting(...)`), so *setting* `EnableSplashScreen`
+      / `DisableThemes` is what turns them off.
+    - Power menu style -> "Classic list" (`powermenu_list`; the style is an
+      exclusive group, so clear the other two flags `powermenu_panel` /
+      `powermenu_iconlist`).
+    Defensive: logged, never aborts the run.
     """
     try:
         xbmc.executebuiltin(
@@ -218,20 +224,38 @@ def set_weather_icons():
         xbmc.executebuiltin(
             "Skin.SetString(WeatherIcons.name,Weather Icons - Outline HD)"
         )
-        xbmc.log("[mod v2+] weather icons -> Outline HD", xbmc.LOGINFO)
+        xbmc.executebuiltin("Skin.SetBool(show_weatherinfo)")
+        xbmc.executebuiltin("Skin.SetBool(EnableSplashScreen)")
+        xbmc.executebuiltin("Skin.SetBool(DisableThemes)")
+        # Power menu style -> "Classic list" (exclusive group: clear the other two)
+        xbmc.executebuiltin("Skin.SetBool(powermenu_list)")
+        xbmc.executebuiltin("Skin.Reset(powermenu_panel)")
+        xbmc.executebuiltin("Skin.Reset(powermenu_iconlist)")
+        xbmc.log("[mod v2+] skin settings applied", xbmc.LOGINFO)
     except Exception as e:
-        xbmc.log("[mod v2+] failed setting weather icons: {}".format(e), xbmc.LOGERROR)
+        xbmc.log("[mod v2+] failed applying skin settings: {}".format(e), xbmc.LOGERROR)
 
 
-def reset_weather_icons():
-    """Clear the weather-icon skin strings so MOD V2 reverts to its default pack."""
+def reset_skin_settings():
+    """Revert our skin-setting defaults to MOD V2 stock: clear the weather icon
+    strings, turn the top-bar readout back off, and clear the splash / themes /
+    power-menu flags so they return to MOD V2's defaults."""
     try:
-        xbmc.executebuiltin("Skin.Reset(WeatherIcons.path)")
-        xbmc.executebuiltin("Skin.Reset(WeatherIcons.name)")
-        xbmc.log("[mod v2+] weather icons reset", xbmc.LOGINFO)
+        for s in (
+            "WeatherIcons.path",
+            "WeatherIcons.name",
+            "show_weatherinfo",
+            "EnableSplashScreen",
+            "DisableThemes",
+            "powermenu_list",
+            "powermenu_panel",
+            "powermenu_iconlist",
+        ):
+            xbmc.executebuiltin("Skin.Reset({})".format(s))
+        xbmc.log("[mod v2+] skin settings reset", xbmc.LOGINFO)
     except Exception as e:
         xbmc.log(
-            "[mod v2+] failed resetting weather icons: {}".format(e), xbmc.LOGERROR
+            "[mod v2+] failed resetting skin settings: {}".format(e), xbmc.LOGERROR
         )
 
 
@@ -257,7 +281,7 @@ def _apply(skin_root, skin_xml):
         xbmcgui.NOTIFICATION_INFO,
         4000,
     )
-    set_weather_icons()
+    apply_skin_settings()
     xbmc.executebuiltin("ReloadSkin()")
 
 
@@ -295,7 +319,7 @@ def _restore(skin_root, skin_xml):
             xbmcgui.NOTIFICATION_INFO,
             4000,
         )
-    reset_weather_icons()
+    reset_skin_settings()
     xbmc.executebuiltin("ReloadSkin()")
 
 

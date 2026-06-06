@@ -187,9 +187,9 @@ def test_addon_name():
     assert _addon_root().get("name") == "Estuary MOD V2+"
 
 
-def test_addon_version_floor_1_3_1():
+def test_addon_version_floor_1_3_2():
     parts = tuple(int(p) for p in _addon_root().get("version").split("."))
-    assert parts >= (1, 3, 1), "version must be at least 1.3.1"
+    assert parts >= (1, 3, 2), "version must be at least 1.3.2"
 
 
 def test_no_provides_executable():
@@ -790,6 +790,16 @@ def test_run_apply_copies_files_and_media(patch_env):
     assert any(
         "Skin.SetString(WeatherIcons.name" in b for b in patch_env.state["builtins"]
     ), "Apply must set WeatherIcons.name"
+    # Apply also turns ON the top-bar weather/temp readout (off on a fresh skin).
+    assert any(
+        "Skin.SetBool(show_weatherinfo)" in b for b in patch_env.state["builtins"]
+    ), "Apply must enable the top-bar weather readout (show_weatherinfo)"
+    # ...and applies the other Extras defaults: splash OFF, themes OFF (both
+    # opt-out flags), power menu -> Classic list.
+    for flag in ("EnableSplashScreen", "DisableThemes", "powermenu_list"):
+        assert any(
+            "Skin.SetBool({})".format(flag) in b for b in patch_env.state["builtins"]
+        ), "Apply must set {}".format(flag)
 
 
 def test_run_apply_arg_skips_chooser_and_applies(patch_env, monkeypatch):
@@ -878,6 +888,14 @@ def test_run_restore_reverts_xml_and_removes_loose_png(patch_env):
     assert any(
         "Skin.Reset(WeatherIcons.path)" in b for b in patch_env.state["builtins"]
     ), "Restore must reset WeatherIcons.path"
+    assert any(
+        "Skin.Reset(show_weatherinfo)" in b for b in patch_env.state["builtins"]
+    ), "Restore must turn the top-bar weather readout back off"
+    # ...and clears the other Extras flags back to MOD V2 stock.
+    for flag in ("EnableSplashScreen", "DisableThemes", "powermenu_list"):
+        assert any(
+            "Skin.Reset({})".format(flag) in b for b in patch_env.state["builtins"]
+        ), "Restore must reset {}".format(flag)
 
 
 def test_run_restore_nothing_to_restore(patch_env):
