@@ -510,3 +510,62 @@ def test_generate_asset_indexes_skips_special_and_addon_dirs(tmp_path, monkeypat
     assert not (repo / "media" / "index.html").exists()
     assert not (repo / "plugin.test" / "index.html").exists()
     assert (repo / "iptv" / "index.html").exists()
+
+
+# ---------------------------------------------------------------------------
+# sync_kodibox — kodibox/ is the human canvas; the build mirrors it into repo/
+# ---------------------------------------------------------------------------
+def test_kodibox_sync_mirrors_canvas_drops_unowned_and_keeps_canvas_clean(
+    tmp_path, monkeypatch
+):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    # an add-on dir (must be left untouched by the sync)
+    _make_addon(repo, "plugin.hello", "2.0.0")
+    # a served content folder the canvas no longer owns (must be removed)
+    (repo / "scripts").mkdir()
+    (repo / "scripts" / "old.zip").write_bytes(b"old")
+
+    # the canvas: a sibling of repo/ (sync derives kodibox from REPO_DIR/..)
+    canvas = tmp_path / "kodibox"
+    (canvas / "repositories").mkdir(parents=True)
+    (canvas / "repositories" / "repository.x-1.0.0.zip").write_bytes(b"zip")
+    (canvas / "iptv").mkdir()
+    (canvas / "iptv" / "groups.xml").write_bytes(b"<x/>")
+
+    monkeypatch.setattr(gr, "REPO_DIR", str(repo))
+    monkeypatch.setattr(gr, "REPOS_DIR", str(repo / "repositories"))
+    monkeypatch.setattr(gr, "SCRIPTS_DIR", str(repo / "scripts"))
+    monkeypatch.setattr(gr, "MEDIA_DIR", str(repo / "media"))
+
+    gr.generate()
+
+    # canvas content mirrored into repo/
+    assert (repo / "repositories" / "repository.x-1.0.0.zip").read_bytes() == b"zip"
+    assert (repo / "iptv" / "groups.xml").read_bytes() == b"<x/>"
+    # index.html generated into repo/, never into the canvas
+    assert (repo / "repositories" / "index.html").exists()
+    assert (repo / "iptv" / "index.html").exists()
+    assert not (canvas / "repositories" / "index.html").exists()
+    assert not (canvas / "iptv" / "index.html").exists()
+    # canvas stays exactly what we authored — nothing added
+    assert {p.name for p in canvas.rglob("*") if p.is_file()} == {
+        "repository.x-1.0.0.zip",
+        "groups.xml",
+    }
+    # served folder the canvas no longer owns is dropped; add-on dir untouched
+    assert not (repo / "scripts").exists()
+    assert (repo / "plugin.hello" / "addon.xml").exists()
+
+
+def test_kodibox_sync_noop_without_canvas(tmp_path, monkeypatch):
+    """No sibling kodibox/ -> sync is a clean no-op (real-repo tests stay sandboxed)."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    (repo / "repositories").mkdir()
+    (repo / "repositories" / "keep.zip").write_bytes(b"zip")
+    monkeypatch.setattr(gr, "REPO_DIR", str(repo))
+
+    gr.sync_kodibox()
+
+    assert (repo / "repositories" / "keep.zip").exists()

@@ -15,6 +15,7 @@ Run from anywhere:
 
 import hashlib
 import os
+import shutil
 import subprocess
 import zipfile
 from datetime import datetime, timezone
@@ -280,7 +281,49 @@ def generate_asset_indexes() -> None:
     return total
 
 
+def sync_kodibox() -> None:
+    """Mirror the kodibox/ canvas into repo/ so Kodi serves exactly its content.
+
+    kodibox/ holds only human-authored content (no index.html / checksums). Each
+    kodibox/<folder> is copied verbatim into repo/<folder> (the served, browsable
+    location); the index.html is generated into repo/ afterwards, never into
+    kodibox/. A served content folder that kodibox no longer owns is removed, so
+    deleting something from kodibox/ removes it from what Kodi sees. Add-on dirs
+    (those with an addon.xml) and the hosted/ mirror tree are left untouched.
+    """
+    # Derived from REPO_DIR (not a module constant) so tests that monkeypatch
+    # REPO_DIR stay sandboxed: with no sibling kodibox/, this is a clean no-op.
+    kodibox_dir = os.path.normpath(os.path.join(REPO_DIR, "..", "kodibox"))
+    if not os.path.isdir(kodibox_dir):
+        return
+    owned = {
+        d
+        for d in os.listdir(kodibox_dir)
+        if os.path.isdir(os.path.join(kodibox_dir, d))
+    }
+    # Mirror each kodibox folder into repo/ (exact: wipe + recopy; the index is
+    # regenerated afterwards by the index generators).
+    for d in sorted(owned):
+        dst = os.path.join(REPO_DIR, d)
+        if os.path.isdir(dst):
+            shutil.rmtree(dst)
+        shutil.copytree(os.path.join(kodibox_dir, d), dst)
+        print(f"kodibox/{d} -> repo/{d}")
+    # Drop served content folders kodibox no longer owns (not add-ons, not hosted).
+    for d in os.listdir(REPO_DIR):
+        p = os.path.join(REPO_DIR, d)
+        if (
+            os.path.isdir(p)
+            and d != "hosted"
+            and d not in owned
+            and not os.path.exists(os.path.join(p, "addon.xml"))
+        ):
+            shutil.rmtree(p)
+            print(f"removed repo/{d} (not in kodibox)")
+
+
 def generate() -> None:
+    sync_kodibox()
     plugin_roots, _plugin_ids = process_addons(REPO_DIR)
 
     addons_el = ET.Element("addons")
