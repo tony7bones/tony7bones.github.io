@@ -36,8 +36,9 @@ on `main`, the generated clutter lives only on `dist`.
 
 The `push` trigger is scoped to `branches: [main]`. The workflow's own pushes
 land on `dist`, which can never match a `main`-scoped trigger — self-triggering
-is **structurally impossible**. As a second, independent layer, the path filter
-excludes `.github/**`, so editing the workflow itself does not trigger a build.
+is **structurally impossible**. As a second, independent layer, the path
+allow-list (`repo/**`, `_tools/**`, `index.html`) does not include `.github/**`,
+so editing the workflow itself does not trigger a build.
 
 ## Operating it
 
@@ -58,9 +59,11 @@ These are deliberately deferred to the stage where the proxy is repointed at
    publisher does `git add -A` on a `main` checkout. Harmless while nothing reads
    `dist`. At cutover, decide whether `dist` should be pruned to an output-only
    tree. (It does not affect the proxy, which fetches specific `repo/...` paths.)
-2. **Workflow-only edits don't republish `dist`** (the path filter excludes
-   `.github/**`), so after such a commit `dist` sits one source-commit behind
-   `main`. Expected; press the manual button if a republish is ever wanted.
+2. **Workflow-only edits don't republish `dist`** (the path allow-list does not
+   include `.github/**`), so after such a commit `dist` sits one source-commit
+   behind `main`. Expected; press the manual button if a republish is ever
+   wanted. (A no-change build still force-pushes, advancing `dist` to the
+   current `main` HEAD even when no new build commit is created.)
 3. **No branch protection on `dist`** — intentional (it's force-pushed
    generated output), but it means a stray human push there is clobbered on the
    next build.
