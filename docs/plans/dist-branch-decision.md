@@ -88,16 +88,17 @@ branch name in its config — no engine changes, no change to the download URLs'
 shape, and (critically) no change to the install URL
 `https://tony7bones.github.io/`. The dual-branch model is viable and safe.
 
-## What is NOT done yet
+## Progress
 
-This document is a decision and a proof, not an implementation. Still ahead,
-for a later session, in safe stages:
-
-1. Set up CI to build `main` into `dist` automatically.
-2. Verify the proxy works off `dist` on a throwaway version.
-3. Flip the proxy to read `dist` (a normal, versioned proxy release).
+1. **Set up CI to build `main` into `dist` automatically — ✅ DONE (Stage 1,
+   QA-approved).** The publisher workflow `.github/workflows/publish-dist.yml`
+   runs on every content change to `main` (and on demand) and keeps `dist`
+   current. Operating guide: [../playbooks/dist-branch-publisher.md](../playbooks/dist-branch-publisher.md).
+2. Verify the proxy works off `dist` on a throwaway version. — pending (Stage 2)
+3. Flip the proxy to read `dist` (a normal, versioned proxy release). — pending
+   (Stage 3, the first live-affecting step)
 4. Only then remove the generated clutter from `main` so it becomes the clean
-   drop box.
+   drop box. — pending (Stage 4)
 
 Each stage is reversible, and the `safety/pre-dist-spike-ce5ae11` tag is the
 backstop for the whole effort.
