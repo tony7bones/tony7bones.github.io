@@ -94,22 +94,32 @@ shape, and (critically) no change to the install URL
    QA-approved).** The publisher workflow `.github/workflows/publish-dist.yml`
    runs on every content change to `main` (and on demand) and keeps `dist`
    current. Operating guide: [../playbooks/dist-branch-publisher.md](../playbooks/dist-branch-publisher.md).
-2. **Verify the proxy works off `dist` — ✅ largely DONE (Stage 2, QA-approved).**
-   Two offline proofs against a throwaway `dist`-pointed config (the real
-   `repository.json` is never touched):
-   - **2a (engine):** flipping all 12 tony7bones entries to `dist` yields a
-     **byte-identical `addons.xml`** + matching md5 vs `main`; all 8 `{ref}`-based
-     zips download byte-identical; the proxy reads its own self-update version
-     (2.0.0) from `dist`.
+2. **Verify the proxy works off `dist` — ✅ DONE (Stage 2, all three sub-phases
+   QA-approved).** The throwaway `dist`-pointed config flips the **12
+   tony7bones-hosted entries** (5 first-party tony add-ons + 7 mirrored hosted
+   repos under `repo/hosted/`: Magnetic, diggz, kodifitzwell, kodinerds, loop,
+   redwizard, umbrella). The 5 entries left at main/master fetch from _external_
+   upstream repos and are untouched. The committed `repository.json` is never
+   changed.
+   - **2a (engine):** the 12-entry `addons.xml` is **byte-identical** + matching
+     md5 (`871115bf…`) vs `main`; all 8 `{ref}`-based zips download
+     byte-identical; the proxy reads its own self-update version (2.0.0) from
+     `dist`.
    - **2b (real HTTP server):** the proxy's actual serving stack
      (`httpserver`+`routes`+`repository`, same wiring as `service.py`) on a live
      localhost socket serves `/addons.xml` (12 addons), `/addons.xml.md5`, and
      streamed zips from `dist`, and 404s correctly.
-   - **2c (live local Kodi) — still pending**: drive the real local Kodi proxy
-     (`127.0.0.1:61234`) pointed at `dist` and prove a non-empty `GetDirectory` +
-     rendered menu (per `../playbooks/local-kodi-verification.md`). This is the
-     last verification gate before cutover. Note: 2a/2b prove equivalence _while
-     `dist` mirrors `main`_; the Stage 1 publisher is what keeps them in sync.
+   - **2c (LIVE local Kodi) — ✅ DONE.** Installed Kodi 21.3 Omega, ran the real
+     `repository.tony7bones` add-on with its installed config flipped to `dist`.
+     `kodi.log` shows `Using ref dist` for all 12 entries and literal
+     `…/dist/repo/…` GETs returning 200 (0 errors); the in-Kodi proxy on
+     `127.0.0.1:61234` served the full **17-entry** `addons.xml` (md5
+     `a110ad51…` — differs from 2a/2b's `871115bf…` only because it includes the
+     5 external third-party entries) and streamed valid zips; Kodi rendered the
+     repo's browsable add-on list (13 repository add-ons, versions matching
+     `dist`). Provenance proven by the `/dist/` fetch URLs in the log, not just
+     byte-equality. Note: 2a/2b/2c prove equivalence _while `dist` mirrors
+     `main`_; the Stage 1 publisher is what keeps them in sync.
 3. Flip the proxy to read `dist` (a normal, versioned proxy release). — pending
    (Stage 3, the first live-affecting step)
 4. Only then remove the generated clutter from `main` so it becomes the clean

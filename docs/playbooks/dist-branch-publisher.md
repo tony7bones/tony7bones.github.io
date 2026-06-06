@@ -76,7 +76,8 @@ These are deliberately deferred to the stage where the proxy is repointed at
 
 - **Stage 1 — build the translator**: ✅ done (1a manual → 1b automatic →
   1c this playbook), QA-approved at each step.
-- **Stage 2 — prove the proxy serves off `dist`**: ✅ engine (2a) + real HTTP
-  server (2b) proofs done, QA-approved; live local-Kodi check (2c) pending.
+- **Stage 2 — prove the proxy serves off `dist`**: ✅ DONE, QA-approved —
+  engine (2a) + real HTTP server (2b) + LIVE Kodi 21.3 Omega (2c, log shows
+  `Using ref dist` + `/dist/` fetches at 200, rendered repo menu).
 - **Stage 3 — cutover** (repoint proxy at `dist`, versioned release): pending.
 - **Stage 4 — clean `main`** (remove generated clutter): pending.
