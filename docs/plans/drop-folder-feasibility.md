@@ -1,8 +1,12 @@
 # Model B — One Source of Truth (`dropbox/` → `repo/`)
 
-> Status: **APPROVED — ready to execute.** Decided spec, hardened by a three-lens
-> review (Kodi / architecture / QA) and the owner's decisions. No repo changes
-> yet — this is the agreed plan; execution begins on the owner's "go."
+> Status: **APPROVED IN DIRECTION — blocking amendments pending (do not execute
+> as written).** Decided spec, hardened by a three-lens review (Kodi /
+> architecture / QA) and the owner's decisions, then re-reviewed by a second
+> independent three-lens panel (2026-06-06) that found the byte-identity gate
+> self-contradictory and several unlisted safety gaps. **Read
+> [Panel review amendments (2026-06-06)](#panel-review-amendments-2026-06-06)
+> before Step 0** — four edits are required first. No repo changes yet.
 >
 > **Decisions locked:** Full Model B · source of truth = `dropbox/` at repo root ·
 > compiled output = `repo/` (committed, generated) · build from `dropbox/`.
@@ -214,3 +218,146 @@ deliberately-broken `dropbox/` fails at pre-push, before any push.
    surface in log, prune deliberately (consistent with the root-zip cleanup).
 3. **Doubled-diff ergonomics** — optionally have CI/PR view collapse `repo/` diffs
    (generated) to keep human review focused on `dropbox/`. Nice-to-have.
+
+## Panel review amendments (2026-06-06)
+
+A second, independent three-lens panel (architecture / QA / Kodi), each agent
+working in isolation against the live code, re-reviewed this plan. They confirmed
+the direction and the core Kodi mechanics (see "Confirmed by the panel" below)
+but found the **byte-identity gate is self-contradictory as a whole-tree
+invariant** and surfaced safety gaps not in the original plan. The four
+amendments below are **blocking** — fold them in before Step 0.
+
+> Numbering note: these supersede the affected lines above where they conflict.
+> The original text is left intact for history; this section is the authority.
+
+### Amendment A — Scope the byte-identity gate (do NOT assert whole-tree). **[P0, blocking]**
+
+P0 gate #1 as written ("post-migration `repo/` byte-identical to today's `repo/`")
+is unachievable, for **two independent reasons** the panel reached separately:
+
+- **`repo/index.html` (QA + Kodi).** Today's `repo/index.html` is hand-crafted
+  **and stale** — it advertises
+  `https://tony7bones.github.io/repo/repositories/repository.tony7bones-1.0.5.zip`,
+  a path that does not exist (the real install zip is the root
+  `repository.tony7bones-2.0.0.zip`). Step 4 generates this file _without_ an
+  install-URL line, so its bytes necessarily change → CI `git status --porcelain`
+  is non-empty → the gate the plan calls its go/no-go fails on Step 4. (The
+  **root** `/index.html` is correct at 2.0.0 and is untouched by the build — only
+  `repo/index.html` is the problem. Dropping its stale line is a net fix, not a
+  regression.)
+- **Source de-duplication (architecture, see Amendment B).** If `repo/<addon>/`
+  stops carrying unpacked source, it can no longer be byte-identical to today's
+  `repo/<addon>/`, which _contains_ that source.
+
+**Resolution:** redefine the gate to cover **only what Kodi actually loads** —
+the five first-party add-on **zips**, every `addon.xml` (first-party + each
+`repo/hosted/<id>/addon.xml`), and the `hosted/` trees — **not** the whole tree.
+`repo/index.html` is an explicit, reviewed **one-time carve-out** shipped in its
+own Step 4 commit. The byte-identity assertion in Steps 0–3 must exclude
+`repo/index.html`; a Step 4 test asserts the regenerated landing is well-formed
+and carries no `1.0.5` / `repo/repositories/` / install-URL line. Pin the oracle
+snapshot to the **post-Step-0** commit (Step 0 deletes rot zips and regenerates
+`repo/scripts/index.html`, so the pre-clean changes `repo/` before the gate).
+
+### Amendment B — Secrets / `.gitignore` in the mirror. **[P0, blocking — active leak risk]**
+
+`.gitignore` ignores `repo/iptv/instance-settings*.xml` (a local-only secret),
+and the ignore pattern is **path-anchored to `repo/`**. When that file moves to
+`dropbox/iptv/…` it is **no longer ignored at all** — a verbatim
+`dropbox/ → repo/` mirror would (a) commit the secret in `dropbox/` and (b) copy
+it into the committed, **Pages-served** `repo/`. Double exposure of a secret to a
+public repo. The plan's P0 rules never mention `.gitignore`.
+
+**Resolution:** add a P0 rule — **the mirror honors `.gitignore`** (skips ignored
+paths) — and **re-anchor** the existing `repo/iptv/instance-settings*.xml` ignore
+to the `dropbox/` source. Add a **negative test**: a gitignored/secret file under
+`dropbox/` never appears in `repo/` (nor in any `addons.xml`/index). Implement the
+exclusion with a **batched** `git check-ignore --stdin` (or `git ls-files`
+filtering), **not** the current per-file `_git_ignored()` subprocess — a per-file
+fork across the whole `dropbox/` tree on every build/pre-push is too slow.
+
+### Amendment C — Re-point ALL version gates, not just `deploy.py`/`check_consistency.py`. **[blocking]**
+
+The plan's Steps 3/5 name only `deploy.py` and `check_consistency.py`. The panel
+found two more:
+
+- **`check_versions.py` is omitted and would silently regress.** It hardcodes
+  `ADDON_BASE = repo/` and diffs `repo/<addon>/` source against `origin/main`. If
+  Amendment B/source-dedup removes source from `repo/<addon>/`, it finds nothing
+  to diff → the "every changed add-on must bump its version" gate **silently
+  passes for everything**. Re-point it at `dropbox/`.
+- **`check_consistency.py` gains a new invariant, not just a path swap.** Making
+  `repo/repository.tony7bones/addon.xml` a _derived copy_ of the `dropbox/` source
+  changes the gate from "do N independent locations agree" to "…agree **and** the
+  derived copy equals its source." `MAIN_ADDON` (currently the `repo/` path) must
+  point at the source, a new derived-equality field/check is added, and
+  `test_deploy.py`'s sandbox must be updated to the new layout. This introduces a
+  new **source/derived skew** failure mode (build skipped or non-deterministic →
+  served self-update metadata diverges from the tag) — enumerate it in the gate
+  list. Also verify `deploy.py`'s `GENERATED_ZIP_DIR` still resolves to the
+  **output** `repo/repository.tony7bones/` and that the build runs **before** the
+  root-zip copy.
+
+### Amendment D — Document the ROI / duplication trade before committing to Full Model B. **[blocking decision, not code]**
+
+The plan is marked "APPROVED / decisions locked" without a written comparison to
+lighter options. The panel rated this its weakest point. Cost the alternatives
+explicitly:
+
+- **Permanent binary bloat.** `hosted/` (~1.7M), `repositories/` (~2.9M),
+  `media/` (~576K) are binary; Full Model B commits them under two paths forever,
+  and zips don't delta-compress — roughly **doubling the pack's binary growth
+  rate**. Adopting source-dedup (Amendment B/below) removes only first-party
+  _source_ duplication, not these pass-through binaries.
+- **Lighter alternatives to weigh:** a `git`-aware **"clean view"** command that
+  hides generated artifacts (≈90% of the "clean folder" benefit, ≈1% of the risk,
+  zero migration); and/or a **scoped split** — `dropbox/<addon>/` holds source,
+  `repo/<addon>/` holds only the built zip + index — applied **only** to add-on
+  dirs, leaving `hosted/`/`repositories/`/`scripts/`/`media/` exactly where they
+  are (already clutter-free). The scoped split is where the dedup is nearly free.
+
+Decide Full Model B vs. scoped split vs. clean-view **with this trade written
+down** before any code.
+
+### Other findings to fold in (non-blocking but real)
+
+- **`_zip_is_stale` mtime heuristic doesn't survive a copy pipeline.** The mirror
+  rewrites mtimes every run, breaking the incremental-rebuild trigger
+  (determinism itself is fine — fixed 1980 timestamps). Switch to always-rebuild
+  or content-hash staleness. "Just an I/O split, minimal new surface" understates
+  this.
+- **Mirror must prune deletions.** Git sees adds, not the _absence_ of a delete;
+  a file removed from `dropbox/` but left in `repo/` won't trip the porcelain
+  gate. Add a test: remove a `dropbox/` file → it disappears from `repo/`.
+- **Rollback / determinism is now load-bearing for production.** Model B inserts a
+  build transform between human edit and the bytes live Kodi boxes fetch from
+  `…/main/repo/…`. Require a tested rollback (revert to the pre-migration commit
+  reproduces identical `repo/`) and treat the determinism gate as a production
+  guard, not just CI hygiene.
+- **Keep HTML-3.2 for parser-facing indexes.** `_make_index` (HTML 3.2 `<pre>`)
+  is required for the add-on/asset index pages Kodi's file-manager parses; do not
+  unify them onto `_styled_page`.
+- **`_git_date`/`_fmt_date` are effectively dead in `generate()`** (indexes emit
+  sizes, not dates). The rewrite is the moment to delete them or wire them — don't
+  carry them in unexamined, and confirm no date leak reactivates.
+- **Naming.** `dropbox/` reads as the SaaS, not a drop folder; `src/`/`source/`
+  is clearer. Cheap to fix now.
+
+### Confirmed by the panel (de-risks execution)
+
+- **Zip arcname is provably location-independent.** `arcname =
+  relpath(fpath, dirname(addon_dir))` depends only on the add-on's basename, so
+  `repo/ → dropbox/` does not perturb member paths **provided the split only
+  re-points the scan root and leaves the arcname math alone**. Add a test
+  asserting member paths have no `dropbox/`/`repo/` prefix and the built zip hash
+  equals the committed one — the failure would be invisible to humans.
+- **Proxy fetch paths need ZERO `asset_prefix` edits.** All `repository.json`
+  entries are `branch: main` with `asset_prefix` under `/repo/…`; keeping `repo/`
+  committed with `hosted/` mirrored verbatim preserves every
+  `raw.githubusercontent` path byte-for-byte. The proxy rebuilds `addons.xml`
+  in-memory at runtime (it never reads `repo/addons.xml`), so that file's bytes
+  matter only to legacy static-repo users, not the proxy.
+- **Install-URL flow is preserved.** Root `/index.html` + the versioned root zip
+  stay at the repo root, owned by `deploy.py`; the constant install URL
+  `https://tony7bones.github.io/` is untouched.
