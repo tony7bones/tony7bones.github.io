@@ -23,6 +23,11 @@ node_modules/
 repo/iptv/instance-settings*.xml
 .coverage
 
+# Secrets / local env — never commit
+.env
+.env.*
+!.env.example
+
 # NOTE: docs/ is intentionally TRACKED. The playbooks under docs/playbooks/ are
 # real project deliverables and must be committed. Tracked/committed files do not
 # trip the pre-push generated-files staleness gate (that only flags UNTRACKED
