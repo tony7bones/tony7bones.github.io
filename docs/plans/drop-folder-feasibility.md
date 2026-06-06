@@ -1,12 +1,5 @@
 # Model B — One Source of Truth (`dropbox/` → `repo/`)
 
-> **SUPERSEDED (2026-06-06).** A live spike confirmed a simpler approach —
-> a clean `main` branch plus a CI-built `dist` branch — which avoids the
-> problems the amendments below try to patch. See
-> [dist-branch-decision.md](dist-branch-decision.md) for the chosen direction.
-> This document is kept for history and for the still-useful Kodi findings in
-> the amendments section.
-
 > Status: **APPROVED IN DIRECTION — blocking amendments pending (do not execute
 > as written).** Decided spec, hardened by a three-lens review (Kodi /
 > architecture / QA) and the owner's decisions, then re-reviewed by a second
