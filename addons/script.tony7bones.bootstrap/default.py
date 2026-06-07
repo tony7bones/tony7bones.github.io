@@ -89,9 +89,9 @@ REPO_ZIPS = [
     ("repository.umbrella-2.2.6.zip", "repository.umbrella"),
 ]
 
-# First-party add-on ids on our Pages — direct extract, version resolved live.
-# Deliberately empty (the Estuary MOD V2 patch is manual-only); run() simply
-# skips the first-party loop.
+# First-party add-on ids installed by the generic direct-extract loop. Empty:
+# the MOD V2 skin + the MOD V2+ patch add-on are installed by _install_skin
+# (which handles their proxy-invisible deps + activation), not this loop.
 FIRST_PARTY = []
 
 # Apps installed (with dependency closure) by direct extract, in order.
@@ -145,12 +145,18 @@ def _latest_zip_url(addon_id):
 # --------------------------------------------------------------------------- #
 # File-Manager sources (base-only configuration + merge)
 # --------------------------------------------------------------------------- #
-# (display name, path). The second path is the Android/Fire Stick internal
-# storage dir — we try to create it (harmless no-op off Android) but always add
-# the source entry regardless.
+# (display name, path). The "special://kodi" source's path is the Android/Fire
+# Stick internal storage dir — we try to create it (harmless no-op off Android)
+# but always add the source entry regardless.
+# Our repo's bare URL is special: ANY existing source pointing at it (with OR
+# without a trailing slash, under ANY label) is NORMALIZED to REPO_SOURCE_NAME +
+# the canonical REPO_SOURCE_URL by _add_file_sources (not just deduped).
+REPO_SOURCE_NAME = ".tony.7.bones"
+REPO_SOURCE_URL = "https://tony7bones.github.io/"
 FILE_SOURCES = [
-    ("Kodi home directory", "special://home"),
-    ("Kodi sources directory", "/storage/emulated/0/kodi/"),
+    ("special://home", "special://home"),
+    ("special://kodi", "/storage/emulated/0/kodi/"),
+    (REPO_SOURCE_NAME, REPO_SOURCE_URL),
 ]
 
 
@@ -176,11 +182,15 @@ def _add_file_sources():
     """Add our File-Manager sources to userdata/sources.xml.
 
     Edits the <files> section in place: creates the file/structure if missing,
-    PRESERVES every existing source, and DEDUPES on both name and path so a second
-    run adds nothing. For the Android internal-storage path we attempt mkdirs
-    first (guarded) but add the source entry either way. Fully defensive: any
-    error is logged and the rest of setup continues. The end-of-setup restart is
-    what makes Kodi pick up the new sources (it caches sources.xml at startup).
+    PRESERVES every existing source, and DEDUPES new ones on both name and path so
+    a second run adds nothing. Special case — the repo source is NORMALIZED: any
+    existing source whose path is our bare URL (with or without a trailing slash,
+    under ANY label) is renamed to REPO_SOURCE_NAME with the canonical
+    REPO_SOURCE_URL, and slash-variant duplicates collapse to one. For the Android
+    internal-storage path we attempt mkdirs first (guarded) but add the source
+    entry either way. Fully defensive: any error is logged and the rest of setup
+    continues. The end-of-setup restart is what makes Kodi pick up the new sources
+    (it caches sources.xml at startup).
     """
     try:
         xml_path = _sources_xml_path()
@@ -205,7 +215,42 @@ def _add_file_sources():
             default = ET.Element("default")
             files.insert(0, default)
 
-        # Existing names/paths in <files> — dedupe against both.
+        changed = False
+        # Normalize the repo source: ANY existing <files> source whose path is our
+        # bare URL — with OR without a trailing slash, under ANY label — is renamed
+        # to the canonical REPO_SOURCE_NAME + REPO_SOURCE_URL. Deliberate (not a
+        # dedupe): claim the repo source under one known name however it was added.
+        repo_key = REPO_SOURCE_URL.rstrip("/")
+        for s in files.findall("source"):
+            if (s.findtext("path") or "").strip().rstrip("/") == repo_key:
+                name_el = s.find("name")
+                if name_el is None:
+                    name_el = ET.SubElement(s, "name")
+                if name_el.text != REPO_SOURCE_NAME:
+                    name_el.text = REPO_SOURCE_NAME
+                    changed = True
+                path_el = s.find("path")
+                if (
+                    path_el is not None
+                    and (path_el.text or "").strip() != REPO_SOURCE_URL
+                ):
+                    path_el.text = REPO_SOURCE_URL
+                    changed = True
+        # Collapse any duplicates the normalization produced (e.g. both slash
+        # variants existed) down to a single canonical repo source.
+        seen_repo = False
+        for s in list(files.findall("source")):
+            is_repo = (s.findtext("name") or "") == REPO_SOURCE_NAME and (
+                s.findtext("path") or ""
+            ).strip() == REPO_SOURCE_URL
+            if is_repo:
+                if seen_repo:
+                    files.remove(s)
+                    changed = True
+                else:
+                    seen_repo = True
+
+        # Existing names/paths in <files> — dedupe new sources against both.
         have_names = {
             (s.findtext("name") or "").strip() for s in files.findall("source")
         }
@@ -232,11 +277,11 @@ def _add_file_sources():
             have_paths.add(path)
             added += 1
 
-        if added:
+        if added or changed:
             data = ET.tostring(root, encoding="unicode")
             with open(xml_path, "w", encoding="utf-8") as f:
                 f.write(data)
-            _log(f"added {added} file source(s) to {xml_path}", xbmc.LOGINFO)
+            _log(f"file sources updated ({added} added) in {xml_path}", xbmc.LOGINFO)
         else:
             _log("file sources already present (no change)", xbmc.LOGINFO)
     except Exception as e:  # noqa: BLE001 - never abort the rest of setup
@@ -380,7 +425,7 @@ WEATHER_LOCATION = {
 SHOW_WEATHERINFO = "show_weatherinfo"  # Estuary skin bool: weather in the top bar
 
 # Device → userdata file copies. The user places these files on the device under
-# the Android/Fire-Stick "Kodi sources directory" tree (note the exact
+# the Android/Fire-Stick /storage/emulated/0/kodi/ tree (note the exact
 # "tony.7.bones" spelling); Setup copies each one into Kodi's userdata over any
 # default. Every file is USER-PROVIDED — Setup never downloads or creates them; it
 # only copies each when present, overwriting the destination. They carry the

@@ -14,8 +14,9 @@ self-update source is the canonical `addons/repository.tony7bones/addon.xml`
 itself (the manifest points the repository.tony7bones entry's asset_prefix at
 `.../main/addons/repository.tony7bones/`). There is no longer a separate
 `virtual-repo` branch or a `hosted/repository.tony7bones/addon.xml` mirror to
-keep in sync. The version-bearing locations are: the main addon.xml, the root
-index.html link, the committed root zip, and the git tag.
+keep in sync. The version-bearing locations are: the main addon.xml, the
+committed root zip filename, and the git tag. (The root index.html is the
+bare-URL canvas listing and no longer carries a zip link to read.)
 
 Usage:
     python3 _tools/check_consistency.py        # exit 0 = consistent, 1 = mismatch
@@ -32,7 +33,6 @@ import release_lib as rl  # noqa: E402
 
 MAIN = "main"
 MAIN_ADDON = "addons/repository.tony7bones/addon.xml"
-INDEX = "index.html"
 
 REPO_ROOT = os.path.normpath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
@@ -63,25 +63,29 @@ def _resolve(repo: str, name: str) -> str:
 
 
 def gather(repo: str) -> dict:
-    """Read the observed version at every location, from git refs."""
+    """Read the observed version at every location, from git refs.
+
+    The shipped version is read from the root installer zip's FILENAME (the zip is
+    served at the repo root for the proxy self-update). The root index.html is the
+    bare-URL canvas listing and no longer carries a zip link, so it is not read.
+    """
     main_ref = _resolve(repo, MAIN)
 
     main_addon = rl.read_addon_version(_show(repo, main_ref, MAIN_ADDON))
-    index_v = rl.version_from_index(_show(repo, main_ref, INDEX))
 
     tree = _git(repo, "ls-tree", "--name-only", main_ref).stdout.split()
-    zip_present = rl.zip_name(index_v) in tree
+    root_zips = sorted(n for n in tree if rl.is_root_zip_name(n))
+    zip_v = rl.version_from_zip_name(root_zips[0]) if len(root_zips) == 1 else None
 
-    tag = rl.tag_name(index_v)
-    tag_exists = (
+    tag = rl.tag_name(zip_v) if zip_v else None
+    tag_exists = bool(tag) and (
         _git(repo, "rev-parse", "--verify", "--quiet", f"refs/tags/{tag}").returncode
         == 0
     )
     return {
         "main_addon": main_addon,
-        "index": index_v,
-        "root_zip": rl.zip_name(index_v),
-        "root_zip_present": zip_present,
+        "root_zip_version": zip_v,
+        "root_zips": root_zips,
         "tag": tag,
         "tag_exists": tag_exists,
     }
@@ -102,13 +106,16 @@ def check(repo: str) -> tuple[bool, dict, list[str]]:
             "(each of MAJOR.MINOR.PATCH must be 0-9)"
         )
 
-    versions = {info["main_addon"], info["index"]}
-    if len(versions) != 1:
+    if len(info["root_zips"]) != 1:
         problems.append(
-            f"version mismatch: main_addon={info['main_addon']} index={info['index']}"
+            "expected exactly one root installer zip (repository.tony7bones-*.zip), "
+            f"found {info['root_zips']}"
         )
-    if not info["root_zip_present"]:
-        problems.append(f"root zip {info['root_zip']} not present in main tree")
+    elif info["main_addon"] != info["root_zip_version"]:
+        problems.append(
+            f"version mismatch: main_addon={info['main_addon']} "
+            f"root_zip={info['root_zip_version']}"
+        )
     if not info["tag_exists"]:
         problems.append(f"tag {info['tag']} does not exist")
     return (not problems, info, problems)

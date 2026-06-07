@@ -144,7 +144,10 @@ non-fatal (`shutil.rmtree(..., ignore_errors=True)`). A **library** add-on
   the user to reopen Kodi (`system.is_android()` gates this).
 
 A restart is needed to settle binary add-ons, apply stamped origins / language
-resources, and pick up skin + sources changes.
+resources, and pick up skin + sources changes (including the just-set MOD V2 skin
+— see §13). On Android / Fire TV, where Kodi cannot self-relaunch, the user
+reopens it manually; on that reopen MOD V2 is the active skin and the modv2plus
+boot service auto-applies the patch.
 
 ## 10. The home-screen "program tile" trap
 
@@ -187,3 +190,35 @@ Changes go live after the restart (Kodi caches `sources.xml` at startup). See
 `_add_file_sources()` / `_make_files_source()` in the base Setup. (The fresh-box
 file source the user adds by hand to reach the repo is named `.tony7.bones` — see
 the verification playbook.)
+
+## 13. Skin activation — set `lookandfeel.skin` RIGHT before the restart
+
+This one is non-obvious and cost a real wipe-and-test to catch.
+`Settings.SetSettingValue("lookandfeel.skin", <id>)` **does** switch the live
+skin immediately — but it also starts Kodi's **"Keep this skin?" ~10 s safety
+timeout**. If nothing confirms within that window, Kodi **reverts** to the
+previous skin. Unattended there is nothing to confirm, so if there is a long gap
+between setting the skin and the restart, the box reverts to stock Estuary before
+shutdown ever persists the choice.
+
+Two reliable ways to make the activation stick:
+
+- ✅ **Set `lookandfeel.skin` immediately before the restart** (what the bootstrap
+  does). Kodi writes the in-memory skin to `guisettings.xml` on shutdown, and a
+  short set→restart gap beats the revert timeout.
+- ✅ **Write `guisettings.xml` while Kodi is fully down** (no live timeout to race).
+
+What the bootstrap does (`script.tony7bones.bootstrap/default.py:run()`):
+`_install_skin()` extracts + enables the skin and its proxy-invisible deps but
+**does NOT set the skin**. `run()` then does the box config and, **last**, sets
+`lookandfeel.skin = skin.estuary.modv2` and immediately calls `restart_kodi()`.
+
+> Two prerequisites before the skin can even be set (else Kodi silently keeps
+> stock Estuary regardless of timing): the freshly-extracted skin must be
+> **registered** (`UpdateLocalAddons`) AND **enabled** (`SetAddonEnabled`). See
+> `_install_skin()` and §1–2 above.
+
+The MOD V2+ patch is NOT applied during Setup — it cannot run until MOD V2 is the
+**active** skin, which only happens after this restart, by which point the Setup
+has self-uninstalled. The `script.tony7bones.modv2plus` **boot service** closes
+that gap (see `modv2plus-dev-cycle-and-lessons.md`).

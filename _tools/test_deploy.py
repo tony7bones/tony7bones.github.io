@@ -10,8 +10,8 @@ Two layers:
 
 Single-branch model: there is no virtual-repo branch and no separate hosted
 self-update addon.xml; the proxy's self-update source is the canonical main
-addon.xml itself. The four version-bearing locations are main addon.xml, root
-zip, index.html link, and the git tag.
+addon.xml itself. The three version-bearing locations are main addon.xml, the
+root zip filename, and the git tag (the root index.html no longer carries a link).
 """
 
 from __future__ import annotations
@@ -189,11 +189,6 @@ v1.0.7: old line
     </extension>
 </addon>"""
 
-INDEX_HTML = (
-    '<pre><a href="repository.tony7bones-1.0.7.zip">'
-    'repository.tony7bones-1.0.7.zip</a>\n<a href="repo/">repo/</a></pre>'
-)
-
 
 def test_read_addon_version():
     assert rl.read_addon_version(ADDON_XML) == "1.0.7"
@@ -221,29 +216,13 @@ def test_set_addon_news_missing_block():
         rl.set_addon_news('<addon version="1.0.0"/>', "x")
 
 
-def test_version_from_index():
-    assert rl.version_from_index(INDEX_HTML) == "1.0.7"
-
-
-def test_rewrite_index_link_href_and_text():
-    out = rl.rewrite_index_link(INDEX_HTML, "1.0.8")
-    assert out.count("repository.tony7bones-1.0.8.zip") == 2  # href AND text
-    assert "1.0.7" not in out
-
-
-def test_rewrite_index_link_idempotent():
-    once = rl.rewrite_index_link(INDEX_HTML, "1.0.8")
-    twice = rl.rewrite_index_link(once, "1.0.8")
-    assert once == twice
-
-
-def test_rewrite_index_link_preserves_base_url():
-    html = (
-        '<a href="https://tony7bones.github.io/repository.tony7bones-1.0.7.zip">x</a>'
-    )
-    out = rl.rewrite_index_link(html, "1.0.8")
-    assert "https://tony7bones.github.io/" in out  # host never rewritten
-    assert "repository.tony7bones-1.0.8.zip" in out
+def test_is_root_zip_name():
+    # the consistency gate reads the shipped version from this filename
+    assert rl.is_root_zip_name("repository.tony7bones-1.0.7.zip")
+    assert rl.is_root_zip_name("repository.tony7bones-2.2.1.zip")
+    assert not rl.is_root_zip_name("repository.umbrella-2.2.6.zip")
+    assert not rl.is_root_zip_name("index.html")
+    assert not rl.is_root_zip_name("repository.tony7bones.zip")  # no version
 
 
 # ============================================================================ #
@@ -278,11 +257,12 @@ def test_deployplan_accepts_ceiling():
 
 def test_deployplan_single_source_of_truth():
     # there is exactly one way to set the version: the constructor argument.
-    # Single-branch model has four version-bearing locations (no hosted addon).
+    # Three version-bearing locations now (the root index no longer carries a
+    # zip link — the gate reads the version from the root zip filename).
     plan = rl.DeployPlan("3.1.4")
     locations = plan.all_versions()
-    assert len(locations) == 4
-    assert set(locations) == {"main_addon", "root_zip", "index", "tag"}
+    assert len(locations) == 3
+    assert set(locations) == {"main_addon", "root_zip", "tag"}
     assert all(v == "3.1.4" for v in locations.values())
 
 
@@ -401,7 +381,9 @@ def test_system_full_deploy_happy_path(sandbox):
         )
         == "1.0.1"
     )
-    assert rl.version_from_index(_show(repo, "main", "index.html")) == "1.0.1"
+    # the root zip is served, but the bare-URL index no longer LISTS it (the gate
+    # reads the version from the zip filename; the installer is browsed via repositories/)
+    assert "repository.tony7bones-1.0.1.zip" not in _show(repo, "main", "index.html")
     assert (repo / "repository.tony7bones-1.0.1.zip").exists()
     # the superseded root installer zip is pruned (working tree + committed)
     assert not (repo / "repository.tony7bones-1.0.0.zip").exists()
@@ -501,7 +483,7 @@ def test_system_deterministic_regen_clean_after_deploy(sandbox):
 def test_system_consistency_gate_detects_mismatch(sandbox):
     repo, _ = sandbox
     _deploy(repo, "--news", "x", "--no-verify")  # now consistent at 1.0.1
-    # corrupt the main addon.xml version so it disagrees with index.html
+    # corrupt the main addon.xml version so it disagrees with the root zip filename
     addon = repo / "addons" / "repository.tony7bones" / "addon.xml"
     addon.write_text(rl.set_addon_version(addon.read_text(), "9.9.9"))
     _git(repo, "add", "-A")

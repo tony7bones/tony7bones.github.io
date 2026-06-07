@@ -22,12 +22,23 @@ WHY and the exact code locations.
 
 - Project overview, branches, releases: repo-root `CLAUDE.md` + `README.md`.
 - Architecture & one-shot flow: `docs/playbooks/one-shot-and-architecture.md`.
-- The four first-party add-ons: `repository.tony7bones` (virtual proxy),
-  `script.module.tony7bones` (shared LIBRARY, invisible), `script.tony7bones.bootstrap`
-  ("Tony.7.Bones Setup" — installs repos + apps + the curated video add-ons
-  unattended, no picker), `script.tony7bones.modv2plus` ("Estuary MOD V2+",
-  manual-only skin patch). The standalone Video Add-ons Setup is retired — its
-  install logic is folded into the shared library as `install_selection`.
+- The four first-party add-ons (current versions):
+  - `repository.tony7bones` **2.2.1** — the virtual proxy repository (local
+    `127.0.0.1:61234` server; released via `deploy.py`).
+  - `script.module.tony7bones` **1.1.0** — shared LIBRARY (`xbmc.python.module`,
+    hidden); holds all the generic install machinery incl. `install_selection`.
+  - `script.tony7bones.bootstrap` **1.3.0** — "Tony.7.Bones Setup", the one-shot.
+    In ONE unattended run it installs the source repos + base apps + the curated
+    video add-ons (POV, The Loop, Sports HD, YouTube, no picker), applies the
+    base-box config, **AND installs + activates the Estuary MOD V2 skin + the
+    MOD V2+ patch**, then self-uninstalls and restarts once.
+  - `script.tony7bones.modv2plus` **1.4.0** — "Estuary MOD V2+" skin patch. Has a
+    **boot service** (`service.py`) that auto-applies the patch the first time
+    MOD V2 is the active skin (and re-applies after a MOD V2 update), plus a
+    manual Apply/Restore chooser + in-tab buttons for hand use.
+- **Retired — do not reference:** the standalone `script.tony7bones.video` (its
+  install logic is folded into the shared library as `install_selection`), and
+  `script.tony7bones.modv2.patch` (replaced by `script.tony7bones.modv2plus`).
 - Structure: `dropbox/` is the pristine human canvas, mirrored 1:1 to the repo
   ROOT and served at the bare URL `https://tony7bones.github.io/` (the Kodi File
   Manager source). `addons/` holds add-on source + built zips + `addons.xml` +
@@ -63,6 +74,22 @@ WHY and the exact code locations.
    permanent home tile.
 10. Estuary skin settings: use `Skin.SetBool(...)` (in-memory, survives shutdown);
     a direct `settings.xml` write is clobbered on shutdown.
+11. **The closure resolver SKIPS the `127.0.0.1` proxy** (`repos.py`). So any
+    first-party / GitHub-only add-on the resolver can't see — `script.module.pvr.artwork`
+    (b-jesch GitHub-only) and our own `script.tony7bones.modv2plus` — must be
+    **DIRECT-extracted** (and its non-proxy deps pulled from official) BEFORE the
+    closure resolve, never left to the resolver (it would report them "missing").
+12. **Skin activation order matters:** set `lookandfeel.skin` **LAST**, immediately
+    before the restart. A long gap between the skin-set and the restart lets Kodi's
+    "Keep this skin?" safety timeout silently revert it to stock Estuary (a real
+    bug the fresh-Kodi test caught). Also rescan + settle + **enable** a
+    freshly-extracted skin first, or Kodi rejects the skin setting outright.
+13. **The modv2plus boot service auto-applies the patch** once MOD V2 is the active
+    skin after the restart — the patch can't run before the skin is live, and the
+    Setup add-on is already gone by then. Don't try to apply the patch from Setup.
+14. **Wipe-and-test on a real fresh Kodi is mandatory** before shipping the
+    one-shot — it catches integration bugs (skin-revert, proxy-invisible deps,
+    enable-before-set) that unit tests with mocked `xbmc*` cannot.
 
 ## Golden rules — release
 
@@ -106,5 +133,6 @@ WHY and the exact code locations.
 
 ## Restore points
 
-Tags `clean-setup-1.0.17` and `perfectly-working-2026-06-04`. Make a tag for any
-known-good state before risky work.
+Latest known-good (3.0 one-shot, live): `perfectly-working-2026-06-06` and the
+rollback safety net `main-rollback-2026-06-06`. Older: `clean-setup-1.0.17`,
+`perfectly-working-2026-06-04`. Make a tag for any known-good state before risky work.

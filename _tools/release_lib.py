@@ -173,20 +173,14 @@ def set_addon_news(xml_text: str, news_line: str) -> str:
     return _NEWS_RE.sub(lambda m: m.group(1) + body + m.group(3), xml_text, count=1)
 
 
-def version_from_index(html_text: str) -> str:
-    m = _ZIP_RE.search(html_text)
-    if not m:
-        raise ValueError("no repository zip link found in index.html")
-    return m.group(1)
+def is_root_zip_name(name: str) -> bool:
+    """True if `name` is a root proxy installer zip (repository.tony7bones-X.Y.Z.zip).
 
-
-def rewrite_index_link(html_text: str, version: str) -> str:
-    """Rewrite every occurrence of the repo zip name (href AND link text) to `version`."""
-    new_zip = zip_name(version)
-    new, n = _ZIP_RE.subn(lambda m: new_zip, html_text)
-    if n == 0:
-        raise ValueError("no repository zip link to rewrite")
-    return new
+    The release-consistency gate reads the shipped version from THIS filename — the
+    zip is served at the repo root for the proxy self-update — because the root
+    index.html is the bare-URL canvas listing and no longer carries a zip link.
+    """
+    return bool(_ZIP_RE.fullmatch(name))
 
 
 # --------------------------------------------------------------------------- #
@@ -194,15 +188,16 @@ def rewrite_index_link(html_text: str, version: str) -> str:
 # --------------------------------------------------------------------------- #
 @dataclass(frozen=True)
 class DeployPlan:
-    """All four version-bearing locations derived from ONE version string.
+    """All three version-bearing locations derived from ONE version string.
 
-    There is deliberately no way to set the four locations independently —
-    this collapses an entire class of version-drift bugs into a single input.
+    There is deliberately no way to set the locations independently — this
+    collapses an entire class of version-drift bugs into a single input.
 
     Single-branch model: the proxy's self-update source is the canonical main
     addon.xml itself, so there is no separate hosted self-update addon.xml. The
-    four locations are: main addon.xml, root zip filename, root index.html link,
-    and the git tag.
+    three locations are: main addon.xml, the root zip filename, and the git tag.
+    (The root index.html is the bare-URL canvas listing and no longer carries a
+    zip link — the install zip is browsed from the served repositories/ folder.)
     """
 
     version: str
@@ -224,10 +219,6 @@ class DeployPlan:
         return zip_name(self.version)
 
     @property
-    def index_version(self) -> str:
-        return self.version
-
-    @property
     def tag(self) -> str:
         return tag_name(self.version)
 
@@ -236,7 +227,6 @@ class DeployPlan:
         return {
             "main_addon": self.main_addon_version,
             "root_zip": version_from_zip_name(self.root_zip),
-            "index": self.index_version,
             "tag": self.tag[1:],
         }
 

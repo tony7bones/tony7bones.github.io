@@ -21,6 +21,18 @@ the real Amazon Fire TV Stick 4K Max ("hazel") running Kodi 21.3 Omega.
 
 The Mac's LAN IP is `192.168.7.214`; the subnet is `192.168.7.0/24`.
 
+> **3.0 one-shot on the device.** This is still the device runbook for iterating on
+> `script.tony7bones.modv2plus`. Note two things about the shipped 3.0 flow when you
+> verify it on the Fire TV: (1) the one-tap Setup now **installs and activates**
+> MOD V2 + the patch itself — you no longer Apply by hand for a fresh box; (2) Kodi
+> on Android **cannot self-restart**, so Setup prompts the user to **close** Kodi and
+> the user **reopens** it. On that reopen, MOD V2 is the active skin and the modv2plus
+> **boot service** (`service.py`) auto-applies the patch — so a clean device verify
+> means: run Setup → close Kodi → reopen → confirm MOD V2 is active and the patch
+> marker (`show_system_info_overlay` in the live `Home.xml`) is present, without ever
+> calling Apply yourself. The manual Apply/Restore commands below remain for
+> re-applying or reverting.
+
 ---
 
 ## Prerequisites
@@ -104,7 +116,7 @@ patches into `skin.estuary.modv2`.
 FIRETV=192.168.7.162:5555
 KODI_ADDONS=/sdcard/Android/data/org.xbmc.kodi/files/.kodi/addons
 SKIN_XML=${KODI_ADDONS}/skin.estuary.modv2/xml
-ADDON_SRC=/Users/moquette/Code/moquette/tony7bones.github.io/addons/script.tony7bones.modv2plus
+ADDON_SRC=/Users/moquette/Code/tony7bones.github.io/addons/script.tony7bones.modv2plus
 ```
 
 ### Step 1 — edit a source file on the Mac
@@ -186,7 +198,7 @@ The add-on logs with prefix `[mod v2+]` at INFO level; errors use ERROR level.
 FIRETV=192.168.7.162:5555
 KODI_ADDONS=/sdcard/Android/data/org.xbmc.kodi/files/.kodi/addons
 SKIN_XML=${KODI_ADDONS}/skin.estuary.modv2/xml
-ADDON_SRC=/Users/moquette/Code/moquette/tony7bones.github.io/addons/script.tony7bones.modv2plus
+ADDON_SRC=/Users/moquette/Code/tony7bones.github.io/addons/script.tony7bones.modv2plus
 
 # 1. Push changed XML directly into the live skin
 adb -s $FIRETV push ${ADDON_SRC}/resources/xml/Home.xml ${SKIN_XML}/Home.xml
@@ -214,7 +226,7 @@ the updated add-on to the device without going through the repo release cycle:
 ```bash
 FIRETV=192.168.7.162:5555
 KODI_ADDONS=/sdcard/Android/data/org.xbmc.kodi/files/.kodi/addons
-ADDON_SRC=/Users/moquette/Code/moquette/tony7bones.github.io/addons/script.tony7bones.modv2plus
+ADDON_SRC=/Users/moquette/Code/tony7bones.github.io/addons/script.tony7bones.modv2plus
 
 # Push entire addon dir
 adb -s $FIRETV push ${ADDON_SRC}/. ${KODI_ADDONS}/script.tony7bones.modv2plus/

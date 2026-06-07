@@ -23,9 +23,12 @@ class of "works on the Mac, broken on the Fire Stick" bugs that ate days early o
 
 ## 1. What the product is (and the architecture decision)
 
-`script.tony7bones.modv2plus` ("Estuary MOD V2+") is a **patch**, not a fork. It runs from
-My add-ons → Program add-ons and, on **Apply**, layers our customizations onto the installed
-`skin.estuary.modv2`. On **Restore**, it reverts cleanly.
+`script.tony7bones.modv2plus` ("Estuary MOD V2+") is a **patch**, not a fork. On **Apply**, it
+layers our customizations onto the installed `skin.estuary.modv2`; on **Restore**, it reverts
+cleanly. It has **two extension points**: an `xbmc.python.script` (the manual Apply/Restore
+chooser + the in-skin buttons) and an `xbmc.service` (`service.py`) that auto-applies the patch
+on boot once MOD V2 is the active skin — see §1.5. As of 3.0 the one-tap Setup installs and
+activates this add-on for you (the manual run is still available for re-applying or restoring).
 
 ### Patch vs. fork — why patch (decided deliberately)
 
@@ -49,22 +52,49 @@ My add-ons → Program add-ons and, on **Apply**, layers our customizations onto
   **Restore** = (after a yes/no confirm) revert XMLs from `.bak`, delete added media, reset skin
   strings, reload.
 
-### What it currently ships / changes (as of 1.3.1)
+### 1.5 The boot service — auto-apply (added in 1.4.0)
 
-| File / mechanism                                        | Purpose                                                                                                             |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `Home.xml`                                              | overlay gate (group 18000) + nav **wordmark** retarget/sizing                                                       |
-| `SkinSettings.xml`                                      | the **"Tony.7.Bones MOD V2+"** category (last) + its toggles & Apply/Restore buttons; Settings-menu reorder context |
-| `Settings.xml`                                          | gear-menu reorder — **Skin Settings above Media sources**                                                           |
-| `Includes.xml`                                          | top-bar **clock** de-bold; top-bar weather icon path                                                                |
-| `Variables.xml`                                         | `ClockLabelVar` (clock toggle) + the category help-text value                                                       |
-| loose media: `extras/logo-text-hires.png`               | crisp white "KODI" wordmark                                                                                         |
-| skin strings: `WeatherIcons.path` / `WeatherIcons.name` | point all weather widgets at **Outline HD**                                                                         |
-| dependency: `resource.images.weathericons.outline-hd`   | the official Outline HD weather icon pack                                                                           |
+`service.py` runs at Kodi start. The patch can **only** run when `skin.estuary.modv2` is the
+**active** skin (it overwrites the live skin's XML, sets skin strings, reloads) — but in the
+one-tap Setup flow the skin only becomes active _after_ the end-of-Setup restart, by which point
+the Setup add-on has self-uninstalled. The service closes that gap:
 
-### The two patch-isms (never forget)
+- On start it waits up to **90 s** for `xbmc.getSkinDir()` to become `skin.estuary.modv2`
+  (Kodi briefly reports the previous/booting skin), polling every 3 s and bailing on
+  `waitForAbort`.
+- **Applied-marker:** it considers the patch already applied iff the string
+  `show_system_info_overlay` is present in the live `skin.estuary.modv2/xml/Home.xml` — a string
+  stock MOD V2 never contains. A skin **update** overwrites `Home.xml` with stock, which clears
+  the marker, so the service **re-applies automatically after a MOD V2 update**.
+- If MOD V2 is active **and** the marker is absent, it auto-applies once by calling the add-on's
+  own `default._apply(skin_root, skin_xml)`. It is a **no-op** on every normal start (already
+  patched) and whenever a different skin is active. A service must never crash Kodi, so the whole
+  thing is wrapped defensively.
 
-1. **Re-run the patch after any MOD V2 skin update** — an update overwrites our patched XMLs.
+This makes the one-shot truly hands-off: install via Setup → restart → MOD V2 active → service
+applies the patch. On **Android / Fire TV**, where Kodi can't self-relaunch, the user reopens
+Kodi after Setup prompts to close — and the service applies the patch on that reopen.
+
+### What it currently ships / changes (as of 1.4.0)
+
+| File / mechanism                                        | Purpose                                                                                                                                                                                                                                                                                      |
+| ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Home.xml`                                              | overlay gate (group 18000) + nav **wordmark** retarget/sizing                                                                                                                                                                                                                                |
+| `SkinSettings.xml`                                      | the **"Tony.7.Bones MOD V2+"** category (last) + its toggles & Apply/Restore buttons; Settings-menu reorder context                                                                                                                                                                          |
+| `Settings.xml`                                          | gear-menu reorder — **Skin Settings above Media sources**                                                                                                                                                                                                                                    |
+| `Includes.xml`                                          | top-bar **clock** de-bold; top-bar weather icon path                                                                                                                                                                                                                                         |
+| `Variables.xml`                                         | `ClockLabelVar` (clock toggle) + the category help-text value                                                                                                                                                                                                                                |
+| loose media: `extras/logo-text-hires.png`               | crisp white "KODI" wordmark                                                                                                                                                                                                                                                                  |
+| skin strings: `WeatherIcons.path` / `WeatherIcons.name` | point all weather widgets at **Outline HD**                                                                                                                                                                                                                                                  |
+| skin settings (set on Apply, in `apply_skin_settings`)  | `show_weatherinfo` ON; splash OFF (`EnableSplashScreen`), seasonal themes OFF (`DisableThemes`); Power menu → Classic list (`powermenu_list`); plain backgrounds for Power/Settings/Search (`enable_*_background`, 1.3.5) — all opt-out flags where _setting_ the flag turns the feature off |
+| dependency: `resource.images.weathericons.outline-hd`   | the official Outline HD weather icon pack                                                                                                                                                                                                                                                    |
+| `service.py` (1.4.0)                                    | boot service that auto-applies the patch once MOD V2 is the active skin (see §1.5)                                                                                                                                                                                                           |
+
+### The two patch-isms (the service now handles #1, but know them)
+
+1. **The patch must be re-applied after any MOD V2 skin update** — an update overwrites our patched
+   XMLs with stock ones. As of 1.4.0 the **boot service does this automatically** (the applied-marker
+   clears when `Home.xml` reverts to stock); you no longer have to remember to re-run Apply.
 2. **Restore before uninstall** — uninstalling/disabling the add-on does **not** revert anything (Kodi
    gives scripts no on-uninstall hook). Our changes live in the skin dir + userdata, not in the add-on.
 
@@ -232,17 +262,22 @@ loose files over repacking the XBT.)
 
 ## 6. Today's shipped releases (the arc)
 
-| Ver   | What                                                                                                                                                                                |
-| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1.0.0 | New lean add-on from omega.4 (settings-menu swap, overlay toggle, crisp white wordmark); old `script.tony7bones.modv2.patch` retired; proxy released (repository.tony7bones 1.0.14) |
-| 1.0.1 | Apply/Restore auto-reload via notification (no blocking dialog)                                                                                                                     |
-| 1.0.2 | Nav wordmark sized to match the Kodi mark                                                                                                                                           |
-| 1.0.3 | Top-bar clock de-bolded (thin)                                                                                                                                                      |
-| 1.0.4 | Top-bar weather → stock white (49 icons extracted from `Textures.xbt`)                                                                                                              |
-| 1.1.0 | "Tony.7.Bones MOD V2+" Skin Settings category; overlay toggle moved there                                                                                                           |
-| 1.2.0 | Per-item toggles (weather/clock/wordmark) + in-tab Apply/Restore buttons                                                                                                            |
-| 1.3.0 | Overlay hidden by default ("Disable System Info overlay"); weather → Outline HD pack (replaced the bundled white set with a dependency)                                             |
-| 1.3.1 | Outline HD applied to the **home** weather widget too (set `WeatherIcons` skin strings); **Restore now confirms**                                                                   |
+| Ver   | What                                                                                                                                                                                                                                    |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.0.0 | New lean add-on from omega.4 (settings-menu swap, overlay toggle, crisp white wordmark); old `script.tony7bones.modv2.patch` retired; proxy released (repository.tony7bones 1.0.14)                                                     |
+| 1.0.1 | Apply/Restore auto-reload via notification (no blocking dialog)                                                                                                                                                                         |
+| 1.0.2 | Nav wordmark sized to match the Kodi mark                                                                                                                                                                                               |
+| 1.0.3 | Top-bar clock de-bolded (thin)                                                                                                                                                                                                          |
+| 1.0.4 | Top-bar weather → stock white (49 icons extracted from `Textures.xbt`)                                                                                                                                                                  |
+| 1.1.0 | "Tony.7.Bones MOD V2+" Skin Settings category; overlay toggle moved there                                                                                                                                                               |
+| 1.2.0 | Per-item toggles (weather/clock/wordmark) + in-tab Apply/Restore buttons                                                                                                                                                                |
+| 1.3.0 | Overlay hidden by default ("Disable System Info overlay"); weather → Outline HD pack (replaced the bundled white set with a dependency)                                                                                                 |
+| 1.3.1 | Outline HD applied to the **home** weather widget too (set `WeatherIcons` skin strings); **Restore now confirms**                                                                                                                       |
+| 1.3.5 | Power/Settings/Search **backgrounds OFF** by default (the `enable_*_background` opt-out flags in `apply_skin_settings`)                                                                                                                 |
+| 1.4.0 | **Boot service** (`service.py`) — auto-applies the patch once MOD V2 is the active skin, and re-applies after a MOD V2 update (the one-tap Setup now produces a fully patched box with no manual step). Manual Apply/Restore unchanged. |
+
+> The 1.3.2–1.3.4 intermediate releases are not detailed here (their `<news>` is in the
+> add-on history); 1.3.5 and 1.4.0 are the load-bearing steps for the 3.0 one-shot.
 
 ---
 
@@ -253,7 +288,8 @@ loose files over repacking the XBT.)
   `reload-skin`, `screencap`, `log`, `launch`, `stop`).
 - **Live skin paths:** `…/org.xbmc.kodi/files/.kodi/addons/skin.estuary.modv2/{xml,media,extras}/`;
   skin settings: `…/userdata/addon_data/skin.estuary.modv2/settings.xml`.
-- **Add-on source:** `addons/script.tony7bones.modv2plus/` (`default.py`, `resources/xml/*`, `resources/media/*`).
+- **Add-on source:** `addons/script.tony7bones.modv2plus/` (`default.py` = manual Apply/Restore,
+  `service.py` = boot auto-apply, `resources/xml/*`, `resources/media/*`).
 - **Tests:** `_tools/test_modv2plus.py` (import under mocked `xbmc*`).
 - **Related docs:** [`firetv-adb-dev.md`](firetv-adb-dev.md) (commands), `kodi-install-mechanics.md`,
   `release-and-deploy.md`, `local-kodi-verification.md`, and the repo `TASKS.md`.

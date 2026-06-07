@@ -176,16 +176,20 @@ Create a tag for any known-good state. Current ones:
 - `clean-setup-1.0.17` — a bare, clean baseline.
 - `perfectly-working-2026-06-04` — full working build before the one-shot work.
 
-## Current source versions (branch `3.0`, as of this writing)
+## Current source versions (the shipped 3.0 one-shot, on `main`)
 
 | Add-on                        | Version |
 | ----------------------------- | ------- |
-| `repository.tony7bones`       | 2.2.0   |
+| `repository.tony7bones`       | 2.2.1   |
 | `script.module.tony7bones`    | 1.1.0   |
-| `script.tony7bones.bootstrap` | 1.2.0   |
-| `script.tony7bones.modv2plus` | 1.3.4   |
+| `script.tony7bones.bootstrap` | 1.3.0   |
+| `script.tony7bones.modv2plus` | 1.4.0   |
 
-> `script.module.tony7bones` 1.0.0 → 1.1.0 (the new `install_selection` API) and
-> `script.tony7bones.bootstrap` 1.1.6 → 1.2.0 (unattended video) were bumped in
-> this work. The proxy `repository.tony7bones` is still 2.2.0 (not re-released on
-> this branch yet). The standalone `script.tony7bones.video` add-on was removed.
+> The 3.0 one-shot (skin + MOD V2+ patch installed and activated by Setup) is
+> **deployed live and proven on a wiped Kodi and a real Fire TV**. The bumps in
+> this milestone: `script.module.tony7bones` → 1.1.0 (the `install_selection`
+> API), `script.tony7bones.bootstrap` → 1.3.0 (unattended video + the skin/patch
+> install step), `script.tony7bones.modv2plus` → 1.4.0 (the boot auto-apply
+> service; 1.3.5 added the backgrounds-off opt-out flags), and the proxy
+> `repository.tony7bones` → 2.2.1. The standalone `script.tony7bones.video` add-on
+> was removed.

@@ -369,13 +369,14 @@ def test_root_install_zip_picks_proxy_zip(tmp_path, monkeypatch):
     assert gr._root_install_zip() == "repository.tony7bones-2.2.0.zip"
 
 
-def test_write_root_index_lists_canvas_and_install_zip(tmp_path, monkeypatch):
+def test_write_root_index_lists_only_canvas_not_install_zip(tmp_path, monkeypatch):
     _patch_dirs(monkeypatch, tmp_path)
     (tmp_path / "repository.tony7bones-2.2.0.zip").write_bytes(b"z")
     gr.write_root_index(["repositories/", "media/", "note.txt"])
     content = (tmp_path / "index.html").read_text()
     assert "HTML 3.2" in content
-    assert "repository.tony7bones-2.2.0.zip" in content
+    # the install zip is served at the root but NOT listed in the bare-URL canvas
+    assert "repository.tony7bones-2.2.0.zip" not in content
     assert '<a href="repositories/">repositories/</a>' in content
     assert '<a href="media/">media/</a>' in content
     assert '<a href="note.txt">note.txt</a>' in content
@@ -439,11 +440,11 @@ def test_generate_integration(tmp_path, monkeypatch):
     assert (tmp_path / "repositories" / "repository.other-1.0.0.zip").exists()
     assert (tmp_path / "media" / "splash.jpg").exists()
     assert (tmp_path / "media" / "index.html").exists()
-    # proxy installer injected into served repositories/
+    # proxy installer injected into served repositories/ (the install path)
     assert (tmp_path / "repositories" / "repository.tony7bones-2.2.0.zip").exists()
-    # bare-URL root index = canvas 1:1 + installer, nothing machine
+    # bare-URL root index = canvas 1:1, NOTHING else: no installer zip, no machine dirs
     root_index = (tmp_path / "index.html").read_text()
-    assert "repository.tony7bones-2.2.0.zip" in root_index
+    assert "repository.tony7bones-2.2.0.zip" not in root_index
     assert '<a href="repositories/">repositories/</a>' in root_index
     assert '<a href="media/">media/</a>' in root_index
     assert "addons/" not in root_index and "dropbox/" not in root_index

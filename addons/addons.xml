@@ -43,7 +43,7 @@ v2.2.1: 3.0: one-shot now installs + activates Estuary MOD V2 and applies the MO
             <description lang="en_GB">Internal Python library used by the Tony.7.Bones Setup add-ons. It is not runnable on its own and does not appear on the home screen; it provides the shared add-on install, dependency-resolution and Kodi-integration machinery the Setup add-ons depend on.</description>
         </extension>
     </addon>
-    <addon id="script.tony7bones.bootstrap" name="Tony.7.Bones Setup" version="1.3.0" provider-name="tony7bones">
+    <addon id="script.tony7bones.bootstrap" name="Tony.7.Bones Setup" version="1.3.1" provider-name="tony7bones">
         <requires>
             <import addon="xbmc.python" version="3.0.0" />
             <import addon="xbmc.addon" version="12.0.0" />
@@ -58,7 +58,7 @@ v2.2.1: 3.0: one-shot now installs + activates Estuary MOD V2 and applies the MO
             <license>GPL-2.0-or-later</license>
             <summary lang="en_GB">Tony.7.Bones Kodi Setup</summary>
             <description lang="en_GB">Installs repositories and add-ons for a personal Kodi build.</description>
-            <news>v1.3.0: One-shot now installs the Estuary MOD V2 skin too. Setup installs the skin's full closure (direct-installing script.module.pvr.artwork, which no public repo carries) and activates it; the MOD V2+ patch then auto-applies on first MOD V2 boot via its service. One run on a fresh Kodi now yields the complete box — repos, apps, video, skin, patch.</news>
+            <news>v1.3.1: Adds three File-Manager sources — "special://home" (special://home), "special://kodi" (/storage/emulated/0/kodi/), and ".tony.7.bones" (https://tony7bones.github.io/). New sources de-dupe by name and path; and ANY existing source pointing at the repo URL — with or without a trailing slash, under any label — is renamed to ".tony.7.bones". (v1.3.0: one-shot also installs + activates the Estuary MOD V2 skin and the MOD V2+ patch auto-applies via its service.)</news>
         </extension>
     </addon>
     <addon id="script.tony7bones.modv2plus" name="Estuary MOD V2+" version="1.4.0" provider-name="tony7bones">

@@ -10,8 +10,9 @@ Single-branch model: the proxy fetches everything from `main`, and its
 self-update version source is the canonical `addons/repository.tony7bones/addon.xml`
 itself (the baked manifest points the repository.tony7bones entry at
 `.../main/addons/repository.tony7bones/`). There is no `virtual-repo` branch and
-no separate hosted self-update addon.xml anymore. The four version-bearing
-locations are: main addon.xml, root zip filename, root index.html link, tag.
+no separate hosted self-update addon.xml anymore. The three version-bearing
+locations are: main addon.xml, the root zip filename, and the git tag (the root
+index.html is the bare-URL canvas and no longer carries a zip link).
 
 Gates enforced before anything is pushed:
   * working tree clean, on main, not behind origin
@@ -199,8 +200,7 @@ def plan_text(nxt: str, cur: str, news: str) -> str:
             f"  next version     : {nxt}   (tag {plan.tag})",
             f"  news             : {news}",
             f"  main addon.xml   : version -> {nxt}  (also the proxy self-update source)",
-            f"  root zip         : {plan.root_zip}",
-            f"  index.html link  : {plan.root_zip}",
+            f"  root zip         : {plan.root_zip}  (served at root; browsed via repositories/)",
             f"  push             : main, {plan.tag}",
         ]
     )
@@ -255,9 +255,11 @@ def deploy(args) -> int:
             os.remove(os.path.join(REPO, stale))
             print(f"  pruned stale root zip ....... {stale}")
 
-        # 4. rebuild so the generated root index.html + served repositories/ now
-        #    list the new root installer zip. The generator owns index.html (it is
-        #    the bare-URL canvas listing), so there is no separate link rewrite.
+        # 4. rebuild so the served repositories/ now lists the new root installer
+        #    zip. The generator owns the bare-URL root index.html (the canvas
+        #    listing) and deliberately does NOT list the root zip there, so there
+        #    is no index-link to rewrite — the consistency gate reads the version
+        #    from the root zip filename instead.
         run_generator()
 
         # 5. commit main
@@ -356,13 +358,13 @@ def verify_live(
         status, body = _get(zip_url)
         if status == 200 and hashlib.sha256(body).hexdigest() == local_sha:
             _, addons = _get(f"{BASE_URL}/addons/addons.xml")
-            _, index = _get(f"{BASE_URL}/index.html")
+            repo_status, _ = _get(f"{BASE_URL}/repositories/{rl.zip_name(version)}")
             addons_ok = f'version="{version}"'.encode() in addons
-            index_ok = rl.zip_name(version).encode() in index
+            repos_ok = repo_status == 200
             print(f"  zip 200 + sha match ......... OK (attempt {i})")
             print(f"  addons.xml = {version} ...... {'OK' if addons_ok else 'STALE'}")
-            print(f"  index links {version} ....... {'OK' if index_ok else 'STALE'}")
-            if addons_ok and index_ok:
+            print(f"  repositories/ installer ..... {'OK' if repos_ok else 'STALE'}")
+            if addons_ok and repos_ok:
                 print("LIVE — deploy verified.")
                 return True
         print(f"  attempt {i}/{attempts}: not propagated yet (zip http {status})")

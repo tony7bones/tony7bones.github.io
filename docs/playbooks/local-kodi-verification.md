@@ -70,3 +70,40 @@ cause when something is empty — don't guess.
 Dispatch a focused agent to **drive the REAL local Kodi and read the debug log**,
 rather than guessing/iterating blind. Seeing the actual rendered menu and the
 actual `GetDirectory` output is what turned "I think it works" into "it works."
+
+## Hard lesson — a wipe-and-run is non-negotiable
+
+The 3.0 one-shot (skin + MOD V2+ patch installed and activated by Setup) passed
+**unit-green AND code-QA-green** and was still broken on a real box. A genuine
+**wipe-and-test on a fresh Kodi** (and a real Fire TV) caught **three integration
+bugs that the tests and code-only review both missed**:
+
+1. **An `is_installed` import was auto-stripped as "unused"** by a tooling pass, so
+   the whole skin step silently no-op'd. The unit tests mock the install machinery
+   and never exercised that import path; a wipe-and-run did.
+2. **modv2plus + the outline-hd weather icons never installed**, because both are
+   **proxy-invisible** — the closure resolver skips our `127.0.0.1` proxy
+   (`repos.py`), so they don't resolve through the normal closure. Fix: direct-extract
+   them (see `one-shot-and-architecture.md` → "The skin install"). Unit tests using a
+   fake index never hit this gap.
+3. **The skin reverted to stock Estuary**, because `lookandfeel.skin` was set too
+   long before the restart and Kodi's "Keep this skin?" timeout reverted it
+   unattended (see `kodi-install-mechanics.md` §13). No unit test can model that
+   live timeout.
+
+**Rule:** unit-green + code-QA-green is NOT proof. Before declaring a one-shot
+change shipped, wipe the profile (or `pm clear` on the device), run the full
+Setup, restart, and verify the END STATE on the real box.
+
+### Verifying the skin one-shot specifically
+
+After the post-Setup restart, confirm — don't assume:
+
+- `xbmc.getSkinDir()` (or `Settings.GetSettingValue lookandfeel.skin`) returns
+  **`skin.estuary.modv2`**, not `skin.estuary` (no silent revert).
+- `script.tony7bones.modv2plus`, `script.module.pvr.artwork`, and
+  `resource.images.weathericons.outline-hd` are all installed + enabled.
+- The patch is **applied**: the marker string `show_system_info_overlay` is present
+  in the live `skin.estuary.modv2/xml/Home.xml` (the same marker the modv2plus
+  service uses to decide whether to auto-apply).
+- A `TakeScreenshot` shows the patched MOD V2 home, not stock Estuary.

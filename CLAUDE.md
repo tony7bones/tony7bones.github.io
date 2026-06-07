@@ -8,7 +8,7 @@ A GitHub Pages site (`tony7bones.github.io`) that hosts a Kodi add-on repository
 
 The repository add-on, `repository.tony7bones`, is a **virtual repository** built on i96751414's `repository.github` engine: once installed in Kodi it runs a local HTTP proxy (`127.0.0.1:61234`) that streams add-on metadata and zips live from GitHub at runtime, driven by a `repository.json` manifest. There are no committed per-add-on zips for the third-party repos it lists.
 
-**Install URL (must stay constant): `https://tony7bones.github.io/`** (the root). The root `index.html` is **generated** and exposes a Kodi-parseable link to `repository.tony7bones-<version>.zip` (the installer) plus the canvas folders (`repositories/ media/ iptv/ rss/`) for file-manager browsing. Cache-busting comes ONLY from the versioned zip _filename_ — never from versioned paths, because Kodi cannot follow a moving base URL.
+**Install URL (must stay constant): `https://tony7bones.github.io/`** (the root). The root `index.html` is **generated** and lists ONLY the canvas folders (`repositories/ media/ iptv/ rss/`) for file-manager browsing — a clean 1:1 of `dropbox/`. The installer `repository.tony7bones-<version>.zip` is still **served at the root** (the proxy self-update fetches it there) but is **deliberately not listed** in the bare-URL view; users install it by browsing into `repositories/`, where the generator injects a copy. Cache-busting comes ONLY from the versioned zip _filename_ — never from versioned paths, because Kodi cannot follow a moving base URL.
 
 ### Two source trees: `dropbox/` (canvas) and `addons/` (add-on tree)
 
@@ -27,22 +27,28 @@ A release bumps the version in one place — `addons/repository.tony7bones/addon
 
 ### First-party add-ons (current)
 
-Besides the proxy, the repo ships two first-party Setup/library add-ons plus the Estuary MOD V2+ skin patch — **four** first-party add-ons in total (counting the proxy):
+Besides the proxy, the repo ships two first-party Setup/library add-ons plus the Estuary MOD V2+ skin patch — **four** first-party add-ons in total (counting the proxy). Current shipped versions on `main`: `repository.tony7bones` 2.2.1, `script.tony7bones.bootstrap` 1.3.0, `script.tony7bones.modv2plus` 1.4.0, `script.module.tony7bones` 1.1.0.
 
 - `repository.tony7bones` — the virtual proxy repository (runs the local `127.0.0.1:61234` server).
 - `script.module.tony7bones` — a Python **library** (`xbmc.python.module`, invisible on the home screen) holding the shared install machinery (HTTP fetch, addons.xml index load/parse/merge, the dependency-closure resolvers, zip extract, enable/disable, add-on `origin` stamping, source-repo enabling, the curated-video installer `install_selection()`, self-uninstall, restart, platform detection). The Setup `<requires>` it, so Kodi auto-installs it from the repo.
-- `script.tony7bones.bootstrap` — "Tony.7.Bones Setup", the one-tap base install; runs fully **unattended** (no prompts, no picker), installs the base repos + apps plus a curated set of video add-ons in one pass, shows one summary, restarts once, then self-uninstalls.
-- `script.tony7bones.modv2plus` — "Estuary MOD V2+", the lean patch that customizes `skin.estuary.modv2` (gear-menu reorder, a "Tony.7.Bones MOD V2+" Skin Settings category with per-item toggles, crisp white nav wordmark, thin clock, Outline HD weather icons). Run by hand — it offers **Apply / Restore** (Restore confirms first) — after installing/updating the skin. Built FRESH from the current omega source each release; replaced the retired `script.tony7bones.modv2.patch`. Full dev cycle + lessons: `docs/playbooks/modv2plus-dev-cycle-and-lessons.md`.
+- `script.tony7bones.bootstrap` — "Tony.7.Bones Setup", the one-tap base install. One run on a fresh Kodi produces the complete box: it runs fully **unattended** (no prompts, no picker), installs the base repos + apps plus a curated set of video add-ons, **installs AND activates the Estuary MOD V2 skin** (the MOD V2+ patch auto-applies after the restart via modv2plus's boot service — see below), applies the base-box configuration, shows one summary, restarts once, then self-uninstalls.
+- `script.tony7bones.modv2plus` — "Estuary MOD V2+", the lean patch that customizes `skin.estuary.modv2` (gear-menu reorder, a "Tony.7.Bones MOD V2+" Skin Settings category with per-item toggles, crisp white nav wordmark, thin clock, Outline HD weather icons, plain Power/Settings/Search backgrounds). It ships a **boot service** (`service.py`, `xbmc.service` extension) that auto-applies the patch once MOD V2 is the active skin AND it is not already patched, and re-applies after a MOD V2 skin update overwrites the patched files with stock. **Manual Apply / Restore still exist** (the in-skin category buttons and a chooser; Restore confirms first). Built FRESH from the current omega source each release; replaced the retired `script.tony7bones.modv2.patch`. Full dev cycle + lessons: `docs/playbooks/modv2plus-dev-cycle-and-lessons.md`.
 
 > The standalone `script.tony7bones.video` ("Video Add-ons Setup") add-on has been **removed**. Its install logic was folded into the shared library as `install_selection(selected, official_base, disable_ids, dialog, log)`, which the Setup now calls directly to install the curated video add-ons unattended.
 
 ### What the base Setup does after installing (`script.tony7bones.bootstrap/default.py`)
 
-After the unattended video install and before the single end-of-setup restart, `run()` applies a sequence of **base-box configuration** steps — each defensive (logged, never aborts the run), set before the restart so Kodi re-reads them:
+`run()` installs the base repos + apps, the curated video add-ons (`_install_video`), then the Estuary MOD V2 skin (`_install_skin`). After that, before the single end-of-setup restart, it applies a sequence of **base-box configuration** steps — each defensive (logged, never aborts the run), set before the restart so Kodi re-reads them:
 
 - `_add_file_sources()` — merge File-Manager sources into `sources.xml` (deduped).
 - `_trim_home_menu()` — hide all but TV / Add-ons / Favourites / Weather on stock Estuary via `Skin.SetBool` (the in-memory set is what survives the restart; a settings.xml merge backs it up).
 - `_configure_box()` — weather + interface prefs: provider → `weather.multi`, **location 1 → Sacramento** (written into weather.multi's `addon_data`; note `loc1_url` is the field weather.multi actually fetches by, NOT lat/lon), RSS ticker on, top-bar weather (`Skin.SetBool(show_weatherinfo)`), then `_copy_device_files()` + `_ensure_iptv_custom_tv_groups()`.
+
+**Skin install + activation (`_install_skin`).** The closure resolver SKIPS our `127.0.0.1` proxy (`repos.py`), so two add-ons it cannot see are direct-extracted first: `script.module.pvr.artwork` (b-jesch's GitHub-only module, a hard skin requirement; its `requests`/`simplecache` deps come from the official repo) AND our own first-party `script.tony7bones.modv2plus` (version resolved live via `_latest_zip_url`, plus its Outline HD weather-icon dep from official). The rest of the MOD V2 skin closure (skin + skinshortcuts + image.resource.select) is installed via `install_selection([SKIN_ID])` from the installed repos. Then everything direct-extracted is rescanned, settled, and **enabled** so the skin is a registered, enabled choice. `lookandfeel.skin` is set **LAST, in `run()` immediately before the restart** — NOT inside `_install_skin` — because a long gap between the skin-set and the restart lets Kodi's "Keep this skin?" safety timeout silently revert it to stock Estuary. The restart boots into MOD V2; modv2plus's boot service then auto-applies the patch (the patch can only run with MOD V2 active, by which point Setup is gone).
+
+**Curated video add-ons** (`VIDEO_APPS`): POV, The Loop, Sports HD, YouTube. `plugin.video.dailymotion_com` is **install-then-disabled** (`VIDEO_DISABLE_AFTER`) because The Loop declares it as a required import nobody here uses — installing satisfies the dep check, disabling means it never runs and survives Loop updates with no re-patching. (Umbrella was dropped.)
+
+**Restart is platform-specific.** Desktop Kodi self-restarts (`RestartApp`). On Fire TV / Android, Kodi cannot self-restart, so Setup prompts the user to close Kodi and reopen it; on reopen MOD V2 is the active skin and the modv2plus service applies the patch.
 
 **Device→userdata file convention.** `DEVICE_FILE_COPIES` copies user-placed files from the Fire Stick path `/storage/emulated/0/kodi/tony.7.bones/{rss,iptv}/…` into `userdata/` (RssFeeds.xml) and `userdata/addon_data/pvr.iptvsimple/…` (instance-settings-1.xml, channelGroups/customTVGroups-\*.xml). Each copy is **guarded** (no-ops if the source is absent, so desktop runs skip cleanly), **creates dest dirs, and overwrites**. The real copy only happens on the device; on the dev Mac only the guarded-skip path runs live — the copy logic is proven by unit tests, not live verification (state this honestly).
 
@@ -88,13 +94,15 @@ Test files map to what they cover (all tests import the add-on `default.py` unde
 | ------------------------ | ------------------------------------------------------------------------------------------------------------- |
 | `test_bootstrap.py`      | `script.tony7bones.bootstrap` (base Setup + the unattended one-shot, incl. the curated video step)            |
 | `test_module.py`         | `script.module.tony7bones` (shared install library, incl. `install_selection`)                                |
-| `test_modv2plus.py`      | `script.tony7bones.modv2plus` (the Estuary MOD V2+ skin patch)                                                |
+| `test_modv2plus.py`      | `script.tony7bones.modv2plus` (the Estuary MOD V2+ skin patch + the auto-apply boot service)                  |
 | `test_proxy.py`          | `repository.tony7bones` proxy engine (version math, manifest validators, tag/URL resolution, cache, platform) |
 | `test_deploy.py`         | `deploy.py` / `release_lib.py` (sandbox end-to-end with a bare remote)                                        |
 | `test_check_versions.py` | the per-add-on version-bump gate                                                                              |
 | `test_generate_repo.py`  | the generator (zips, indexes, canvas mirror, determinism)                                                     |
 
 ## Releasing
+
+> **Restore points.** The shipped, hardware-proven 3.0 one-shot state is tagged `perfectly-working-2026-06-06`; the pre-3.0 `main` is `main-rollback-2026-06-06`; the current repository-add-on release is `v2.2.1`. Use these to roll back if a release regresses the box.
 
 There are **two** release paths — pick the right one (full detail in `docs/playbooks/release-and-deploy.md`):
 
@@ -117,26 +125,27 @@ python3 _tools/deploy.py check                      # version-consistency gate o
 Or via npm (thin wrappers): `npm run deploy -- --news "..."`, `deploy:dry`, `deploy:minor`, `deploy:major`, `deploy:local` (`--no-push`), `check`, `verify`.
 
 `deploy.py` runs the whole pipeline atomically: bump → build deterministically →
-sync all four version-bearing locations (main `addons/repository.tony7bones/addon.xml`
-— which doubles as the proxy self-update source — root zip filename, root
-`index.html` link, git tag) → commit main → tag → `git push --atomic main <tag>` →
-force a GitHub Pages build → verify live on Pages. The root `index.html` link is
-produced by the generator (which owns the bare-URL canvas listing) when deploy
-re-runs the build, so there is no separate index-link rewrite step. Any failure
+sync all three version-bearing locations (main `addons/repository.tony7bones/addon.xml`
+— which doubles as the proxy self-update source — the root zip filename, and the
+git tag) → commit main → tag → `git push --atomic main <tag>` →
+force a GitHub Pages build → verify live on Pages. The root `index.html` is the
+bare-URL canvas listing and **deliberately does NOT list the install zip** — the
+consistency gate reads the shipped version from the **root zip filename** instead,
+so there is no index link to rewrite. Any failure
 before the push rolls main and the tag back. It refuses to run on a dirty tree, when
 behind origin, or when the new version is not greater than the current one. The
 version lives ONLY in `addon.xml`; `package.json` deliberately does not mirror it.
 
 The release tooling is split for testability: `_tools/release_lib.py` (pure version
 math + file transforms + the single-source-of-truth `DeployPlan`), `_tools/check_consistency.py`
-(reads all four locations on main and fails on any mismatch — reused by
+(reads all three locations on main and fails on any mismatch — reused by
 the hook, CI, and deploy), `_tools/deploy.py` (orchestrator), `_tools/test_deploy.py`
 (unit + end-to-end sandbox tests with a bare remote).
 
 ## Gates (pre-push hook)
 
 `.githooks/pre-push` blocks a push unless tests pass, lint is clean, generated files
-are up to date, and all four version locations agree and are tagged. Install once
+are up to date, and all three version locations agree and are tagged. Install once
 after cloning:
 
 ```bash
@@ -201,7 +210,7 @@ The generator reads from the two source trees and writes the served output (an I
 - `write_addons_xml(roots)` — writes `addons/addons.xml` + `.sha256` + `.md5`.
 - `mirror_canvas()` — mirrors `dropbox/` -> the repo ROOT 1:1, honoring `.gitignore` and pruning root dirs that are no longer in `dropbox/`; returns the canvas listing.
 - `_index_tree(top)` — writes a Kodi HTML 3.2 index into `top` and every subdir.
-- `write_root_index(canvas_listing)` — generates the bare-URL root `index.html` (the canvas 1:1 plus the install zip).
+- `write_root_index(canvas_listing)` — generates the bare-URL root `index.html` (the canvas 1:1; the install zip is served at the root but deliberately NOT listed — install via `repositories/`).
 - `_inject_install_zip_into_repositories()` — copies the root proxy installer zip into the SERVED `repositories/` so it is browsable in the canvas; `dropbox/` stays pristine.
 - `generate()` — orchestrates everything.
 

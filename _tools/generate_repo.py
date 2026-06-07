@@ -16,10 +16,10 @@ Two source trees, two jobs:
              proxy fetches these from main via raw.githubusercontent; they are
              NOT listed at the bare URL.
 
-The root install zip (repository.tony7bones-X.Y.Z.zip) and its link in the root
-index.html are owned by deploy.py. The generator injects a copy of whatever root
-install zip is present into the served repositories/ so it is browsable in the
-canvas too, and lists it on the root page.
+The root install zip (repository.tony7bones-X.Y.Z.zip) is owned by deploy.py and
+stays served at the repo root for the proxy self-update, but is NOT listed on the
+bare-URL root page (the root index is the owner's canvas, 1:1). The generator
+injects a copy into the served repositories/ so the installer is browsable there.
 
 The mirror honors .gitignore: a secret-bearing source file (e.g. IPTV instance
 settings) is kept locally but never copied into the served tree.
@@ -301,19 +301,17 @@ def _root_install_zip() -> str | None:
 
 
 def write_root_index(canvas_listing: list[str]) -> None:
-    """Generate the bare-URL root index.html: the canvas 1:1 plus the install zip.
+    """Generate the bare-URL root index.html: the canvas 1:1, nothing else.
 
-    HTML 3.2 so Kodi's File Manager parses it. Lists exactly the canvas entries
-    (mirrored from dropbox/) and the root install zip — nothing else (no addons/,
-    dropbox/, _tools/, docs/).
+    HTML 3.2 so Kodi's File Manager parses it. Lists EXACTLY the canvas entries
+    (mirrored from dropbox/) — no addons/, dropbox/, _tools/, docs/, and NOT the
+    root install zip. The install zip stays served at the repo root (so the proxy
+    self-update keeps working) but is deliberately NOT listed here, so the
+    bare-URL view shows only the owner's canvas; the installer is browsed from the
+    served repositories/ folder (where _inject_install_zip_into_repositories puts
+    a copy).
     """
-    rows = []
-    install_zip = _root_install_zip()
-    if install_zip:
-        size = _fmt_size(os.path.getsize(os.path.join(ROOT_DIR, install_zip)))
-        rows.append(f'<a href="{install_zip}">{install_zip}</a>  {size}')
-    for e in canvas_listing:
-        rows.append(f'<a href="{e}">{e}</a>')
+    rows = [f'<a href="{e}">{e}</a>' for e in canvas_listing]
     _make_index(ROOT_DIR, "Index of /", rows)
 
 

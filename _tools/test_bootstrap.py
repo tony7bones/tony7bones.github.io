@@ -628,8 +628,9 @@ def _files_sources(boot):
     return [(s.findtext("name"), s.findtext("path")) for s in files.findall("source")]
 
 
-_HOME = ("Kodi home directory", "special://home")
-_SRC = ("Kodi sources directory", "/storage/emulated/0/kodi/")
+_HOME = ("special://home", "special://home")
+_SRC = ("special://kodi", "/storage/emulated/0/kodi/")
+_T7B = (".tony.7.bones", "https://tony7bones.github.io/")
 
 
 def test_add_file_sources_helper_exists():
@@ -651,6 +652,7 @@ def test_add_file_sources_creates_file_when_missing(boot):
     entries = _files_sources(boot)
     assert _HOME in entries
     assert _SRC in entries
+    assert _T7B in entries
     # canonical shape: <files> opens with a <default> element
     root = ET.parse(boot.sources_xml).getroot()
     assert root.find("files")[0].tag == "default"
@@ -663,13 +665,14 @@ def test_add_file_sources_creates_file_when_missing(boot):
 def test_add_file_sources_both_present_with_names_and_paths(boot):
     boot.mod._add_file_sources()
     entries = dict(_files_sources(boot))
-    assert entries["Kodi home directory"] == "special://home"
-    assert entries["Kodi sources directory"] == "/storage/emulated/0/kodi/"
+    assert entries["special://home"] == "special://home"
+    assert entries["special://kodi"] == "/storage/emulated/0/kodi/"
+    assert entries[".tony.7.bones"] == "https://tony7bones.github.io/"
 
 
-def test_add_file_sources_preserves_existing(boot):
-    """Existing sources (incl. a .tony7.bones files source and other media
-    sections) must survive untouched."""
+def test_add_file_sources_preserves_others_and_normalizes_repo(boot):
+    """Unrelated existing sources survive untouched; an existing source pointing at
+    our repo URL is RENAMED to the canonical .tony.7.bones (whatever its label)."""
     boot.sources_xml.write_text(
         '<?xml version="1.0" encoding="UTF-8"?>\n'
         "<sources>\n"
@@ -680,7 +683,7 @@ def test_add_file_sources_preserves_existing(boot):
         "  </video>\n"
         "  <files>\n"
         "    <default></default>\n"
-        "    <source><name>.tony7.bones</name>"
+        "    <source><name>my repo</name>"
         "<path>https://tony7bones.github.io/</path>"
         "<allowsharing>true</allowsharing></source>\n"
         "  </files>\n"
@@ -688,15 +691,56 @@ def test_add_file_sources_preserves_existing(boot):
     )
     boot.mod._add_file_sources()
     root = ET.parse(boot.sources_xml).getroot()
-    # video section + its Movies source preserved
+    # the unrelated video/Movies source is preserved untouched
     movies = [s.findtext("name") for s in root.find("video").findall("source")]
     assert "Movies" in movies
-    # the .tony7.bones files source preserved, plus the two new ones added
     files_entries = _files_sources(boot)
     names = [n for n, _p in files_entries]
-    assert ".tony7.bones" in names
-    assert "Kodi home directory" in names
-    assert "Kodi sources directory" in names
+    paths = [p for _n, p in files_entries]
+    # the repo source was renamed from "my repo" -> canonical, not duplicated
+    assert ".tony.7.bones" in names
+    assert "my repo" not in names
+    assert paths.count("https://tony7bones.github.io/") == 1
+    # the home/kodi sources also landed
+    assert "special://home" in names
+    assert "special://kodi" in names
+
+
+def test_add_file_sources_normalizes_repo_url_without_slash(boot):
+    """A repo source WITHOUT a trailing slash (any label) is renamed to
+    .tony.7.bones and its path canonicalized to the trailing-slash form."""
+    boot.sources_xml.write_text(
+        "<sources><files><default></default>"
+        "<source><name>.xyz</name>"
+        '<path pathversion="1">https://tony7bones.github.io</path>'
+        "<allowsharing>true</allowsharing></source>"
+        "</files></sources>"
+    )
+    boot.mod._add_file_sources()
+    entries = dict(_files_sources(boot))
+    assert ".xyz" not in entries
+    assert entries[".tony.7.bones"] == "https://tony7bones.github.io/"
+    paths = [p for _n, p in _files_sources(boot)]
+    assert paths.count("https://tony7bones.github.io/") == 1
+    assert "https://tony7bones.github.io" not in paths  # no-slash form normalized
+
+
+def test_add_file_sources_collapses_repo_slash_variants(boot):
+    """Both slash variants of the repo URL collapse to a single .tony.7.bones."""
+    boot.sources_xml.write_text(
+        "<sources><files><default></default>"
+        "<source><name>a</name><path>https://tony7bones.github.io</path>"
+        "<allowsharing>true</allowsharing></source>"
+        "<source><name>b</name><path>https://tony7bones.github.io/</path>"
+        "<allowsharing>true</allowsharing></source>"
+        "</files></sources>"
+    )
+    boot.mod._add_file_sources()
+    entries = _files_sources(boot)
+    names = [n for n, _p in entries]
+    paths = [p for _n, p in entries]
+    assert names.count(".tony.7.bones") == 1
+    assert paths.count("https://tony7bones.github.io/") == 1
 
 
 def test_add_file_sources_dedupes_on_second_run(boot):
@@ -706,6 +750,7 @@ def test_add_file_sources_dedupes_on_second_run(boot):
     entries = _files_sources(boot)
     assert entries.count(_HOME) == 1
     assert entries.count(_SRC) == 1
+    assert entries.count(_T7B) == 1
 
 
 def test_add_file_sources_dedupes_on_path_with_different_name(boot):
@@ -732,6 +777,7 @@ def test_add_file_sources_handles_malformed_xml(boot):
     entries = _files_sources(boot)
     assert _HOME in entries
     assert _SRC in entries
+    assert _T7B in entries
 
 
 def test_add_file_sources_attempts_guarded_mkdirs(boot):
@@ -768,6 +814,7 @@ def test_run_adds_file_sources(boot):
     entries = _files_sources(boot)
     assert _HOME in entries
     assert _SRC in entries
+    assert _T7B in entries
 
 
 # --------------------------------------------------------------------------- #
@@ -1205,7 +1252,7 @@ def test_run_configures_box(boot):
 
 # --------------------------------------------------------------------------- #
 # Device → userdata file copies (DEVICE_FILE_COPIES / _copy_device_files, called
-# from _configure_box). The sources are device "Kodi sources directory" paths;
+# from _configure_box). The sources are device /storage/emulated/0/kodi/ paths;
 # on the test host they do not exist, so we point DEVICE_FILE_COPIES at real temp
 # files to exercise the copy path, and leave them unmapped for the guarded-skip
 # path. Covers the custom RssFeeds.xml plus pvr.iptvsimple's instance settings

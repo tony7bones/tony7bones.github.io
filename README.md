@@ -34,25 +34,34 @@ The install URL is the site **root** and never changes:
 
 ## The add-ons
 
-| Add-on                        | Name in Kodi                | What it is                                                                                                                                                                                                |
-| ----------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `repository.tony7bones`       | Tony.7.Bones Repo           | The virtual proxy repository (runs the local `127.0.0.1:61234` server).                                                                                                                                   |
-| `script.module.tony7bones`    | Tony.7.Bones Shared Library | Python LIBRARY (`xbmc.python.module`) — the shared install machinery. Invisible on the home screen.                                                                                                       |
-| `script.tony7bones.bootstrap` | Tony.7.Bones Setup          | One-tap base setup (12 repos + base apps + a curated set of video add-ons), unattended. Self-uninstalls after running.                                                                                    |
-| `script.tony7bones.modv2plus` | Estuary MOD V2+             | Patch for `skin.estuary.modv2`: gear-menu reorder, a "Tony.7.Bones MOD V2+" settings category with per-item toggles, crisp white nav logo, thin clock, Outline HD weather. Apply / Restore. Run manually. |
+Current shipped versions: `repository.tony7bones` 2.2.1 · `script.tony7bones.bootstrap`
+1.3.0 · `script.tony7bones.modv2plus` 1.4.0 · `script.module.tony7bones` 1.1.0.
+
+| Add-on                        | Name in Kodi                | What it is                                                                                                                                                                                                                                                                     |
+| ----------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `repository.tony7bones`       | Tony.7.Bones Repo           | The virtual proxy repository (runs the local `127.0.0.1:61234` server).                                                                                                                                                                                                        |
+| `script.module.tony7bones`    | Tony.7.Bones Shared Library | Python LIBRARY (`xbmc.python.module`) — the shared install machinery. Invisible on the home screen.                                                                                                                                                                            |
+| `script.tony7bones.bootstrap` | Tony.7.Bones Setup          | One-tap base setup (12 repos + base apps + curated video add-ons + the Estuary MOD V2 skin), unattended. Self-uninstalls after running.                                                                                                                                        |
+| `script.tony7bones.modv2plus` | Estuary MOD V2+             | Patch for `skin.estuary.modv2`: gear-menu reorder, a "Tony.7.Bones MOD V2+" settings category with per-item toggles, crisp white nav logo, thin clock, Outline HD weather. A boot service auto-applies the patch when MOD V2 is active; manual Apply / Restore also available. |
 
 ### One-tap setup
 
-Install and run **Tony.7.Bones Setup** from the repo. It runs unattended — no
-prompts, no picker: it installs the base repos + apps plus a curated set of video
-add-ons (POV, The Loop, Sports HD) with their full dependency closures, stamps
-each add-on's source repo, adds file-manager sources, trims the Estuary home menu,
-shows one summary, self-uninstalls, and restarts once. See
-`docs/playbooks/one-shot-and-architecture.md`.
+Install and run **Tony.7.Bones Setup** from the repo. One run on a fresh Kodi
+produces the complete box — it runs fully unattended (no prompts, no picker) and:
 
-> Installing the Estuary MOD V2 skin and applying the MOD V2+ patch
-> (`script.tony7bones.modv2plus`) are still **manual** steps — not part of the
-> one-tap run.
+- installs the base repos + base apps plus a curated set of video add-ons (POV,
+  The Loop, Sports HD, YouTube) with their full dependency closures, stamping each
+  add-on's source repo;
+- installs **and activates** the Estuary MOD V2 skin (the MOD V2+ patch
+  auto-applies on the next start via its boot service — no hand step);
+- adds file-manager sources, trims the Estuary home menu, sets weather/RSS/top-bar
+  preferences, copies any user-placed device files;
+- shows one summary, self-uninstalls, then restarts once.
+
+On desktop Kodi the restart is automatic. On Fire TV / Android, Kodi cannot
+self-restart, so Setup prompts the user to close Kodi and reopen it; on reopen MOD
+V2 is the active skin and the modv2plus service applies the patch. See
+`docs/playbooks/one-shot-and-architecture.md`.
 
 ## Architecture (developers)
 
