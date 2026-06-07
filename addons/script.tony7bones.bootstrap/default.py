@@ -30,11 +30,10 @@ Binary (platform-specific) add-ons — e.g. pvr.iptvsimple and the inputstream.*
 clients it needs — are resolved per-platform: the library detects this machine's
 Kodi platform string at runtime and picks the matching official-repo entry.
 
-This Setup can optionally chain the Video Add-ons Setup: two prompts are
-FRONT-LOADED before any install (a yes/no, default No, then the video
-multiselect), and the whole run — base install plus the chosen video apps — runs
-unattended in this one script with a single combined summary and a single
-restart.
+This Setup also installs a curated set of video add-ons (POV, The Loop, Sports
+HD) unattended — no picker — as part of the one-tap run, with a single combined
+summary and a single restart. Each resolves its full dependency closure from the
+source repos installed above plus the official repo; origins are stamped.
 
 No secrets are embedded in this script.
 """
@@ -51,6 +50,7 @@ import xbmcvfs
 # lives here; this file keeps only the base box's configuration + base-only steps.
 from tony7bones import (
     extract_zip,
+    install_selection,
     install_with_deps,
     restart_kodi,
     self_uninstall,
@@ -653,35 +653,38 @@ def _configure_box():
 
 
 # --------------------------------------------------------------------------- #
-# Optional video chaining — front-loaded prompts (see video module for config)
+# Curated video add-ons — installed unattended (no picker) in the one-tap run
 # --------------------------------------------------------------------------- #
-# Imported lazily inside run() so this base Setup still imports cleanly if the
-# video Setup is not installed; the prompts are shown BEFORE any install so the
-# whole run is unattended afterwards.
+VIDEO_APPS = [
+    "plugin.video.pov",
+    "plugin.video.the-loop",
+    "plugin.video.sporthdme",
+]
+# Install-then-disable: The Loop declares plugin.video.dailymotion_com as a
+# REQUIRED import nobody here uses. Installing it satisfies the dep check;
+# disabling it afterwards means it never runs and survives Loop updates with no
+# re-patching.
+VIDEO_DISABLE_AFTER = {"plugin.video.dailymotion_com"}
 
 
-def _ask_also_video():
-    """Front-loaded yes/no: 'Include video add-ons?'.
+def _install_video(dialog):
+    """Install the curated video add-ons + their closure, unattended.
 
-    DEFAULTS TO NO (opt-in): the No button is pre-focused via Kodi's
-    defaultbutton=DLG_YESNO_NO_BTN. Both the constant and the kwarg exist on
-    Kodi 21 Omega (verified on the box). We fall back gracefully on any older
-    Kodi that lacks either — a plain yesno whose No is the right-hand (default)
-    button. Returns True only if the user explicitly chose Yes.
+    Delegates to the shared library's install_selection (folded in from the
+    retired standalone Video Add-ons Setup): enable the source repos, build the
+    combined index from the installed repos + the official repo, resolve the
+    closure for VIDEO_APPS, extract/enable/origin-stamp it, and apply the
+    install-then-disable set. Shares this run's progress dialog. Returns how many
+    of VIDEO_APPS ended up installed. Never raises — a video failure must not
+    abort the box.
     """
-    title = "Tony.7.Bones Setup"
-    msg = "Include video add-ons?"
-    no_btn = getattr(xbmcgui, "DLG_YESNO_NO_BTN", None)
-    if no_btn is not None:
-        try:
-            return bool(
-                xbmcgui.Dialog().yesno(
-                    title, msg, yeslabel="Yes", nolabel="No", defaultbutton=no_btn
-                )
-            )
-        except TypeError:
-            pass  # older Kodi without the defaultbutton kwarg — fall through
-    return bool(xbmcgui.Dialog().yesno(title, msg, yeslabel="Yes", nolabel="No"))
+    try:
+        return install_selection(
+            VIDEO_APPS, OFFICIAL_BASE, VIDEO_DISABLE_AFTER, dialog, _log
+        )
+    except Exception as e:  # noqa: BLE001 - video failure must not abort the run
+        _log(f"video install failed (non-fatal): {e}", xbmc.LOGERROR)
+        return 0
 
 
 def _install_base(dialog):
@@ -735,179 +738,45 @@ def _install_base(dialog):
 
 
 def run():
-    # Front-load the optional video chaining prompts BEFORE any install, so the
-    # rest of the run is unattended. Default is No (opt-in). If Yes, the video
-    # multiselect is shown up front and the selection captured; the actual video
-    # install happens after the base install, in this one script.
-    video = None  # the video Setup's default.py module, imported only if chosen
-    video_selected = []  # list of chosen video app ids
-    video_load_failed = False  # Yes was chosen but the video Setup couldn't load
-    if _ask_also_video():
-        # The video chaining reuses the Video Add-ons Setup add-on's config and
-        # install logic, so that add-on must be present on the box to load it. On
-        # a fresh box the user has only installed our repo + run THIS base Setup,
-        # so script.tony7bones.video is usually NOT installed yet. Fetch it (and
-        # its shared library) by direct extract from our Pages repo BEFORE trying
-        # to load it — otherwise the prompt is answered Yes but the whole video
-        # step silently vanishes (the original one-shot bug). If it still can't be
-        # loaded we record that and surface it in the summary, never silently drop.
-        _ensure_video_setup_installed()
-        video = _load_video_module()
-        if video is None:
-            video_load_failed = True
-        else:
-            labels = [label for label, _aid in video.APPS]
-            choices = xbmcgui.Dialog().multiselect(
-                "Video Add-ons Setup", labels, preselect=video.PRESELECT
-            )
-            # Cancelled/empty multiselect → run base only (today's behaviour).
-            if choices:
-                video_selected = [video.APPS[i][1] for i in choices]
-
     dialog = xbmcgui.DialogProgress()
     dialog.create("Tony.7.Bones Setup", "Starting setup...")
 
-    # --- base install ---
-    repo_ok, fp_ok, app_ok, canceled = _install_base(dialog)
+    # --- base install (source repos + base apps) ---
+    repo_ok, _fp_ok, app_ok, canceled = _install_base(dialog)
     if canceled:
-        # User cancelled the progress dialog mid-install: abort cleanly with NO
-        # summary, NO self-uninstall, NO restart (exactly today's behaviour). The
-        # partial install is harmless and re-running Setup completes it.
+        # User cancelled mid-install: abort cleanly with NO summary, NO
+        # self-uninstall, NO restart. The partial install is harmless and
+        # re-running Setup completes it.
         return dialog.close()
 
-    # --- optional video install (unattended, in this one script) ---
-    video_installed = video_total = 0
-    if video is not None and video_selected:
-        video_installed, video_total = _install_video(video, video_selected, dialog)
+    # --- video add-ons (unattended — no picker, part of one-tap onboarding) ---
+    video_ok = _install_video(dialog)
 
     dialog.close()
 
     # --- one combined summary ---
-    lines = [
-        f"Repos: {repo_ok}/{len(REPO_ZIPS)}",
-        f"Patches: {fp_ok}/{len(FIRST_PARTY)}",
-        f"Apps: {app_ok}/{len(ADDONS)}",
-    ]
-    if video_total:
-        lines.append(f"Video add-ons: {video_installed}/{video_total}")
-    elif video_load_failed:
-        # Yes was chosen but the Video Add-ons Setup could not be installed/loaded
-        # — say so plainly instead of silently dropping the whole video step.
-        lines.append("Video add-ons: could not load Video Setup (skipped)")
-    lines.append("Open Add-ons to finish any remaining setup.")
-    xbmcgui.Dialog().ok("Tony.7.Bones Setup", "\n".join(lines))
+    xbmcgui.Dialog().ok(
+        "Tony.7.Bones Setup",
+        "\n".join(
+            [
+                f"Repos: {repo_ok}/{len(REPO_ZIPS)}",
+                f"Apps: {app_ok}/{len(ADDONS)}",
+                f"Video add-ons: {video_ok}/{len(VIDEO_APPS)}",
+                "Open Add-ons to finish any remaining setup.",
+            ]
+        ),
+    )
 
-    # Run once, then disappear. Done AFTER the summary; never raises.
+    # Run once, then disappear (after the summary; never raises). The shared
+    # library is a hidden module add-on and is deliberately LEFT installed.
     self_uninstall(MY_ID, _log)
-    # If we chained the Video Add-ons Setup, remove ITS tile too (the standalone
-    # video run removes itself; the chained run never reaches that code, so the
-    # base run cleans it up here). The shared library is a hidden module add-on
-    # and is deliberately LEFT installed. Guarded + never-raises by self_uninstall.
-    if video is not None and video_selected:
-        self_uninstall("script.tony7bones.video", _log)
-    # Add our File-Manager sources (Kodi home + sources dirs) — before the restart.
+    # Base-box configuration — applied before the restart so Kodi re-reads it:
+    # file-manager sources, the Estuary home-menu trim, weather/RSS/top-bar.
     _add_file_sources()
-    # Trim the stock Estuary home menu — before the restart so Estuary re-reads it.
     _trim_home_menu()
-    # Weather provider + Sacramento location, RSS ticker on (custom feeds if
-    # present), top-bar weather on.
     _configure_box()
     # ONE restart finalises every freshly extracted add-on AND the self-removal.
     restart_kodi("Tony.7.Bones Setup", _log)
-
-
-VIDEO_ID = "script.tony7bones.video"
-MODULE_ID = "script.module.tony7bones"
-
-
-def _video_default_py_path():
-    """Absolute path to the installed Video Add-ons Setup's default.py."""
-    return xbmcvfs.translatePath(f"special://home/addons/{VIDEO_ID}/default.py")
-
-
-def _module_init_py_path():
-    """Absolute path to the installed shared library's package __init__.py."""
-    return xbmcvfs.translatePath(
-        f"special://home/addons/{MODULE_ID}/lib/tony7bones/__init__.py"
-    )
-
-
-def _ensure_video_setup_installed():
-    """Make sure the Video Add-ons Setup add-on (and its shared library) are on
-    the box so the one-shot can load and reuse them.
-
-    On a fresh box the user installs our repo and runs THIS base Setup; the Video
-    Add-ons Setup add-on is usually not installed yet. Without it _load_video_module()
-    returns None and the chosen video step silently vanishes (the one-shot bug).
-    So when the user opts into video we direct-extract script.tony7bones.video
-    (and script.module.tony7bones if missing) from our Pages repo — the same
-    download+extract+rescan+enable path the rest of Setup uses, no blocking
-    InstallAddon modal — then enable them. Idempotent: anything already present
-    is skipped. Defensive: any failure is logged and swallowed; _load_video_module()
-    then reports the load failure and run() surfaces it in the summary.
-    """
-    try:
-        # The shared library underpins the video module's imports — fetch it first
-        # if it is somehow absent (normally installed already as our dependency).
-        if not os.path.isfile(_module_init_py_path()):
-            url = _latest_zip_url(MODULE_ID)
-            if url:
-                extract_zip(url, None, 100, _log)
-        # The video Setup add-on itself.
-        if not os.path.isfile(_video_default_py_path()):
-            url = _latest_zip_url(VIDEO_ID)
-            if url:
-                _log(f"fetching {VIDEO_ID} for one-shot video chaining", xbmc.LOGINFO)
-                extract_zip(url, None, 100, _log)
-        # Rescan + enable so the freshly extracted dirs register and load.
-        update_local_addons()
-        xbmc.sleep(2000)
-        _enable(MODULE_ID)
-        _enable(VIDEO_ID)
-    except Exception as e:  # noqa: BLE001 - best-effort; _load_video_module reports
-        _log(f"_ensure_video_setup_installed failed (non-fatal): {e}", xbmc.LOGERROR)
-
-
-def _load_video_module():
-    """Import the installed Video Add-ons Setup's default.py as a module so its
-    config (APPS / PRESELECT / DISABLE_AFTER_INSTALL) and helpers can be reused.
-
-    Returns the module, or None if the video Setup is not installed on the box.
-    The video default.py is __main__-guarded, so importing it runs no install.
-    """
-    try:
-        import importlib.util
-
-        path = xbmcvfs.translatePath(
-            "special://home/addons/script.tony7bones.video/default.py"
-        )
-        if not os.path.isfile(path):
-            _log("video Setup not installed; running base only", xbmc.LOGINFO)
-            return None
-        spec = importlib.util.spec_from_file_location("video_setup", path)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        return mod
-    except Exception as e:  # noqa: BLE001 - video chaining is best-effort
-        _log(f"could not load video Setup (running base only): {e}", xbmc.LOGERROR)
-        return None
-
-
-def _install_video(video, selected, dialog):
-    """Install the chosen video apps + closure via the video Setup's own logic,
-    sharing this run's progress dialog. Returns (installed_ok, total_selected).
-
-    Delegates to video.install_selected(), the standalone-and-chained entry point
-    the video module exposes, so the chained path and the standalone path run the
-    exact same code. No separate restart/self-uninstall happens here — the base
-    run owns the single restart and the video Setup's tile is removed by the base
-    run too (see run())."""
-    try:
-        installed_ok = video.install_selected(selected, dialog)
-        return installed_ok, len(selected)
-    except Exception as e:  # noqa: BLE001 - a video failure must not abort base
-        _log(f"video install failed (non-fatal): {e}", xbmc.LOGERROR)
-        return 0, len(selected)
 
 
 if __name__ == "__main__":

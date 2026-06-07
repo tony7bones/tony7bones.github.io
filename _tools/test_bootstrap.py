@@ -595,7 +595,7 @@ def test_run_installs_apps_without_modal(boot):
     assert "script.tony7bones.modv2plus" not in s["extracted"]
     assert s["ok"], "no completion dialog shown"
     _title, msg = s["ok"][-1]
-    assert "Repos:" in msg and "Patches:" in msg and "Apps:" in msg
+    assert "Repos:" in msg and "Apps:" in msg and "Video add-ons:" in msg
 
 
 def test_run_self_uninstalls_at_end(boot):
@@ -960,17 +960,14 @@ def test_run_trims_home_menu(boot):
 
 
 # --------------------------------------------------------------------------- #
-# Shared-library wiring + one-shot video chaining (Option B / Phase 2)
+# Shared-library wiring + unattended video add-ons (one-tap onboarding)
 # --------------------------------------------------------------------------- #
-VIDEO_DEFAULT_PY = REPO_ROOT / "addons" / "script.tony7bones.video" / "default.py"
-
-
 def test_requires_the_shared_module():
     """The manifest must declare the shared library as a required import so Kodi
     auto-installs script.module.tony7bones when this Setup is installed."""
     imp = _addon_root().find("requires/import[@addon='script.module.tony7bones']")
     assert imp is not None, "must <import> script.module.tony7bones"
-    assert imp.get("version") == "1.0.0"
+    assert imp.get("version") == "1.1.0"
 
 
 def test_imports_from_shared_module():
@@ -983,312 +980,81 @@ def test_imports_from_shared_module():
     assert "def _platform_tag" not in src
     assert "def _self_uninstall" not in src
     assert "def _restart_kodi" not in src
+    # the folded video entry point comes from the library now
+    assert "install_selection" in src
 
 
-def test_one_shot_prompt_is_front_loaded_and_defaults_no():
-    """The 'Include video add-ons?' yes/no must come BEFORE any install and
-    default to No (opt-in) via DLG_YESNO_NO_BTN."""
+def test_no_video_picker_in_source():
+    """The video picker is gone — no prompt, no multiselect. Video installs
+    unattended as part of one-tap onboarding."""
     src = DEFAULT_PY.read_text()
-    assert "Include video add-ons?" in src
-    assert "DLG_YESNO_NO_BTN" in src, "must default the prompt to No"
-    # the ask happens before the progress dialog / base install in run()
-    ask_pos = src.find("_ask_also_video()")
-    base_pos = src.find("_install_base(dialog)")
-    assert ask_pos != -1 and base_pos != -1 and ask_pos < base_pos
+    assert "_ask_also_video" not in src
+    assert "multiselect" not in src
+    assert "Include video" not in src
 
 
-def _install_video_setup_into(boot):
-    """Drop the REAL video default.py into the fixture's addons dir so the base
-    Setup's _load_video_module() can import it (it imports the shared library,
-    already on sys.path via the fixture)."""
-    vdir = boot.addons / "script.tony7bones.video"
-    vdir.mkdir(exist_ok=True)
-    (vdir / "default.py").write_text(VIDEO_DEFAULT_PY.read_text())
-    (vdir / "addon.xml").write_text('<addon id="script.tony7bones.video"/>')
-    # lay down a discoverable source repo so the video resolver finds an index
-    repo = boot.addons / "repository.fake"
-    repo.mkdir(exist_ok=True)
-    (repo / "addon.xml").write_text(
-        '<?xml version="1.0"?><addon id="repository.fake" version="1.0.0">'
-        '<extension point="xbmc.addon.repository"><dir minversion="21.0.0">'
-        "<info>https://fake.repo/zips/addons.xml</info>"
-        "<datadir>https://fake.repo/zips/</datadir>"
-        "</dir></extension></addon>"
-    )
-    return vdir
-
-
-def test_one_shot_no_runs_base_only(boot):
-    """Declining the video prompt = exactly today's base behaviour: no video apps,
-    no video line in the summary, one restart prompt."""
-    boot.state["also_video"] = False
-    boot.mod.run()
-    # base apps installed
-    for aid in boot.mod.ADDONS:
-        assert aid in boot.state["installed"]
-    # NO video apps touched
-    assert "plugin.video.pov" not in boot.state["installed"]
-    # summary has NO video line
-    _title, msg = boot.state["ok"][-1]
-    assert "Video add-ons:" not in msg
-    # exactly one restart prompt (the base end-of-setup one)
-    restart_prompts = [
-        m for _t, m in boot.state.get("yesno", []) if "needs to restart" in m
+def test_video_apps_are_the_three_without_umbrella(boot):
+    """VIDEO_APPS is exactly POV + The Loop + Sports HD — Umbrella is dropped."""
+    assert boot.mod.VIDEO_APPS == [
+        "plugin.video.pov",
+        "plugin.video.the-loop",
+        "plugin.video.sporthdme",
     ]
-    assert len(restart_prompts) == 1
+    assert "plugin.video.umbrella" not in boot.mod.VIDEO_APPS
 
 
-def test_one_shot_yes_chains_video_install(boot):
-    """Choosing Yes + the default multiselect installs the base AND the selected
-    video apps in ONE run, with ONE combined summary and ONE restart."""
-    _install_video_setup_into(boot)
-    # the video resolver fetches an index from the discovered fake repo; serve a
-    # tiny one plus zips through the fixture's urlopen.
-    extra_index = {
-        "plugin.video.pov": ("6.0", [], "https://fake.repo/zips/x.zip", "r"),
-        "plugin.video.the-loop": (
-            "7.9",
-            ["plugin.video.dailymotion_com"],
-            "https://fake.repo/zips/x.zip",
-            "r",
-        ),
-        "plugin.video.sporthdme": ("0.1", [], "https://fake.repo/zips/x.zip", "r"),
-        "plugin.video.dailymotion_com": (
-            "1.0",
-            [],
-            "https://fake.repo/zips/x.zip",
-            "r",
-        ),
-    }
+def test_video_installs_unattended(boot, monkeypatch):
+    """run() installs the curated video apps via the shared library with NO prompt
+    and reports them in the single combined summary."""
+    captured = {}
 
-    import urllib.request as _ur
+    def _stub(selected, official_base, disable_ids, dialog, log):
+        captured["selected"] = list(selected)
+        captured["disable"] = set(disable_ids)
+        return len(selected)
 
-    _orig_urlopen = _ur.urlopen
-
-    def _vid_urlopen(req, timeout=None):
-        url = req.full_url if hasattr(req, "full_url") else req
-        if "fake.repo" in url and "addons.xml" in url:
-            parts = ['<?xml version="1.0"?>', "<addons>"]
-            for aid, (ver, deps, _u, _o) in extra_index.items():
-                parts.append(f'<addon id="{aid}" version="{ver}"><requires>')
-                for d in deps:
-                    parts.append(f'<import addon="{d}" version="1.0.0"/>')
-                parts.append("</requires></addon>")
-            parts.append("</addons>")
-            data = "".join(parts).encode()
-            return _FakeResp(_gzip.compress(data) if url.endswith(".gz") else data)
-        if "mirrors.kodi.tv" in url and "addons.xml" in url:
-            data = b'<?xml version="1.0"?><addons></addons>'
-            return _FakeResp(_gzip.compress(data) if url.endswith(".gz") else data)
-        if url.endswith(".zip") and "fake.repo" in url:
-            # video zips all share the 'x.zip' name, so extract every selected
-            # video id deterministically here.
-            for aid in extra_index:
-                boot.state["extracted"].add(aid)
-            buf = io.BytesIO()
-            with _zipfile.ZipFile(buf, "w") as z:
-                z.writestr("x/addon.xml", '<addon id="x"/>')
-            return _FakeResp(buf.getvalue())
-        # base apps + their index/zips go through the fixture's own urlopen
-        return _orig_urlopen(req, timeout=timeout)
-
-    _ur.urlopen = _vid_urlopen
-    try:
-        boot.state["also_video"] = True
-        boot.state["video_pick"] = [0, 1, 2]  # POV, The Loop, Sports HD
-        boot.mod.run()
-    finally:
-        _ur.urlopen = _orig_urlopen
-
-    s = boot.state
-    # base still installed
-    for aid in boot.mod.ADDONS:
-        assert aid in s["installed"], f"base {aid} missing"
-    # multiselect was shown up front
-    assert s.get("multiselect"), "the video multiselect must be shown"
-    _t, options, preselect = s["multiselect"][-1]
-    assert options == ["POV", "The Loop", "Sports HD", "Umbrella"]
-    assert preselect == [0, 1, 2]
-    # the chosen video apps installed
-    for aid in ("plugin.video.pov", "plugin.video.the-loop", "plugin.video.sporthdme"):
-        assert aid in s["installed"], f"video {aid} not installed"
-    # Dailymotion installed-but-disabled
-    assert "plugin.video.dailymotion_com" in s["installed"]
-    assert "plugin.video.dailymotion_com" in s["disabled"]
-    # ONE combined summary with both base and video counts
-    _title, msg = s["ok"][-1]
-    assert "Apps:" in msg and "Video add-ons:" in msg
-    # exactly ONE restart prompt for the whole run
-    restart_prompts = [m for _t, m in s.get("yesno", []) if "needs to restart" in m]
-    assert len(restart_prompts) == 1, "exactly one restart for the whole one-shot run"
-
-
-def test_one_shot_yes_removes_both_setup_tiles(boot):
-    """A chained run self-removes BOTH the base and the video Setup dirs, but
-    LEAVES the shared library module installed (it is a hidden dependency)."""
-    base_dir = boot.addons / "script.tony7bones.bootstrap"
-    base_dir.mkdir()
-    (base_dir / "addon.xml").write_text('<addon id="script.tony7bones.bootstrap"/>')
-    _install_video_setup_into(boot)
-
-    import urllib.request as _ur
-
-    _orig = _ur.urlopen
-
-    def _u(req, timeout=None):
-        url = req.full_url if hasattr(req, "full_url") else req
-        if "fake.repo" in url and "addons.xml" in url:
-            return _FakeResp(b'<?xml version="1.0"?><addons></addons>')
-        if "mirrors.kodi.tv" in url and "addons.xml" in url:
-            return _FakeResp(b'<?xml version="1.0"?><addons></addons>')
-        return _orig(req, timeout=timeout)
-
-    _ur.urlopen = _u
-    try:
-        boot.state["also_video"] = True
-        boot.state["video_pick"] = [0]
-        boot.mod.run()
-    finally:
-        _ur.urlopen = _orig
-
-    assert not base_dir.exists(), "base Setup tile must be removed"
-    assert not (boot.addons / "script.tony7bones.video").exists(), (
-        "chained video Setup tile must be removed too"
-    )
-
-
-# --------------------------------------------------------------------------- #
-# Regression: the one-shot video step must NOT silently vanish when the Video
-# Add-ons Setup add-on is not yet installed (the original production bug).
-#
-# On a fresh box the user installs our repo + runs THIS base Setup; the Video
-# Add-ons Setup add-on is usually NOT installed. The old code asked "Also install
-# Video Add-ons?", got Yes, then _load_video_module() returned None and the whole
-# video step disappeared with no prompt, no error, no summary line — exactly what
-# was reported from the Fire Stick run. run() must instead fetch the Video Setup
-# (via _ensure_video_setup_installed) before loading it, then run the picker and
-# the video install. These tests fail against the pre-fix code.
-# --------------------------------------------------------------------------- #
-def test_one_shot_yes_fetches_video_setup_when_absent(boot, monkeypatch):
-    """Yes + Video Setup NOT installed: run() must fetch it (so the picker and the
-    video install actually happen), not silently fall back to base-only."""
-    # Deliberately do NOT _install_video_setup_into(boot): the video add-on is
-    # absent, mirroring a fresh box. Lay down a discoverable source repo so the
-    # video resolver can build an index once the module is loaded.
-    repo = boot.addons / "repository.fake"
-    repo.mkdir(exist_ok=True)
-    (repo / "addon.xml").write_text(
-        '<?xml version="1.0"?><addon id="repository.fake" version="1.0.0">'
-        '<extension point="xbmc.addon.repository"><dir minversion="21.0.0">'
-        "<info>https://fake.repo/zips/addons.xml</info>"
-        "<datadir>https://fake.repo/zips/</datadir>"
-        "</dir></extension></addon>"
-    )
-
-    # The real _ensure_video_setup_installed() would download the video zip from
-    # Pages and extract it; here we stand in for that fetch by dropping the REAL
-    # video default.py into the addons dir, then call through. This proves run()
-    # invokes the fetch step AND that after it the module becomes loadable.
-    calls = {"ensure": 0}
-    real_ensure = boot.mod._ensure_video_setup_installed
-
-    def _fake_ensure():
-        calls["ensure"] += 1
-        vdir = boot.addons / "script.tony7bones.video"
-        vdir.mkdir(exist_ok=True)
-        (vdir / "default.py").write_text(VIDEO_DEFAULT_PY.read_text())
-        (vdir / "addon.xml").write_text('<addon id="script.tony7bones.video"/>')
-
-    monkeypatch.setattr(boot.mod, "_ensure_video_setup_installed", _fake_ensure)
-    assert real_ensure is not None  # the fix's helper must exist
-
-    extra_index = {
-        "plugin.video.pov": ("6.0", []),
-        "plugin.video.the-loop": ("7.9", ["plugin.video.dailymotion_com"]),
-        "plugin.video.sporthdme": ("0.1", []),
-        "plugin.video.dailymotion_com": ("1.0", []),
-    }
-
-    import urllib.request as _ur
-
-    _orig = _ur.urlopen
-
-    def _u(req, timeout=None):
-        url = req.full_url if hasattr(req, "full_url") else req
-        if "fake.repo" in url and "addons.xml" in url:
-            parts = ['<?xml version="1.0"?>', "<addons>"]
-            for aid, (ver, deps) in extra_index.items():
-                parts.append(f'<addon id="{aid}" version="{ver}"><requires>')
-                for d in deps:
-                    parts.append(f'<import addon="{d}" version="1.0.0"/>')
-                parts.append("</requires></addon>")
-            parts.append("</addons>")
-            return _FakeResp("".join(parts).encode())
-        if "mirrors.kodi.tv" in url and "addons.xml" in url:
-            return _FakeResp(b'<?xml version="1.0"?><addons></addons>')
-        if url.endswith(".zip") and "fake.repo" in url:
-            for aid in extra_index:
-                boot.state["extracted"].add(aid)
-            buf = io.BytesIO()
-            with _zipfile.ZipFile(buf, "w") as z:
-                z.writestr("x/addon.xml", '<addon id="x"/>')
-            return _FakeResp(buf.getvalue())
-        return _orig(req, timeout=timeout)
-
-    _ur.urlopen = _u
-    try:
-        boot.state["also_video"] = True
-        boot.state["video_pick"] = [0, 1, 2]
-        boot.mod.run()
-    finally:
-        _ur.urlopen = _orig
-
-    s = boot.state
-    # The fetch step must have been invoked (this is the heart of the fix).
-    assert calls["ensure"] == 1, "run() must fetch the Video Setup when it is absent"
-    # The picker must have been shown (it was silently skipped before the fix).
-    assert s.get("multiselect"), "the video picker must be shown after the fetch"
-    # The chosen video apps must actually install — not silently vanish.
-    for aid in ("plugin.video.pov", "plugin.video.the-loop", "plugin.video.sporthdme"):
-        assert aid in s["installed"], f"video {aid} must install on a fresh box"
-    # Combined summary names both base and video — never a base-only summary.
-    _title, msg = s["ok"][-1]
-    assert "Apps:" in msg and "Video add-ons:" in msg
-
-
-def test_one_shot_yes_surfaces_video_load_failure(boot, monkeypatch):
-    """If Yes is chosen but the Video Setup cannot be fetched/loaded, run() must
-    say so in the summary instead of silently dropping the whole video step (and
-    base install must still complete)."""
-    # No video add-on present, and the fetch is a no-op (simulating a failed
-    # download), so _load_video_module() returns None.
-    monkeypatch.setattr(boot.mod, "_ensure_video_setup_installed", lambda: None)
-    boot.state["also_video"] = True
+    monkeypatch.setattr(boot.mod, "install_selection", _stub)
     boot.mod.run()
 
-    # base install still happened
+    assert captured["selected"] == [
+        "plugin.video.pov",
+        "plugin.video.the-loop",
+        "plugin.video.sporthdme",
+    ]
+    assert "plugin.video.dailymotion_com" in captured["disable"]
+    # no picker was ever shown
+    assert not boot.state.get("multiselect")
+    # the single combined summary reports the video count
+    _title, msg = boot.state["ok"][-1]
+    assert "Video add-ons: 3/3" in msg
+    # exactly one restart prompt for the whole run
+    restarts = [m for _t, m in boot.state.get("yesno", []) if "needs to restart" in m]
+    assert len(restarts) == 1
+
+
+def test_video_failure_is_nonfatal(boot, monkeypatch):
+    """A video install failure must not abort the box: base still installs and the
+    summary reports 0 video add-ons."""
+
+    def _boom(*a, **k):
+        raise RuntimeError("video boom")
+
+    monkeypatch.setattr(boot.mod, "install_selection", _boom)
+    boot.mod.run()
+
     for aid in boot.mod.ADDONS:
         assert aid in boot.state["installed"]
-    # no picker (module never loaded) and the failure is surfaced, not silent
-    assert not boot.state.get("multiselect"), "no picker when the module won't load"
     _title, msg = boot.state["ok"][-1]
-    assert "could not load" in msg.lower(), (
-        "a video load failure must be surfaced in the summary, not silently dropped"
-    )
+    assert "Video add-ons: 0/3" in msg
 
 
-def test_ensure_video_setup_runs_before_self_uninstall_and_restart():
-    """Source-level ordering guard: the fetch step must be wired BEFORE the
-    self-uninstall + restart so the chained video install can run first."""
+def test_video_runs_before_self_uninstall_and_restart():
+    """Source ordering guard: video install -> self-uninstall -> restart."""
     src = DEFAULT_PY.read_text()
-    ensure_pos = src.find("_ensure_video_setup_installed()")
-    install_video_pos = src.find("_install_video(")
-    uninstall_pos = src.find("self_uninstall(MY_ID")
-    restart_pos = src.find('restart_kodi("Tony.7.Bones Setup"')
-    assert ensure_pos != -1, "run() must call _ensure_video_setup_installed()"
-    assert ensure_pos < install_video_pos < uninstall_pos < restart_pos, (
-        "fetch -> video install -> self-uninstall -> restart ordering must hold"
-    )
+    iv = src.find("_install_video(dialog)")
+    un = src.find("self_uninstall(MY_ID")
+    rs = src.find('restart_kodi("Tony.7.Bones Setup"')
+    assert iv != -1 and -1 < iv < un < rs
 
 
 # --------------------------------------------------------------------------- #

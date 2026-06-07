@@ -107,3 +107,32 @@ def install_closure(closure, dialog, disable_ids, log):
     installed_ids = {aid for aid, _url, _origin in closure if net.is_installed(aid)}
     disable_after_install(installed_ids, disable_ids, log)
     return sum(1 for aid, _url, _origin in closure if net.is_installed(aid))
+
+
+def install_selection(selected, official_base, disable_ids, dialog, log):
+    """Resolve + install a set of apps with their combined dependency closure.
+
+    The shared entry point folded in from the retired standalone Video Add-ons
+    Setup. Enables the source repos (so stamped origins reference repos Kodi
+    knows about — a blank origin is what breaks The Loop and POV), builds the
+    combined index from the installed repos + the official repo (platform-aware,
+    `official_base` last), resolves the closure for `selected`, then extracts +
+    enables + origin-stamps it via install_closure and applies the install-then-
+    disable set (`disable_ids`). Shares the caller's progress `dialog` (may be
+    None). NEVER prompts, summarises, self-uninstalls, or restarts — the caller
+    owns that UX. Returns how many of `selected` ended up installed.
+    """
+    if dialog is not None:
+        dialog.update(0, "Resolving add-ons...")
+    repos.enable_source_repos(log)
+    plat = system.platform_tag()
+    idx = index.build_index(repos.repo_dirs(log), official_base, plat)
+    if not idx:
+        log("could not read any repository index", xbmc.LOGERROR)
+        return 0
+    closure, _missing = index.resolve_closure_combined(selected, idx)
+    if closure:
+        if dialog is not None:
+            dialog.update(10, "Installing add-ons and dependencies...")
+        install_closure(closure, dialog, disable_ids, log)
+    return sum(1 for aid in selected if net.is_installed(aid))

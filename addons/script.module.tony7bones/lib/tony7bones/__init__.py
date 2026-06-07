@@ -1,10 +1,9 @@
 """Tony.7.Bones shared install library.
 
-Public API used by the Setup add-ons (script.tony7bones.bootstrap and
-script.tony7bones.video). Everything below is the genuinely-shared, previously
-duplicated machinery; each Setup keeps only its own configuration (which
-repos/apps it installs, the file-manager sources, the home-menu trim, the
-multiselect items, the install-then-disable set).
+Public API used by the Tony.7.Bones Setup (script.tony7bones.bootstrap).
+Everything below is the genuinely-shared install machinery; the Setup keeps only
+its own configuration (which repos/apps it installs, the curated video add-ons,
+the file-manager sources, the home-menu trim, the install-then-disable set).
 
 Stable surface:
 
@@ -23,7 +22,7 @@ Stable surface:
     repo_dirs, have_source_repos, enable_source_repos, set_origins
 
   Install orchestration:
-    install_with_deps, install_closure, disable_after_install
+    install_with_deps, install_closure, install_selection, disable_after_install
 
   Constants:
     SYSTEM_PREFIXES, KODI_MAJOR
@@ -40,7 +39,12 @@ from .index import (
     resolve_closure_ordered,
     ver_key,
 )
-from .install import disable_after_install, install_closure, install_with_deps
+from .install import (
+    disable_after_install,
+    install_closure,
+    install_selection,
+    install_with_deps,
+)
 from .net import (
     disable,
     enable,
@@ -70,6 +74,7 @@ __all__ = [
     "have_source_repos",
     "http_get",
     "install_closure",
+    "install_selection",
     "install_with_deps",
     "is_android",
     "is_installed",

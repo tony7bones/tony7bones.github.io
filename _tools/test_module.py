@@ -58,7 +58,7 @@ class _FakeResp:
 def test_module_id_and_version():
     root = _addon_root()
     assert root.get("id") == "script.module.tony7bones"
-    assert root.get("version") == "1.0.0"
+    assert root.get("version") == "1.1.0"
     assert root.get("provider-name") == "tony7bones"
 
 
@@ -763,3 +763,64 @@ def test_self_uninstall_never_raises(lib, monkeypatch):
         sysmod.xbmcvfs, "translatePath", lambda p: (_ for _ in ()).throw(OSError("x"))
     )
     lib.t7.self_uninstall("script.tony7bones.video", lambda *a, **k: None)
+
+
+# --------------------------------------------------------------------------- #
+# install_selection — the curated-app installer folded in from the retired
+# standalone video Setup (now the bootstrap's unattended video step calls it).
+# --------------------------------------------------------------------------- #
+def test_install_selection_returns_zero_on_empty_index(lib, monkeypatch):
+    """No readable repo index -> install nothing, return 0 (never raises)."""
+    import tony7bones.install as inst
+
+    monkeypatch.setattr(inst.repos, "enable_source_repos", lambda log: None)
+    monkeypatch.setattr(inst.repos, "repo_dirs", lambda log: [])
+    monkeypatch.setattr(inst.system, "platform_tag", lambda: "x")
+    monkeypatch.setattr(inst.index, "build_index", lambda dirs, base, plat: {})
+    n = lib.t7.install_selection(
+        ["plugin.video.pov"], "official", set(), None, lambda *a, **k: None
+    )
+    assert n == 0
+
+
+def test_install_selection_resolves_and_installs_closure(lib, monkeypatch):
+    """Enables source repos, builds the index, resolves the closure, then
+    installs it via install_closure with the disable set — returning the count."""
+    import tony7bones.install as inst
+
+    seen = {}
+    monkeypatch.setattr(
+        inst.repos, "enable_source_repos", lambda log: seen.setdefault("enabled", True)
+    )
+    monkeypatch.setattr(inst.repos, "repo_dirs", lambda log: ["/repo"])
+    monkeypatch.setattr(inst.system, "platform_tag", lambda: "x")
+    monkeypatch.setattr(
+        inst.index,
+        "build_index",
+        lambda dirs, base, plat: {"plugin.video.pov": object()},
+    )
+    monkeypatch.setattr(
+        inst.index,
+        "resolve_closure_combined",
+        lambda selected, idx: ([("plugin.video.pov", "u", "r")], []),
+    )
+
+    def _ic(closure, dialog, disable_ids, log):
+        seen["closure"] = closure
+        seen["disable"] = disable_ids
+        return 1
+
+    monkeypatch.setattr(inst, "install_closure", _ic)
+    monkeypatch.setattr(inst.net, "is_installed", lambda aid: True)
+
+    n = lib.t7.install_selection(
+        ["plugin.video.pov"],
+        "official",
+        {"plugin.video.dailymotion_com"},
+        None,
+        lambda *a, **k: None,
+    )
+    assert seen.get("enabled") is True
+    assert seen["disable"] == {"plugin.video.dailymotion_com"}
+    assert seen["closure"] == [("plugin.video.pov", "u", "r")]
+    assert n == 1
