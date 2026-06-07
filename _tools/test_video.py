@@ -32,7 +32,7 @@ import pytest
 
 HERE = Path(__file__).parent
 REPO_ROOT = HERE.parent
-ADDON_DIR = REPO_ROOT / "repo" / "script.tony7bones.video"
+ADDON_DIR = REPO_ROOT / "addons" / "script.tony7bones.video"
 ADDON_XML = ADDON_DIR / "addon.xml"
 DEFAULT_PY = ADDON_DIR / "default.py"
 
@@ -434,7 +434,7 @@ def vid(tmp_path, monkeypatch):
     # Kodi does for an add-on that imports it, and purge any cached copy so the
     # library re-binds to THIS test's mock Kodi modules (it does `import xbmc`
     # at module load). Without the purge a prior test's mocks would leak in.
-    _LIB = REPO_ROOT / "repo" / "script.module.tony7bones" / "lib"
+    _LIB = REPO_ROOT / "addons" / "script.module.tony7bones" / "lib"
     monkeypatch.syspath_prepend(str(_LIB))
     for _name in list(sys.modules):
         if _name == "tony7bones" or _name.startswith("tony7bones."):

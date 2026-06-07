@@ -1,13 +1,28 @@
 #!/usr/bin/env python3
-"""Generate addons.xml, addons.xml.sha256, per-addon zips, and index.html files
-so Kodi can browse the repo over HTTP.
+"""Build the Kodi repo from two pristine source trees into the Pages-served root.
 
-Structure:
-  repo/                → Kodi plugin add-ons (have addon.xml, go in addons.xml)
-  repo/repositories/   → repo installer zips (manual install only)
-  repo/scripts/        → script zips (manual install only)
-  repo/media/          → images browsable from Kodi file manager
-  repo/<anything>/     → any other directory is auto-indexed for Kodi file manager
+Two source trees, two jobs:
+
+  dropbox/   the human canvas (pristine, committed; NEVER holds generated files).
+             Mirrored verbatim to the repo ROOT (repositories/, media/, iptv/,
+             rss/, ...), with a Kodi-parseable index.html generated into every
+             folder plus a root index.html that lists the canvas 1:1. This is
+             exactly what the bare URL https://tony7bones.github.io/ serves — the
+             Kodi File Manager source.
+
+  addons/    first-party add-on source + the hosted/ third-party mirror trees
+             (committed). Each dir with an addon.xml is built into a reproducible
+             zip and listed in addons/addons.xml (+ .sha256/.md5). The virtual
+             proxy fetches these from main via raw.githubusercontent; they are
+             NOT listed at the bare URL.
+
+The root install zip (repository.tony7bones-X.Y.Z.zip) and its link in the root
+index.html are owned by deploy.py. The generator injects a copy of whatever root
+install zip is present into the served repositories/ so it is browsable in the
+canvas too, and lists it on the root page.
+
+The mirror honors .gitignore: a secret-bearing source file (e.g. IPTV instance
+settings) is kept locally but never copied into the served tree.
 
 Run from anywhere:
     python3 _tools/generate_repo.py
@@ -18,24 +33,40 @@ import os
 import shutil
 import subprocess
 import zipfile
-from datetime import datetime, timezone
 from xml.etree import ElementTree as ET
 
-REPO_DIR = os.path.normpath(
-    os.path.join(os.path.abspath(os.path.dirname(__file__)), "..", "repo")
+ROOT_DIR = os.path.normpath(
+    os.path.join(os.path.abspath(os.path.dirname(__file__)), "..")
 )
-REPOS_DIR = os.path.join(REPO_DIR, "repositories")
-SCRIPTS_DIR = os.path.join(REPO_DIR, "scripts")
-MEDIA_DIR = os.path.join(REPO_DIR, "media")
+DROPBOX_DIR = os.path.join(ROOT_DIR, "dropbox")
+ADDONS_DIR = os.path.join(ROOT_DIR, "addons")
+
 MEDIA_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"}
 
-# Top-level dirs handled by dedicated generators — skip in asset discovery.
-# "hosted" holds the third-party-repo mirror trees (addon.xml + zip) that the
-# virtual proxy fetches from main via raw.githubusercontent. They are static,
-# committed-by-hand files — NOT generated, and NOT auto-indexed (we don't want a
-# Kodi-browsable listing of them, and indexing would churn index.html into every
-# hosted subdir on each run).
-_SPECIAL_DIRS = {"repositories", "scripts", "media", "hosted"}
+# Inside addons/: hosted/ holds the third-party mirror trees the proxy fetches
+# verbatim — never built as an add-on, never indexed (it is not browsed at the
+# bare URL and indexing would churn an index.html into every hosted subdir).
+_ADDONS_SPECIAL = {"hosted"}
+
+# Repo-root entries that are NOT canvas and must never be served-listed or pruned
+# by the canvas mirror. Everything else at the root that is a directory is treated
+# as canvas output (a mirror of a dropbox/ folder) and pruned if dropbox/ drops it.
+_ROOT_PROTECTED = {
+    "dropbox",
+    "addons",
+    "_tools",
+    "docs",
+    "images",
+    "node_modules",
+    ".git",
+    ".github",
+    ".githooks",
+    ".claude",
+    ".ruff_cache",
+    ".pytest_cache",
+}
+# Root files that belong to the site/install, not the canvas listing.
+_ROOT_NONCANVAS_FILES = {"index.html", "style.css"}
 
 
 def _fmt_size(n: int) -> str:
@@ -46,32 +77,12 @@ def _fmt_size(n: int) -> str:
     return f"{n}G"
 
 
-def _git_date(path: str) -> str | None:
-    """Return the last-commit date for path as 'YYYY-MM-DD HH:MM', or None if unknown."""
-    try:
-        out = (
-            subprocess.check_output(
-                ["git", "log", "-1", "--format=%cI", "--", path],
-                stderr=subprocess.DEVNULL,
-            )
-            .decode()
-            .strip()
-        )
-        if not out:
-            return None
-        dt = datetime.fromisoformat(out)
-        return dt.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M")
-    except (subprocess.CalledProcessError, ValueError, OSError):
-        return None
-
-
 def _git_ignored(path: str) -> bool:
     """True if `path` is git-ignored, so it is kept locally but never published.
 
-    Lets a secret-bearing file (e.g. IPTV settings) live in the working tree for
-    local use without appearing in any generated listing or being served by
-    Pages. Outside a git repo (tests) this returns False, so behaviour is
-    unchanged.
+    Lets a secret-bearing file (e.g. IPTV settings) live in the canvas for local
+    use without being copied into the served tree or appearing in any listing.
+    Outside a git repo (tests) this returns False, so behaviour is unchanged.
     """
     try:
         return (
@@ -86,22 +97,8 @@ def _git_ignored(path: str) -> bool:
         return False
 
 
-def _fmt_date(path: str) -> str:
-    """Return a stable date string for path.
-
-    Prefers the git last-commit date so the output is identical on every
-    checkout (including CI runners that reset all file mtimes).  Falls back
-    to the filesystem mtime for untracked files.
-    """
-    git_date = _git_date(path)
-    if git_date is not None:
-        return git_date
-    ts = os.path.getmtime(path)
-    return datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M")
-
-
 def _make_index(directory: str, title: str, rows: list[str]) -> None:
-    """Write an Apache-style directory listing Kodi can parse."""
+    """Write an Apache-style directory listing Kodi can parse (HTML 3.2)."""
     html = (
         '<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">\n'
         f"<html>\n<head><title>{title}</title></head>\n"
@@ -113,266 +110,245 @@ def _make_index(directory: str, title: str, rows: list[str]) -> None:
         fh.write(html)
 
 
-def _styled_page(title: str, heading: str, links: list[str]) -> str:
-    """Return a dark-themed HTML page using the shared stylesheet."""
-    link_tags = "\n      ".join(f'<a href="{h}">{h}</a>' for h in links)
-    return (
-        "<!DOCTYPE html>\n"
-        '<html lang="en">\n'
-        "  <head>\n"
-        '    <meta charset="utf-8">\n'
-        f"    <title>{title}</title>\n"
-        '    <link rel="stylesheet" href="/style.css">\n'
-        "  </head>\n"
-        "  <body>\n"
-        '    <img src="/images/tony7bones.png" alt="Tony.7.Bones" class="avatar">\n'
-        f"    <h1>{heading}</h1>\n"
-        '    <nav class="links">\n'
-        f"      {link_tags}\n"
-        "    </nav>\n"
-        "  </body>\n"
-        "</html>\n"
-    )
+def _zip_addon(addon_dir: str) -> tuple[ET.Element, str, str] | None:
+    """Build a reproducible zip for one add-on dir. Returns (root, id, zip_name).
 
+    Members are collected in a stable path-sorted order and written with fixed
+    1980 timestamps / 0644 perms so the zip is byte-for-byte reproducible on every
+    machine and CI run (Kodi's version-based auto-upgrade breaks on same-version
+    byte churn). __pycache__ and any prior zip / root index.html are excluded.
+    The zip is always rebuilt (a copy pipeline rewrites mtimes, so an mtime
+    staleness heuristic is meaningless — determinism makes the rebuild a no-op
+    diff anyway).
+    """
+    xml_path = os.path.join(addon_dir, "addon.xml")
+    try:
+        root = ET.parse(xml_path).getroot()
+    except ET.ParseError as exc:
+        print(
+            f"  ! skipping {os.path.basename(addon_dir)}: malformed addon.xml ({exc})"
+        )
+        return None
+    addon_id, version = root.get("id"), root.get("version")
+    if not (addon_id and version):
+        print(f"  ! skipping {os.path.basename(addon_dir)}: missing id or version")
+        return None
 
-def _zip_is_stale(addon_dir: str, zip_path: str) -> bool:
-    """Return True if any source file in addon_dir is newer than zip_path."""
-    zip_mtime = os.path.getmtime(zip_path)
-    root_index = os.path.join(addon_dir, "index.html")
+    zip_name = f"{addon_id}-{version}.zip"
+    zip_path = os.path.join(addon_dir, zip_name)
+    members = []
     for dirpath, dirs, files in os.walk(addon_dir):
-        # __pycache__ is a build artefact (recreated whenever the script is
-        # imported, e.g. by the test suite); it must never affect staleness or
-        # land in the published zip — that would make the zip non-reproducible.
         dirs[:] = [d for d in dirs if d != "__pycache__"]
-        for fname in files:
-            if fname.endswith(".zip") or os.path.join(dirpath, fname) == root_index:
+        dirs.sort()
+        for fname in sorted(files):
+            if fname.endswith(".zip") or (
+                fname == "index.html" and dirpath == addon_dir
+            ):
                 continue
-            if os.path.getmtime(os.path.join(dirpath, fname)) > zip_mtime:
-                return True
-    return False
+            fpath = os.path.join(dirpath, fname)
+            arcname = os.path.relpath(fpath, os.path.dirname(addon_dir))
+            members.append((fpath, arcname))
+    members.sort(key=lambda m: m[1])
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for fpath, arcname in members:
+            info = zipfile.ZipInfo(arcname, date_time=(1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o644 << 16
+            with open(fpath, "rb") as fh:
+                zf.writestr(info, fh.read())
+    return root, addon_id, zip_name
 
 
-def process_addons(scan_dir: str) -> tuple[list[ET.Element], list[str]]:
-    """Zip every addon subdir that has an addon.xml. Returns (roots, addon_ids)."""
-    roots, ids = [], []
+def process_addons(scan_dir: str) -> list[ET.Element]:
+    """Zip every add-on subdir (has addon.xml) under scan_dir + write its index.
+
+    Returns the list of <addon> roots for addons.xml. hosted/ is skipped.
+    """
+    roots = []
+    if not os.path.isdir(scan_dir):
+        return roots
     for entry in sorted(os.listdir(scan_dir)):
         addon_dir = os.path.join(scan_dir, entry)
-        xml_path = os.path.join(addon_dir, "addon.xml")
-        if not os.path.isdir(addon_dir) or not os.path.exists(xml_path):
+        if entry in _ADDONS_SPECIAL or not os.path.isdir(addon_dir):
             continue
-        try:
-            root = ET.parse(xml_path).getroot()
-        except ET.ParseError as exc:
-            print(f"  ! skipping {entry}: malformed addon.xml ({exc})")
+        if not os.path.exists(os.path.join(addon_dir, "addon.xml")):
             continue
-        addon_id, version = root.get("id"), root.get("version")
-        if not (addon_id and version):
-            print(f"  ! skipping {entry}: missing id or version")
+        built = _zip_addon(addon_dir)
+        if built is None:
             continue
-        zip_name = f"{addon_id}-{version}.zip"
-        zip_path = os.path.join(addon_dir, zip_name)
-        if not os.path.exists(zip_path) or _zip_is_stale(addon_dir, zip_path):
-            # Collect members in a stable, path-sorted order and write them with
-            # fixed timestamps/permissions so the zip is byte-for-byte
-            # reproducible on every machine and CI run. Without this, rebuilds
-            # embed local mtimes and produce churn at the same version — which
-            # breaks Kodi's version-based auto-upgrade and forces CI to commit.
-            members = []
-            for dirpath, dirs, files in os.walk(addon_dir):
-                # Drop build artefacts so the zip is reproducible (see
-                # _zip_is_stale): __pycache__ appears whenever default.py is
-                # imported (tests do this) and must never enter the zip.
-                dirs[:] = [d for d in dirs if d != "__pycache__"]
-                dirs.sort()
-                for fname in sorted(files):
-                    if fname.endswith(".zip") or (
-                        fname == "index.html" and dirpath == addon_dir
-                    ):
-                        continue
-                    fpath = os.path.join(dirpath, fname)
-                    arcname = os.path.relpath(fpath, os.path.dirname(addon_dir))
-                    members.append((fpath, arcname))
-            members.sort(key=lambda m: m[1])
-            with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
-                for fpath, arcname in members:
-                    info = zipfile.ZipInfo(arcname, date_time=(1980, 1, 1, 0, 0, 0))
-                    info.compress_type = zipfile.ZIP_DEFLATED
-                    info.external_attr = 0o644 << 16
-                    with open(fpath, "rb") as fh:
-                        zf.writestr(info, fh.read())
-        addon_rows = [
-            '<a href="../">Parent Directory</a>',
-            f'<a href="{zip_name}">{zip_name}</a>  {_fmt_size(os.path.getsize(zip_path))}',
-        ]
+        root, addon_id, zip_name = built
         _make_index(
             addon_dir,
-            f"Index of /{os.path.relpath(addon_dir, os.path.dirname(REPO_DIR))}/",
-            addon_rows,
+            f"Index of /{os.path.relpath(addon_dir, ROOT_DIR)}/",
+            [
+                '<a href="../">Parent Directory</a>',
+                f'<a href="{zip_name}">{zip_name}</a>  '
+                f"{_fmt_size(os.path.getsize(os.path.join(addon_dir, zip_name)))}",
+            ],
         )
         roots.append(root)
-        ids.append(addon_id)
-        print(f"  + {addon_id} {version}  →  {zip_name}")
-    return roots, ids
+        print(f"  + {addon_id} {root.get('version')}  ->  {zip_name}")
+    return roots
 
 
-def generate_scripts_index() -> None:
-    """Regenerate repo/scripts/index.html from the zip files currently in that directory."""
-    if not os.path.isdir(SCRIPTS_DIR):
-        return
-    zips = sorted(e for e in os.listdir(SCRIPTS_DIR) if e.lower().endswith(".zip"))
-    html = _styled_page("Tony.7.Bones — Scripts", "Scripts", zips)
-    with open(os.path.join(SCRIPTS_DIR, "index.html"), "w", encoding="utf-8") as fh:
-        fh.write(html)
-    print(f"scripts/index.html: {len(zips)} zip(s)")
+def write_addons_xml(roots: list[ET.Element]) -> tuple[str, str]:
+    """Write addons/addons.xml + .sha256 + .md5. Returns (sha256, md5)."""
+    addons_el = ET.Element("addons")
+    addons_el.extend(roots)
+    ET.indent(addons_el, space="    ")
+    path = os.path.join(ADDONS_DIR, "addons.xml")
+    ET.ElementTree(addons_el).write(path, encoding="UTF-8", xml_declaration=True)
+    data = open(path, "rb").read()
+    sha256 = hashlib.sha256(data).hexdigest()
+    md5 = hashlib.md5(data).hexdigest()
+    with open(path + ".sha256", "w") as fh:
+        fh.write(sha256)
+    with open(path + ".md5", "w") as fh:
+        fh.write(md5)
+    return sha256, md5
 
 
-def generate_media_index() -> None:
-    """Regenerate repo/media/index.html from the images currently in that directory."""
-    if not os.path.isdir(MEDIA_DIR):
-        return
-    images = sorted(
-        e for e in os.listdir(MEDIA_DIR) if os.path.splitext(e)[1].lower() in MEDIA_EXTS
-    )
-    html = _styled_page("Tony.7.Bones — Media", "Media", images)
-    with open(os.path.join(MEDIA_DIR, "index.html"), "w", encoding="utf-8") as fh:
-        fh.write(html)
-    print(f"media/index.html: {len(images)} image(s)")
-
-
-def generate_asset_indexes() -> None:
-    """Recursively index every top-level asset directory in repo/.
-
-    An asset directory is any subdirectory that:
-      - is not a known special dir (repositories, scripts, media)
-      - does not contain an addon.xml (those are Kodi add-ons, handled separately)
-
-    Just drop a folder under repo/, run this script, commit — Kodi's file
-    manager can browse the full tree.
+def _index_tree(top: str) -> int:
+    """Generate a Kodi index.html into `top` and every subdir, listing real
+    entries (dirs + files) by name with sizes, no dates. Git-ignored files are
+    omitted (kept locally, never served). Returns the number of indexes written.
     """
-    total = 0
-    for entry in sorted(os.listdir(REPO_DIR)):
-        asset_dir = os.path.join(REPO_DIR, entry)
-        if not os.path.isdir(asset_dir):
-            continue
-        if entry in _SPECIAL_DIRS:
-            continue
-        if os.path.exists(os.path.join(asset_dir, "addon.xml")):
-            continue
-        count = 0
-        for dirpath, dirnames, filenames in os.walk(asset_dir):
-            dirnames.sort()
-            rel = os.path.relpath(dirpath, os.path.dirname(REPO_DIR))
-            rows = ['<a href="../">Parent Directory</a>']
-            for d in dirnames:
-                rows.append(f'<a href="{d}/">{d}/</a>')
-            for f in sorted(filenames):
-                if f == "index.html":
-                    continue
-                fpath = os.path.join(dirpath, f)
-                if _git_ignored(fpath):
-                    continue  # kept locally, never published
-                rows.append(
-                    f'<a href="{f}">{f}</a>  {_fmt_size(os.path.getsize(fpath))}'
-                )
-            _make_index(dirpath, f"Index of /{rel}/", rows)
-            count += 1
-        print(f"{entry}/: {count} index(es) generated")
-        total += count
-    return total
+    count = 0
+    for dirpath, dirnames, filenames in os.walk(top):
+        dirnames[:] = sorted(d for d in dirnames if d != "__pycache__")
+        rel = os.path.relpath(dirpath, ROOT_DIR)
+        rows = ['<a href="../">Parent Directory</a>']
+        for d in dirnames:
+            rows.append(f'<a href="{d}/">{d}/</a>')
+        for f in sorted(filenames):
+            if f == "index.html":
+                continue
+            fpath = os.path.join(dirpath, f)
+            if _git_ignored(fpath):
+                continue
+            rows.append(f'<a href="{f}">{f}</a>  {_fmt_size(os.path.getsize(fpath))}')
+        _make_index(dirpath, f"Index of /{rel}/", rows)
+        count += 1
+    return count
 
 
-def sync_dropbox() -> None:
-    """Mirror the dropbox/ canvas into repo/ for Kodi.
+def _copy_canvas_dir(src: str, dst: str) -> None:
+    """Mirror one canvas folder src -> dst, replacing dst wholesale (so deletions
+    in the source propagate) and skipping git-ignored files (secrets)."""
+    if os.path.isdir(dst):
+        shutil.rmtree(dst)
 
-    dropbox/ is the human canvas (no index.html / checksums). index.html is
-    generated into repo/ only — never into dropbox/. The canvas is mirrored two
-    ways:
+    def _ignore(dirname, names):
+        skip = set()
+        for n in names:
+            p = os.path.join(dirname, n)
+            if n == "__pycache__" or (os.path.isfile(p) and _git_ignored(p)):
+                skip.add(n)
+        return skip
 
-      * repo/dropbox/  — an EXACT 1:1 mirror of the WHOLE canvas (every file and
-        folder, including loose files at the dropbox/ root). This is the clean
-        view Kodi's file manager points at: what you put in dropbox/ is exactly
-        what Kodi shows — nothing else, no machine folders.
-      * repo/<folder>/ — each canvas SUBFOLDER is also mirrored to the repo top
-        level so existing fetch paths keep working (the bootstrap downloads repo
-        installer zips from repo/repositories/, etc.). Add-on dirs (with an
-        addon.xml) and the hosted/ tree are never touched.
+    shutil.copytree(src, dst, ignore=_ignore)
+
+
+def mirror_canvas() -> list[str]:
+    """Mirror dropbox/ -> repo ROOT (1:1) and index every served folder.
+
+    Each top-level dropbox/ folder is copied to ROOT/<folder> (replacing any
+    prior copy), loose dropbox/ files are copied to the root, and a Kodi index is
+    generated into every served canvas folder. Root dirs that were canvas but are
+    no longer in dropbox/ are pruned. Returns the sorted canvas entry names (dirs
+    + loose files) for the root listing. No-op if dropbox/ is absent.
     """
-    # Derived from REPO_DIR (not a module constant) so tests that monkeypatch
-    # REPO_DIR stay sandboxed: with no sibling dropbox/, this is a clean no-op.
-    dropbox_dir = os.path.normpath(os.path.join(REPO_DIR, "..", "dropbox"))
-    if not os.path.isdir(dropbox_dir):
-        return
-    owned = {
-        d
-        for d in os.listdir(dropbox_dir)
-        if os.path.isdir(os.path.join(dropbox_dir, d))
-    }
-    # Per-folder mirror to the repo top level (keeps the bootstrap/proxy paths).
-    for d in sorted(owned):
-        dst = os.path.join(REPO_DIR, d)
-        if os.path.isdir(dst):
-            shutil.rmtree(dst)
-        shutil.copytree(os.path.join(dropbox_dir, d), dst)
-        print(f"dropbox/{d} -> repo/{d}")
-    # Drop top-level content folders the canvas no longer owns (not add-ons, not
-    # hosted/, not the repo/dropbox browse view).
-    for d in os.listdir(REPO_DIR):
-        p = os.path.join(REPO_DIR, d)
+    if not os.path.isdir(DROPBOX_DIR):
+        return []
+    entries = sorted(os.listdir(DROPBOX_DIR))
+    canvas_dirs = [e for e in entries if os.path.isdir(os.path.join(DROPBOX_DIR, e))]
+
+    # Prune root dirs that used to be canvas but dropbox/ no longer owns.
+    for d in os.listdir(ROOT_DIR):
+        p = os.path.join(ROOT_DIR, d)
         if (
             os.path.isdir(p)
-            and d not in ("hosted", "dropbox")
-            and d not in owned
+            and d not in _ROOT_PROTECTED
+            and d not in canvas_dirs
             and not os.path.exists(os.path.join(p, "addon.xml"))
         ):
             shutil.rmtree(p)
-            print(f"removed repo/{d} (not in dropbox)")
-    # The clean 1:1 browse view Kodi points at — the whole canvas verbatim,
-    # loose root files included. index.html is added here by the index pass.
-    served = os.path.join(REPO_DIR, "dropbox")
-    if os.path.isdir(served):
-        shutil.rmtree(served)
-    shutil.copytree(dropbox_dir, served)
-    print("dropbox/ -> repo/dropbox/ (1:1 browse view)")
+            print(f"pruned root/{d} (no longer in dropbox/)")
+
+    listing = []
+    for e in entries:
+        src = os.path.join(DROPBOX_DIR, e)
+        dst = os.path.join(ROOT_DIR, e)
+        if os.path.isdir(src):
+            _copy_canvas_dir(src, dst)
+            _index_tree(dst)
+            listing.append(e + "/")
+            print(f"dropbox/{e}/ -> /{e}/")
+        elif os.path.isfile(src) and not _git_ignored(src):
+            shutil.copyfile(src, dst)
+            listing.append(e)
+    return listing
+
+
+def _root_install_zip() -> str | None:
+    """The repository.tony7bones-*.zip at the repo root (owned by deploy.py)."""
+    zips = sorted(
+        e
+        for e in os.listdir(ROOT_DIR)
+        if e.startswith("repository.tony7bones-") and e.endswith(".zip")
+    )
+    return zips[-1] if zips else None
+
+
+def write_root_index(canvas_listing: list[str]) -> None:
+    """Generate the bare-URL root index.html: the canvas 1:1 plus the install zip.
+
+    HTML 3.2 so Kodi's File Manager parses it. Lists exactly the canvas entries
+    (mirrored from dropbox/) and the root install zip — nothing else (no addons/,
+    dropbox/, _tools/, docs/).
+    """
+    rows = []
+    install_zip = _root_install_zip()
+    if install_zip:
+        size = _fmt_size(os.path.getsize(os.path.join(ROOT_DIR, install_zip)))
+        rows.append(f'<a href="{install_zip}">{install_zip}</a>  {size}')
+    for e in canvas_listing:
+        rows.append(f'<a href="{e}">{e}</a>')
+    _make_index(ROOT_DIR, "Index of /", rows)
+
+
+def _inject_install_zip_into_repositories() -> None:
+    """Copy the root install zip into the served repositories/ so it is browsable
+    in the canvas too, pruning any older proxy zip there. dropbox/ stays pristine
+    (the built zip is injected only into the served copy)."""
+    install_zip = _root_install_zip()
+    served_repos = os.path.join(ROOT_DIR, "repositories")
+    if not install_zip or not os.path.isdir(served_repos):
+        return
+    for e in os.listdir(served_repos):
+        if e.startswith("repository.tony7bones-") and e.endswith(".zip"):
+            os.remove(os.path.join(served_repos, e))
+    shutil.copyfile(
+        os.path.join(ROOT_DIR, install_zip), os.path.join(served_repos, install_zip)
+    )
+    # Re-index repositories/ so the injected zip shows in its listing.
+    if os.path.isdir(served_repos):
+        _index_tree(served_repos)
 
 
 def generate() -> None:
-    sync_dropbox()
-    plugin_roots, _plugin_ids = process_addons(REPO_DIR)
+    # 1. Build the add-on zips + addons.xml (machine tree, proxy-fetched).
+    roots = process_addons(ADDONS_DIR)
+    sha256, md5 = write_addons_xml(roots)
 
-    addons_el = ET.Element("addons")
-    addons_el.extend(plugin_roots)
-    ET.indent(addons_el, space="    ")
-    addons_xml_path = os.path.join(REPO_DIR, "addons.xml")
-    ET.ElementTree(addons_el).write(
-        addons_xml_path, encoding="UTF-8", xml_declaration=True
-    )
+    # 2. Mirror the canvas to the served root + index every folder.
+    canvas_listing = mirror_canvas()
 
-    with open(addons_xml_path, "rb") as fh:
-        data = fh.read()
-    sha256 = hashlib.sha256(data).hexdigest()
-    md5 = hashlib.md5(data).hexdigest()
-    with open(os.path.join(REPO_DIR, "addons.xml.sha256"), "w") as fh:
-        fh.write(sha256)
-    with open(os.path.join(REPO_DIR, "addons.xml.md5"), "w") as fh:
-        fh.write(md5)
+    # 3. Make the proxy installer browsable in the canvas, then the root listing.
+    _inject_install_zip_into_repositories()
+    write_root_index(canvas_listing)
 
-    os.makedirs(REPOS_DIR, exist_ok=True)
-    zip_entries = sorted(
-        e
-        for e in os.listdir(REPOS_DIR)
-        if os.path.isfile(os.path.join(REPOS_DIR, e)) and e.lower().endswith(".zip")
-    )
-    html = _styled_page("Tony.7.Bones — Repositories", "Repositories", zip_entries)
-    with open(os.path.join(REPOS_DIR, "index.html"), "w", encoding="utf-8") as fh:
-        fh.write(html)
-
-    generate_scripts_index()
-    generate_media_index()
-    generate_asset_indexes()
-
-    # repo/index.html is hand-crafted — never overwrite it
-
-    print(f"\naddons.xml: {len(plugin_roots)} plugin(s)")
+    print(f"\naddons.xml: {len(roots)} add-on(s)")
     print(f"addons.xml.sha256: {sha256}")
     print(f"addons.xml.md5:    {md5}")
 

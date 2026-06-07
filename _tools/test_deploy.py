@@ -344,7 +344,7 @@ def sandbox(tmp_path):
     ):
         shutil.copyfile(HERE / name, tools / name)
 
-    addon = repo / "repo" / "repository.tony7bones"
+    addon = repo / "addons" / "repository.tony7bones"
     addon.mkdir(parents=True)
     (addon / "addon.xml").write_text(SEED_ADDON)
     (addon / "default.py").write_text("# entry\n")
@@ -397,7 +397,7 @@ def test_system_full_deploy_happy_path(sandbox):
     # doubles as the proxy self-update source — no separate hosted addon)
     assert (
         rl.read_addon_version(
-            _show(repo, "main", "repo/repository.tony7bones/addon.xml")
+            _show(repo, "main", "addons/repository.tony7bones/addon.xml")
         )
         == "1.0.1"
     )
@@ -419,7 +419,7 @@ def test_system_full_deploy_happy_path(sandbox):
         return hashlib.sha256(Path(p).read_bytes()).hexdigest()
 
     assert sha(repo / "repository.tony7bones-1.0.1.zip") == sha(
-        repo / "repo" / "repository.tony7bones" / "repository.tony7bones-1.0.1.zip"
+        repo / "addons" / "repository.tony7bones" / "repository.tony7bones-1.0.1.zip"
     )
 
     # tag created on the main release commit
@@ -502,7 +502,7 @@ def test_system_consistency_gate_detects_mismatch(sandbox):
     repo, _ = sandbox
     _deploy(repo, "--news", "x", "--no-verify")  # now consistent at 1.0.1
     # corrupt the main addon.xml version so it disagrees with index.html
-    addon = repo / "repo" / "repository.tony7bones" / "addon.xml"
+    addon = repo / "addons" / "repository.tony7bones" / "addon.xml"
     addon.write_text(rl.set_addon_version(addon.read_text(), "9.9.9"))
     _git(repo, "add", "-A")
     _run(
@@ -526,7 +526,7 @@ def test_system_two_consecutive_deploys_climb(sandbox):
     _deploy(repo, "--news", "second", "--no-verify")
     assert (
         rl.read_addon_version(
-            _show(repo, "main", "repo/repository.tony7bones/addon.xml")
+            _show(repo, "main", "addons/repository.tony7bones/addon.xml")
         )
         == "1.0.2"
     )
@@ -589,7 +589,7 @@ def test_system_no_push_keeps_local_only(sandbox):
     assert _git(repo, "tag", "-l", "v1.0.1").stdout.strip() == "v1.0.1"
     assert (
         rl.read_addon_version(
-            _show(repo, "main", "repo/repository.tony7bones/addon.xml")
+            _show(repo, "main", "addons/repository.tony7bones/addon.xml")
         )
         == "1.0.1"
     )
@@ -614,7 +614,7 @@ def test_system_offline_origin_warns_and_proceeds(sandbox):
     assert "could not fetch origin" in (r.stdout + r.stderr)
     assert (
         rl.read_addon_version(
-            _show(repo, "main", "repo/repository.tony7bones/addon.xml")
+            _show(repo, "main", "addons/repository.tony7bones/addon.xml")
         )
         == "1.0.1"
     )

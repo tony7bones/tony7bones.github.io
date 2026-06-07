@@ -38,7 +38,7 @@ import pytest
 
 HERE = Path(__file__).parent
 REPO_ROOT = HERE.parent
-ADDON_DIR = REPO_ROOT / "repo" / "script.tony7bones.modv2plus"
+ADDON_DIR = REPO_ROOT / "addons" / "script.tony7bones.modv2plus"
 ADDON_XML = ADDON_DIR / "addon.xml"
 DEFAULT_PY = ADDON_DIR / "default.py"
 HOME_XML = ADDON_DIR / "resources" / "xml" / "Home.xml"

@@ -33,7 +33,7 @@ def _scaffold(tmp_path, with_origin=True):
     (repo / "_tools").mkdir(parents=True)
     for name in ("check_versions.py", "release_lib.py"):
         shutil.copyfile(HERE / name, repo / "_tools" / name)
-    addon = repo / "repo" / "plugin.test"
+    addon = repo / "addons" / "plugin.test"
     addon.mkdir(parents=True)
     (addon / "addon.xml").write_text('<addon id="plugin.test" version="1.0.0"/>\n')
     (addon / "default.py").write_text("# v1\n")
@@ -61,7 +61,7 @@ def _check(repo):
 
 def test_blocks_source_change_without_bump(tmp_path):
     repo = _scaffold(tmp_path)
-    (repo / "repo" / "plugin.test" / "default.py").write_text("# changed, no bump\n")
+    (repo / "addons" / "plugin.test" / "default.py").write_text("# changed, no bump\n")
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "change without bump")
     r = _check(repo)
@@ -71,8 +71,8 @@ def test_blocks_source_change_without_bump(tmp_path):
 
 def test_allows_source_change_with_bump(tmp_path):
     repo = _scaffold(tmp_path)
-    (repo / "repo" / "plugin.test" / "default.py").write_text("# changed\n")
-    (repo / "repo" / "plugin.test" / "addon.xml").write_text(
+    (repo / "addons" / "plugin.test" / "default.py").write_text("# changed\n")
+    (repo / "addons" / "plugin.test" / "addon.xml").write_text(
         '<addon id="plugin.test" version="1.0.1"/>\n'
     )
     _git(repo, "add", "-A")
@@ -83,8 +83,8 @@ def test_allows_source_change_with_bump(tmp_path):
 
 def test_ignores_generated_zip_and_index(tmp_path):
     repo = _scaffold(tmp_path)
-    (repo / "repo" / "plugin.test" / "plugin.test-1.0.0.zip").write_bytes(b"zip")
-    (repo / "repo" / "plugin.test" / "index.html").write_text("<html/>")
+    (repo / "addons" / "plugin.test" / "plugin.test-1.0.0.zip").write_bytes(b"zip")
+    (repo / "addons" / "plugin.test" / "index.html").write_text("<html/>")
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "generated files only")
     r = _check(repo)
@@ -93,10 +93,10 @@ def test_ignores_generated_zip_and_index(tmp_path):
 
 def _seed_base_version(repo, version):
     """Advance the add-on (and origin/main baseline) to `version` cleanly."""
-    (repo / "repo" / "plugin.test" / "addon.xml").write_text(
+    (repo / "addons" / "plugin.test" / "addon.xml").write_text(
         f'<addon id="plugin.test" version="{version}"/>\n'
     )
-    (repo / "repo" / "plugin.test" / "default.py").write_text(f"# base {version}\n")
+    (repo / "addons" / "plugin.test" / "default.py").write_text(f"# base {version}\n")
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", f"base {version}")
     base = _git(repo, "rev-parse", "HEAD").stdout.strip()
@@ -110,8 +110,8 @@ def test_rejects_double_digit_bump(tmp_path):
     """A hand-edited 1.0.9 -> 1.0.10 bump is rejected (component >= 10)."""
     repo = _scaffold(tmp_path)
     _seed_base_version(repo, "1.0.9")
-    (repo / "repo" / "plugin.test" / "default.py").write_text("# changed\n")
-    (repo / "repo" / "plugin.test" / "addon.xml").write_text(
+    (repo / "addons" / "plugin.test" / "default.py").write_text("# changed\n")
+    (repo / "addons" / "plugin.test" / "addon.xml").write_text(
         '<addon id="plugin.test" version="1.0.10"/>\n'
     )
     _git(repo, "add", "-A")
@@ -125,8 +125,8 @@ def test_allows_clean_rollover_bump(tmp_path):
     """A 1.0.9 -> 1.1.0 rollover bump is accepted."""
     repo = _scaffold(tmp_path)
     _seed_base_version(repo, "1.0.9")
-    (repo / "repo" / "plugin.test" / "default.py").write_text("# changed\n")
-    (repo / "repo" / "plugin.test" / "addon.xml").write_text(
+    (repo / "addons" / "plugin.test" / "default.py").write_text("# changed\n")
+    (repo / "addons" / "plugin.test" / "addon.xml").write_text(
         '<addon id="plugin.test" version="1.1.0"/>\n'
     )
     _git(repo, "add", "-A")
@@ -137,7 +137,7 @@ def test_allows_clean_rollover_bump(tmp_path):
 
 def test_skips_when_no_origin(tmp_path):
     repo = _scaffold(tmp_path, with_origin=False)
-    (repo / "repo" / "plugin.test" / "default.py").write_text("# changed\n")
+    (repo / "addons" / "plugin.test" / "default.py").write_text("# changed\n")
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "change")
     r = _check(repo)

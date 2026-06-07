@@ -56,8 +56,8 @@ import check_consistency as cc  # noqa: E402
 import release_lib as rl  # noqa: E402
 
 REPO = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-MAIN_ADDON = os.path.join(REPO, "repo", "repository.tony7bones", "addon.xml")
-GENERATED_ZIP_DIR = os.path.join(REPO, "repo", "repository.tony7bones")
+MAIN_ADDON = os.path.join(REPO, "addons", "repository.tony7bones", "addon.xml")
+GENERATED_ZIP_DIR = os.path.join(REPO, "addons", "repository.tony7bones")
 ROOT_INDEX = os.path.join(REPO, "index.html")
 GENERATOR = os.path.join(REPO, "_tools", "generate_repo.py")
 BASE_URL = "https://tony7bones.github.io"
@@ -255,8 +255,10 @@ def deploy(args) -> int:
             os.remove(os.path.join(REPO, stale))
             print(f"  pruned stale root zip ....... {stale}")
 
-        # 4. root index link -> new zip
-        write(ROOT_INDEX, rl.rewrite_index_link(read(ROOT_INDEX), nxt))
+        # 4. rebuild so the generated root index.html + served repositories/ now
+        #    list the new root installer zip. The generator owns index.html (it is
+        #    the bare-URL canvas listing), so there is no separate link rewrite.
+        run_generator()
 
         # 5. commit main
         git("add", "-A")
@@ -353,7 +355,7 @@ def verify_live(
     for i in range(1, attempts + 1):
         status, body = _get(zip_url)
         if status == 200 and hashlib.sha256(body).hexdigest() == local_sha:
-            _, addons = _get(f"{BASE_URL}/repo/addons.xml")
+            _, addons = _get(f"{BASE_URL}/addons/addons.xml")
             _, index = _get(f"{BASE_URL}/index.html")
             addons_ok = f'version="{version}"'.encode() in addons
             index_ok = rl.zip_name(version).encode() in index

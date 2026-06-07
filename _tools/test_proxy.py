@@ -28,7 +28,7 @@ import pytest
 
 HERE = Path(__file__).parent
 REPO_ROOT = HERE.parent
-PROXY_ROOT = REPO_ROOT / "repo" / "repository.tony7bones"
+PROXY_ROOT = REPO_ROOT / "addons" / "repository.tony7bones"
 
 
 # --------------------------------------------------------------------------- #

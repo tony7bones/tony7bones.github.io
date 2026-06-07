@@ -28,10 +28,10 @@ sys.path.insert(0, str(HERE))
 import release_lib as rl  # noqa: E402
 
 REPO_ROOT = HERE.parent
-ADDON_DIR = REPO_ROOT / "repo" / "script.tony7bones.bootstrap"
+ADDON_DIR = REPO_ROOT / "addons" / "script.tony7bones.bootstrap"
 ADDON_XML = ADDON_DIR / "addon.xml"
 DEFAULT_PY = ADDON_DIR / "default.py"
-REPOSITORIES = REPO_ROOT / "repo" / "repositories"
+REPOSITORIES = REPO_ROOT / "repositories"
 
 
 def _addon_root():
@@ -219,7 +219,7 @@ def test_success_dialog_does_not_overclaim():
 
 def test_modv2plus_is_host_provided():
     """The patch must exist in the host addons.xml and be served statically."""
-    addons = (REPO_ROOT / "repo" / "addons.xml").read_text()
+    addons = (REPO_ROOT / "addons" / "addons.xml").read_text()
     assert 'id="script.tony7bones.modv2plus"' in addons
 
 
@@ -531,7 +531,7 @@ def boot(tmp_path, monkeypatch):
     # Kodi does for an add-on that imports it, and purge any cached copy so the
     # library re-binds to THIS test's mock Kodi modules (it does `import xbmc`
     # at module load). Without the purge a prior test's mocks would leak in.
-    _LIB = REPO_ROOT / "repo" / "script.module.tony7bones" / "lib"
+    _LIB = REPO_ROOT / "addons" / "script.module.tony7bones" / "lib"
     monkeypatch.syspath_prepend(str(_LIB))
     for _name in list(sys.modules):
         if _name == "tony7bones" or _name.startswith("tony7bones."):
@@ -560,7 +560,7 @@ def test_no_unknown_sources_jsonrpc_during_run(boot):
 def test_latest_zip_url_resolves_live_version(boot):
     url = boot.mod._latest_zip_url("script.tony7bones.modv2plus")
     assert url == (
-        "https://tony7bones.github.io/repo/script.tony7bones.modv2plus/"
+        "https://tony7bones.github.io/addons/script.tony7bones.modv2plus/"
         "script.tony7bones.modv2plus-1.0.0.zip"
     )
 
@@ -962,7 +962,7 @@ def test_run_trims_home_menu(boot):
 # --------------------------------------------------------------------------- #
 # Shared-library wiring + one-shot video chaining (Option B / Phase 2)
 # --------------------------------------------------------------------------- #
-VIDEO_DEFAULT_PY = REPO_ROOT / "repo" / "script.tony7bones.video" / "default.py"
+VIDEO_DEFAULT_PY = REPO_ROOT / "addons" / "script.tony7bones.video" / "default.py"
 
 
 def test_requires_the_shared_module():

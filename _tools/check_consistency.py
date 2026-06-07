@@ -31,7 +31,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import release_lib as rl  # noqa: E402
 
 MAIN = "main"
-MAIN_ADDON = "repo/repository.tony7bones/addon.xml"
+MAIN_ADDON = "addons/repository.tony7bones/addon.xml"
 INDEX = "index.html"
 
 REPO_ROOT = os.path.normpath(

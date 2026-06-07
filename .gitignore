@@ -19,8 +19,11 @@ venv/
 # Node
 node_modules/
 
-# Private IPTV settings — kept locally, never published
-repo/iptv/instance-settings*.xml
+# Private IPTV settings — kept locally, never published. Anchored to the dropbox/
+# canvas SOURCE; the generator's mirror honors .gitignore so the secret is never
+# copied into the served root. The served-root path is ignored too (belt-and-suspenders).
+dropbox/iptv/instance-settings*.xml
+/iptv/instance-settings*.xml
 .coverage
 
 # Secrets / local env — never commit

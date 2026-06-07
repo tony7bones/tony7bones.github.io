@@ -29,7 +29,7 @@ import pytest
 
 HERE = Path(__file__).parent
 REPO_ROOT = HERE.parent
-MODULE_DIR = REPO_ROOT / "repo" / "script.module.tony7bones"
+MODULE_DIR = REPO_ROOT / "addons" / "script.module.tony7bones"
 LIB = MODULE_DIR / "lib"
 ADDON_XML = MODULE_DIR / "addon.xml"
 
@@ -82,7 +82,7 @@ def test_module_license_is_gpl():
 def test_module_in_repo_addons_xml():
     """The generator must list the module in repo/addons.xml so Kodi can resolve
     it as a dependency when a Setup is installed from the Tony.7.Bones repo."""
-    addons = (REPO_ROOT / "repo" / "addons.xml").read_text()
+    addons = (REPO_ROOT / "addons" / "addons.xml").read_text()
     assert 'id="script.module.tony7bones"' in addons
 
 
@@ -98,7 +98,7 @@ def test_manifest_lists_the_module():
     manifest = _json.loads(
         (
             REPO_ROOT
-            / "repo"
+            / "addons"
             / "repository.tony7bones"
             / "resources"
             / "repository.json"

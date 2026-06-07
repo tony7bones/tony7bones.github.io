@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Versioning gate — every push that changes an add-on must bump its version.
 
-For each add-on directory under repo/, compares local HEAD against origin/main
+For each add-on directory under addons/, compares local HEAD against origin/main
 (ignoring the generated zip + index.html). If the add-on's SOURCE changed but
 its addon.xml version did not increase, the push is blocked.
 
@@ -24,7 +24,7 @@ import release_lib as rl  # noqa: E402
 REPO_ROOT = os.path.normpath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 )
-ADDON_BASE = os.path.join(REPO_ROOT, "repo")
+ADDON_BASE = os.path.join(REPO_ROOT, "addons")
 BASE_REF = "origin/main"
 
 
@@ -50,7 +50,7 @@ def check(base_ref: str = BASE_REF):
 
     info, problems = [], []
     for name, path in _addon_dirs():
-        rel = f"repo/{name}"
+        rel = f"addons/{name}"
         # Did any source file change (excluding the generated zip + index.html)?
         diff = _git(
             "diff",
