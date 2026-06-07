@@ -325,6 +325,10 @@ def apply_skin_settings():
     - Power menu style -> "Classic list" (`powermenu_list`; the style is an
       exclusive group, so clear the other two flags `powermenu_panel` /
       `powermenu_iconlist`).
+    - Plain backgrounds for the Power / Settings / Search home items. MOD V2 shows
+      a dedicated image for each when its flag is UNSET (HomeFanartVar gates on
+      `!Skin.HasSetting(enable_*_background)`), so *setting* each flag turns that
+      background OFF.
     Defensive: logged, never aborts the run.
     """
     try:
@@ -342,6 +346,10 @@ def apply_skin_settings():
         xbmc.executebuiltin("Skin.SetBool(powermenu_list)")
         xbmc.executebuiltin("Skin.Reset(powermenu_panel)")
         xbmc.executebuiltin("Skin.Reset(powermenu_iconlist)")
+        # Plain backgrounds for Power / Settings / Search (opt-out flags: set = off).
+        xbmc.executebuiltin("Skin.SetBool(enable_power_background)")
+        xbmc.executebuiltin("Skin.SetBool(enable_settings_background)")
+        xbmc.executebuiltin("Skin.SetBool(enable_search_background)")
         xbmc.log("[mod v2+] skin settings applied", xbmc.LOGINFO)
     except Exception as e:
         xbmc.log("[mod v2+] failed applying skin settings: {}".format(e), xbmc.LOGERROR)
@@ -361,6 +369,9 @@ def reset_skin_settings():
             "powermenu_list",
             "powermenu_panel",
             "powermenu_iconlist",
+            "enable_power_background",
+            "enable_settings_background",
+            "enable_search_background",
         ):
             xbmc.executebuiltin("Skin.Reset({})".format(s))
         xbmc.log("[mod v2+] skin settings reset", xbmc.LOGINFO)

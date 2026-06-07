@@ -240,7 +240,7 @@ def test_restart_flow_present_and_prompted():
 def test_restart_comes_after_success_summary():
     """The restart prompt must follow the counts dialog, not replace it."""
     src = DEFAULT_PY.read_text()
-    ok_pos = src.rfind("Open Add-ons to finish")
+    ok_pos = src.rfind("Restart will finish setup.")
     restart_pos = src.rfind("restart_kodi(")
     assert ok_pos != -1 and restart_pos != -1
     assert restart_pos > ok_pos, "restart prompt must come after the summary dialog"
@@ -268,7 +268,7 @@ def test_self_uninstall_runs_after_summary_and_before_restart():
     """Sequence must be: summary dialog -> self-uninstall -> restart prompt.
     The restart is what finalises the removal (startup scan drops the DB row)."""
     src = DEFAULT_PY.read_text()
-    ok_pos = src.rfind("Open Add-ons to finish")
+    ok_pos = src.rfind("Restart will finish setup.")
     uninstall_pos = src.rfind("self_uninstall(MY_ID")
     restart_pos = src.rfind("restart_kodi(")
     assert ok_pos != -1 and uninstall_pos != -1 and restart_pos != -1
@@ -590,9 +590,10 @@ def test_run_installs_apps_without_modal(boot):
     assert "weather.multi" in s["installed"]
     assert "pvr.iptvsimple" in s["installed"]
     assert "inputstream.ffmpegdirect" in s["installed"]  # binary dep of the PVR
-    # the MOD V2 patch is NO LONGER auto-installed (opt-in only)
-    assert "script.tony7bones.modv2plus" not in s["installed"]
-    assert "script.tony7bones.modv2plus" not in s["extracted"]
+    # the one-shot now ALSO installs the MOD V2+ patch add-on, direct-extracted —
+    # our first-party add-on is served only by the proxy the resolver skips
+    assert "script.tony7bones.modv2plus" in s["installed"]
+    assert "script.tony7bones.modv2plus" in s["extracted"]
     assert s["ok"], "no completion dialog shown"
     _title, msg = s["ok"][-1]
     assert "Repos:" in msg and "Apps:" in msg and "Video add-ons:" in msg
@@ -993,12 +994,13 @@ def test_no_video_picker_in_source():
     assert "Include video" not in src
 
 
-def test_video_apps_are_the_three_without_umbrella(boot):
-    """VIDEO_APPS is exactly POV + The Loop + Sports HD — Umbrella is dropped."""
+def test_video_apps_are_the_four_without_umbrella(boot):
+    """VIDEO_APPS is exactly POV + The Loop + Sports HD + YouTube — Umbrella dropped."""
     assert boot.mod.VIDEO_APPS == [
         "plugin.video.pov",
         "plugin.video.the-loop",
         "plugin.video.sporthdme",
+        "plugin.video.youtube",
     ]
     assert "plugin.video.umbrella" not in boot.mod.VIDEO_APPS
 
@@ -1006,27 +1008,31 @@ def test_video_apps_are_the_three_without_umbrella(boot):
 def test_video_installs_unattended(boot, monkeypatch):
     """run() installs the curated video apps via the shared library with NO prompt
     and reports them in the single combined summary."""
-    captured = {}
+    calls = []
 
     def _stub(selected, official_base, disable_ids, dialog, log):
-        captured["selected"] = list(selected)
-        captured["disable"] = set(disable_ids)
+        calls.append((list(selected), set(disable_ids)))
         return len(selected)
 
     monkeypatch.setattr(boot.mod, "install_selection", _stub)
     boot.mod.run()
 
-    assert captured["selected"] == [
+    # install_selection is now used for BOTH the video apps and the skin closure;
+    # find the video call among them.
+    video_call = next((c for c in calls if "plugin.video.pov" in c[0]), None)
+    assert video_call is not None, "video apps must install via install_selection"
+    assert video_call[0] == [
         "plugin.video.pov",
         "plugin.video.the-loop",
         "plugin.video.sporthdme",
+        "plugin.video.youtube",
     ]
-    assert "plugin.video.dailymotion_com" in captured["disable"]
+    assert "plugin.video.dailymotion_com" in video_call[1]
     # no picker was ever shown
     assert not boot.state.get("multiselect")
     # the single combined summary reports the video count
     _title, msg = boot.state["ok"][-1]
-    assert "Video add-ons: 3/3" in msg
+    assert "Video add-ons: 4/4" in msg
     # exactly one restart prompt for the whole run
     restarts = [m for _t, m in boot.state.get("yesno", []) if "needs to restart" in m]
     assert len(restarts) == 1
@@ -1045,7 +1051,67 @@ def test_video_failure_is_nonfatal(boot, monkeypatch):
     for aid in boot.mod.ADDONS:
         assert aid in boot.state["installed"]
     _title, msg = boot.state["ok"][-1]
-    assert "Video add-ons: 0/3" in msg
+    assert "Video add-ons: 0/4" in msg
+
+
+def test_install_skin_imports_is_installed():
+    """_install_skin calls is_installed; guard against the ruff-fix hook stripping
+    it (it was added before its first use once, got auto-removed as 'unused', and
+    silently turned the whole skin step into a no-op). This test pins the import."""
+    src = DEFAULT_PY.read_text()
+    import_block = src.split("from tony7bones import (")[1].split(")")[0]
+    assert "is_installed" in import_block, (
+        "is_installed must stay imported — _install_skin no-ops silently without it"
+    )
+
+
+def test_skin_install_resolves_closure_and_sets_skin(boot, monkeypatch):
+    """run() direct-installs pvr.artwork (the proxy-invisible, GitHub-only dep),
+    resolves the skin + patch closure via install_selection, and sets
+    lookandfeel.skin so the end-of-Setup restart activates Estuary MOD V2."""
+    sel_calls = []
+    extracted = []
+
+    def _sel(selected, official_base, disable_ids, dialog, log):
+        sel_calls.append(list(selected))
+        for aid in selected:  # mark installed so the set-skin guard passes
+            boot.state["installed"].add(aid)
+        return len(selected)
+
+    def _extract(url, dialog, pct, log):
+        extracted.append(url)
+        if "pvr.artwork" in url:
+            boot.state["installed"].add(boot.mod.PVR_ARTWORK_ID)
+        if "modv2plus" in url:
+            boot.state["installed"].add(boot.mod.MODV2PLUS_ID)
+        return True
+
+    monkeypatch.setattr(boot.mod, "install_selection", _sel)
+    monkeypatch.setattr(boot.mod, "extract_zip", _extract)
+    monkeypatch.setattr(boot.mod, "install_with_deps", lambda *a, **k: True)
+    monkeypatch.setattr(
+        boot.mod, "_latest_zip_url", lambda aid: "http://local/{}-9.9.9.zip".format(aid)
+    )
+    boot.mod.run()
+
+    # BOTH proxy-invisible first-party pieces are direct-extracted: pvr.artwork
+    # (GitHub-only) and our own modv2plus patch add-on (proxy-only).
+    assert any("script.module.pvr.artwork-2.2.10.zip" in u for u in extracted), (
+        "pvr.artwork must be direct-installed from the hosted mirror"
+    )
+    assert any("script.tony7bones.modv2plus" in u for u in extracted), (
+        "modv2plus must be direct-installed (resolver can't see our proxy)"
+    )
+    # the skin itself resolves via install_selection from the installed repos
+    assert ["skin.estuary.modv2"] in sel_calls
+    # lookandfeel.skin set (set-and-restart activation, no modal)
+    assert any(
+        "lookandfeel.skin" in s and "skin.estuary.modv2" in s
+        for s in boot.state["jsonrpc"]
+    ), "must set lookandfeel.skin so the restart activates MOD V2"
+    # summary reports the skin installed
+    _title, msg = boot.state["ok"][-1]
+    assert "Estuary MOD V2: installed" in msg
 
 
 def test_video_runs_before_self_uninstall_and_restart():

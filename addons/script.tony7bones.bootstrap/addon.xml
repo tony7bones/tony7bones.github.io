@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="script.tony7bones.bootstrap"
        name="Tony.7.Bones Setup"
-       version="1.2.0"
+       version="1.3.0"
        provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
@@ -24,6 +24,6 @@
     <license>GPL-2.0-or-later</license>
     <summary lang="en_GB">Tony.7.Bones Kodi Setup</summary>
     <description lang="en_GB">Installs repositories and add-ons for a personal Kodi build.</description>
-    <news>v1.2.0: One-tap onboarding — video add-ons (POV, The Loop, Sports HD) now install automatically with no picker or prompt. The standalone Video Add-ons Setup is retired and its install logic folded into the shared library; Umbrella is no longer installed. One combined summary, one restart, fully unattended.</news>
+    <news>v1.3.0: One-shot now installs the Estuary MOD V2 skin too. Setup installs the skin's full closure (direct-installing script.module.pvr.artwork, which no public repo carries) and activates it; the MOD V2+ patch then auto-applies on first MOD V2 boot via its service. One run on a fresh Kodi now yields the complete box — repos, apps, video, skin, patch.</news>
   </extension>
 </addon>

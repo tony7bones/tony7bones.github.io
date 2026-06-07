@@ -31,7 +31,7 @@ clients it needs — are resolved per-platform: the library detects this machine
 Kodi platform string at runtime and picks the matching official-repo entry.
 
 This Setup also installs a curated set of video add-ons (POV, The Loop, Sports
-HD) unattended — no picker — as part of the one-tap run, with a single combined
+HD, YouTube) unattended — no picker — as part of the one-tap run, with a combined
 summary and a single restart. Each resolves its full dependency closure from the
 source repos installed above plus the official repo; origins are stamped.
 
@@ -52,6 +52,7 @@ from tony7bones import (
     extract_zip,
     install_selection,
     install_with_deps,
+    is_installed,
     restart_kodi,
     self_uninstall,
     update_local_addons,
@@ -103,6 +104,21 @@ ADDONS = [
     "weather.multi",
     "pvr.iptvsimple",
 ]
+
+# Estuary MOD V2 skin + the MOD V2+ patch — installed + activated by the one-shot.
+SKIN_ID = "skin.estuary.modv2"
+MODV2PLUS_ID = "script.tony7bones.modv2plus"
+OUTLINE_HD_ID = "resource.images.weathericons.outline-hd"
+# script.module.pvr.artwork is a hard requirement of the skin but is b-jesch's own
+# GitHub module — not in Kodinerds/official, and the closure resolver SKIPS our
+# 127.0.0.1 proxy (repos.py), so it would resolve as "missing". We direct-extract
+# it (+ its requests/simplecache deps from official) BEFORE the closure resolve so
+# the skin's dependency check is satisfied. The mirror is served at our Pages
+# /addons/hosted/ (raw.githubusercontent equivalent for the proxy).
+HOSTED_BASE = "https://tony7bones.github.io/addons/hosted"
+PVR_ARTWORK_ID = "script.module.pvr.artwork"
+PVR_ARTWORK_ZIP = "script.module.pvr.artwork-2.2.10.zip"
+PVR_ARTWORK_DEPS = ["script.module.requests", "script.module.simplecache"]
 
 
 def _log(msg, level=xbmc.LOGINFO):
@@ -659,6 +675,7 @@ VIDEO_APPS = [
     "plugin.video.pov",
     "plugin.video.the-loop",
     "plugin.video.sporthdme",
+    "plugin.video.youtube",
 ]
 # Install-then-disable: The Loop declares plugin.video.dailymotion_com as a
 # REQUIRED import nobody here uses. Installing it satisfies the dep check;
@@ -685,6 +702,60 @@ def _install_video(dialog):
     except Exception as e:  # noqa: BLE001 - video failure must not abort the run
         _log(f"video install failed (non-fatal): {e}", xbmc.LOGERROR)
         return 0
+
+
+def _install_skin(dialog):
+    """Install + activate Estuary MOD V2 and the MOD V2+ patch, unattended.
+
+    Two pieces are INVISIBLE to the closure resolver because it skips our
+    127.0.0.1 proxy (repos.py): script.module.pvr.artwork (b-jesch GitHub-only)
+    and our OWN first-party patch add-on script.tony7bones.modv2plus. Both are
+    direct-extracted here. install_selection then resolves the rest of the skin's
+    closure (skin.estuary.modv2 + skinshortcuts + image.resource.select from
+    Kodinerds; pvr.artwork already satisfied) from the installed repos.
+
+    Then we rescan + settle + enable everything we direct-extracted BEFORE setting
+    lookandfeel.skin: a freshly-extracted skin must be registered AND enabled or
+    Kodi silently rejects the skin setting and the box boots stock Estuary (the
+    bug the fresh-Kodi test caught). The single end-of-Setup restart then activates
+    MOD V2 (no "Keep this skin?" modal); modv2plus's boot service auto-applies the
+    patch once MOD V2 is live. Returns True if the skin installed. Never raises.
+    """
+    try:
+        if dialog is not None:
+            dialog.update(0, "Installing Estuary MOD V2 skin...")
+        # 1. pvr.artwork (GitHub-only, proxy-invisible) + its module deps, direct.
+        if not is_installed(PVR_ARTWORK_ID):
+            extract_zip(
+                f"{HOSTED_BASE}/{PVR_ARTWORK_ID}/{PVR_ARTWORK_ZIP}", dialog, 100, _log
+            )
+        for dep in PVR_ARTWORK_DEPS:
+            install_with_deps(dep, dialog, [], OFFICIAL_BASE, _log)
+        # 2. our MOD V2+ patch add-on is proxy-only too -> direct-extract it (live
+        #    version) + pull its outline-hd weather-icon dep from the official repo.
+        if not is_installed(MODV2PLUS_ID):
+            url = _latest_zip_url(MODV2PLUS_ID)
+            if url:
+                extract_zip(url, dialog, 100, _log)
+        install_with_deps(OUTLINE_HD_ID, dialog, [], OFFICIAL_BASE, _log)
+        # 3. the skin + its remaining closure from the installed repos + official.
+        install_selection([SKIN_ID], OFFICIAL_BASE, set(), dialog, _log)
+        # 4. rescan + settle + enable everything so the skin is a registered,
+        #    enabled choice BEFORE we set it (else Kodi keeps stock Estuary).
+        update_local_addons()
+        xbmc.sleep(3000)
+        for aid in (PVR_ARTWORK_ID, MODV2PLUS_ID, SKIN_ID):
+            _enable(aid)
+        xbmc.sleep(1000)
+        # NOTE: lookandfeel.skin is set LAST in run(), immediately before the
+        # restart — NOT here. A long gap between the skin-set and the restart lets
+        # Kodi's "Keep this skin?" safety timeout silently revert the choice (the
+        # bug the fresh-Kodi test caught); setting it right before the restart
+        # persists it to guisettings on shutdown.
+        return is_installed(SKIN_ID)
+    except Exception as e:  # noqa: BLE001 - a skin failure must not abort the box
+        _log(f"skin install failed (non-fatal): {e}", xbmc.LOGERROR)
+        return False
 
 
 def _install_base(dialog):
@@ -752,6 +823,12 @@ def run():
     # --- video add-ons (unattended — no picker, part of one-tap onboarding) ---
     video_ok = _install_video(dialog)
 
+    # --- Estuary MOD V2 skin + MOD V2+ patch: install + activate. The patch
+    #     itself auto-applies via modv2plus's boot service once MOD V2 is live
+    #     after the end-of-Setup restart (the patch cannot run before the skin is
+    #     active, and Setup is gone by then). ---
+    skin_ok = _install_skin(dialog)
+
     dialog.close()
 
     # --- one combined summary ---
@@ -762,7 +839,8 @@ def run():
                 f"Repos: {repo_ok}/{len(REPO_ZIPS)}",
                 f"Apps: {app_ok}/{len(ADDONS)}",
                 f"Video add-ons: {video_ok}/{len(VIDEO_APPS)}",
-                "Open Add-ons to finish any remaining setup.",
+                "Estuary MOD V2: {}".format("installed" if skin_ok else "FAILED"),
+                "Restart will finish setup.",
             ]
         ),
     )
@@ -775,6 +853,13 @@ def run():
     _add_file_sources()
     _trim_home_menu()
     _configure_box()
+    # Activate MOD V2 LAST — immediately before the restart. Setting lookandfeel.skin
+    # and then restarting promptly is what persists the choice: Kodi writes the
+    # in-memory skin to guisettings on shutdown, and a short set->restart gap beats
+    # the "Keep this skin?" timeout that would otherwise revert it to stock Estuary.
+    # The restart boots into MOD V2; modv2plus's service then auto-applies the patch.
+    if skin_ok:
+        _set_setting("lookandfeel.skin", SKIN_ID)
     # ONE restart finalises every freshly extracted add-on AND the self-removal.
     restart_kodi("Tony.7.Bones Setup", _log)
 

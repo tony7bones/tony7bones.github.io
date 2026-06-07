@@ -43,7 +43,7 @@ v2.2.0: Point hosted add-ons back at the main branch
             <description lang="en_GB">Internal Python library used by the Tony.7.Bones Setup add-ons. It is not runnable on its own and does not appear on the home screen; it provides the shared add-on install, dependency-resolution and Kodi-integration machinery the Setup add-ons depend on.</description>
         </extension>
     </addon>
-    <addon id="script.tony7bones.bootstrap" name="Tony.7.Bones Setup" version="1.2.0" provider-name="tony7bones">
+    <addon id="script.tony7bones.bootstrap" name="Tony.7.Bones Setup" version="1.3.0" provider-name="tony7bones">
         <requires>
             <import addon="xbmc.python" version="3.0.0" />
             <import addon="xbmc.addon" version="12.0.0" />
@@ -58,15 +58,16 @@ v2.2.0: Point hosted add-ons back at the main branch
             <license>GPL-2.0-or-later</license>
             <summary lang="en_GB">Tony.7.Bones Kodi Setup</summary>
             <description lang="en_GB">Installs repositories and add-ons for a personal Kodi build.</description>
-            <news>v1.2.0: One-tap onboarding — video add-ons (POV, The Loop, Sports HD) now install automatically with no picker or prompt. The standalone Video Add-ons Setup is retired and its install logic folded into the shared library; Umbrella is no longer installed. One combined summary, one restart, fully unattended.</news>
+            <news>v1.3.0: One-shot now installs the Estuary MOD V2 skin too. Setup installs the skin's full closure (direct-installing script.module.pvr.artwork, which no public repo carries) and activates it; the MOD V2+ patch then auto-applies on first MOD V2 boot via its service. One run on a fresh Kodi now yields the complete box — repos, apps, video, skin, patch.</news>
         </extension>
     </addon>
-    <addon id="script.tony7bones.modv2plus" name="Estuary MOD V2+" version="1.3.4" provider-name="tony7bones">
+    <addon id="script.tony7bones.modv2plus" name="Estuary MOD V2+" version="1.4.0" provider-name="tony7bones">
         <requires>
             <import addon="xbmc.python" version="3.0.0" />
             <import addon="resource.images.weathericons.outline-hd" version="0.0.3" />
         </requires>
         <extension point="xbmc.python.script" library="default.py" />
+        <extension point="xbmc.service" library="service.py" />
         <extension point="xbmc.addon.metadata">
             <summary lang="en_GB">Lean enhancements for Estuary MOD V2</summary>
             <description lang="en_GB">A small, non-destructive set of enhancements for skin.estuary.modv2 (Estuary MOD V2), built fresh against the Omega release. Reorders the gear Settings menu so Skin Settings sits above Media sources, and adds a dedicated "Tony.7.Bones MOD V2+" Skin Settings category that is home to our tweaks. The System Info overlay is hidden by default (toggle renamed "Disable System Info overlay"), the top-bar weather icons default to the Outline HD set (resource.images.weathericons.outline-hd), and the clock and navigation wordmark each have a per-item toggle that defaults to the stock look. The category also carries in-tab Apply and Restore buttons. Run after installing or updating skin.estuary.modv2. Apply and Restore are both available — original files are backed up once and never overwritten, and Restore reverts every change cleanly.</description>
@@ -74,7 +75,7 @@ v2.2.0: Point hosted add-ons back at the main branch
             <assets>
                 <icon>icon.png</icon>
             </assets>
-            <news>Fix: Apply no longer reports "Partly Applied" on Fire OS 8 / Android 11 (Firestick 4K Max). Skin files now copy with content-only writes (shutil.copyfile), avoiding the sdcardfs chmod/utime error that made copies count as failed and skipped the menu-trim + skin-settings steps.</news>
+            <news>v1.4.0: Auto-apply service — when Estuary MOD V2 is the active skin and the patch is not yet applied, it now applies itself once on startup (so the one-tap Setup produces a fully patched box with no manual step), and re-applies automatically after a MOD V2 skin update. Manual Apply/Restore unchanged. (v1.3.5: turns off the Power/Settings/Search backgrounds.)</news>
         </extension>
     </addon>
 </addons>

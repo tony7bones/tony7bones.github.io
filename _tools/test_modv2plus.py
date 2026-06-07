@@ -897,7 +897,14 @@ def test_run_apply_copies_files_and_media(patch_env):
     ), "Apply must enable the top-bar weather readout (show_weatherinfo)"
     # ...and applies the other Extras defaults: splash OFF, themes OFF (both
     # opt-out flags), power menu -> Classic list.
-    for flag in ("EnableSplashScreen", "DisableThemes", "powermenu_list"):
+    for flag in (
+        "EnableSplashScreen",
+        "DisableThemes",
+        "powermenu_list",
+        "enable_power_background",
+        "enable_settings_background",
+        "enable_search_background",
+    ):
         assert any(
             "Skin.SetBool({})".format(flag) in b for b in patch_env.state["builtins"]
         ), "Apply must set {}".format(flag)
@@ -993,7 +1000,14 @@ def test_run_restore_reverts_xml_and_removes_loose_png(patch_env):
         "Skin.Reset(show_weatherinfo)" in b for b in patch_env.state["builtins"]
     ), "Restore must turn the top-bar weather readout back off"
     # ...and clears the other Extras flags back to MOD V2 stock.
-    for flag in ("EnableSplashScreen", "DisableThemes", "powermenu_list"):
+    for flag in (
+        "EnableSplashScreen",
+        "DisableThemes",
+        "powermenu_list",
+        "enable_power_background",
+        "enable_settings_background",
+        "enable_search_background",
+    ):
         assert any(
             "Skin.Reset({})".format(flag) in b for b in patch_env.state["builtins"]
         ), "Restore must reset {}".format(flag)
@@ -1040,3 +1054,45 @@ def test_restore_patches_nothing_to_restore_no_exception(patch_env):
     assert restored == 0
     assert failed == 0
     assert skipped == len(_assign("FILES"))
+
+
+# --------------------------------------------------------------------------- #
+# Auto-apply service (service.py) — the one-shot's patch self-applier
+# --------------------------------------------------------------------------- #
+SERVICE_PY = ADDON_DIR / "service.py"
+
+
+def test_service_py_compiles():
+    """service.py runs as a boot service; a syntax error there would silently
+    break the one-shot's auto-apply."""
+    py_compile.compile(str(SERVICE_PY), doraise=True)
+
+
+def test_service_registered_as_boot_service():
+    """addon.xml must register service.py as xbmc.service so Kodi starts it at
+    boot (alongside the xbmc.python.script for manual Apply/Restore)."""
+    txt = ADDON_XML.read_text(encoding="utf-8")
+    assert '<extension point="xbmc.service" library="service.py"/>' in txt
+    assert '<extension point="xbmc.python.script" library="default.py"/>' in txt
+
+
+def test_service_marker_present_in_patched_home():
+    """The service's applied-marker must be a string our patched Home.xml contains
+    (so 'applied' is detectable) and that gates on a Tony-invented skin setting
+    (stock MOD V2 lacks it -> auto-recovery after a skin update). Pin both."""
+    marker = "show_system_info_overlay"
+    svc = SERVICE_PY.read_text(encoding="utf-8")
+    assert marker in svc, "service must key its applied-marker on a real string"
+    assert marker in HOME_XML.read_text(encoding="utf-8"), (
+        "patched Home.xml must contain the marker the service detects"
+    )
+
+
+def test_service_gates_on_modv2_and_calls_apply_path():
+    """The service must target the MOD V2 skin id, apply via the add-on's own
+    _apply path (not duplicate it), and wait without busy-spinning."""
+    svc = SERVICE_PY.read_text(encoding="utf-8")
+    assert 'SKIN_ID = "skin.estuary.modv2"' in svc
+    assert "import default as patch" in svc
+    assert "patch._apply(" in svc
+    assert "waitForAbort" in svc and "abortRequested" in svc
