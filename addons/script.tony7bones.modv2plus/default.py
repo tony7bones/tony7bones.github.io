@@ -397,6 +397,18 @@ def apply_skin_settings():
         xbmc.executebuiltin("Skin.SetBool(enable_power_background)")
         xbmc.executebuiltin("Skin.SetBool(enable_settings_background)")
         xbmc.executebuiltin("Skin.SetBool(enable_search_background)")
+        # Hide home-screen widgets via the skin's opt-out bools (setting
+        # hide_<widget> removes that widget): TV (Recent recordings, Saved Search
+        # Results, All Channels) + Add-ons (Music, Game, Picture).
+        for _w in (
+            "hide_recordingchannels",  # Recent recordings (#31015)
+            "hide_searches",  # Saved Search Results (#31617)
+            "hide_allchannels",  # All channels (#31361)
+            "hide_audioaddons",  # Music add-ons (#1038)
+            "hide_gameaddons",  # Game add-ons (#35049)
+            "hide_imageaddons",  # Picture add-ons (#1039)
+        ):
+            xbmc.executebuiltin("Skin.SetBool({})".format(_w))
         xbmc.log("[mod v2+] skin settings applied", xbmc.LOGINFO)
     except Exception as e:
         xbmc.log("[mod v2+] failed applying skin settings: {}".format(e), xbmc.LOGERROR)
@@ -419,6 +431,12 @@ def reset_skin_settings():
             "enable_power_background",
             "enable_settings_background",
             "enable_search_background",
+            "hide_recordingchannels",
+            "hide_searches",
+            "hide_allchannels",
+            "hide_audioaddons",
+            "hide_gameaddons",
+            "hide_imageaddons",
         ):
             xbmc.executebuiltin("Skin.Reset({})".format(s))
         xbmc.log("[mod v2+] skin settings reset", xbmc.LOGINFO)

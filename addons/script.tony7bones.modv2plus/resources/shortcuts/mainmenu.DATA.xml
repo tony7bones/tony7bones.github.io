@@ -61,7 +61,7 @@
         <label2>Common Shortcut</label2>
         <defaultID>livetv</defaultID>
         <icon>icons/sidemenu/livetv.png</icon>
-        <action>ActivateWindow(TVChannels)</action>
+        <action>ActivateWindow(TVGuide)</action>
     </shortcut>
     <shortcut>
         <label>24001</label>
@@ -71,7 +71,7 @@
         <action>ActivateWindow(1100)</action>
     </shortcut>
     <shortcut>
-        <label>10134</label>
+        <label>Favorites</label>
         <label2>Common Shortcut</label2>
         <defaultID>favorites</defaultID>
         <icon>icons/sidemenu/favourites.png</icon>

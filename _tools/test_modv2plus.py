@@ -277,6 +277,18 @@ def test_mainmenu_data_drops_the_six_items():
         )
 
 
+def test_mainmenu_tv_opens_guide_and_favorites_relabeled():
+    """The TV item opens the TV Guide (not Channels) and Favourites is relabeled."""
+    root = ET.parse(MAINMENU_DATA).getroot()
+    by_id = {s.findtext("defaultID"): s for s in root.findall("shortcut")}
+    assert by_id["livetv"].findtext("action") == "ActivateWindow(TVGuide)", (
+        "TV item must open the TV Guide"
+    )
+    assert by_id["favorites"].findtext("label") == "Favorites", (
+        "Favourites must be relabeled to Favorites"
+    )
+
+
 def test_default_defines_home_menu_helpers():
     """default.py defines apply_home_menu / restore_home_menu /
     _clear_skinshortcuts_cache, and _apply / _restore call the apply / restore
@@ -912,6 +924,13 @@ def test_run_apply_copies_files_and_media(patch_env):
         "enable_power_background",
         "enable_settings_background",
         "enable_search_background",
+        # hidden home-screen widgets: TV + Add-ons
+        "hide_recordingchannels",
+        "hide_searches",
+        "hide_allchannels",
+        "hide_audioaddons",
+        "hide_gameaddons",
+        "hide_imageaddons",
     ):
         assert any(
             "Skin.SetBool({})".format(flag) in b for b in patch_env.state["builtins"]
@@ -1015,6 +1034,12 @@ def test_run_restore_reverts_xml_and_removes_loose_png(patch_env):
         "enable_power_background",
         "enable_settings_background",
         "enable_search_background",
+        "hide_recordingchannels",
+        "hide_searches",
+        "hide_allchannels",
+        "hide_audioaddons",
+        "hide_gameaddons",
+        "hide_imageaddons",
     ):
         assert any(
             "Skin.Reset({})".format(flag) in b for b in patch_env.state["builtins"]
