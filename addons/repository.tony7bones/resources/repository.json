@@ -120,6 +120,16 @@
     }
   },
   {
+    "id": "script.module.pvr.artwork",
+    "username": "tony7bones",
+    "repository": "tony7bones.github.io",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
+    "assets": {
+      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/{id}-{version}.zip"
+    }
+  },
+  {
     "id": "repository.tony7bones",
     "username": "tony7bones",
     "repository": "tony7bones.github.io",
