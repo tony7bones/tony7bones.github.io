@@ -8,7 +8,8 @@ on:
     branches:
       - main
     paths:
-      - "repo/**"
+      - "addons/**"
+      - "dropbox/**"
       - "_tools/**"
       - "index.html"
   workflow_dispatch:

@@ -10,9 +10,9 @@ Reads from git refs (not the working tree) so it validates what will actually
 ship.
 
 Single-branch model: the proxy fetches everything from `main`, and its
-self-update source is the canonical `repo/repository.tony7bones/addon.xml`
+self-update source is the canonical `addons/repository.tony7bones/addon.xml`
 itself (the manifest points the repository.tony7bones entry's asset_prefix at
-`.../main/repo/repository.tony7bones/`). There is no longer a separate
+`.../main/addons/repository.tony7bones/`). There is no longer a separate
 `virtual-repo` branch or a `hosted/repository.tony7bones/addon.xml` mirror to
 keep in sync. The version-bearing locations are: the main addon.xml, the root
 index.html link, the committed root zip, and the git tag.

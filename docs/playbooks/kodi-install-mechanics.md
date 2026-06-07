@@ -76,9 +76,10 @@ nobody here uses Dailymotion. Two bad options and the good one:
   dep check, no broken flag, no "required" lock) but never runs. Durable across
   the requiring app's auto-updates with no per-update re-patching.
 
-Config: `DISABLE_AFTER_INSTALL = {"plugin.video.dailymotion_com"}` in
-`script.tony7bones.video/default.py`; logic in `install.disable_after_install()`
-(only disables ids that actually ended up installed).
+Config: `VIDEO_DISABLE_AFTER = {"plugin.video.dailymotion_com"}` in
+`script.tony7bones.bootstrap/default.py` (passed to the shared library's
+`install_selection()`); logic in `install.disable_after_install()` (only disables
+ids that actually ended up installed).
 
 ## 6. Binary / platform add-ons — pick the entry for THIS machine
 
@@ -106,8 +107,9 @@ The resolvers walk `<requires>/<import>` **recursively**, dependencies ordered
 - **Base Setup** (`resolve_closure_ordered`): an ordered list of indexes
   (peno64 first, official Kodi repo last, platform-aware); first repo to declare
   an id wins.
-- **Video Setup** (`build_index` + `resolve_closure_combined`): a single combined
-  index across every repo installed on the box plus the official repo. Across
+- **Curated video install** (`install_selection` → `build_index` +
+  `resolve_closure_combined`): a single combined index across every repo installed
+  on the box plus the official repo. Across
   third-party repos the **highest version wins** (`merge_index` / `ver_key`), but
   the **official repo is preferred** (`prefer=True`) for shared `script.module.*`
   so those stay Kodi-matched.

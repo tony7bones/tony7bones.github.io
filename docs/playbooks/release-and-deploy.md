@@ -13,12 +13,13 @@ times, the determinism rules, and the restore-point tags. Verified against
 ### Path A — a `script.*` / `script.module.*` add-on
 
 For `script.module.tony7bones`, `script.tony7bones.bootstrap`,
-`script.tony7bones.video`, `script.tony7bones.modv2.patch`.
+`script.tony7bones.modv2plus`.
 
-1. Edit the add-on's `repo/<id>/addon.xml` — **bump `version`** (and update
+1. Edit the add-on's `addons/<id>/addon.xml` — **bump `version`** (and update
    `<news>`).
 2. `python3 _tools/generate_repo.py` — zips the add-on and regenerates
-   `repo/addons.xml`, `.sha256`, `.md5`, and the index pages.
+   `addons/addons.xml`, `.sha256`, `.md5`, the served canvas mirror, and the
+   index pages.
 3. `git add` the changed source + the regenerated files.
 4. `git push` — the pre-push hook runs the full gate.
 
@@ -46,14 +47,16 @@ python3 _tools/deploy.py check                       # consistency gate only
 
 `deploy.py` does the whole transaction atomically:
 
-1. Bump `repo/repository.tony7bones/addon.xml` (version + news). This single
+1. Bump `addons/repository.tony7bones/addon.xml` (version + news). This single
    file is **both** the installed-addon metadata **and** the proxy's self-update
    version source (the baked manifest points the `repository.tony7bones` entry's
-   `asset_prefix` at `.../main/repo/repository.tony7bones/`), so the one bump
+   `asset_prefix` at `.../main/addons/repository.tony7bones/`), so the one bump
    covers self-update too.
 2. Build deterministically; copy the generated zip to the **root** zip; assert
    byte-identity.
-3. Rewrite the `index.html` install link to the new zip filename.
+3. Prune any stale root installer zips, then rebuild — the **generator** owns the
+   root `index.html` (the bare-URL canvas listing), so it produces the install
+   link for the new zip filename; there is no separate index-link rewrite.
 4. Commit `main`.
 5. Determinism gate: regenerate — the tree must stay clean.
 6. Tag the `main` release commit (`vX.Y.Z`).
@@ -69,12 +72,12 @@ before the push rolls main and the tag back** to their pre-deploy state.
 The **four version-bearing locations** (all kept in sync by deploy.py, all
 checked by `check_consistency.py`):
 
-| #   | Location                                          | Branch      |
-| --- | ------------------------------------------------- | ----------- |
-| 1   | `repo/repository.tony7bones/addon.xml` `version=` | main        |
-| 2   | root `repository.tony7bones-<ver>.zip` filename   | main        |
-| 3   | `index.html` install link                         | main        |
-| 4   | git tag `vX.Y.Z`                                  | (annotated) |
+| #   | Location                                            | Branch      |
+| --- | --------------------------------------------------- | ----------- |
+| 1   | `addons/repository.tony7bones/addon.xml` `version=` | main        |
+| 2   | root `repository.tony7bones-<ver>.zip` filename     | main        |
+| 3   | `index.html` install link (generated)               | main        |
+| 4   | git tag `vX.Y.Z`                                    | (annotated) |
 
 > The version lives ONLY in `addon.xml`. `package.json` deliberately does not
 > mirror it. There is **no `virtual-repo` branch** and **no separate hosted
@@ -82,26 +85,32 @@ checked by `check_consistency.py`):
 
 ## What the proxy fetches from `main`
 
-The proxy serves from its **baked** `repo/repository.tony7bones/resources/repository.json`
-(read locally at runtime — see `one-shot-and-architecture.md`). Every entry now
-resolves to `main`:
+The proxy serves from its **baked** `addons/repository.tony7bones/resources/repository.json`
+(read locally at runtime — see `one-shot-and-architecture.md`). Most entries now
+resolve to `main`:
 
-- The 5 first-party add-ons resolve from `.../main/repo/<id>/`.
+- The first-party add-ons (`repository.tony7bones`, `script.tony7bones.bootstrap`,
+  `script.module.tony7bones`, `script.tony7bones.modv2plus`) resolve from
+  `.../main/addons/<id>/`.
 - The 7 mirrored third-party repos resolve their `addon.xml` (and, for
   `repository.Magnetic` / `.kodinerds` / `.loop` / `.redwizard`, their zip too)
-  from `.../main/repo/hosted/<id>/`. `repository.kodifitzwell`, `.umbrella`,
-  `.diggz` read their `addon.xml` from `repo/hosted/<id>/` but pull the **zip**
+  from `.../main/addons/hosted/<id>/`. `repository.kodifitzwell`, `.umbrella`,
+  `.diggz` read their `addon.xml` from `addons/hosted/<id>/` but pull the **zip**
   from the original upstream project.
 - `repository.tony7bones` (self-update) reads its `addon.xml` from
-  `.../main/repo/repository.tony7bones/` and its zip from the Pages root.
+  `.../main/addons/repository.tony7bones/` and its zip from the Pages root.
+- `repository.709`, `.bugatsinho`, `.cocoscrapers`, `.ivarbrandt`, and `.peno64`
+  resolve entirely from their own upstream repos — `repository.peno64`'s URLs
+  legitimately contain `/repo/` because that is **peno64's own** repo layout, not
+  our `addons/` tree.
 
 ## Adding an add-on to what the repo SERVES
 
-1. Add the entry to `repo/repository.tony7bones/resources/repository.json`
-   (single copy — there is no second branch). If it is a mirrored third-party
-   repo, drop its `addon.xml` (and zip if self-hosted) under
-   `repo/hosted/<id>/` and point `asset_prefix` at
-   `.../{ref}/repo/hosted/{id}/` with `"branch": "main"`.
+1. Add the entry to `addons/repository.tony7bones/resources/repository.json`
+   (single canonical copy — there is no second branch). If it is a mirrored
+   third-party repo, drop its `addon.xml` (and zip if self-hosted) under
+   `addons/hosted/<id>/` and point `asset_prefix` at
+   `.../{ref}/addons/hosted/{id}/` with `"branch": "main"`.
 2. `python3 _tools/deploy.py --news "add <id>"` so the new manifest ships inside
    the installer zip.
 
@@ -123,7 +132,7 @@ curl -sI https://tony7bones.github.io/repository.tony7bones-<ver>.zip   # want H
 
 Key distinction:
 
-- **Add-on zips and all proxy-fetched content** (including `repo/hosted/**`) are
+- **Add-on zips and all proxy-fetched content** (including `addons/hosted/**`) are
   served from `raw.githubusercontent.com` (`main`) and are live **instantly** —
   no Pages build involved.
 - Only the **repo installer zip** at the site root rides Pages.
@@ -132,11 +141,14 @@ Key distinction:
 
 `.github/workflows/generate_repo.yml`:
 
-- Triggers on **`branches: [main]`** pushes touching `repo/**`, `_tools/**`, or
-  `index.html` (plus `workflow_dispatch`). **Tag pushes are excluded** — the
-  atomic main+tag push re-points the tag at main's HEAD (already validated), and
-  on a detached tag checkout the consistency gate can't resolve `main`, so a tag
-  run fails spuriously.
+- Triggers on **`branches: [main]`** pushes touching the workflow's path filter
+  (plus `workflow_dispatch`). **Tag pushes are excluded** — the atomic main+tag
+  push re-points the tag at main's HEAD (already validated), and on a detached tag
+  checkout the consistency gate can't resolve `main`, so a tag run fails
+  spuriously.
+  > NOTE: the workflow's `paths:` filter still lists `repo/**` (pre-rename) rather
+  > than `addons/**`/`dropbox/**`. It is a code file (out of scope for this doc
+  > pass) and should be re-pointed so add-on/canvas pushes still trigger CI.
 - It runs the same gate as the hook (pytest, ruff, generator-staleness,
   version consistency on main) and **NEVER commits to main** — it only validates.
   If generated files are stale the author must regenerate and commit.
@@ -164,12 +176,16 @@ Create a tag for any known-good state. Current ones:
 - `clean-setup-1.0.17` — a bare, clean baseline.
 - `perfectly-working-2026-06-04` — full working build before the one-shot work.
 
-## Current live versions (as of this writing)
+## Current source versions (branch `3.0`, as of this writing)
 
-| Add-on                          | Version |
-| ------------------------------- | ------- |
-| `repository.tony7bones`         | 1.0.11  |
-| `script.module.tony7bones`      | 1.0.0   |
-| `script.tony7bones.bootstrap`   | 1.1.0   |
-| `script.tony7bones.video`       | 1.1.0   |
-| `script.tony7bones.modv2.patch` | 1.0.3   |
+| Add-on                        | Version |
+| ----------------------------- | ------- |
+| `repository.tony7bones`       | 2.2.0   |
+| `script.module.tony7bones`    | 1.1.0   |
+| `script.tony7bones.bootstrap` | 1.2.0   |
+| `script.tony7bones.modv2plus` | 1.3.4   |
+
+> `script.module.tony7bones` 1.0.0 → 1.1.0 (the new `install_selection` API) and
+> `script.tony7bones.bootstrap` 1.1.6 → 1.2.0 (unattended video) were bumped in
+> this work. The proxy `repository.tony7bones` is still 2.2.0 (not re-released on
+> this branch yet). The standalone `script.tony7bones.video` add-on was removed.

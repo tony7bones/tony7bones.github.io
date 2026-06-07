@@ -83,7 +83,7 @@ My add-ons → Program add-ons and, on **Apply**, layers our customizations onto
 ### Inner loop (fast — for skin XML / media tweaks)
 
 ```
-1. Edit repo/script.tony7bones.modv2plus/resources/xml/<file> on the Mac
+1. Edit addons/script.tony7bones.modv2plus/resources/xml/<file> on the Mac
 2. _tools/firetv.sh push-xml <file>      # adb push into the live skin
 3. _tools/firetv.sh reload-skin           # or restart Kodi for cached assets
 4. _tools/firetv.sh screencap             # look at the real TV
@@ -253,7 +253,7 @@ loose files over repacking the XBT.)
   `reload-skin`, `screencap`, `log`, `launch`, `stop`).
 - **Live skin paths:** `…/org.xbmc.kodi/files/.kodi/addons/skin.estuary.modv2/{xml,media,extras}/`;
   skin settings: `…/userdata/addon_data/skin.estuary.modv2/settings.xml`.
-- **Add-on source:** `repo/script.tony7bones.modv2plus/` (`default.py`, `resources/xml/*`, `resources/media/*`).
+- **Add-on source:** `addons/script.tony7bones.modv2plus/` (`default.py`, `resources/xml/*`, `resources/media/*`).
 - **Tests:** `_tools/test_modv2plus.py` (import under mocked `xbmc*`).
 - **Related docs:** [`firetv-adb-dev.md`](firetv-adb-dev.md) (commands), `kodi-install-mechanics.md`,
   `release-and-deploy.md`, `local-kodi-verification.md`, and the repo `TASKS.md`.

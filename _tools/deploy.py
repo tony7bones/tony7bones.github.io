@@ -7,9 +7,9 @@ main + tag together. CI stays validate-only — this script is the only thing
 that commits a release.
 
 Single-branch model: the proxy fetches everything from `main`, and its
-self-update version source is the canonical `repo/repository.tony7bones/addon.xml`
+self-update version source is the canonical `addons/repository.tony7bones/addon.xml`
 itself (the baked manifest points the repository.tony7bones entry at
-`.../main/repo/repository.tony7bones/`). There is no `virtual-repo` branch and
+`.../main/addons/repository.tony7bones/`). There is no `virtual-repo` branch and
 no separate hosted self-update addon.xml anymore. The four version-bearing
 locations are: main addon.xml, root zip filename, root index.html link, tag.
 

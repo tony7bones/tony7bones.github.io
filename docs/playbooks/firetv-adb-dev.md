@@ -104,12 +104,12 @@ patches into `skin.estuary.modv2`.
 FIRETV=192.168.7.162:5555
 KODI_ADDONS=/sdcard/Android/data/org.xbmc.kodi/files/.kodi/addons
 SKIN_XML=${KODI_ADDONS}/skin.estuary.modv2/xml
-ADDON_SRC=/Users/moquette/Code/moquette/tony7bones.github.io/repo/script.tony7bones.modv2plus
+ADDON_SRC=/Users/moquette/Code/moquette/tony7bones.github.io/addons/script.tony7bones.modv2plus
 ```
 
 ### Step 1 — edit a source file on the Mac
 
-Edit any file under `repo/script.tony7bones.modv2plus/resources/xml/` (e.g.
+Edit any file under `addons/script.tony7bones.modv2plus/resources/xml/` (e.g.
 `Home.xml`, `SkinSettings.xml`) or `resources/media/` in your editor.
 
 ### Step 2 — push the changed file(s)
@@ -186,7 +186,7 @@ The add-on logs with prefix `[mod v2+]` at INFO level; errors use ERROR level.
 FIRETV=192.168.7.162:5555
 KODI_ADDONS=/sdcard/Android/data/org.xbmc.kodi/files/.kodi/addons
 SKIN_XML=${KODI_ADDONS}/skin.estuary.modv2/xml
-ADDON_SRC=/Users/moquette/Code/moquette/tony7bones.github.io/repo/script.tony7bones.modv2plus
+ADDON_SRC=/Users/moquette/Code/moquette/tony7bones.github.io/addons/script.tony7bones.modv2plus
 
 # 1. Push changed XML directly into the live skin
 adb -s $FIRETV push ${ADDON_SRC}/resources/xml/Home.xml ${SKIN_XML}/Home.xml
@@ -214,7 +214,7 @@ the updated add-on to the device without going through the repo release cycle:
 ```bash
 FIRETV=192.168.7.162:5555
 KODI_ADDONS=/sdcard/Android/data/org.xbmc.kodi/files/.kodi/addons
-ADDON_SRC=/Users/moquette/Code/moquette/tony7bones.github.io/repo/script.tony7bones.modv2plus
+ADDON_SRC=/Users/moquette/Code/moquette/tony7bones.github.io/addons/script.tony7bones.modv2plus
 
 # Push entire addon dir
 adb -s $FIRETV push ${ADDON_SRC}/. ${KODI_ADDONS}/script.tony7bones.modv2plus/

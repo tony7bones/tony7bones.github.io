@@ -3,8 +3,8 @@ name: kodi-super-agent
 description: >-
   Kodi Super Agent Developer for the Tony.7.Bones repository
   (tony7bones.github.io). Load when working anywhere in this repo on Kodi
-  add-on tasks — installing add-ons via the Setup scripts, building/editing the
-  script.module.tony7bones shared library or the bootstrap/video Setups,
+  add-on tasks — installing add-ons via the Setup script, building/editing the
+  script.module.tony7bones shared library or the bootstrap Setup,
   releasing repository.tony7bones with deploy.py, releasing the script.* add-ons
   via generate_repo.py, adding an entry to repository.json, debugging the local
   Kodi 21 Omega install, or verifying behaviour on the real local Kodi. Triggers
@@ -22,10 +22,17 @@ WHY and the exact code locations.
 
 - Project overview, branches, releases: repo-root `CLAUDE.md` + `README.md`.
 - Architecture & one-shot flow: `docs/playbooks/one-shot-and-architecture.md`.
-- The add-ons: `repository.tony7bones` (virtual proxy), `script.module.tony7bones`
-  (shared LIBRARY, invisible), `script.tony7bones.bootstrap` ("Tony.7.Bones
-  Setup"), `script.tony7bones.video` ("Video Add-ons Setup"),
-  `script.tony7bones.modv2.patch` (manual-only skin patch).
+- The four first-party add-ons: `repository.tony7bones` (virtual proxy),
+  `script.module.tony7bones` (shared LIBRARY, invisible), `script.tony7bones.bootstrap`
+  ("Tony.7.Bones Setup" — installs repos + apps + the curated video add-ons
+  unattended, no picker), `script.tony7bones.modv2plus` ("Estuary MOD V2+",
+  manual-only skin patch). The standalone Video Add-ons Setup is retired — its
+  install logic is folded into the shared library as `install_selection`.
+- Structure: `dropbox/` is the pristine human canvas, mirrored 1:1 to the repo
+  ROOT and served at the bare URL `https://tony7bones.github.io/` (the Kodi File
+  Manager source). `addons/` holds add-on source + built zips + `addons.xml` +
+  `hosted/` and is what the proxy fetches via raw.githubusercontent.
+  `generate_repo.py` compiles `dropbox/` → root and `addons/` → zips.
 
 ## Golden rules — install (Kodi 21 Omega)
 
@@ -69,13 +76,13 @@ WHY and the exact code locations.
   proxy self-update source), builds deterministically, commits main, tags,
   pushes `main + tag`, forces a Pages build, verifies live.
 - **Add a served add-on:** edit the single `repository.json`
-  (`repo/repository.tony7bones/resources/`); for a mirrored third-party repo drop
-  its `addon.xml`/zip under `repo/hosted/<id>/` with `"branch": "main"` +
-  `asset_prefix` `.../{ref}/repo/hosted/{id}/`, then `deploy.py`.
+  (`addons/repository.tony7bones/resources/`); for a mirrored third-party repo drop
+  its `addon.xml`/zip under `addons/hosted/<id>/` with `"branch": "main"` +
+  `asset_prefix` `.../{ref}/addons/hosted/{id}/`, then `deploy.py`.
 - **Pages gotcha:** Pages often skips the build → live-verify times out.
   `deploy.py` now forces a build automatically; by hand:
   `gh api --method POST repos/tony7bones/tony7bones.github.io/pages/builds`, then
-  poll the root zip for HTTP 200. (Add-on zips + `repo/hosted/**` come from
+  poll the root zip for HTTP 200. (Add-on zips + `addons/hosted/**` come from
   raw.githubusercontent — instant; only the installer zip rides Pages.)
 - **`virtual-repo` is retired** — single branch now; do not write to it.
 - **Determinism:** `generate_repo.py` excludes `__pycache__`; if a zip churns by
