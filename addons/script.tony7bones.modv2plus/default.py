@@ -211,14 +211,60 @@ def _clear_skinshortcuts_cache():
     return removed
 
 
+def _build_skinshortcuts_menu(skin_root):
+    """Build the skinshortcuts home-menu includes from the trimmed mainmenu.DATA.xml
+    and BLOCK until they are written, so the home renders WITH the menu on the next
+    skin reload.
+
+    Why this is needed (fresh-box bug): on a brand-new box script.skinshortcuts has
+    never built, and the skin's OWN first-load build is asynchronous — it finishes
+    AFTER the home window has already rendered (blank, logging "Control 9000 ... has
+    been asked to focus, but it can't" because script-skinshortcuts-includes.xml is
+    missing). Worse, our cache-clear above can race and clobber that build. So we
+    drive the build ourselves, deterministically, and wait for the output before the
+    caller reloads the skin. MOD V2's own build uses exactly these params
+    (mainmenuID=9000, group=mainmenu).
+    """
+    includes = os.path.join(skin_root, "xml", "script-skinshortcuts-includes.xml")
+    try:
+        if os.path.exists(includes):
+            os.remove(includes)  # force a clean rebuild from the trimmed menu
+    except OSError:
+        pass
+    xbmc.executebuiltin(
+        "RunScript(script.skinshortcuts,type=buildxml&mainmenuID=9000&group=mainmenu)"
+    )
+    # Poll until the includes file exists and its size stops growing (build done).
+    # buildxml is fire-and-forget, and a slow Fire TV first build can take ~20s.
+    last = -1
+    for _ in range(40):
+        xbmc.sleep(1000)
+        try:
+            size = os.path.getsize(includes)
+        except OSError:
+            continue
+        if size > 0 and size == last:
+            xbmc.log(
+                "[mod v2+] skinshortcuts menu built ({} bytes)".format(size),
+                xbmc.LOGINFO,
+            )
+            return
+        last = size
+    xbmc.log(
+        "[mod v2+] skinshortcuts menu build did not settle in time (continuing)",
+        xbmc.LOGERROR,
+    )
+
+
 def apply_home_menu(skin_root):
     """Install our trimmed home menu over the skin's skinshortcuts default.
 
     Copies resources/shortcuts/mainmenu.DATA.xml -> <skin_root>/shortcuts/
     mainmenu.DATA.xml, taking a one-time mainmenu.DATA.xml.bak of the original
-    first (creating the shortcuts dir if needed), then clears skinshortcuts' built
-    data so the menu re-seeds from our trimmed default. Defensive: logged, never
-    aborts the run. Returns True if the default was copied.
+    first (creating the shortcuts dir if needed), clears skinshortcuts' built data,
+    then rebuilds the menu includes and BLOCKS until they are written so the home
+    renders with the menu on the next reload. Defensive: logged, never aborts the
+    run. Returns True if the default was copied.
     """
     src = os.path.join(ADDON_PATH, "resources", "shortcuts", "mainmenu.DATA.xml")
     dst_dir = os.path.join(skin_root, "shortcuts")
@@ -234,6 +280,7 @@ def apply_home_menu(skin_root):
             "[mod v2+] applied home menu (trimmed mainmenu.DATA.xml)", xbmc.LOGINFO
         )
         _clear_skinshortcuts_cache()
+        _build_skinshortcuts_menu(skin_root)
         return True
     except Exception as e:
         xbmc.log("[mod v2+] failed applying home menu: {}".format(e), xbmc.LOGERROR)

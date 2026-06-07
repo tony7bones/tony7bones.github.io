@@ -799,6 +799,7 @@ def patch_env(tmp_path, monkeypatch):
     xbmc.log = lambda msg, level=1: state["log"].append((level, msg))
     xbmc.getSkinDir = lambda: state["skin"]
     xbmc.executebuiltin = lambda cmd, wait=False: state["builtins"].append(cmd)
+    xbmc.sleep = lambda ms: None
 
     xbmcaddon = types.ModuleType("xbmcaddon")
 
@@ -876,6 +877,13 @@ def test_run_apply_copies_files_and_media(patch_env):
     menu = patch_env.skin_root / "shortcuts" / "mainmenu.DATA.xml"
     assert menu.exists(), "the trimmed home menu must be copied on Apply"
     assert menu.read_bytes() == MAINMENU_DATA.read_bytes()
+    # the skinshortcuts menu is built deterministically (the fresh-box fix) before
+    # the reload, so the home renders WITH the menu on the first try
+    assert any(
+        "RunScript(script.skinshortcuts,type=buildxml&mainmenuID=9000&group=mainmenu)"
+        in b
+        for b in patch_env.state["builtins"]
+    ), "Apply must trigger the skinshortcuts buildxml"
     assert any("ReloadSkin" in b for b in patch_env.state["builtins"])
     # The reload must be automatic: a non-blocking notification, never a modal
     # ok() that waits for a click before reloading.

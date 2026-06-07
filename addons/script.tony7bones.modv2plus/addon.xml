@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="script.tony7bones.modv2plus"
        name="Estuary MOD V2+"
-       version="1.4.0"
+       version="1.4.1"
        provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
@@ -16,6 +16,6 @@
     <assets>
       <icon>icon.png</icon>
     </assets>
-    <news>v1.4.0: Auto-apply service — when Estuary MOD V2 is the active skin and the patch is not yet applied, it now applies itself once on startup (so the one-tap Setup produces a fully patched box with no manual step), and re-applies automatically after a MOD V2 skin update. Manual Apply/Restore unchanged. (v1.3.5: turns off the Power/Settings/Search backgrounds.)</news>
+    <news>v1.4.1: Fresh-box fix — the home menu now builds deterministically. On a first boot script.skinshortcuts hadn't yet built its menu includes (its build is async and the patch's reload raced it), leaving a blank home; Apply now triggers the skinshortcuts buildxml and WAITS for the menu to be written before reloading, so a single post-Setup restart shows the full menu. (v1.4.0: auto-apply boot service. v1.3.5: Power/Settings/Search backgrounds off.)</news>
   </extension>
 </addon>
