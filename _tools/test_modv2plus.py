@@ -935,6 +935,10 @@ def test_run_apply_copies_files_and_media(patch_env):
         assert any(
             "Skin.SetBool({})".format(flag) in b for b in patch_env.state["builtins"]
         ), "Apply must set {}".format(flag)
+    # channel numbers OFF in the Live TV lists (clear ShowPVRChannelNumbers)
+    assert any(
+        "Skin.Reset(ShowPVRChannelNumbers)" in b for b in patch_env.state["builtins"]
+    ), "Apply must clear ShowPVRChannelNumbers (channel numbers off)"
 
 
 def test_run_apply_arg_skips_chooser_and_applies(patch_env, monkeypatch):
@@ -1044,6 +1048,10 @@ def test_run_restore_reverts_xml_and_removes_loose_png(patch_env):
         assert any(
             "Skin.Reset({})".format(flag) in b for b in patch_env.state["builtins"]
         ), "Restore must reset {}".format(flag)
+    # channel numbers back ON (stock MOD V2)
+    assert any(
+        "Skin.SetBool(ShowPVRChannelNumbers)" in b for b in patch_env.state["builtins"]
+    ), "Restore must restore ShowPVRChannelNumbers (channel numbers on)"
 
 
 def test_run_restore_nothing_to_restore(patch_env):

@@ -61,7 +61,7 @@ v2.2.1: 3.0: one-shot now installs + activates Estuary MOD V2 and applies the MO
             <news>v1.3.1: Adds three File-Manager sources — "special://home" (special://home), "special://kodi" (/storage/emulated/0/kodi/), and ".tony.7.bones" (https://tony7bones.github.io/). New sources de-dupe by name and path; and ANY existing source pointing at the repo URL — with or without a trailing slash, under any label — is renamed to ".tony.7.bones". (v1.3.0: one-shot also installs + activates the Estuary MOD V2 skin and the MOD V2+ patch auto-applies via its service.)</news>
         </extension>
     </addon>
-    <addon id="script.tony7bones.modv2plus" name="Estuary MOD V2+" version="1.4.2" provider-name="tony7bones">
+    <addon id="script.tony7bones.modv2plus" name="Estuary MOD V2+" version="1.4.3" provider-name="tony7bones">
         <requires>
             <import addon="xbmc.python" version="3.0.0" />
             <import addon="resource.images.weathericons.outline-hd" version="0.0.3" />
@@ -75,7 +75,7 @@ v2.2.1: 3.0: one-shot now installs + activates Estuary MOD V2 and applies the MO
             <assets>
                 <icon>icon.png</icon>
             </assets>
-            <news>v1.4.2: Home-menu polish — the TV item now opens the TV Guide (was Channels), Favourites is relabeled "Favorites", and these home-screen widgets are hidden by default: Recent recordings, Saved Search Results, All Channels, Music add-ons, Game add-ons, Picture add-ons. (v1.4.1: deterministic menu build on first boot. v1.4.0: auto-apply boot service.)</news>
+            <news>v1.4.3: New add-on icon (Tony.7.Bones V2+ branding); Live TV lists no longer show channel numbers by default (Restore puts them back). (v1.4.2: TV opens the Guide, Favourites→Favorites, six home widgets hidden. v1.4.1: deterministic menu build on first boot.)</news>
         </extension>
     </addon>
 </addons>

@@ -409,6 +409,9 @@ def apply_skin_settings():
             "hide_imageaddons",  # Picture add-ons (#1039)
         ):
             xbmc.executebuiltin("Skin.SetBool({})".format(_w))
+        # Channel numbers OFF in the Live TV lists: the skin shows them only when
+        # ShowPVRChannelNumbers is set, so clearing it hides them.
+        xbmc.executebuiltin("Skin.Reset(ShowPVRChannelNumbers)")
         xbmc.log("[mod v2+] skin settings applied", xbmc.LOGINFO)
     except Exception as e:
         xbmc.log("[mod v2+] failed applying skin settings: {}".format(e), xbmc.LOGERROR)
@@ -439,6 +442,8 @@ def reset_skin_settings():
             "hide_imageaddons",
         ):
             xbmc.executebuiltin("Skin.Reset({})".format(s))
+        # Restore stock: MOD V2 shows channel numbers by default.
+        xbmc.executebuiltin("Skin.SetBool(ShowPVRChannelNumbers)")
         xbmc.log("[mod v2+] skin settings reset", xbmc.LOGINFO)
     except Exception as e:
         xbmc.log(

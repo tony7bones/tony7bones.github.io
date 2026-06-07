@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="script.tony7bones.modv2plus"
        name="Estuary MOD V2+"
-       version="1.4.2"
+       version="1.4.3"
        provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
@@ -16,6 +16,6 @@
     <assets>
       <icon>icon.png</icon>
     </assets>
-    <news>v1.4.2: Home-menu polish — the TV item now opens the TV Guide (was Channels), Favourites is relabeled "Favorites", and these home-screen widgets are hidden by default: Recent recordings, Saved Search Results, All Channels, Music add-ons, Game add-ons, Picture add-ons. (v1.4.1: deterministic menu build on first boot. v1.4.0: auto-apply boot service.)</news>
+    <news>v1.4.3: New add-on icon (Tony.7.Bones V2+ branding); Live TV lists no longer show channel numbers by default (Restore puts them back). (v1.4.2: TV opens the Guide, Favourites→Favorites, six home widgets hidden. v1.4.1: deterministic menu build on first boot.)</news>
   </extension>
 </addon>
