@@ -676,8 +676,21 @@ def _ensure_iptv_custom_tv_groups():
     fresh box without the copied file). Idempotent and fully defensive: any
     failure is logged and swallowed — never aborts the rest of setup. These keys
     cannot be set via JSON-RPC (it does not reach add-on instance settings), so a
-    direct file write is the only mechanism."""
+    direct file write is the only mechanism.
+
+    GATED: only enforces custom-group mode when the custom-groups file actually
+    exists (copied from the device, or generated from the env's IPTV_GROUPS). On a
+    no-env / no-file box, forcing tvGroupMode=2 at a MISSING file gives
+    pvr.iptvsimple an empty channel list — so we leave the all-channels default.
+    """
     try:
+        groups_file = xbmcvfs.translatePath(IPTV_CUSTOM_TV_GROUPS_FILE_VALUE)
+        if not os.path.exists(groups_file):
+            _log(
+                "_ensure_iptv_custom_tv_groups: custom-groups file absent "
+                f"({groups_file}); leaving all-channels default (no tvGroupMode=2)"
+            )
+            return
         xml_path = xbmcvfs.translatePath(IPTV_INSTANCE_SETTINGS_SPECIAL)
         os.makedirs(os.path.dirname(xml_path), exist_ok=True)
 

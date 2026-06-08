@@ -449,6 +449,7 @@ def boot(tmp_path, monkeypatch):
             .replace("special://home/addons/", str(addons) + "/")
             .replace("special://profile/", str(profile) + "/")
             .replace("special://home/userdata/", str(profile) + "/")
+            .replace("special://userdata/", str(profile) + "/")
         )
 
     xbmcvfs.translatePath = _translate
@@ -1389,17 +1390,18 @@ def test_configure_box_default_sources_missing_is_guarded(boot):
     # With the real default /storage/... sources the files cannot exist on the
     # test host: _configure_box must still complete and apply the other settings
     # without raising or copying anything. The two USER-PROVIDED-ONLY copies (RSS
-    # feeds + custom TV groups) must NOT appear. The instance-settings file is the
-    # exception: the IPTV custom-groups enforce step creates it from scratch on a
-    # fresh box (no device file needed), so it is expected to exist with the keys.
+    # feeds + custom TV groups) must NOT appear. And with NO custom-groups file
+    # present, the IPTV enforce is gated OFF: it must not force tvGroupMode=2 at a
+    # missing file (which would empty the channel list — the no-env contract).
     boot.mod._configure_box()
     for special in (_RSS_DST, _IPTV_GROUPS_DST):
         assert not os.path.exists(_dst_path(boot, special)), "no copy on desktop"
     inst = _dst_path(boot, _IPTV_INSTANCE_DST)
-    assert os.path.exists(inst), "enforce step creates instance-settings on a fresh box"
-    got = _read_instance_settings(boot)
-    assert got["tvGroupMode"] == "2"
-    assert got["customTvGroupsFile"].endswith("customTVGroups-Network24.xml")
+    if os.path.exists(inst):
+        got = _read_instance_settings(boot)
+        assert got.get("tvGroupMode") != "2", (
+            "must not force custom mode w/o a groups file"
+        )
     assert _settings_set(boot).get("weather.addon") == "weather.multi"
 
 
@@ -1418,6 +1420,19 @@ def _read_instance_settings(boot):
     return {s.get("id"): (s.text or "") for s in root.findall("setting")}
 
 
+def _make_groups_file(boot):
+    """Create the custom-TV-groups file the IPTV enforce now GATES on, so the
+    enforce actually runs in these tests (post no-env-contract fix)."""
+    path = boot.mod.xbmcvfs.translatePath(boot.mod.IPTV_CUSTOM_TV_GROUPS_FILE_VALUE)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write(
+            "<customChannelGroups><channelGroupName>X</channelGroupName>"
+            "</customChannelGroups>"
+        )
+    return path
+
+
 def test_ensure_iptv_groups_constants_match_schema():
     """The enforced values must be the schema's CUSTOM_GROUPS enum (2) and a
     channelGroups path pointing at the Network24 file we copy."""
@@ -1434,6 +1449,7 @@ def test_ensure_iptv_groups_creates_file_when_absent(boot):
     with both keys correct (and the addon_data dir)."""
     path = _dst_path(boot, boot.mod.IPTV_INSTANCE_SETTINGS_SPECIAL)
     assert not os.path.exists(path)
+    _make_groups_file(boot)
     boot.mod._ensure_iptv_custom_tv_groups()
     got = _read_instance_settings(boot)
     assert got["tvGroupMode"] == "2"
@@ -1458,6 +1474,7 @@ def test_ensure_iptv_groups_patches_copied_file(boot):
             "customTVGroups-example.xml</setting>"
             "</settings>"
         )
+    _make_groups_file(boot)
     boot.mod._ensure_iptv_custom_tv_groups()
     got = _read_instance_settings(boot)
     assert got["tvGroupMode"] == "2"
@@ -1485,6 +1502,7 @@ def test_ensure_iptv_groups_respects_user_value_when_already_custom(boot):
             '<setting id="tvChannelGroupsOnly">true</setting>'
             "</settings>"
         )
+    _make_groups_file(boot)
     before = open(path).read()
     boot.mod._ensure_iptv_custom_tv_groups()
     got = _read_instance_settings(boot)
@@ -1502,6 +1520,7 @@ def test_ensure_iptv_groups_recreates_malformed_file(boot):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w") as f:
         f.write("<settings><not-closed>")
+    _make_groups_file(boot)
     boot.mod._ensure_iptv_custom_tv_groups()
     got = _read_instance_settings(boot)
     assert got["tvGroupMode"] == "2"
@@ -1510,6 +1529,7 @@ def test_ensure_iptv_groups_recreates_malformed_file(boot):
 
 def test_ensure_iptv_groups_is_idempotent(boot):
     """Two runs converge — second run changes nothing."""
+    _make_groups_file(boot)
     boot.mod._ensure_iptv_custom_tv_groups()
     path = _dst_path(boot, boot.mod.IPTV_INSTANCE_SETTINGS_SPECIAL)
     first = open(path).read()
@@ -1598,3 +1618,16 @@ def test_read_box_env_reads_file(boot, tmp_path):
     env = boot.mod.read_box_env(str(p))
     assert env["DEVICE_NAME"] == "Office"
     assert boot.mod.split_list(env["WEATHER_LOCATIONS"]) == ["A", "B"]
+
+
+def test_ensure_iptv_groups_skipped_when_no_groups_file(boot):
+    """No custom-groups file present -> the enforce is a NO-OP (leaves the
+    all-channels default; never points tvGroupMode=2 at a missing file). This is
+    the no-env IPTV contract — QA criterion A, a regression that shipped before."""
+    path = _dst_path(boot, boot.mod.IPTV_INSTANCE_SETTINGS_SPECIAL)
+    if os.path.exists(path):
+        os.remove(path)
+    boot.mod._ensure_iptv_custom_tv_groups()
+    assert not os.path.exists(path), (
+        "no instance-settings written without a groups file"
+    )
