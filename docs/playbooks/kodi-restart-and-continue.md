@@ -32,6 +32,42 @@ None of these is "the script is wrong" — they're platform + timing realities.
 
 ---
 
+## ⭐ THE fix (proven on hardware 2026-06-08) — three changes, in order
+
+This is the most important section. The finish is now **deterministic** on a real
+Fire TV. There were actually **three** problems, and the third is the one that was
+hiding:
+
+1. **Accept Kodi's "Keep this skin?" dialog.** _(the missing piece)_ Changing
+   `lookandfeel.skin` live raises a yes/no confirm (**window 10100**) that
+   **defaults to REVERT on its timeout**. If you don't accept it, Kodi rolls the
+   skin back to stock Estuary. The old code never accepted it — it only ever
+   "worked" by accident when a freeze/force-kill stopped Kodi _before_ it could
+   revert. Earlier guidance here ("set the skin last and restart _promptly_ to
+   beat the timeout") was **wrong**: restarting faster just guarantees you quit
+   before accepting → guaranteed revert.
+   **Fix:** after setting the skin, wait for window 10100 and click its **Yes**
+   button — **`SendClick(11)`** (control 11 = Yes of Kodi's yes/no dialog).
+   Verified live: control 11 keeps the skin, no revert. → shipped as
+   `tony7bones.system.activate_skin(skin_id, log)` (module ≥ 1.1.2).
+2. **Clean `Quit`, not `RestartApp` and not a hard kill.** On Android `RestartApp`
+   is a no-op; a hard kill (`os._exit`) loses unsaved settings. `Quit` cleanly
+   shuts down (flushing the now-committed skin), Kodi closes unambiguously, the
+   user reopens. Do it **prompt-free** (no blocking yes/no) so nothing stalls.
+   → `restart_kodi` (module ≥ 1.1.1).
+3. **The boot service waits for the home to render, then builds the menu.** It
+   waits for `Window.IsVisible(10000)` **and** the skin to be active (not just
+   `getSkinDir()==id`), settles, then applies — so it never races the async
+   skinshortcuts build. → modv2plus ≥ 1.4.4. Run-once stays idempotent (the
+   Home.xml marker).
+
+**Sequence that works:** install → `activate_skin` (set + **accept dialog**) →
+clean `Quit` → reopen → service waits for home → builds menu → renders.
+Hardware result: no force-kill, skin persists as `skin.estuary.modv2`, home
+renders first try with **0** `Control 9000` focus errors.
+
+---
+
 ## (A) Restart builtins — what each does, per platform
 
 | Builtin      | Desktop (Win / Linux)                                          | macOS      | Android / Fire TV              |
