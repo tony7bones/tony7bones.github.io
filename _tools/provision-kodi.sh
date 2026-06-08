@@ -55,17 +55,40 @@ RAW="https://raw.githubusercontent.com/tony7bones/tony7bones.github.io/main/addo
 
 command -v adb >/dev/null 2>&1 || die "adb not found. Install it: brew install android-platform-tools"
 
+# --- load the owner's master .env ------------------------------------------- #
+# Provides defaults (DEVICE_IP / DEVICE_NAME / KODI_WEB_* / SETTINGS_LEVEL) and is
+# the source we derive the per-device tony7bones.env from (pushed to the box;
+# absent .env -> built-in defaults, exactly like the bootstrap's own fallback).
+# Per-device env path on the box (matches the bootstrap's BOX_ENV_PATH; read then
+# REMOVED by the bootstrap so its secrets don't linger).
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+ENV_FILE="$REPO_ROOT/.env"
+BOX_ENV_PATH="/storage/emulated/0/kodi/tony.7.bones/tony7bones.env"
+# USE_LOCAL=1 pushes the WORKING-TREE add-ons instead of fetching from the live
+# site (main) — required to verify a feature branch on the box BEFORE merging.
+USE_LOCAL="${USE_LOCAL:-}"
+if [[ -f "$ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$ENV_FILE"
+fi
+# Settings level (Standard|Advanced|Expert) -> Kodi's <settinglevel> 1|2|3.
+case "$(printf '%s' "${SETTINGS_LEVEL:-expert}" | tr '[:upper:]' '[:lower:]')" in
+  standard | basic) SL=1 ;;
+  advanced) SL=2 ;;
+  *) SL=3 ;;
+esac
+
 # --- 0. device IP ----------------------------------------------------------- #
 clear 2>/dev/null || true
 say "${B}Tony.7.Bones — Kodi box provisioner${Z}"
 say "Provisions a FRESH box: wipe → install → run Setup → reopen → verify."
 say "Make sure ADB debugging is ON at the TV (Settings → My Fire TV → Developer options)."
-IP="${1:-}"
+IP="${1:-${DEVICE_IP:-}}"
 [[ -n "$IP" ]] || IP=$(ask "Device IP address (e.g. 192.168.7.84):")
 [[ "$IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "That doesn't look like an IP: '$IP'"
 D="$IP:5555"
 # Device name shown to phone remotes (Kore/Yatse) etc. Prompt up front.
-DEVNAME=$(ask "Device name for this box (phone remotes show this) [Kodi]:" "Kodi")
+DEVNAME=$(ask "Device name for this box (phone remotes show this) [${DEVICE_NAME:-Kodi}]:" "${DEVICE_NAME:-Kodi}")
 DEVNAME="${DEVNAME//&/and}" # keep it XML-safe in guisettings.xml
 DEVNAME="${DEVNAME//</}"
 DEVNAME="${DEVNAME//>/}"
@@ -74,7 +97,7 @@ DEVNAME="${DEVNAME//\"/}"
 # NB: </dev/null on every adb call — `adb shell` otherwise drains the script's
 # stdin, eating queued prompt answers (breaks non-interactive/automated runs).
 _adb() { adb -s "$D" "$@" </dev/null; }
-rpc() { curl -s -m 6 -H 'Content-Type: application/json' -d "$1" "http://$IP:8080/jsonrpc" 2>/dev/null; }
+rpc() { curl -s -m 6 -H 'Content-Type: application/json' -d "$1" "http://$IP:${KODI_WEB_PORT:-8080}/jsonrpc" 2>/dev/null; }
 kodi_up() { rpc '{"jsonrpc":"2.0","method":"JSONRPC.Ping","id":1}' | grep -q pong; }
 kodi_running() { _adb shell 'pidof '"$PKG"' >/dev/null' 2>/dev/null; }
 
@@ -123,7 +146,7 @@ _adb shell "rm -rf $K && mkdir -p $K/userdata $K/addons" >/dev/null 2>&1
 # control block (kodi/kodi, auth OFF, SSL off, remote control from this AND other
 # systems on — for phone remotes like Kore/Yatse), the device name, and the
 # Expert settings level (<settinglevel>3</settinglevel> lives under <general>).
-printf '<settings version="2"><setting id="services.devicename">%s</setting><setting id="services.webserver">true</setting><setting id="services.webserverport">8080</setting><setting id="services.webserverusername">kodi</setting><setting id="services.webserverpassword">kodi</setting><setting id="services.webserverauthentication">false</setting><setting id="services.webserverssl">false</setting><setting id="services.esenabled">true</setting><setting id="services.esallinterfaces">true</setting></settings>' "$DEVNAME" >/tmp/_t7b_gs.xml
+printf '<settings version="2"><setting id="services.devicename">%s</setting><setting id="services.webserver">true</setting><setting id="services.webserverport">%s</setting><setting id="services.webserverusername">%s</setting><setting id="services.webserverpassword">%s</setting><setting id="services.webserverauthentication">false</setting><setting id="services.webserverssl">false</setting><setting id="services.esenabled">true</setting><setting id="services.esallinterfaces">true</setting></settings>' "$DEVNAME" "${KODI_WEB_PORT:-8080}" "${KODI_WEB_USER:-kodi}" "${KODI_WEB_PASS:-kodi}" >/tmp/_t7b_gs.xml
 _adb push /tmp/_t7b_gs.xml "$K/userdata/guisettings.xml" >/dev/null 2>&1
 # pre-grant storage so Kodi doesn't pop a permissions prompt at the TV after the
 # data wipe (Android-9 runtime grants reset on data clear). The appops line covers
@@ -131,7 +154,7 @@ _adb push /tmp/_t7b_gs.xml "$K/userdata/guisettings.xml" >/dev/null 2>&1
 _adb shell "pm grant $PKG android.permission.READ_EXTERNAL_STORAGE" 2>/dev/null
 _adb shell "pm grant $PKG android.permission.WRITE_EXTERNAL_STORAGE" 2>/dev/null
 _adb shell "appops set $PKG MANAGE_EXTERNAL_STORAGE allow" 2>/dev/null
-ok "Wiped. Seeded: web server (kodi/kodi, remote control on), device name \"$DEVNAME\", storage granted."
+ok "Wiped. Seeded: web server (user ${KODI_WEB_USER:-kodi}, port ${KODI_WEB_PORT:-8080}, remote control on), device name \"$DEVNAME\", storage granted."
 
 # --- 4. install the Setup add-ons from the live site ------------------------ #
 step "4/8  Install the Setup (from the live site)"
@@ -146,6 +169,13 @@ trap 'rm -rf "$T"' EXIT
 curl -s -o "$T/m.zip" "$RAW/script.module.tony7bones/script.module.tony7bones-$MV.zip"
 curl -s -o "$T/b.zip" "$RAW/script.tony7bones.bootstrap/script.tony7bones.bootstrap-$BV.zip"
 (cd "$T" && unzip -oq m.zip && unzip -oq b.zip)
+if [[ -n "$USE_LOCAL" ]]; then
+  # Pre-merge verification: push the WORKING-TREE add-ons, not the live-site ones.
+  rm -rf "$T/script.module.tony7bones" "$T/script.tony7bones.bootstrap"
+  cp -R "$REPO_ROOT/addons/script.module.tony7bones" \
+    "$REPO_ROOT/addons/script.tony7bones.bootstrap" "$T/"
+  warn "USE_LOCAL: pushing the working-tree add-ons (pre-merge test, not main)."
+fi
 _adb push "$T/script.module.tony7bones" "$K/addons/" >/dev/null 2>&1
 _adb push "$T/script.tony7bones.bootstrap" "$K/addons/" >/dev/null 2>&1
 # the virtual proxy repository (Tony.7.Bones Repo) — so the box can browse/update
@@ -160,6 +190,24 @@ fi
 _adb shell "ls $K/addons/script.module.tony7bones/lib/tony7bones/system.py" >/dev/null 2>&1 ||
   die "Library didn't land correctly. Re-run (the wipe creates addons/ up front)."
 ok "Setup $BV + library $MV installed."
+
+# --- 4b. push the per-device config (derived from the master .env) ---------- #
+# Drop DEVICE_IP (laptop-only connection metadata) and override DEVICE_NAME with
+# the prompted value. The bootstrap reads this for weather/IPTV/RSS during the
+# run, then REMOVES it. Absent .env -> nothing pushed -> bootstrap uses defaults.
+if [[ -f "$ENV_FILE" ]]; then
+  grep -v '^[[:space:]]*DEVICE_IP=' "$ENV_FILE" |
+    sed "s|^DEVICE_NAME=.*|DEVICE_NAME=\"$DEVNAME\"|" >/tmp/_t7b_env
+  _adb shell "mkdir -p $(dirname "$BOX_ENV_PATH")" >/dev/null 2>&1
+  if _adb push /tmp/_t7b_env "$BOX_ENV_PATH" >/dev/null 2>&1; then
+    ok "Per-device config pushed (weather + IPTV + RSS from .env)."
+  else
+    warn "Couldn't push the per-device env — box will use built-in defaults."
+  fi
+  rm -f /tmp/_t7b_env
+else
+  warn "No local .env — box uses built-in defaults (keyless weather, no IPTV)."
+fi
 
 # --- 5. launch + enable ----------------------------------------------------- #
 step "5/8  Launch Kodi + enable the Setup"
@@ -266,7 +314,7 @@ step "7/8  Reopen Kodi (the box finishes itself)"
 pause "→ Press Enter to reopen Kodi…"
 # Expert settings level: a fresh-profile seed resets to Standard on first boot, so
 # set it on the now-established guisettings right before the final boot — it sticks.
-_adb shell "sed -i 's|<settinglevel>[0-9]*</settinglevel>|<settinglevel>3</settinglevel>|' $K/userdata/guisettings.xml" >/dev/null 2>&1
+_adb shell "sed -i 's|<settinglevel>[0-9]*</settinglevel>|<settinglevel>$SL</settinglevel>|' $K/userdata/guisettings.xml" >/dev/null 2>&1
 _adb shell "am start -n $PKG/.Splash" >/dev/null 2>&1
 printf '  booting MOD V2 + applying patch + menu'
 built=0
