@@ -349,6 +349,7 @@ def boot(tmp_path, monkeypatch):
     xbmc = types.ModuleType("xbmc")
     xbmc.LOGERROR = 4
     xbmc.LOGINFO = 1
+    xbmc.LOGWARNING = 2
     xbmc.log = lambda *a, **k: None
     xbmc.sleep = lambda ms: None
     # Active skin — default to Estuary so _trim_home_menu() is exercised. Tests
@@ -1631,3 +1632,87 @@ def test_ensure_iptv_groups_skipped_when_no_groups_file(boot):
     assert not os.path.exists(path), (
         "no instance-settings written without a groups file"
     )
+
+
+# --------------------------------------------------------------------------- #
+# Weather from env (Phase 2): multi-location resolve + provider-key layers.
+# --------------------------------------------------------------------------- #
+
+
+def _read_weather_settings(boot):
+    path = boot.mod._weather_multi_settings_path()
+    root = ET.parse(path).getroot()
+    return {s.get("id"): (s.text or "") for s in root.findall("setting")}
+
+
+def test_apply_weather_from_env_resolves_and_writes_keys(boot, monkeypatch):
+    locs = {
+        "Sacramento": {
+            "name": "Sacramento, CA, US",
+            "url": "us/ca/sacramento",
+            "lat": "38.5",
+            "lon": "-121.4",
+        },
+        "Reno": {
+            "name": "Reno, NV, US",
+            "url": "us/nv/reno",
+            "lat": "39.5",
+            "lon": "-119.8",
+        },
+    }
+    monkeypatch.setattr(
+        boot.mod,
+        "_resolve_weather_location",
+        lambda q, **k: next((v for n, v in locs.items() if n in q), None),
+    )
+    boot.mod._apply_weather_from_env(
+        {
+            "WEATHER_LOCATIONS": "Sacramento, CA; Reno, NV",
+            "WEATHERBIT_API_KEY": "WBITKEY",
+            "OWM_API_KEY": "OWMKEY",
+        }
+    )
+    got = _read_weather_settings(boot)
+    assert got["loc1_url"] == "us/ca/sacramento"
+    assert got["loc2_url"] == "us/nv/reno"
+    assert got["loc3_url"] == ""  # unused slot cleared, never stale
+    assert got["WAdd"] == "true" and got["API"] == "WBITKEY"
+    assert got["WMaps"] == "true" and got["MAPAPI"] == "OWMKEY"
+
+
+def test_apply_weather_from_env_fallback_no_env(boot, monkeypatch):
+    monkeypatch.setattr(boot.mod, "_resolve_weather_location", lambda q, **k: None)
+    boot.mod._apply_weather_from_env({})  # no WEATHER_LOCATIONS at all
+    got = _read_weather_settings(boot)
+    assert got["loc1_url"] == "us/ca/sacramento"  # Sacramento default
+    assert "WAdd" not in got  # no keys -> no upgrade layer
+
+
+def test_apply_weather_never_empty_url_when_all_fail(boot, monkeypatch):
+    monkeypatch.setattr(boot.mod, "_resolve_weather_location", lambda q, **k: None)
+    boot.mod._apply_weather_from_env({"WEATHER_LOCATIONS": "Nowhere, ZZ; Atlantis"})
+    got = _read_weather_settings(boot)
+    assert got["loc1_url"] == "us/ca/sacramento" and got["loc1_url"]  # never empty
+
+
+def test_apply_weather_skips_unresolvable_keeps_resolved(boot, monkeypatch):
+    monkeypatch.setattr(
+        boot.mod,
+        "_resolve_weather_location",
+        lambda q, **k: (
+            {"name": "Reno, NV, US", "url": "us/nv/reno", "lat": "39", "lon": "-119"}
+            if "Reno" in q
+            else None
+        ),
+    )
+    boot.mod._apply_weather_from_env({"WEATHER_LOCATIONS": "Badtown; Reno, NV"})
+    got = _read_weather_settings(boot)
+    assert got["loc1_url"] == "us/nv/reno"  # the resolved one becomes loc1 (no gap)
+    assert got.get("loc2_url", "") == ""
+
+
+def test_set_weather_location_default_is_sacramento(boot):
+    boot.mod._set_weather_location()
+    got = _read_weather_settings(boot)
+    assert got["loc1_url"] == "us/ca/sacramento"
+    assert "Sacramento" in got["loc1_name"]

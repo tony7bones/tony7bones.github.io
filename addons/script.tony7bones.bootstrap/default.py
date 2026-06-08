@@ -522,15 +522,10 @@ def _weather_multi_settings_path():
     )
 
 
-def _set_weather_location():
-    """Pre-write Multi Weather location 1 (name + url + lat + lon) so it resolves
-    and fetches without the interactive geocode search. loc1_url is the field the
-    add-on actually fetches by (see WEATHER_LOCATION). Creates the file/dir if
-    missing and PRESERVES every other existing setting. Idempotent.
-
-    The file is written as version="2" (Kodi's current addon-settings on-disk
-    format, which the add-on's own setSetting* writes through); the add-on reads
-    settings by id regardless of the bundled resources/settings.xml schema version."""
+def _set_weather_settings(settings):
+    """Write each id->value in `settings` into Multi Weather's settings.xml,
+    creating the file/dir if missing and PRESERVING every other existing setting.
+    Idempotent; written version="2" (the add-on reads settings by id)."""
     xml_path = _weather_multi_settings_path()
     os.makedirs(os.path.dirname(xml_path), exist_ok=True)
     root = None
@@ -543,7 +538,7 @@ def _set_weather_location():
         root = ET.Element("settings")
         root.set("version", "2")
     by_id = {s.get("id"): s for s in root.findall("setting") if s.get("id")}
-    for sid, val in WEATHER_LOCATION.items():
+    for sid, val in settings.items():
         el = by_id.get(sid)
         if el is None:
             el = ET.SubElement(root, "setting")
@@ -552,7 +547,110 @@ def _set_weather_location():
         el.text = val
     with open(xml_path, "w", encoding="utf-8") as f:
         f.write(ET.tostring(root, encoding="unicode"))
-    _log(f"_configure_box: wrote Multi Weather location 1 to {xml_path}")
+
+
+def _set_weather_location():
+    """Fallback: Multi Weather location 1 = Sacramento (the keyless default used
+    when the env provides no resolvable locations). loc1_url is the field the
+    add-on fetches by. Idempotent; preserves other settings."""
+    _set_weather_settings(WEATHER_LOCATION)
+    _log("_configure_box: wrote Multi Weather default location (Sacramento)")
+
+
+def _resolve_weather_location(query, timeout=10, tries=2):
+    """Resolve a city name / zipcode to a Multi Weather location via Yahoo's
+    search-assist API (the trailing-slash endpoint — no redirect needed). Returns
+    {name,url,lat,lon} or None on any failure (the caller falls back). Retries the
+    network call; never raises. Mirrors how the add-on's own search builds the
+    fields: name "Town, Region, Country"; url "country/region/town"."""
+    import json as _json
+    import urllib.parse as _uparse
+    import urllib.request as _ureq
+
+    api = (
+        "https://weather.yahoo.com/_atmos/api/search-assist/locations/?query="
+        + _uparse.quote(query)
+    )
+    req = _ureq.Request(
+        api, headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
+    )
+    for _ in range(tries):
+        try:
+            with _ureq.urlopen(req, timeout=timeout) as resp:
+                data = _json.loads(resp.read().decode("utf-8"))
+            for sug in data.get("suggestions", []):
+                loc = sug.get("location") or {}
+                town = loc.get("town") or {}
+                region = loc.get("region") or {}
+                code = region.get("code") or region.get("name") or ""
+                country = (loc.get("country") or {}).get("code") or ""
+                name = town.get("name")
+                if not (name and country and town.get("latitude") is not None):
+                    continue
+                return {
+                    "name": "%s, %s, %s" % (name, code, country),
+                    "url": "%s/%s/%s"
+                    % (
+                        country.lower(),
+                        str(code).lower().replace(" ", "-"),
+                        name.lower().replace(" ", "-"),
+                    ),
+                    "lat": str(town["latitude"]),
+                    "lon": str(town["longitude"]),
+                }
+            return None
+        except Exception:  # noqa: BLE001 - best-effort; caller falls back
+            continue
+    return None
+
+
+def _apply_weather_from_env(box_env):
+    """Drive Multi Weather from the per-device env: resolve up to 5
+    WEATHER_LOCATIONS (city names or zipcodes) via Yahoo, write loc1..N (+ clear
+    the unused slots), and enable the optional Weatherbit / OpenWeatherMap upgrade
+    layers when their keys are present. Falls back to the hardcoded Sacramento
+    default when no env locations are given OR none resolve — NEVER writes an empty
+    loc_url. Defensive: logs counts/flags only (never secret values); never raises.
+    """
+    try:
+        wanted = split_list(box_env.get("WEATHER_LOCATIONS", ""))[:5]
+        settings = {}
+        resolved = 0
+        for query in wanted:
+            loc = _resolve_weather_location(query)
+            if not loc or not loc.get("url"):
+                _log(
+                    "_apply_weather: a location did not resolve — skipped",
+                    xbmc.LOGWARNING,
+                )
+                continue
+            resolved += 1
+            settings["loc%d_name" % resolved] = loc["name"]
+            settings["loc%d_url" % resolved] = loc["url"]
+            settings["loc%d_lat" % resolved] = loc["lat"]
+            settings["loc%d_lon" % resolved] = loc["lon"]
+        if resolved == 0:
+            settings.update(WEATHER_LOCATION)  # Sacramento default — never empty
+            resolved = 1
+        else:
+            for j in range(resolved + 1, 6):  # clear stale higher-numbered slots
+                for fld in ("name", "url", "lat", "lon"):
+                    settings["loc%d_%s" % (j, fld)] = ""
+        wbit = (box_env.get("WEATHERBIT_API_KEY") or "").strip()
+        owm = (box_env.get("OWM_API_KEY") or "").strip()
+        if wbit:
+            settings["WAdd"] = "true"
+            settings["API"] = wbit
+        if owm:
+            settings["WMaps"] = "true"
+            settings["MAPAPI"] = owm
+        _set_weather_settings(settings)
+        _log(
+            "_apply_weather: %d location(s) written; weatherbit=%s owm=%s"
+            % (resolved, bool(wbit), bool(owm))
+        )
+    except Exception as e:  # noqa: BLE001 - never abort the rest of setup
+        _log(f"_apply_weather failed (non-fatal): {e}", xbmc.LOGERROR)
 
 
 def _copy_one_device_file(src, dst_special):
@@ -741,6 +839,12 @@ def _ensure_iptv_custom_tv_groups():
         )
 
 
+# The per-device config the provisioner derives from the owner's master .env and
+# pushes to the box (read once here; absent -> built-in defaults). It is read then
+# REMOVED so its secrets do not linger on the box.
+BOX_ENV_PATH = "/storage/emulated/0/kodi/tony.7.bones/tony7bones.env"
+
+
 def _configure_box():
     """Apply the base box's weather + interface preferences:
       * weather provider  -> Multi Weather (weather.addon)
@@ -755,9 +859,12 @@ def _configure_box():
       * Estuary top bar   -> show weather info (Skin.SetBool, persists on restart)
     Defensive: any failure is logged and swallowed; never aborts the run."""
     try:
+        box_env = read_box_env(BOX_ENV_PATH)
         _set_setting("weather.addon", WEATHER_ADDON)
         _set_setting("lookandfeel.enablerssfeeds", True)
-        _set_weather_location()
+        # Weather: env-driven (up to 5 resolved locations + the upgrade keys),
+        # falling back to the keyless Sacramento default when no env is present.
+        _apply_weather_from_env(box_env)
         # Copy the user's device files into userdata (guarded; skips any missing).
         _copy_device_files()
         # Enforce IPTV custom-TV-groups keys on top of the copied file (1a/1b).
@@ -771,6 +878,12 @@ def _configure_box():
             skin = ""
         if not skin or skin == ESTUARY_SKIN_ID:
             xbmc.executebuiltin(f"Skin.SetBool({SHOW_WEATHERINFO})")
+        # Read-then-remove the per-device env so its secrets do not linger on box.
+        if box_env:
+            try:
+                os.remove(BOX_ENV_PATH)
+            except OSError:
+                pass
         _log(
             "_configure_box: weather provider/location set, RSS on, "
             "device files copied if present, top-bar weather on"
