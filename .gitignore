@@ -32,6 +32,7 @@ dropbox/iptv/instance-settings*.xml
 # tony7bones.env (per-device) + any other *.env master file
 *.env
 !.env.example
+!.env.device.example
 # generated secret IPTV outputs (curated m3u + instance-settings)
 /iptv-build/
 # curated playlists embed provider credentials

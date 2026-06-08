@@ -16,6 +16,9 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 
+# Committed config TEMPLATES — placeholder values only, never real secrets.
+_EXAMPLE_ENVS = {".env.example", ".env.device.example"}
+
 
 def _git(*args):
     return subprocess.run(["git", *args], cwd=REPO, capture_output=True, text=True)
@@ -34,7 +37,7 @@ def test_secret_artifacts_not_tracked():
         for f in _tracked()
         if (
             os.path.basename(f).startswith(".env")
-            and os.path.basename(f) != ".env.example"
+            and os.path.basename(f) not in _EXAMPLE_ENVS
         )
         or os.path.basename(f).endswith(".env")
         or f.startswith("iptv-build/")
@@ -78,7 +81,7 @@ def _secret_tokens(env):
 def test_no_env_secret_value_in_tracked_files():
     """No secret VALUE from any local .env* (the per-device .env.<device> files)
     appears in any git-tracked file."""
-    env_files = [p for p in REPO.glob(".env*") if p.name != ".env.example"]
+    env_files = [p for p in REPO.glob(".env*") if p.name not in _EXAMPLE_ENVS]
     if not env_files:
         return  # CI / no local env — value-scan not applicable
     tokens = set()
