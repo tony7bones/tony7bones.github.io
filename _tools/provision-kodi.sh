@@ -71,21 +71,23 @@ DEVNAME="${DEVNAME//</}"
 DEVNAME="${DEVNAME//>/}"
 DEVNAME="${DEVNAME//\"/}"
 
-_adb() { adb -s "$D" "$@"; }
+# NB: </dev/null on every adb call — `adb shell` otherwise drains the script's
+# stdin, eating queued prompt answers (breaks non-interactive/automated runs).
+_adb() { adb -s "$D" "$@" </dev/null; }
 rpc() { curl -s -m 6 -H 'Content-Type: application/json' -d "$1" "http://$IP:8080/jsonrpc" 2>/dev/null; }
 kodi_up() { rpc '{"jsonrpc":"2.0","method":"JSONRPC.Ping","id":1}' | grep -q pong; }
 kodi_running() { _adb shell 'pidof '"$PKG"' >/dev/null' 2>/dev/null; }
 
 # --- 1. connect ------------------------------------------------------------- #
 step "1/8  Connect to $D"
-adb connect "$D" >/dev/null 2>&1
+adb connect "$D" </dev/null >/dev/null 2>&1
 sleep 1
 MODEL=$(_adb shell 'getprop ro.product.model' 2>/dev/null | tr -d '\r')
 if [[ -z "$MODEL" ]]; then
   warn "Couldn't reach the device. If the TV shows an 'Allow USB debugging?' prompt,"
   warn "check 'Always allow' and accept it, then press Enter to retry."
   pause "Press Enter to retry…"
-  adb connect "$D" >/dev/null 2>&1
+  adb connect "$D" </dev/null >/dev/null 2>&1
   sleep 1
   MODEL=$(_adb shell 'getprop ro.product.model' 2>/dev/null | tr -d '\r')
   [[ -n "$MODEL" ]] || die "Still can't reach $D. Check the IP and ADB debugging."
@@ -121,7 +123,7 @@ _adb shell "rm -rf $K && mkdir -p $K/userdata $K/addons" >/dev/null 2>&1
 # control block (kodi/kodi, auth OFF, SSL off, remote control from this AND other
 # systems on — for phone remotes like Kore/Yatse), the device name, and the
 # Expert settings level (<settinglevel>3</settinglevel> lives under <general>).
-printf '<settings version="2"><setting id="services.devicename">%s</setting><setting id="services.webserver">true</setting><setting id="services.webserverport">8080</setting><setting id="services.webserverusername">kodi</setting><setting id="services.webserverpassword">kodi</setting><setting id="services.webserverauthentication">false</setting><setting id="services.webserverssl">false</setting><setting id="services.esenabled">true</setting><setting id="services.esallinterfaces">true</setting><general><settinglevel>3</settinglevel></general></settings>' "$DEVNAME" >/tmp/_t7b_gs.xml
+printf '<settings version="2"><setting id="services.devicename">%s</setting><setting id="services.webserver">true</setting><setting id="services.webserverport">8080</setting><setting id="services.webserverusername">kodi</setting><setting id="services.webserverpassword">kodi</setting><setting id="services.webserverauthentication">false</setting><setting id="services.webserverssl">false</setting><setting id="services.esenabled">true</setting><setting id="services.esallinterfaces">true</setting></settings>' "$DEVNAME" >/tmp/_t7b_gs.xml
 _adb push /tmp/_t7b_gs.xml "$K/userdata/guisettings.xml" >/dev/null 2>&1
 # pre-grant storage so Kodi doesn't pop a permissions prompt at the TV after the
 # data wipe (Android-9 runtime grants reset on data clear). The appops line covers
@@ -129,7 +131,7 @@ _adb push /tmp/_t7b_gs.xml "$K/userdata/guisettings.xml" >/dev/null 2>&1
 _adb shell "pm grant $PKG android.permission.READ_EXTERNAL_STORAGE" 2>/dev/null
 _adb shell "pm grant $PKG android.permission.WRITE_EXTERNAL_STORAGE" 2>/dev/null
 _adb shell "appops set $PKG MANAGE_EXTERNAL_STORAGE allow" 2>/dev/null
-ok "Wiped. Seeded: web server (kodi/kodi, remote control on), device name \"$DEVNAME\", Expert level, storage granted."
+ok "Wiped. Seeded: web server (kodi/kodi, remote control on), device name \"$DEVNAME\", storage granted."
 
 # --- 4. install the Setup add-ons from the live site ------------------------ #
 step "4/8  Install the Setup (from the live site)"
@@ -235,7 +237,20 @@ for _ in $(seq 1 20); do
 done
 printf '\n'
 if kodi_running; then
-  warn "Kodi is still running after the close. (Old build? Or it's still busy.)"
+  # The Setup's Quit didn't take (a busy/hung skin switch can swallow it). Force a
+  # clean restart via a DEVICE reboot — a Kodi-only force-stop can leave a wedged
+  # GPU that crash-loops; only a device reboot reliably clears it.
+  warn "Kodi didn't self-close — forcing a clean restart (stop + device reboot)."
+  _adb shell "am force-stop $PKG" >/dev/null 2>&1
+  sleep 2
+  _adb reboot >/dev/null 2>&1
+  _adb wait-for-device 2>/dev/null
+  for _ in $(seq 1 40); do
+    [[ "$(_adb shell 'getprop sys.boot_completed' 2>/dev/null | tr -d '\r')" == 1 ]] && break
+    sleep 5
+  done
+  sleep 10
+  ok "Device rebooted — clean state for the reopen."
 else
   ok "Kodi closed cleanly — no force-kill needed."
 fi
@@ -249,20 +264,24 @@ fi
 # --- 7. reopen — the box finishes itself ------------------------------------ #
 step "7/8  Reopen Kodi (the box finishes itself)"
 pause "→ Press Enter to reopen Kodi…"
+# Expert settings level: a fresh-profile seed resets to Standard on first boot, so
+# set it on the now-established guisettings right before the final boot — it sticks.
+_adb shell "sed -i 's|<settinglevel>[0-9]*</settinglevel>|<settinglevel>3</settinglevel>|' $K/userdata/guisettings.xml" >/dev/null 2>&1
 _adb shell "am start -n $PKG/.Splash" >/dev/null 2>&1
-printf '  booting MOD V2 + building the menu'
+printf '  booting MOD V2 + applying patch + menu'
 built=0
 for _ in $(seq 1 48); do
-  _adb shell "grep -aq 'skinshortcuts menu built' $K/temp/kodi.log" 2>/dev/null && {
+  pov=$(_adb shell "grep -c plugin.video.pov $K/addons/skin.estuary.modv2/xml/script-skinshortcuts-includes.xml 2>/dev/null" | tr -dc '0-9')
+  mark=$(_adb shell "grep -c show_system_info_overlay $K/addons/skin.estuary.modv2/xml/Home.xml 2>/dev/null" | tr -dc '0-9')
+  if [[ "${pov:-0}" -ge 1 && "${mark:-0}" -ge 1 ]]; then
     built=1
     break
-  }
-  kodi_up || true
+  fi
   printf '.'
   sleep 5
 done
 printf '\n'
-[[ "$built" == 1 ]] && ok "Menu built." || warn "Didn't see the menu build log — verifying anyway."
+[[ "$built" == 1 ]] && ok "Menu built (POV) + patch applied." || warn "Patch/menu not detected in time — verifying anyway."
 
 # --- 8. verify -------------------------------------------------------------- #
 step "8/8  Verify the box"
