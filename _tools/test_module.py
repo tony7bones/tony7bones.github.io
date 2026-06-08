@@ -58,7 +58,7 @@ class _FakeResp:
 def test_module_id_and_version():
     root = _addon_root()
     assert root.get("id") == "script.module.tony7bones"
-    assert root.get("version") == "1.1.1"
+    assert root.get("version") == "1.1.2"
     assert root.get("provider-name") == "tony7bones"
 
 
@@ -135,6 +135,7 @@ def lib(tmp_path, monkeypatch):
     xbmc.LOGINFO = 1
     xbmc.log = lambda *a, **k: None
     xbmc.sleep = lambda ms: None
+    xbmc.getCondVisibility = lambda cond: state.get("condvis", False)
 
     def _builtin(cmd, wait=False):
         state["builtins"].append(cmd)
@@ -220,6 +221,29 @@ def lib(tmp_path, monkeypatch):
 # --------------------------------------------------------------------------- #
 # Public API surface
 # --------------------------------------------------------------------------- #
+def test_activate_skin_accepts_keep_dialog(lib):
+    """activate_skin sets lookandfeel.skin AND clicks Yes (control 11) on the
+    'Keep this skin?' confirm (window 10100) so the change commits — without it
+    Kodi reverts to the previous skin on the dialog's timeout."""
+    lib.state["condvis"] = True  # the keep-skin yes/no dialog is visible
+    lib.t7.activate_skin("skin.estuary.modv2", lambda *a, **k: None)
+    assert any(
+        "lookandfeel.skin" in j and "skin.estuary.modv2" in j
+        for j in lib.state["jsonrpc"]
+    ), "must set lookandfeel.skin"
+    assert any("SendClick(11)" in b for b in lib.state["builtins"]), (
+        "must click Yes (control 11) to keep the skin"
+    )
+
+
+def test_activate_skin_no_dialog_no_click(lib):
+    """When no keep-skin dialog appears, activate_skin sets the skin but does not
+    click anything (so it never mis-clicks some other window)."""
+    lib.state["condvis"] = False
+    lib.t7.activate_skin("skin.estuary.modv2", lambda *a, **k: None)
+    assert not any("SendClick" in b for b in lib.state["builtins"])
+
+
 def test_restart_kodi_android_clean_quit_no_blocking_prompt(lib, monkeypatch):
     """On Android: a clean Quit + a non-blocking notice, and NO blocking yes/no.
     A prompt there lets the just-set skin hit the 'Keep this skin?' revert and the
@@ -262,6 +286,7 @@ def test_public_api_surface(lib):
         "platform_tag",
         "is_android",
         "self_uninstall",
+        "activate_skin",
         "restart_kodi",
         "load_index_simple",
         "resolve_closure_ordered",

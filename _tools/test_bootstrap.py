@@ -354,6 +354,9 @@ def boot(tmp_path, monkeypatch):
     # Active skin — default to Estuary so _trim_home_menu() is exercised. Tests
     # that need another skin monkeypatch this.
     xbmc.getSkinDir = lambda: "skin.estuary"
+    # activate_skin polls this for the "Keep this skin?" dialog; default False so
+    # it falls through quickly (the JSON-RPC skin-set still happens regardless).
+    xbmc.getCondVisibility = lambda cond: state.get("condvis", False)
 
     def _builtin(cmd, wait=False):
         state["builtins"].append(cmd)
@@ -1015,7 +1018,7 @@ def test_requires_the_shared_module():
     auto-installs script.module.tony7bones when this Setup is installed."""
     imp = _addon_root().find("requires/import[@addon='script.module.tony7bones']")
     assert imp is not None, "must <import> script.module.tony7bones"
-    assert imp.get("version") == "1.1.0"
+    assert imp.get("version") == "1.1.2"
 
 
 def test_imports_from_shared_module():

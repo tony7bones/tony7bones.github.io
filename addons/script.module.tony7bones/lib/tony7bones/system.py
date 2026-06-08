@@ -7,6 +7,7 @@ and the end-of-setup restart. They are identical between the two Setups, so they
 live here once.
 """
 
+import json
 import os
 
 import xbmc
@@ -86,6 +87,46 @@ def self_uninstall(addon_id, log):
             log(f"self-uninstall: removed {my_dir}", xbmc.LOGINFO)
     except Exception as e:  # noqa: BLE001 - self-uninstall must never abort the run
         log(f"self-uninstall failed (non-fatal): {e}", xbmc.LOGERROR)
+
+
+def activate_skin(skin_id, log):
+    """Switch the active skin to skin_id AND accept Kodi's "Keep this skin?"
+    confirmation so the change PERSISTS across the end-of-setup restart.
+
+    Setting lookandfeel.skin live triggers a skin reload and pops a yes/no confirm
+    (window 10100) that DEFAULTS TO REVERT on its timeout. If it is not accepted
+    before Kodi restarts/quits, Kodi rolls the skin back to the previous one — so
+    the box boots stock Estuary instead of MOD V2 (a real Fire TV install hit
+    exactly this). We set the skin, wait for the confirm to appear, then click its
+    Yes button (control 11 of the yes/no dialog) so the change commits, and let it
+    settle before the caller restarts. Verified on a real Fire TV: control 11 keeps
+    the skin with no revert.
+    """
+    xbmc.executeJSONRPC(
+        json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "method": "Settings.SetSettingValue",
+                "params": {"setting": "lookandfeel.skin", "value": skin_id},
+                "id": 1,
+            }
+        )
+    )
+    for _ in range(24):  # up to ~12s for the confirm to render
+        if xbmc.getCondVisibility("Window.IsVisible(10100)"):
+            xbmc.executebuiltin("SendClick(11)")  # control 11 == Yes (keep)
+            log(
+                "activate_skin: accepted keep-skin for {}".format(skin_id),
+                xbmc.LOGINFO,
+            )
+            break
+        xbmc.sleep(500)
+    else:
+        log(
+            "activate_skin: no keep-skin dialog appeared for {}".format(skin_id),
+            xbmc.LOGINFO,
+        )
+    xbmc.sleep(2000)  # let the keep commit + the skin settle before the restart
 
 
 def restart_kodi(title, log):

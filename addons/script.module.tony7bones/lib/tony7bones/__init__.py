@@ -9,7 +9,7 @@ Stable surface:
 
   Primitives:
     is_installed, http_get, extract_zip, update_local_addons, enable, disable
-    platform_tag, is_android, self_uninstall, restart_kodi
+    platform_tag, is_android, self_uninstall, activate_skin, restart_kodi
 
   Index + closure (base Setup, ordered indexes):
     load_index_simple, resolve_closure_ordered
@@ -60,7 +60,13 @@ from .repos import (
     repo_dirs,
     set_origins,
 )
-from .system import is_android, platform_tag, restart_kodi, self_uninstall
+from .system import (
+    activate_skin,
+    is_android,
+    platform_tag,
+    restart_kodi,
+    self_uninstall,
+)
 
 __all__ = [
     "KODI_MAJOR",
@@ -86,6 +92,7 @@ __all__ = [
     "repo_dirs",
     "resolve_closure_combined",
     "resolve_closure_ordered",
+    "activate_skin",
     "restart_kodi",
     "self_uninstall",
     "set_origins",

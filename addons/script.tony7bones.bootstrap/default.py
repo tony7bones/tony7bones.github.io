@@ -49,6 +49,7 @@ import xbmcvfs
 # Shared install library (script.module.tony7bones). All the generic machinery
 # lives here; this file keeps only the base box's configuration + base-only steps.
 from tony7bones import (
+    activate_skin,
     extract_zip,
     install_selection,
     install_with_deps,
@@ -898,13 +899,14 @@ def run():
     _add_file_sources()
     _trim_home_menu()
     _configure_box()
-    # Activate MOD V2 LAST — immediately before the restart. Setting lookandfeel.skin
-    # and then restarting promptly is what persists the choice: Kodi writes the
-    # in-memory skin to guisettings on shutdown, and a short set->restart gap beats
-    # the "Keep this skin?" timeout that would otherwise revert it to stock Estuary.
-    # The restart boots into MOD V2; modv2plus's service then auto-applies the patch.
+    # Activate MOD V2 LAST — immediately before the restart. activate_skin sets
+    # lookandfeel.skin AND clicks "Yes" on Kodi's "Keep this skin?" confirm
+    # (control 11 of the yes/no dialog) so the change COMMITS. Without that accept
+    # the dialog defaults to revert on its timeout and the box boots stock Estuary
+    # (a real Fire TV install hit exactly this). The restart then boots into MOD V2
+    # and modv2plus's service auto-applies the patch.
     if skin_ok:
-        _set_setting("lookandfeel.skin", SKIN_ID)
+        activate_skin(SKIN_ID, _log)
     # ONE restart finalises every freshly extracted add-on AND the self-removal.
     restart_kodi("Tony.7.Bones Setup", _log)
 
