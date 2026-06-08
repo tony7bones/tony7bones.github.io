@@ -48,6 +48,28 @@ def _is_applied():
         return False
 
 
+def _menu_trimmed():
+    """True if the BUILT home menu is our trimmed one (Movies / TV shows / TV /
+    Add-ons / Favorites / Weather), not the full stock menu.
+
+    The Setup's live skin-switch can race script.skinshortcuts into building the
+    FULL stock menu BEFORE the patch trims it; skinshortcuts then caches that full
+    build (via its hash) and SKIPS rebuilding on the next boot — leaving the wrong
+    menu even though our trimmed default is on disk. The full menu carries the
+    Games and Pictures items (which our trimmed menu drops), so their presence in
+    the built includes is a reliable 'not trimmed' signal. When this is false the
+    service re-applies, which clears the skinshortcuts cache and rebuilds from our
+    trimmed default on this (race-free) boot.
+    """
+    inc = os.path.join(_skin_root(), "xml", "script-skinshortcuts-includes.xml")
+    try:
+        with open(inc, encoding="utf-8") as fh:
+            data = fh.read()
+    except OSError:
+        return False  # not built yet -> treat as not trimmed (apply will build it)
+    return "ActivateWindow(Games)" not in data and "ActivateWindow(Pictures" not in data
+
+
 def _auto_apply():
     """Apply the patch via the add-on's own apply path (default.py:_apply)."""
     try:
@@ -92,12 +114,12 @@ def run():
         if monitor.waitForAbort(3):
             return  # Kodi is shutting down
         waited += 3
-    if xbmc.getSkinDir() == SKIN_ID and not _is_applied():
+    if xbmc.getSkinDir() == SKIN_ID and (not _is_applied() or not _menu_trimmed()):
         _auto_apply()
     else:
         xbmc.log(
-            "[mod v2+ service] nothing to do (skin={}, applied={})".format(
-                xbmc.getSkinDir(), _is_applied()
+            "[mod v2+ service] nothing to do (skin={}, applied={}, menu_trimmed={})".format(
+                xbmc.getSkinDir(), _is_applied(), _menu_trimmed()
             ),
             xbmc.LOGINFO,
         )

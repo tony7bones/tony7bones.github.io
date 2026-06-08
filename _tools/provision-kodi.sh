@@ -114,15 +114,22 @@ _adb shell "rm -rf $K && mkdir -p $K/userdata $K/addons" >/dev/null 2>&1
 # enable the web server so we can drive Kodi headless from here
 printf '<settings version="2"><setting id="services.webserver">true</setting><setting id="services.webserverport">8080</setting><setting id="services.webserverauthentication">false</setting><setting id="services.esenabled">true</setting></settings>' >/tmp/_t7b_gs.xml
 _adb push /tmp/_t7b_gs.xml "$K/userdata/guisettings.xml" >/dev/null 2>&1
-ok "Wiped + web server enabled."
+# pre-grant storage so Kodi doesn't pop a permissions prompt at the TV after the
+# data wipe (Android-9 runtime grants reset on data clear). The appops line covers
+# Android 11+ sticks (MANAGE_EXTERNAL_STORAGE) and is a harmless no-op on older ones.
+_adb shell "pm grant $PKG android.permission.READ_EXTERNAL_STORAGE" 2>/dev/null
+_adb shell "pm grant $PKG android.permission.WRITE_EXTERNAL_STORAGE" 2>/dev/null
+_adb shell "appops set $PKG MANAGE_EXTERNAL_STORAGE allow" 2>/dev/null
+ok "Wiped + web server enabled + storage pre-granted."
 
 # --- 4. install the Setup add-ons from the live site ------------------------ #
 step "4/8  Install the Setup (from the live site)"
 ver() { curl -s -m 15 "$RAW/$1/addon.xml" | grep -oE 'version="[0-9]+\.[0-9]+\.[0-9]+"' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1; }
 MV=$(ver script.module.tony7bones)
 BV=$(ver script.tony7bones.bootstrap)
+PV=$(ver repository.tony7bones)
 [[ -n "$MV" && -n "$BV" ]] || die "Couldn't resolve versions from the live site (no internet?)."
-say "  library=$MV  setup=$BV — fetching…"
+say "  library=$MV  setup=$BV  repo=${PV:-?} — fetching…"
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 curl -s -o "$T/m.zip" "$RAW/script.module.tony7bones/script.module.tony7bones-$MV.zip"
@@ -130,6 +137,15 @@ curl -s -o "$T/b.zip" "$RAW/script.tony7bones.bootstrap/script.tony7bones.bootst
 (cd "$T" && unzip -oq m.zip && unzip -oq b.zip)
 _adb push "$T/script.module.tony7bones" "$K/addons/" >/dev/null 2>&1
 _adb push "$T/script.tony7bones.bootstrap" "$K/addons/" >/dev/null 2>&1
+# the virtual proxy repository (Tony.7.Bones Repo) — so the box can browse/update
+# add-ons from our repo + self-update. Non-fatal if it can't be resolved.
+if [[ -n "$PV" ]] && curl -s -f -o "$T/r.zip" "$RAW/repository.tony7bones/repository.tony7bones-$PV.zip"; then
+  (cd "$T" && unzip -oq r.zip)
+  _adb push "$T/repository.tony7bones" "$K/addons/" >/dev/null 2>&1
+  ok "Tony.7.Bones Repo $PV installed."
+else
+  warn "Couldn't install the proxy repo (repository.tony7bones) — non-fatal, box still works."
+fi
 _adb shell "ls $K/addons/script.module.tony7bones/lib/tony7bones/system.py" >/dev/null 2>&1 ||
   die "Library didn't land correctly. Re-run (the wipe creates addons/ up front)."
 ok "Setup $BV + library $MV installed."
@@ -145,7 +161,7 @@ for _ in $(seq 1 50); do
 done
 printf '\n'
 kodi_up || die "Kodi didn't come up. Reboot the device and try again."
-for a in script.module.tony7bones script.tony7bones.bootstrap; do
+for a in script.module.tony7bones script.tony7bones.bootstrap repository.tony7bones; do
   rpc "{\"jsonrpc\":\"2.0\",\"method\":\"Addons.SetAddonEnabled\",\"params\":{\"addonid\":\"$a\",\"enabled\":true},\"id\":1}" >/dev/null
 done
 ok "Kodi up, Setup enabled."
