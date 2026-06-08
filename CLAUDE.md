@@ -67,6 +67,7 @@ The proxy serves add-ons from its **baked** `resources/repository.json` (read lo
 > - `docs/playbooks/one-shot-and-architecture.md` — the first-party add-on architecture and the one-shot flow.
 > - `docs/playbooks/modv2plus-dev-cycle-and-lessons.md` — **MOD V2+ patch: the ADB-on-real-Fire-TV dev cycle + hard-won lessons** (Mac ≠ device; build from current omega; the `WeatherIcons` skin-string mechanism; default-on opt-out flags; logo wordmark-vs-mark; JSON-RPC limits; XBTF extraction; safety).
 > - `docs/playbooks/firetv-adb-dev.md` — command-level runbook for driving the Office Fire TV over ADB + JSON-RPC (`_tools/firetv.sh`).
+> - `docs/playbooks/firetv-stick-scoped-storage-provisioning.md` — **provision a non-rooted Fire OS 11 Stick over adb** via the Jocala/adbLink data-relocation trick (`xbmc_env.properties` → `/sdcard/kodi_data`) and the provisioner's auto-detected Fire-OS mode (`KODI_DATA_PATH`).
 > - `.claude/skills/kodi-super-agent/SKILL.md` — distilled agent operating guide.
 > - `docs/plans/` — historical design docs (implemented).
 

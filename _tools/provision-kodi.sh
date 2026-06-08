@@ -81,6 +81,13 @@ case "$(printf '%s' "${SETTINGS_LEVEL:-expert}" | tr '[:upper:]' '[:lower:]')" i
   advanced) SL=2 ;;
   *) SL=3 ;;
 esac
+# Kodi data dir comes from the per-device file (KODI_DATA_PATH). When it points
+# OUTSIDE Android/data — a Fire OS 11 Stick where adb is locked out of the app
+# sandbox — we RELOCATE Kodi's data there via /sdcard/xbmc_env.properties (the
+# Jocala/adbLink method) so the entire adb push/wipe/seed flow works normally.
+K="${KODI_DATA_PATH:-$K}"
+RELOCATE=""
+[[ "$K" == *Android/data* ]] || RELOCATE=1
 
 # --- 0. device IP ----------------------------------------------------------- #
 clear 2>/dev/null || true
@@ -145,6 +152,14 @@ warn "This ERASES the Kodi profile on $MODEL (add-ons, settings, everything)."
 confirm "Wipe Kodi now?" || die "Aborted before any changes."
 _adb shell "am force-stop $PKG" >/dev/null 2>&1
 sleep 2
+# Fire OS relocation (KODI_DATA_PATH points outside Android/data): tell Kodi to use
+# the writable dir via /sdcard/xbmc_env.properties + grant all-files access, so the
+# wipe/seed/push below land where Kodi actually reads them (Jocala/adbLink method).
+if [[ -n "$RELOCATE" ]]; then
+  _adb shell "printf 'xbmc.data=%s\n' '$(dirname "$K")' > /sdcard/xbmc_env.properties" >/dev/null 2>&1
+  _adb shell "cmd appops set --uid $PKG MANAGE_EXTERNAL_STORAGE allow" >/dev/null 2>&1
+  warn "Fire OS scoped storage -> relocated Kodi data to $(dirname "$K") (xbmc_env.properties)."
+fi
 _adb shell "rm -rf $K && mkdir -p $K/userdata $K/addons" >/dev/null 2>&1
 # Seed guisettings: web server on (so we can drive Kodi headless), the remote-
 # control block (kodi/kodi, auth OFF, SSL off, remote control from this AND other
@@ -215,14 +230,32 @@ fi
 
 # --- 5. launch + enable ----------------------------------------------------- #
 step "5/8  Launch Kodi + enable the Setup"
+_launch_wait() { # poll kodi_up for ~($1*3)s after a launch; return 0 once up
+  printf '  starting Kodi'
+  for _ in $(seq 1 "$1"); do
+    kodi_up && {
+      printf '\n'
+      return 0
+    }
+    printf '.'
+    sleep 3
+  done
+  printf '\n'
+  return 1
+}
 _adb shell "monkey -p $PKG -c android.intent.category.LAUNCHER 1" >/dev/null 2>&1
-printf '  starting Kodi'
-for _ in $(seq 1 50); do
-  kodi_up && break
-  printf '.'
-  sleep 3
-done
-printf '\n'
+if ! _launch_wait 50 && [[ -n "$RELOCATE" ]]; then
+  # Relocated Fire OS stick: the FIRST launch on a fresh profile bounces to the
+  # all-files-access settings (ApplicationsActivity) and Kodi never finishes
+  # starting — the appops grant is already set, the stuck settings task is the
+  # only blocker. Clear it + relaunch. (playbook: firetv-stick-scoped-storage-*)
+  warn "First launch stalled on the Fire OS all-files-access bounce — clearing + retrying."
+  _adb shell "am force-stop com.amazon.tv.settings.v2" >/dev/null 2>&1
+  _adb shell "am force-stop $PKG" >/dev/null 2>&1
+  sleep 2
+  _adb shell "monkey -p $PKG -c android.intent.category.LAUNCHER 1" >/dev/null 2>&1
+  _launch_wait 50 || true
+fi
 kodi_up || die "Kodi didn't come up. Reboot the device and try again."
 for a in script.module.tony7bones script.tony7bones.bootstrap repository.tony7bones; do
   rpc "{\"jsonrpc\":\"2.0\",\"method\":\"Addons.SetAddonEnabled\",\"params\":{\"addonid\":\"$a\",\"enabled\":true},\"id\":1}" >/dev/null
