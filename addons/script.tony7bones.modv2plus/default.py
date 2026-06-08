@@ -211,6 +211,45 @@ def _clear_skinshortcuts_cache():
     return removed
 
 
+def _deploy_skinshortcuts_menu():
+    """Deploy our shipped, GUI-built skinshortcuts menu into the user's addon_data
+    so script.skinshortcuts builds OUR exact home menu — the six-item trim, the
+    Movies/TV shows -> POV actions, TV -> TVGuide, the Favorites relabel, and the
+    Movies List / TV Shows List custom-list widgets — verbatim, instead of seeding
+    the stock default and approximating it. Copies every file under
+    resources/skinshortcuts/ (the mainmenu + per-item DATA + the widget
+    .properties) over addon_data, then drops the built <skin>.hash so the next
+    build regenerates from our menu. Defensive: logged, never aborts the run.
+    Returns the number of files deployed.
+    """
+    deployed = 0
+    try:
+        src_dir = os.path.join(ADDON_PATH, "resources", "skinshortcuts")
+        if not os.path.isdir(src_dir):
+            return 0
+        dst_dir = translatePath("special://profile/addon_data/script.skinshortcuts/")
+        os.makedirs(dst_dir, exist_ok=True)
+        for name in os.listdir(src_dir):
+            shutil.copyfile(os.path.join(src_dir, name), os.path.join(dst_dir, name))
+            deployed += 1
+        # force a rebuild from the freshly-deployed menu
+        hsh = os.path.join(dst_dir, SKIN_ID + ".hash")
+        if os.path.exists(hsh):
+            os.remove(hsh)
+        xbmc.log(
+            "[mod v2+] deployed skinshortcuts menu ({} files: POV actions + widgets)".format(
+                deployed
+            ),
+            xbmc.LOGINFO,
+        )
+    except Exception as e:
+        xbmc.log(
+            "[mod v2+] failed deploying skinshortcuts menu: {}".format(e),
+            xbmc.LOGERROR,
+        )
+    return deployed
+
+
 def _build_skinshortcuts_menu(skin_root):
     """Build the skinshortcuts home-menu includes from the trimmed mainmenu.DATA.xml
     and BLOCK until they are written, so the home renders WITH the menu on the next
@@ -280,6 +319,7 @@ def apply_home_menu(skin_root):
             "[mod v2+] applied home menu (trimmed mainmenu.DATA.xml)", xbmc.LOGINFO
         )
         _clear_skinshortcuts_cache()
+        _deploy_skinshortcuts_menu()
         _build_skinshortcuts_menu(skin_root)
         return True
     except Exception as e:

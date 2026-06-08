@@ -1141,7 +1141,7 @@ def test_service_gates_on_modv2_and_calls_apply_path():
     # the skin to be set, before applying — otherwise it races the menu build and
     # the home comes up blank ("sometimes it doesn't continue").
     assert "getCondVisibility" in svc and "Window.IsVisible(10000)" in svc
-    # must self-heal the menu: if the live skin-switch built the FULL stock menu,
-    # the service detects it (Games/Pictures items present) and re-applies so the
-    # trimmed menu is rebuilt on the next clean boot.
-    assert "_menu_trimmed" in svc and "ActivateWindow(Games)" in svc
+    # must self-heal the menu: if the live skin-switch built the STOCK menu, the
+    # service detects ours is missing (no POV action in the built includes) and
+    # re-applies so our deployed menu is rebuilt on the next clean boot.
+    assert "_menu_is_ours" in svc and "plugin.video.pov" in svc

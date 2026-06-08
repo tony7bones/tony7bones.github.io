@@ -64,6 +64,12 @@ IP="${1:-}"
 [[ -n "$IP" ]] || IP=$(ask "Device IP address (e.g. 192.168.7.84):")
 [[ "$IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "That doesn't look like an IP: '$IP'"
 D="$IP:5555"
+# Device name shown to phone remotes (Kore/Yatse) etc. Prompt up front.
+DEVNAME=$(ask "Device name for this box (phone remotes show this) [Kodi]:" "Kodi")
+DEVNAME="${DEVNAME//&/and}" # keep it XML-safe in guisettings.xml
+DEVNAME="${DEVNAME//</}"
+DEVNAME="${DEVNAME//>/}"
+DEVNAME="${DEVNAME//\"/}"
 
 _adb() { adb -s "$D" "$@"; }
 rpc() { curl -s -m 6 -H 'Content-Type: application/json' -d "$1" "http://$IP:8080/jsonrpc" 2>/dev/null; }
@@ -111,8 +117,11 @@ confirm "Wipe Kodi now?" || die "Aborted before any changes."
 _adb shell "am force-stop $PKG" >/dev/null 2>&1
 sleep 2
 _adb shell "rm -rf $K && mkdir -p $K/userdata $K/addons" >/dev/null 2>&1
-# enable the web server so we can drive Kodi headless from here
-printf '<settings version="2"><setting id="services.webserver">true</setting><setting id="services.webserverport">8080</setting><setting id="services.webserverauthentication">false</setting><setting id="services.esenabled">true</setting></settings>' >/tmp/_t7b_gs.xml
+# Seed guisettings: web server on (so we can drive Kodi headless), the remote-
+# control block (kodi/kodi, auth OFF, SSL off, remote control from this AND other
+# systems on — for phone remotes like Kore/Yatse), the device name, and the
+# Expert settings level (<settinglevel>3</settinglevel> lives under <general>).
+printf '<settings version="2"><setting id="services.devicename">%s</setting><setting id="services.webserver">true</setting><setting id="services.webserverport">8080</setting><setting id="services.webserverusername">kodi</setting><setting id="services.webserverpassword">kodi</setting><setting id="services.webserverauthentication">false</setting><setting id="services.webserverssl">false</setting><setting id="services.esenabled">true</setting><setting id="services.esallinterfaces">true</setting><general><settinglevel>3</settinglevel></general></settings>' "$DEVNAME" >/tmp/_t7b_gs.xml
 _adb push /tmp/_t7b_gs.xml "$K/userdata/guisettings.xml" >/dev/null 2>&1
 # pre-grant storage so Kodi doesn't pop a permissions prompt at the TV after the
 # data wipe (Android-9 runtime grants reset on data clear). The appops line covers
@@ -120,7 +129,7 @@ _adb push /tmp/_t7b_gs.xml "$K/userdata/guisettings.xml" >/dev/null 2>&1
 _adb shell "pm grant $PKG android.permission.READ_EXTERNAL_STORAGE" 2>/dev/null
 _adb shell "pm grant $PKG android.permission.WRITE_EXTERNAL_STORAGE" 2>/dev/null
 _adb shell "appops set $PKG MANAGE_EXTERNAL_STORAGE allow" 2>/dev/null
-ok "Wiped + web server enabled + storage pre-granted."
+ok "Wiped. Seeded: web server (kodi/kodi, remote control on), device name \"$DEVNAME\", Expert level, storage granted."
 
 # --- 4. install the Setup add-ons from the live site ------------------------ #
 step "4/8  Install the Setup (from the live site)"
@@ -169,29 +178,53 @@ ok "Kodi up, Setup enabled."
 # --- 6. run the one-tap Setup ----------------------------------------------- #
 step "6/8  Run the one-tap Setup"
 rpc '{"jsonrpc":"2.0","method":"Addons.ExecuteAddon","params":{"addonid":"script.tony7bones.bootstrap"},"id":1}' >/dev/null
-say "  ${B}▶ Watch your TV.${Z} The Setup is installing (12 repos, apps, video, the"
-say "    skin + patch). This takes about ${B}3–4 minutes${Z} — you'll see a progress bar."
-say "  When it finishes you'll see a ${B}\"Tony.7.Bones Setup\" summary box${Z}."
-echo
-# the summary blocks run(); the user confirms it's on screen, we click it remotely
-while true; do
-  pause "→ When you SEE the summary box on the TV, press Enter here…"
+say "  ${B}Installing${Z} (12 repos, apps, video, skin + patch) — ~3–4 min. Watching, no action needed."
+# Auto-detect install completion: the skin lands + the add-on count goes stable.
+# Also watch for recurring network errors (the library now retries, but flag it).
+_prev=-1
+_stable=0
+_done=0
+_net=0
+for _i in $( # up to ~9 min
+  seq 1 90
+); do
+  sleep 6
+  _cnt=$(_adb shell "ls $K/addons/ 2>/dev/null | wc -l" | tr -d '\r')
+  _ne=$(_adb shell "grep -ac 'connection abort\|urlopen error' $K/temp/kodi.log 2>/dev/null" | tr -d '\r')
+  [[ "${_ne:-0}" -gt "$_net" ]] 2>/dev/null && {
+    _net="$_ne"
+    warn "transient network error on a download (library auto-retries)"
+  }
+  if _adb shell "ls -d $K/addons/skin.estuary.modv2 >/dev/null 2>&1"; then
+    [[ "$_cnt" == "$_prev" ]] && _stable=$((_stable + 1)) || _stable=0
+    [[ "$_stable" -ge 2 ]] && {
+      _done=1
+      break
+    }
+  fi
+  _prev="$_cnt"
+  printf '\r  installing… %s add-ons ' "${_cnt:-?}"
+done
+printf '\n'
+[[ "$_done" == 1 ]] && ok "Install complete." || warn "Install didn't clearly finish — continuing; verify at the end."
+# Auto-dismiss the summary (a blocking ok() dialog); retry until run() moves past it.
+sleep 2
+for _ in 1 2 3 4; do
   rpc '{"jsonrpc":"2.0","method":"Input.Select","id":1}' >/dev/null # click OK
-  # confirm the flow moved past the summary (activate_skin runs after it)
-  moved=0
-  for _ in $(seq 1 12); do
+  _moved=0
+  for _ in $(seq 1 10); do
     _adb shell "grep -aq 'activate_skin\|clean Quit' $K/temp/kodi.log" 2>/dev/null && {
-      moved=1
+      _moved=1
       break
     }
     kodi_running || {
-      moved=1
+      _moved=1
       break
     }
     sleep 2
   done
-  [[ "$moved" == 1 ]] && break
-  warn "Didn't detect the summary closing — if it's not up yet, wait for it, then press Enter again."
+  [[ "$_moved" == 1 ]] && break
+  sleep 3
 done
 ok "Summary accepted — Setup is finishing (skin activate + clean close)."
 printf '  waiting for Kodi to close itself'
@@ -238,7 +271,14 @@ for _ in $(seq 1 20); do
   sleep 3
 done
 GUI=$(rpc '{"jsonrpc":"2.0","method":"GUI.GetProperties","params":{"properties":["skin","currentwindow"]},"id":1}')
-WEATHER=$(rpc '{"jsonrpc":"2.0","method":"XBMC.GetInfoLabels","params":{"labels":["Weather.Location"]},"id":1}')
+# weather.multi resolves a few seconds after boot (returns "Busy" mid-fetch),
+# so poll up to ~30s for the location instead of flagging a transient "Busy".
+WEATHER=""
+for _ in $(seq 1 10); do
+  WEATHER=$(rpc '{"jsonrpc":"2.0","method":"XBMC.GetInfoLabels","params":{"labels":["Weather.Location"]},"id":1}')
+  grep -q 'Sacramento' <<<"$WEATHER" && break
+  sleep 3
+done
 MARK=$(_adb shell "grep -c show_system_info_overlay $K/addons/skin.estuary.modv2/xml/Home.xml" 2>/dev/null | tr -d '\r')
 FOCUS=$(_adb shell "grep -ac 'Control 9000 in window 10000' $K/temp/kodi.log" 2>/dev/null | tr -d '\r')
 grep -q 'skin.estuary.modv2' <<<"$GUI" && ok "Active skin: Estuary MOD V2" || warn "Skin not MOD V2: $GUI"
