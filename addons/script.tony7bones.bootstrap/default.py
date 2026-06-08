@@ -653,6 +653,31 @@ def _apply_weather_from_env(box_env):
         _log(f"_apply_weather failed (non-fatal): {e}", xbmc.LOGERROR)
 
 
+def _apply_rss_from_env(box_env):
+    """Generate userdata/RssFeeds.xml from the env's RSS_FEEDS (+ RSS_INTERVAL).
+    No-op when RSS_FEEDS is absent (a device-copied file / the Kodi default stands).
+    Feed URLs are not secret. Defensive: logged, never raises."""
+    feeds = split_list(box_env.get("RSS_FEEDS", ""))
+    if not feeds:
+        return
+    try:
+        interval = (box_env.get("RSS_INTERVAL") or "30").strip() or "30"
+        path = xbmcvfs.translatePath("special://home/userdata/RssFeeds.xml")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        root = ET.Element("rssfeeds")
+        rset = ET.SubElement(root, "set")
+        rset.set("id", "1")
+        for url in feeds:
+            feed = ET.SubElement(rset, "feed")
+            feed.set("updateinterval", interval)
+            feed.text = url
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(ET.tostring(root, encoding="unicode"))
+        _log("_apply_rss: wrote %d RSS feed(s) (interval %s)" % (len(feeds), interval))
+    except Exception as e:  # noqa: BLE001 - never abort the rest of setup
+        _log(f"_apply_rss failed (non-fatal): {e}", xbmc.LOGERROR)
+
+
 def _copy_one_device_file(src, dst_special):
     """Copy a single USER-PROVIDED device file into userdata, guarded.
 
@@ -899,6 +924,8 @@ def _configure_box():
         # IPTV from env: generate groups + inject m3u/epg, then enforce group mode
         # (gated on the groups file). Falls back to the device-copied file / no-op.
         _ensure_iptv_custom_tv_groups(box_env)
+        # RSS ticker feeds from env (writes userdata/RssFeeds.xml; else no-op).
+        _apply_rss_from_env(box_env)
         # The top-bar toggle is an Estuary skin bool; set it live so the restart
         # persists it (Kodi rewrites skin settings.xml from memory on shutdown).
         skin = ""

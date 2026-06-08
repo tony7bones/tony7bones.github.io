@@ -1767,3 +1767,22 @@ def test_iptv_env_m3u_epg_never_logged(boot, monkeypatch):
     )
     blob = "\n".join(logged)
     assert "SUPERSECRET123" not in blob and "http://host/get" not in blob
+
+
+# --------------------------------------------------------------------------- #
+# RSS feeds from env (Phase 3): generate userdata/RssFeeds.xml.
+# --------------------------------------------------------------------------- #
+
+
+def test_apply_rss_from_env_writes_feeds(boot):
+    boot.mod._apply_rss_from_env({"RSS_FEEDS": "http://a/feed; http://b/feed", "RSS_INTERVAL": "45"})
+    path = boot.mod.xbmcvfs.translatePath("special://home/userdata/RssFeeds.xml")
+    feeds = ET.parse(path).getroot().findall("set/feed")
+    assert [f.text for f in feeds] == ["http://a/feed", "http://b/feed"]
+    assert all(f.get("updateinterval") == "45" for f in feeds)
+
+
+def test_apply_rss_from_env_noop_when_absent(boot):
+    boot.mod._apply_rss_from_env({})
+    path = boot.mod.xbmcvfs.translatePath("special://home/userdata/RssFeeds.xml")
+    assert not os.path.exists(path)
