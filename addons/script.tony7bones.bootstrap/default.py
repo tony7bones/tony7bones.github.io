@@ -763,7 +763,7 @@ def _set_instance_setting(root, setting_id, value):
     return changed
 
 
-def _ensure_iptv_custom_tv_groups():
+def _ensure_iptv_custom_tv_groups(box_env=None):
     """Enforce TV-group-mode=Custom + the custom-TV-groups file path in
     pvr.iptvsimple's instance-settings-1.xml (1a/1b).
 
@@ -780,9 +780,27 @@ def _ensure_iptv_custom_tv_groups():
     exists (copied from the device, or generated from the env's IPTV_GROUPS). On a
     no-env / no-file box, forcing tvGroupMode=2 at a MISSING file gives
     pvr.iptvsimple an empty channel list — so we leave the all-channels default.
+
+    When `box_env` provides IPTV_GROUPS the groups file is GENERATED from it first
+    (channel-group names only — not secret); IPTV_M3U/IPTV_EPG are injected as
+    m3uUrl/epgUrl (+ remote path type); tvChannelGroupsOnly comes from
+    IPTV_GROUPS_ONLY (default true). Secret values are never logged.
     """
+    box_env = box_env or {}
     try:
         groups_file = xbmcvfs.translatePath(IPTV_CUSTOM_TV_GROUPS_FILE_VALUE)
+        groups = split_list(box_env.get("IPTV_GROUPS", ""))
+        if groups:
+            os.makedirs(os.path.dirname(groups_file), exist_ok=True)
+            groot = ET.Element("customChannelGroups")
+            for name in groups:
+                ET.SubElement(groot, "channelGroupName").text = name
+            with open(groups_file, "w", encoding="utf-8") as f:
+                f.write(ET.tostring(groot, encoding="unicode"))
+            _log(
+                "_ensure_iptv_custom_tv_groups: generated %d custom group(s) from env"
+                % len(groups)
+            )
         if not os.path.exists(groups_file):
             _log(
                 "_ensure_iptv_custom_tv_groups: custom-groups file absent "
@@ -818,17 +836,28 @@ def _ensure_iptv_custom_tv_groups():
             )
             or changed
         )
+        only = (box_env.get("IPTV_GROUPS_ONLY", "true") or "true").strip().lower()
+        only_val = "true" if only in ("true", "1", "yes", "on") else "false"
         changed = (
-            _set_instance_setting(root, IPTV_TV_CHANNEL_GROUPS_ONLY_KEY, "true")
+            _set_instance_setting(root, IPTV_TV_CHANNEL_GROUPS_ONLY_KEY, only_val)
             or changed
         )
+        # m3u / epg source from env (provider creds — SECRET; never logged as values)
+        m3u = (box_env.get("IPTV_M3U") or "").strip()
+        if m3u:
+            changed = _set_instance_setting(root, "m3uPathType", "1") or changed
+            changed = _set_instance_setting(root, "m3uUrl", m3u) or changed
+        epg = (box_env.get("IPTV_EPG") or "").strip()
+        if epg:
+            changed = _set_instance_setting(root, "epgPathType", "1") or changed
+            changed = _set_instance_setting(root, "epgUrl", epg) or changed
 
         if changed:
             with open(xml_path, "w", encoding="utf-8") as f:
                 f.write(ET.tostring(root, encoding="unicode"))
             _log(
-                "_ensure_iptv_custom_tv_groups: set tvGroupMode=2 + "
-                f"customTvGroupsFile + tvChannelGroupsOnly in {xml_path}"
+                "_ensure_iptv_custom_tv_groups: set group mode + only=%s + "
+                "m3u=%s epg=%s in %s" % (only_val, bool(m3u), bool(epg), xml_path)
             )
         else:
             _log("_ensure_iptv_custom_tv_groups: keys already correct (no change)")
@@ -867,8 +896,9 @@ def _configure_box():
         _apply_weather_from_env(box_env)
         # Copy the user's device files into userdata (guarded; skips any missing).
         _copy_device_files()
-        # Enforce IPTV custom-TV-groups keys on top of the copied file (1a/1b).
-        _ensure_iptv_custom_tv_groups()
+        # IPTV from env: generate groups + inject m3u/epg, then enforce group mode
+        # (gated on the groups file). Falls back to the device-copied file / no-op.
+        _ensure_iptv_custom_tv_groups(box_env)
         # The top-bar toggle is an Estuary skin bool; set it live so the restart
         # persists it (Kodi rewrites skin settings.xml from memory on shutdown).
         skin = ""

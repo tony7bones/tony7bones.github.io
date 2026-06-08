@@ -181,7 +181,10 @@ def test_installs_weather_and_pvr_binary():
 
 @pytest.mark.parametrize(
     "needle",
-    ["m3uUrl", "epgUrl", "bit.ly", "cutt.ly", "xtream", "get.php", "player_api"],
+    # m3uUrl/epgUrl are NOT here: they are legitimate setting IDs the env-driven
+    # IPTV writer references (the VALUE always comes from the env, never hardcoded
+    # — test_secret_leak.py scans tracked files for the real provider URL/creds).
+    ["bit.ly", "cutt.ly", "xtream", "get.php", "player_api"],
 )
 def test_no_iptv_secret_embedded(needle):
     assert needle not in DEFAULT_PY.read_text(), (
@@ -1553,10 +1556,10 @@ def test_ensure_iptv_groups_wired_into_configure_box_after_copy():
     """_configure_box must call the enforce step, and AFTER the device-file copy
     (so it patches the copied file rather than being overwritten by it)."""
     src = DEFAULT_PY.read_text()
-    assert "_ensure_iptv_custom_tv_groups()" in src
+    assert "_ensure_iptv_custom_tv_groups(box_env)" in src
     copy_at = src.find("_copy_device_files()", src.find("def _configure_box"))
     ensure_at = src.find(
-        "_ensure_iptv_custom_tv_groups()", src.find("def _configure_box")
+        "_ensure_iptv_custom_tv_groups(box_env)", src.find("def _configure_box")
     )
     assert 0 < copy_at < ensure_at, "enforce step must run after the copy"
 
@@ -1716,3 +1719,51 @@ def test_set_weather_location_default_is_sacramento(boot):
     got = _read_weather_settings(boot)
     assert got["loc1_url"] == "us/ca/sacramento"
     assert "Sacramento" in got["loc1_name"]
+
+
+# --------------------------------------------------------------------------- #
+# IPTV from env (Phase 3): generate customTVGroups + inject m3u/epg + groups-only.
+# --------------------------------------------------------------------------- #
+
+
+def test_iptv_from_env_generates_groups_and_injects_m3u_epg(boot):
+    boot.mod._ensure_iptv_custom_tv_groups(
+        {
+            "IPTV_GROUPS": "USA ENTERTAINMENT; USA NEWS/WEATHER; PPV EVENTS",
+            "IPTV_M3U": "http://iptv.example:8080/get.php?username=u&password=p",
+            "IPTV_EPG": "http://iptv.example:8080/xmltv.php?username=u&password=p",
+            "IPTV_GROUPS_ONLY": "true",
+        }
+    )
+    gpath = boot.mod.xbmcvfs.translatePath(boot.mod.IPTV_CUSTOM_TV_GROUPS_FILE_VALUE)
+    assert os.path.exists(gpath)
+    gtext = open(gpath).read()
+    assert "USA ENTERTAINMENT" in gtext and "PPV EVENTS" in gtext
+    got = _read_instance_settings(boot)
+    assert got["tvGroupMode"] == "2"
+    assert got["tvChannelGroupsOnly"] == "true"
+    assert got["m3uUrl"].endswith("password=p") and got["m3uPathType"] == "1"
+    assert got["epgUrl"].startswith("http://iptv.example") and got["epgPathType"] == "1"
+
+
+def test_iptv_from_env_groups_only_false(boot):
+    boot.mod._ensure_iptv_custom_tv_groups(
+        {"IPTV_GROUPS": "A; B", "IPTV_GROUPS_ONLY": "false"}
+    )
+    assert _read_instance_settings(boot)["tvChannelGroupsOnly"] == "false"
+
+
+def test_iptv_env_m3u_epg_never_logged(boot, monkeypatch):
+    logged = []
+    monkeypatch.setattr(
+        boot.mod.xbmc, "log", lambda msg, *a, **k: logged.append(str(msg))
+    )
+    boot.mod._ensure_iptv_custom_tv_groups(
+        {
+            "IPTV_GROUPS": "A",
+            "IPTV_M3U": "http://host/get?password=SUPERSECRET123",
+            "IPTV_EPG": "http://host/epg?password=SUPERSECRET123",
+        }
+    )
+    blob = "\n".join(logged)
+    assert "SUPERSECRET123" not in blob and "http://host/get" not in blob
