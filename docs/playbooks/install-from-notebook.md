@@ -13,6 +13,24 @@ fixes landed (module 1.1.2 / bootstrap 1.3.2 / modv2plus 1.4.4).
 
 ---
 
+## ⚡ Quickest path: the guided script
+
+Don't copy-paste the steps below — just run the provisioner. It asks for the
+device IP and **walks you through every step** (confirms before the wipe, waits
+while the install runs, dismisses the summary remotely when you've seen it on the
+TV, reopens, and verifies + screenshots at the end):
+
+```bash
+_tools/provision-kodi.sh              # it will ask for the IP
+# or pass it directly:
+_tools/provision-kodi.sh 192.168.7.84
+```
+
+The rest of this doc is the **manual walkthrough** the script automates — useful
+for understanding what it does, debugging, or running a step by hand.
+
+---
+
 ## 0. One-time prerequisites
 
 **On your notebook (Mac):**

@@ -1,0 +1,240 @@
+#!/usr/bin/env bash
+#
+# provision-kodi.sh — guided, notebook-driven install + bootstrap of a fresh
+# Tony.7.Bones Kodi box on a Fire TV / Android device over ADB-on-network.
+#
+# Asks for the device IP, then walks you through every step: connect, reboot,
+# wipe, install the Setup, run it, accept the summary, clean-close, reopen, and
+# verify. Hardware-proven flow (see docs/playbooks/install-from-notebook.md).
+#
+# Usage:   _tools/provision-kodi.sh [DEVICE_IP]
+# Example: _tools/provision-kodi.sh 192.168.7.84
+#
+set -u
+
+# --- pretty output ---------------------------------------------------------- #
+if [[ -t 1 ]]; then
+  B=$'\033[1m'
+  G=$'\033[32m'
+  Y=$'\033[33m'
+  R=$'\033[31m'
+  C=$'\033[36m'
+  Z=$'\033[0m'
+else
+  B=''
+  G=''
+  Y=''
+  R=''
+  C=''
+  Z=''
+fi
+say() { printf '%s\n' "${C}$*${Z}"; }
+ok() { printf '%s\n' "${G}  ✓ $*${Z}"; }
+warn() { printf '%s\n' "${Y}  ! $*${Z}"; }
+die() {
+  printf '%s\n' "${R}  ✗ $*${Z}" >&2
+  exit 1
+}
+step() { printf '\n%s\n' "${B}━━ $* ━━${Z}"; }
+ask() {
+  local p="$1" d="${2:-}" a
+  read -r -p "${B}$p${Z} " a
+  printf '%s' "${a:-$d}"
+}
+pause() { read -r -p "${B}$1${Z} "; }
+confirm() {
+  local a
+  a=$(ask "$1 [y/N]")
+  [[ "$a" == [yY]* ]]
+}
+
+# --- constants -------------------------------------------------------------- #
+PKG="org.xbmc.kodi"
+K="/sdcard/Android/data/${PKG}/files/.kodi"
+RAW="https://raw.githubusercontent.com/tony7bones/tony7bones.github.io/main/addons"
+
+command -v adb >/dev/null 2>&1 || die "adb not found. Install it: brew install android-platform-tools"
+
+# --- 0. device IP ----------------------------------------------------------- #
+clear 2>/dev/null || true
+say "${B}Tony.7.Bones — Kodi box provisioner${Z}"
+say "Provisions a FRESH box: wipe → install → run Setup → reopen → verify."
+say "Make sure ADB debugging is ON at the TV (Settings → My Fire TV → Developer options)."
+IP="${1:-}"
+[[ -n "$IP" ]] || IP=$(ask "Device IP address (e.g. 192.168.7.84):")
+[[ "$IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "That doesn't look like an IP: '$IP'"
+D="$IP:5555"
+
+_adb() { adb -s "$D" "$@"; }
+rpc() { curl -s -m 6 -H 'Content-Type: application/json' -d "$1" "http://$IP:8080/jsonrpc" 2>/dev/null; }
+kodi_up() { rpc '{"jsonrpc":"2.0","method":"JSONRPC.Ping","id":1}' | grep -q pong; }
+kodi_running() { _adb shell 'pidof '"$PKG"' >/dev/null' 2>/dev/null; }
+
+# --- 1. connect ------------------------------------------------------------- #
+step "1/8  Connect to $D"
+adb connect "$D" >/dev/null 2>&1
+sleep 1
+MODEL=$(_adb shell 'getprop ro.product.model' 2>/dev/null | tr -d '\r')
+if [[ -z "$MODEL" ]]; then
+  warn "Couldn't reach the device. If the TV shows an 'Allow USB debugging?' prompt,"
+  warn "check 'Always allow' and accept it, then press Enter to retry."
+  pause "Press Enter to retry…"
+  adb connect "$D" >/dev/null 2>&1
+  sleep 1
+  MODEL=$(_adb shell 'getprop ro.product.model' 2>/dev/null | tr -d '\r')
+  [[ -n "$MODEL" ]] || die "Still can't reach $D. Check the IP and ADB debugging."
+fi
+ok "Connected: $MODEL ($D)"
+
+# --- 2. reboot device (clears any GPU wedge) -------------------------------- #
+step "2/8  Reboot the device (recommended — clears any wedged graphics state)"
+if confirm "Reboot the TV now?"; then
+  _adb reboot >/dev/null 2>&1
+  printf '  waiting for it to come back'
+  _adb wait-for-device 2>/dev/null
+  for _ in $(seq 1 40); do
+    [[ "$(_adb shell 'getprop sys.boot_completed' 2>/dev/null | tr -d '\r')" == 1 ]] && break
+    printf '.'
+    sleep 5
+  done
+  printf '\n'
+  sleep 10
+  ok "Rebooted."
+else
+  warn "Skipped reboot (if Kodi crashes on launch later, re-run and reboot)."
+fi
+
+# --- 3. wipe Kodi ----------------------------------------------------------- #
+step "3/8  Wipe Kodi clean"
+warn "This ERASES the Kodi profile on $MODEL (add-ons, settings, everything)."
+confirm "Wipe Kodi now?" || die "Aborted before any changes."
+_adb shell "am force-stop $PKG" >/dev/null 2>&1
+sleep 2
+_adb shell "rm -rf $K && mkdir -p $K/userdata $K/addons" >/dev/null 2>&1
+# enable the web server so we can drive Kodi headless from here
+printf '<settings version="2"><setting id="services.webserver">true</setting><setting id="services.webserverport">8080</setting><setting id="services.webserverauthentication">false</setting><setting id="services.esenabled">true</setting></settings>' >/tmp/_t7b_gs.xml
+_adb push /tmp/_t7b_gs.xml "$K/userdata/guisettings.xml" >/dev/null 2>&1
+ok "Wiped + web server enabled."
+
+# --- 4. install the Setup add-ons from the live site ------------------------ #
+step "4/8  Install the Setup (from the live site)"
+ver() { curl -s -m 15 "$RAW/$1/addon.xml" | grep -oE 'version="[0-9]+\.[0-9]+\.[0-9]+"' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1; }
+MV=$(ver script.module.tony7bones)
+BV=$(ver script.tony7bones.bootstrap)
+[[ -n "$MV" && -n "$BV" ]] || die "Couldn't resolve versions from the live site (no internet?)."
+say "  library=$MV  setup=$BV — fetching…"
+T=$(mktemp -d)
+trap 'rm -rf "$T"' EXIT
+curl -s -o "$T/m.zip" "$RAW/script.module.tony7bones/script.module.tony7bones-$MV.zip"
+curl -s -o "$T/b.zip" "$RAW/script.tony7bones.bootstrap/script.tony7bones.bootstrap-$BV.zip"
+(cd "$T" && unzip -oq m.zip && unzip -oq b.zip)
+_adb push "$T/script.module.tony7bones" "$K/addons/" >/dev/null 2>&1
+_adb push "$T/script.tony7bones.bootstrap" "$K/addons/" >/dev/null 2>&1
+_adb shell "ls $K/addons/script.module.tony7bones/lib/tony7bones/system.py" >/dev/null 2>&1 ||
+  die "Library didn't land correctly. Re-run (the wipe creates addons/ up front)."
+ok "Setup $BV + library $MV installed."
+
+# --- 5. launch + enable ----------------------------------------------------- #
+step "5/8  Launch Kodi + enable the Setup"
+_adb shell "monkey -p $PKG -c android.intent.category.LAUNCHER 1" >/dev/null 2>&1
+printf '  starting Kodi'
+for _ in $(seq 1 50); do
+  kodi_up && break
+  printf '.'
+  sleep 3
+done
+printf '\n'
+kodi_up || die "Kodi didn't come up. Reboot the device and try again."
+for a in script.module.tony7bones script.tony7bones.bootstrap; do
+  rpc "{\"jsonrpc\":\"2.0\",\"method\":\"Addons.SetAddonEnabled\",\"params\":{\"addonid\":\"$a\",\"enabled\":true},\"id\":1}" >/dev/null
+done
+ok "Kodi up, Setup enabled."
+
+# --- 6. run the one-tap Setup ----------------------------------------------- #
+step "6/8  Run the one-tap Setup"
+rpc '{"jsonrpc":"2.0","method":"Addons.ExecuteAddon","params":{"addonid":"script.tony7bones.bootstrap"},"id":1}' >/dev/null
+say "  ${B}▶ Watch your TV.${Z} The Setup is installing (12 repos, apps, video, the"
+say "    skin + patch). This takes about ${B}3–4 minutes${Z} — you'll see a progress bar."
+say "  When it finishes you'll see a ${B}\"Tony.7.Bones Setup\" summary box${Z}."
+echo
+# the summary blocks run(); the user confirms it's on screen, we click it remotely
+while true; do
+  pause "→ When you SEE the summary box on the TV, press Enter here…"
+  rpc '{"jsonrpc":"2.0","method":"Input.Select","id":1}' >/dev/null # click OK
+  # confirm the flow moved past the summary (activate_skin runs after it)
+  moved=0
+  for _ in $(seq 1 12); do
+    _adb shell "grep -aq 'activate_skin\|clean Quit' $K/temp/kodi.log" 2>/dev/null && {
+      moved=1
+      break
+    }
+    kodi_running || {
+      moved=1
+      break
+    }
+    sleep 2
+  done
+  [[ "$moved" == 1 ]] && break
+  warn "Didn't detect the summary closing — if it's not up yet, wait for it, then press Enter again."
+done
+ok "Summary accepted — Setup is finishing (skin activate + clean close)."
+printf '  waiting for Kodi to close itself'
+for _ in $(seq 1 20); do
+  kodi_running || break
+  printf '.'
+  sleep 3
+done
+printf '\n'
+if kodi_running; then
+  warn "Kodi is still running after the close. (Old build? Or it's still busy.)"
+else
+  ok "Kodi closed cleanly — no force-kill needed."
+fi
+SKIN_SET=$(_adb shell "grep lookandfeel.skin\\\" $K/userdata/guisettings.xml" 2>/dev/null | tr -d '\r')
+if grep -q 'skin.estuary.modv2' <<<"$SKIN_SET"; then
+  ok "Skin persisted as MOD V2 (did not revert to stock Estuary)."
+else
+  warn "Skin in guisettings: ${SKIN_SET:-<none>} — expected skin.estuary.modv2."
+fi
+
+# --- 7. reopen — the box finishes itself ------------------------------------ #
+step "7/8  Reopen Kodi (the box finishes itself)"
+pause "→ Press Enter to reopen Kodi…"
+_adb shell "am start -n $PKG/.Splash" >/dev/null 2>&1
+printf '  booting MOD V2 + building the menu'
+built=0
+for _ in $(seq 1 48); do
+  _adb shell "grep -aq 'skinshortcuts menu built' $K/temp/kodi.log" 2>/dev/null && {
+    built=1
+    break
+  }
+  kodi_up || true
+  printf '.'
+  sleep 5
+done
+printf '\n'
+[[ "$built" == 1 ]] && ok "Menu built." || warn "Didn't see the menu build log — verifying anyway."
+
+# --- 8. verify -------------------------------------------------------------- #
+step "8/8  Verify the box"
+for _ in $(seq 1 20); do
+  kodi_up && break
+  sleep 3
+done
+GUI=$(rpc '{"jsonrpc":"2.0","method":"GUI.GetProperties","params":{"properties":["skin","currentwindow"]},"id":1}')
+WEATHER=$(rpc '{"jsonrpc":"2.0","method":"XBMC.GetInfoLabels","params":{"labels":["Weather.Location"]},"id":1}')
+MARK=$(_adb shell "grep -c show_system_info_overlay $K/addons/skin.estuary.modv2/xml/Home.xml" 2>/dev/null | tr -d '\r')
+FOCUS=$(_adb shell "grep -ac 'Control 9000 in window 10000' $K/temp/kodi.log" 2>/dev/null | tr -d '\r')
+grep -q 'skin.estuary.modv2' <<<"$GUI" && ok "Active skin: Estuary MOD V2" || warn "Skin not MOD V2: $GUI"
+grep -q '"id":10000' <<<"$GUI" && ok "Home window is up (10000)" || warn "Not on Home: $GUI"
+[[ "$MARK" == 1 ]] && ok "MOD V2+ patch applied" || warn "Patch marker: ${MARK:-?}"
+[[ "$FOCUS" == 0 ]] && ok "Home renders (0 focus errors)" || warn "Focus errors: ${FOCUS} (give it another reopen)"
+grep -q 'Sacramento' <<<"$WEATHER" && ok "Weather: Sacramento" || warn "Weather: $WEATHER"
+if confirm "Grab a screenshot of the home screen?"; then
+  _adb shell screencap -p /sdcard/_t7b_home.png >/dev/null 2>&1
+  _adb pull /sdcard/_t7b_home.png /tmp/_t7b_home.png >/dev/null 2>&1 && { open /tmp/_t7b_home.png 2>/dev/null || say "  saved /tmp/_t7b_home.png"; }
+fi
+
+echo
+say "${B}${G}Done.${Z} ${C}If anything looks off, see docs/playbooks/install-from-notebook.md → Troubleshooting.${Z}"
+say "${C}One-time manual steps still needed at the TV: hide the PVR \"All channels\" group, and TV → Options → Sort by Name.${Z}"
