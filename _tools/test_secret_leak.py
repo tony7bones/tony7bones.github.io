@@ -1,0 +1,87 @@
+"""Negative tests: no secret artifact or value ever reaches the committed
+(git-tracked) tree.
+
+The forbidden secret VALUES are sourced at runtime from the gitignored local
+`.env` — never hardcoded here. Where no local `.env` exists (CI), the value-scan
+is skipped and only the structural artifact check runs. All scans look at
+git-tracked files ONLY (a developer's own gitignored `.env` is never flagged).
+
+Per the env-config-consolidation plan (Phase 0, QA criterion C).
+"""
+
+import os
+import re
+import subprocess
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parent.parent
+
+
+def _git(*args):
+    return subprocess.run(["git", *args], cwd=REPO, capture_output=True, text=True)
+
+
+def _tracked():
+    return _git("ls-files").stdout.splitlines()
+
+
+def test_secret_artifacts_not_tracked():
+    """The gitignored config artifacts must never be tracked: any *.env (incl.
+    the per-device tony7bones.env), the iptv-build/ staging dir, and *_custom.m3u
+    curated playlists. (.env.example is allowed — it does not end in `.env`.)"""
+    offenders = [
+        f
+        for f in _tracked()
+        if os.path.basename(f).endswith(".env")
+        or f.startswith("iptv-build/")
+        or os.path.basename(f).endswith("_custom.m3u")
+    ]
+    assert not offenders, f"secret-bearing artifacts are TRACKED: {offenders}"
+
+
+def _read_env(path):
+    env = {}
+    for raw in path.read_text().splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        val = val.strip()
+        if val[:1] in ("'", '"'):
+            val = val[1:].split(val[0], 1)[0]  # take quoted body
+        else:
+            val = val.split("#", 1)[0].strip()  # drop inline comment when unquoted
+        env[key.strip()] = val
+    return env
+
+
+def _secret_tokens(env):
+    """High-signal secret substrings to forbid in tracked files: the two weather
+    API keys and the IPTV provider host / username / password from the m3u/epg."""
+    tokens = set()
+    for k in ("WEATHERBIT_API_KEY", "OWM_API_KEY"):
+        if env.get(k):
+            tokens.add(env[k])
+    for k in ("IPTV_M3U", "IPTV_EPG"):
+        url = env.get(k, "")
+        for pat in (r"https?://([^/:]+)", r"username=([^&]+)", r"password=([^&]+)"):
+            m = re.search(pat, url)
+            if m:
+                tokens.add(m.group(1))
+    return {t for t in tokens if len(t) >= 6}
+
+
+def test_no_env_secret_value_in_tracked_files():
+    """No secret VALUE from the local .env appears in any git-tracked file."""
+    env_path = REPO / ".env"
+    if not env_path.exists():
+        return  # CI / no local env — value-scan not applicable
+    tokens = _secret_tokens(_read_env(env_path))
+    if not tokens:
+        return
+    leaks = []
+    for tok in tokens:
+        res = _git("grep", "-F", "-l", tok)  # tracked files only; rc 0 = found
+        if res.returncode == 0:
+            leaks.append((tok[:6] + "…", res.stdout.split()))
+    assert not leaks, f"secret value leaked into tracked files: {leaks}"
