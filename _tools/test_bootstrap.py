@@ -1786,3 +1786,16 @@ def test_apply_rss_from_env_noop_when_absent(boot):
     boot.mod._apply_rss_from_env({})
     path = boot.mod.xbmcvfs.translatePath("special://home/userdata/RssFeeds.xml")
     assert not os.path.exists(path)
+
+
+def test_iptv_m3u_injected_without_groups(boot):
+    """m3u/epg present but NO IPTV_GROUPS and no groups file -> inject the playlist
+    source, but DON'T force custom group mode (crit A intact; m3u/epg decoupled)."""
+    boot.mod._ensure_iptv_custom_tv_groups(
+        {"IPTV_M3U": "http://h/list?password=x", "IPTV_EPG": "http://h/epg"}
+    )
+    got = _read_instance_settings(boot)
+    assert got["m3uUrl"].endswith("password=x") and got["m3uPathType"] == "1"
+    assert got["epgUrl"] == "http://h/epg" and got["epgPathType"] == "1"
+    assert got.get("tvGroupMode") != "2"  # no groups file -> no custom mode
+    assert "customTvGroupsFile" not in got

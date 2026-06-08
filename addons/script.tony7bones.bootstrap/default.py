@@ -826,10 +826,17 @@ def _ensure_iptv_custom_tv_groups(box_env=None):
                 "_ensure_iptv_custom_tv_groups: generated %d custom group(s) from env"
                 % len(groups)
             )
-        if not os.path.exists(groups_file):
+        # The playlist SOURCE (m3u/epg) and the group MODE are independent: inject
+        # the source whenever the env supplies it, but only force CUSTOM group mode
+        # when the groups file exists (crit A — never tvGroupMode=2 at a missing
+        # file). With neither, there's nothing to do — leave the all-channels default.
+        m3u = (box_env.get("IPTV_M3U") or "").strip()
+        epg = (box_env.get("IPTV_EPG") or "").strip()
+        have_groups = os.path.exists(groups_file)
+        if not (m3u or epg or have_groups):
             _log(
-                "_ensure_iptv_custom_tv_groups: custom-groups file absent "
-                f"({groups_file}); leaving all-channels default (no tvGroupMode=2)"
+                "_ensure_iptv_custom_tv_groups: nothing to set (no m3u/epg, no "
+                f"groups file {groups_file}) — leaving the all-channels default"
             )
             return
         xml_path = xbmcvfs.translatePath(IPTV_INSTANCE_SETTINGS_SPECIAL)
@@ -850,39 +857,49 @@ def _ensure_iptv_custom_tv_groups(box_env=None):
             root = ET.Element("settings")
             root.set("version", "2")
 
-        changed = _set_instance_setting(
-            root, IPTV_TV_GROUP_MODE_KEY, IPTV_TV_GROUP_MODE_CUSTOM
-        )
-        changed = (
-            _set_instance_setting(
-                root,
-                IPTV_CUSTOM_TV_GROUPS_FILE_KEY,
-                IPTV_CUSTOM_TV_GROUPS_FILE_VALUE,
-            )
-            or changed
-        )
-        only = (box_env.get("IPTV_GROUPS_ONLY", "true") or "true").strip().lower()
-        only_val = "true" if only in ("true", "1", "yes", "on") else "false"
-        changed = (
-            _set_instance_setting(root, IPTV_TV_CHANNEL_GROUPS_ONLY_KEY, only_val)
-            or changed
-        )
-        # m3u / epg source from env (provider creds — SECRET; never logged as values)
-        m3u = (box_env.get("IPTV_M3U") or "").strip()
+        # Playlist source (provider creds — SECRET; never logged as values).
+        changed = False
         if m3u:
             changed = _set_instance_setting(root, "m3uPathType", "1") or changed
             changed = _set_instance_setting(root, "m3uUrl", m3u) or changed
-        epg = (box_env.get("IPTV_EPG") or "").strip()
         if epg:
             changed = _set_instance_setting(root, "epgPathType", "1") or changed
             changed = _set_instance_setting(root, "epgUrl", epg) or changed
+        # Custom group mode — ONLY when the groups file exists.
+        only_val = "n/a"
+        if have_groups:
+            changed = (
+                _set_instance_setting(
+                    root, IPTV_TV_GROUP_MODE_KEY, IPTV_TV_GROUP_MODE_CUSTOM
+                )
+                or changed
+            )
+            changed = (
+                _set_instance_setting(
+                    root,
+                    IPTV_CUSTOM_TV_GROUPS_FILE_KEY,
+                    IPTV_CUSTOM_TV_GROUPS_FILE_VALUE,
+                )
+                or changed
+            )
+            only = (box_env.get("IPTV_GROUPS_ONLY", "true") or "true").strip().lower()
+            only_val = "true" if only in ("true", "1", "yes", "on") else "false"
+            changed = (
+                _set_instance_setting(root, IPTV_TV_CHANNEL_GROUPS_ONLY_KEY, only_val)
+                or changed
+            )
+        else:
+            _log(
+                "_ensure_iptv_custom_tv_groups: no groups file — m3u/epg set, group "
+                "mode left at the all-channels default"
+            )
 
         if changed:
             with open(xml_path, "w", encoding="utf-8") as f:
                 f.write(ET.tostring(root, encoding="unicode"))
             _log(
-                "_ensure_iptv_custom_tv_groups: set group mode + only=%s + "
-                "m3u=%s epg=%s in %s" % (only_val, bool(m3u), bool(epg), xml_path)
+                "_ensure_iptv_custom_tv_groups: groups=%s only=%s m3u=%s epg=%s in %s"
+                % (have_groups, only_val, bool(m3u), bool(epg), xml_path)
             )
         else:
             _log("_ensure_iptv_custom_tv_groups: keys already correct (no change)")
