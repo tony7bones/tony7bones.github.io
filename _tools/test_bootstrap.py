@@ -1538,3 +1538,63 @@ def test_ensure_iptv_groups_wired_into_configure_box_after_copy():
         "_ensure_iptv_custom_tv_groups()", src.find("def _configure_box")
     )
     assert 0 < copy_at < ensure_at, "enforce step must run after the copy"
+
+
+# --------------------------------------------------------------------------- #
+# Per-device config (tony7bones.env) parser — Phase 1 of env consolidation.
+# Cases per the QA-mandated robustness list.
+# --------------------------------------------------------------------------- #
+
+
+def test_parse_env_basic_quotes_and_empty(boot):
+    env = boot.mod.parse_env('DEVICE_NAME="Bedroom TV"\nIPTV_NAME=Network 24\nEMPTY=\n')
+    assert env["DEVICE_NAME"] == "Bedroom TV"  # surrounding quotes stripped
+    assert env["IPTV_NAME"] == "Network 24"  # unquoted value with a space
+    assert env["EMPTY"] == ""  # empty value preserved
+
+
+def test_parse_env_inline_comment_only_when_unquoted(boot):
+    env = boot.mod.parse_env(
+        'KEY="8090329db7d84dae"   # forecast key\nBARE=value   # note\nHASH="a#b"\n'
+    )
+    assert env["KEY"] == "8090329db7d84dae"  # inline comment dropped
+    assert env["BARE"] == "value"  # unquoted inline comment dropped
+    assert env["HASH"] == "a#b"  # '#' inside quotes is kept
+
+
+def test_parse_env_skips_comments_blanks_and_no_equals(boot):
+    env = boot.mod.parse_env("# comment\n\n   \nnot_a_setting\nOK=1\n")
+    assert env == {"OK": "1"}
+
+
+def test_parse_env_keeps_semicolons_in_value(boot):
+    env = boot.mod.parse_env('M3U="http://h/get?a=1&b=2"\nLIST="x; y; z"\n')
+    assert env["M3U"] == "http://h/get?a=1&b=2"
+    assert env["LIST"] == "x; y; z"  # parse_env never splits
+    assert boot.mod.split_list(env["LIST"]) == ["x", "y", "z"]  # split_list does
+
+
+def test_parse_env_handles_crlf(boot):
+    assert boot.mod.parse_env('A="x"\r\nB="y"\r\n') == {"A": "x", "B": "y"}
+
+
+def test_split_list_trims_and_drops_empties(boot):
+    assert boot.mod.split_list("Sacramento, CA; Yuba City, CA ;; Reno, NV ") == [
+        "Sacramento, CA",
+        "Yuba City, CA",
+        "Reno, NV",
+    ]
+    assert boot.mod.split_list("") == []
+    assert boot.mod.split_list(None) == []
+
+
+def test_read_box_env_absent_returns_empty(boot, tmp_path):
+    assert boot.mod.read_box_env(str(tmp_path / "nope.env")) == {}
+
+
+def test_read_box_env_reads_file(boot, tmp_path):
+    p = tmp_path / "tony7bones.env"
+    p.write_text('DEVICE_NAME="Office"\nWEATHER_LOCATIONS="A; B"\n')
+    env = boot.mod.read_box_env(str(p))
+    assert env["DEVICE_NAME"] == "Office"
+    assert boot.mod.split_list(env["WEATHER_LOCATIONS"]) == ["A", "B"]
