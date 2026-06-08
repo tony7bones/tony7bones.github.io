@@ -32,7 +32,11 @@ def test_secret_artifacts_not_tracked():
     offenders = [
         f
         for f in _tracked()
-        if os.path.basename(f).endswith(".env")
+        if (
+            os.path.basename(f).startswith(".env")
+            and os.path.basename(f) != ".env.example"
+        )
+        or os.path.basename(f).endswith(".env")
         or f.startswith("iptv-build/")
         or os.path.basename(f).endswith("_custom.m3u")
     ]
@@ -72,11 +76,14 @@ def _secret_tokens(env):
 
 
 def test_no_env_secret_value_in_tracked_files():
-    """No secret VALUE from the local .env appears in any git-tracked file."""
-    env_path = REPO / ".env"
-    if not env_path.exists():
+    """No secret VALUE from any local .env* (the per-device .env.<device> files)
+    appears in any git-tracked file."""
+    env_files = [p for p in REPO.glob(".env*") if p.name != ".env.example"]
+    if not env_files:
         return  # CI / no local env — value-scan not applicable
-    tokens = _secret_tokens(_read_env(env_path))
+    tokens = set()
+    for ef in env_files:
+        tokens |= _secret_tokens(_read_env(ef))
     if not tokens:
         return
     leaks = []

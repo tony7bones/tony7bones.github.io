@@ -70,6 +70,29 @@ def _menu_is_ours():
     return "plugin.video.pov" in data
 
 
+def _settings_applied():
+    """True if OUR skin SETTINGS (not just the file patch) are present + on in the
+    skin's settings.xml. The file patch persists immediately (it's a file copy), but
+    the SETTINGS are written by apply_skin_settings and — on a first boot with no
+    clean shutdown — could be lost. The old gate checked only the file patch + menu,
+    so it logged 'nothing to do' and NEVER re-applied lost settings. Checking these
+    here makes the next boot self-heal. Markers: weather readout on + Outline HD."""
+    path = os.path.join(
+        translatePath("special://profile/addon_data/{}".format(SKIN_ID)),
+        "settings.xml",
+    )
+    try:
+        import xml.etree.ElementTree as ET
+
+        root = ET.parse(path).getroot()
+    except Exception:  # noqa: BLE001 - absent/malformed -> treat as not applied
+        return False
+    vals = {s.get("id"): (s.text or "") for s in root.findall("setting")}
+    return vals.get("show_weatherinfo") == "true" and "outline-hd" in vals.get(
+        "WeatherIcons.path", ""
+    )
+
+
 def _auto_apply():
     """Apply the patch via the add-on's own apply path (default.py:_apply)."""
     try:
@@ -114,12 +137,14 @@ def run():
         if monitor.waitForAbort(3):
             return  # Kodi is shutting down
         waited += 3
-    if xbmc.getSkinDir() == SKIN_ID and (not _is_applied() or not _menu_is_ours()):
+    if xbmc.getSkinDir() == SKIN_ID and (
+        not _is_applied() or not _menu_is_ours() or not _settings_applied()
+    ):
         _auto_apply()
     else:
         xbmc.log(
-            "[mod v2+ service] nothing to do (skin={}, applied={}, menu_is_ours={})".format(
-                xbmc.getSkinDir(), _is_applied(), _menu_is_ours()
+            "[mod v2+ service] nothing to do (skin={}, applied={}, menu={}, settings={})".format(
+                xbmc.getSkinDir(), _is_applied(), _menu_is_ours(), _settings_applied()
             ),
             xbmc.LOGINFO,
         )

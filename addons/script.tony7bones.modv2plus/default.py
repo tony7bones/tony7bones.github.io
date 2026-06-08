@@ -399,6 +399,83 @@ def run():
     # choice == -1 (cancelled / back) -> do nothing
 
 
+# The skin settings apply_skin_settings sets LIVE. These are ALSO written straight
+# into the skin's settings.xml (below) so they survive a first boot that never
+# reaches a clean shutdown — Skin.SetBool/SetString only flush to disk on a clean
+# shutdown / ReloadSkin, the race that left fresh boxes looking stock.
+_SKIN_BOOLS_ON = (
+    "show_weatherinfo",
+    "EnableSplashScreen",
+    "DisableThemes",
+    "powermenu_list",
+    "enable_power_background",
+    "enable_settings_background",
+    "enable_search_background",
+    "hide_recordingchannels",
+    "hide_searches",
+    "hide_allchannels",
+    "hide_audioaddons",
+    "hide_gameaddons",
+    "hide_imageaddons",
+)
+_SKIN_STRINGS = {
+    "WeatherIcons.path": "resource://resource.images.weathericons.outline-hd/",
+    "WeatherIcons.name": "Weather Icons - Outline HD",
+}
+# Reset by apply (cleared): the two non-list power-menu styles + channel numbers.
+_SKIN_RESET = ("powermenu_panel", "powermenu_iconlist", "ShowPVRChannelNumbers")
+
+
+def _skin_settings_file():
+    return os.path.join(
+        translatePath("special://profile/addon_data/{}".format(SKIN_ID)),
+        "settings.xml",
+    )
+
+
+def _write_skin_settings(bools_on=(), strings=None, remove=()):
+    """Merge skin settings straight into the skin's settings.xml (create if absent),
+    PRESERVING every other setting: bools_on -> type=bool 'true'; strings -> type
+    string; remove -> deleted. Idempotent. This is the belt-and-suspenders persist
+    that makes apply/restore survive a first boot with no clean shutdown."""
+    import xml.etree.ElementTree as ET
+
+    strings = strings or {}
+    path = _skin_settings_file()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    root = None
+    if os.path.exists(path):
+        try:
+            root = ET.parse(path).getroot()
+        except ET.ParseError:
+            root = None
+    if root is None or root.tag != "settings":
+        root = ET.Element("settings")
+        root.set("version", "2")
+    by_id = {s.get("id"): s for s in root.findall("setting") if s.get("id")}
+
+    def _put(sid, value, stype):
+        el = by_id.get(sid)
+        if el is None:
+            el = ET.SubElement(root, "setting")
+            el.set("id", sid)
+            by_id[sid] = el
+        el.set("type", stype)
+        el.text = value
+
+    for b in bools_on:
+        _put(b, "true", "bool")
+    for sid, val in strings.items():
+        _put(sid, val, "string")
+    for r in remove:
+        el = by_id.get(r)
+        if el is not None:
+            root.remove(el)
+            by_id.pop(r, None)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(ET.tostring(root, encoding="unicode"))
+
+
 def apply_skin_settings():
     """Apply our MOD V2 skin-setting defaults (the parts that aren't shipped files).
 
@@ -452,6 +529,9 @@ def apply_skin_settings():
         # Channel numbers OFF in the Live TV lists: the skin shows them only when
         # ShowPVRChannelNumbers is set, so clearing it hides them.
         xbmc.executebuiltin("Skin.Reset(ShowPVRChannelNumbers)")
+        # Persist the SAME settings straight to settings.xml so they survive a first
+        # boot that never reaches a clean shutdown (the Skin.SetBool race).
+        _write_skin_settings(_SKIN_BOOLS_ON, _SKIN_STRINGS, _SKIN_RESET)
         xbmc.log("[mod v2+] skin settings applied", xbmc.LOGINFO)
     except Exception as e:
         xbmc.log("[mod v2+] failed applying skin settings: {}".format(e), xbmc.LOGERROR)
@@ -484,6 +564,13 @@ def reset_skin_settings():
             xbmc.executebuiltin("Skin.Reset({})".format(s))
         # Restore stock: MOD V2 shows channel numbers by default.
         xbmc.executebuiltin("Skin.SetBool(ShowPVRChannelNumbers)")
+        # Persist the reset to settings.xml too: drop all our keys, restore channel #s.
+        _write_skin_settings(
+            bools_on=("ShowPVRChannelNumbers",),
+            remove=_SKIN_BOOLS_ON
+            + tuple(_SKIN_STRINGS)
+            + ("powermenu_panel", "powermenu_iconlist"),
+        )
         xbmc.log("[mod v2+] skin settings reset", xbmc.LOGINFO)
     except Exception as e:
         xbmc.log(

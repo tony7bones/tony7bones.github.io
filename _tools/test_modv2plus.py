@@ -1145,3 +1145,66 @@ def test_service_gates_on_modv2_and_calls_apply_path():
     # service detects ours is missing (no POV action in the built includes) and
     # re-applies so our deployed menu is rebuilt on the next clean boot.
     assert "_menu_is_ours" in svc and "plugin.video.pov" in svc
+
+
+# --------------------------------------------------------------------------- #
+# First-boot persistence fix: settings written straight to settings.xml (Fix B)
+# + the settings-aware service gate (Fix A).
+# --------------------------------------------------------------------------- #
+
+
+def _skin_settings_vals(patch_env):
+    import xml.etree.ElementTree as ET
+
+    home = patch_env.skin_root.parent.parent
+    path = home / "userdata" / "addon_data" / "skin.estuary.modv2" / "settings.xml"
+    if not path.exists():
+        return None
+    return {s.get("id"): (s.text or "") for s in ET.parse(path).getroot().findall("setting")}
+
+
+def test_apply_skin_settings_persists_to_settings_xml(patch_env):
+    """Fix B: apply writes settings straight to settings.xml so they survive a first
+    boot with no clean shutdown (the Skin.SetBool race that left fresh boxes stock)."""
+    patch_env.mod.apply_skin_settings()
+    vals = _skin_settings_vals(patch_env)
+    assert vals is not None, "apply must persist settings.xml"
+    assert vals.get("show_weatherinfo") == "true"
+    assert "outline-hd" in vals.get("WeatherIcons.path", "")
+    assert vals.get("WeatherIcons.name") == "Weather Icons - Outline HD"
+    assert vals.get("enable_power_background") == "true"
+    assert vals.get("hide_allchannels") == "true"
+    assert "powermenu_panel" not in vals  # apply-cleared
+    assert "ShowPVRChannelNumbers" not in vals  # apply-cleared
+
+
+def test_apply_skin_settings_preserves_unrelated(patch_env):
+    home = patch_env.skin_root.parent.parent
+    d = home / "userdata" / "addon_data" / "skin.estuary.modv2"
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "settings.xml").write_text(
+        '<settings version="2"><setting id="user.custom" type="string">keep</setting></settings>'
+    )
+    patch_env.mod.apply_skin_settings()
+    vals = _skin_settings_vals(patch_env)
+    assert vals.get("user.custom") == "keep"
+    assert vals.get("show_weatherinfo") == "true"
+
+
+def test_reset_skin_settings_persists_removal(patch_env):
+    patch_env.mod.apply_skin_settings()
+    patch_env.mod.reset_skin_settings()
+    vals = _skin_settings_vals(patch_env)
+    assert "show_weatherinfo" not in vals
+    assert "WeatherIcons.path" not in vals
+    assert "enable_power_background" not in vals
+    assert vals.get("ShowPVRChannelNumbers") == "true"
+
+
+def test_service_gate_is_settings_aware():
+    """Fix A: the service re-applies when SETTINGS are missing (not just the file
+    patch) so a box that lost its first-boot settings self-heals next boot."""
+    svc = SERVICE_PY.read_text(encoding="utf-8")
+    assert "def _settings_applied" in svc
+    assert "not _settings_applied()" in svc
+    assert "show_weatherinfo" in svc and "outline-hd" in svc

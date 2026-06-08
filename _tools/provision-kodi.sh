@@ -62,15 +62,19 @@ command -v adb >/dev/null 2>&1 || die "adb not found. Install it: brew install a
 # Per-device env path on the box (matches the bootstrap's BOX_ENV_PATH; read then
 # REMOVED by the bootstrap so its secrets don't linger).
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ENV_FILE="$REPO_ROOT/.env"
 BOX_ENV_PATH="/storage/emulated/0/kodi/tony.7.bones/tony7bones.env"
 # USE_LOCAL=1 pushes the WORKING-TREE add-ons instead of fetching from the live
 # site (main) — required to verify a feature branch on the box BEFORE merging.
 USE_LOCAL="${USE_LOCAL:-}"
-if [[ -f "$ENV_FILE" ]]; then
-  # shellcheck disable=SC1090
-  source "$ENV_FILE"
-fi
+# First arg selects the per-device config .env.<device> (e.g. shield, bedroom,
+# travelstick). The box IP + name + shared config all come from that one file.
+_devices() { ls "$REPO_ROOT"/.env.* 2>/dev/null | sed 's|.*/\.env\.||' | grep -v '^example$' | tr '\n' ' '; }
+DEVICE="${1:-}"
+[[ -n "$DEVICE" ]] || DEVICE=$(ask "Which device? (have: $(_devices)):")
+ENV_FILE="$REPO_ROOT/.env.$DEVICE"
+[[ -f "$ENV_FILE" ]] || die "No per-device config .env.$DEVICE (have: $(_devices))"
+# shellcheck disable=SC1090
+source "$ENV_FILE"
 # Settings level (Standard|Advanced|Expert) -> Kodi's <settinglevel> 1|2|3.
 case "$(printf '%s' "${SETTINGS_LEVEL:-expert}" | tr '[:upper:]' '[:lower:]')" in
   standard | basic) SL=1 ;;
@@ -83,12 +87,12 @@ clear 2>/dev/null || true
 say "${B}Tony.7.Bones — Kodi box provisioner${Z}"
 say "Provisions a FRESH box: wipe → install → run Setup → reopen → verify."
 say "Make sure ADB debugging is ON at the TV (Settings → My Fire TV → Developer options)."
-IP="${1:-${DEVICE_IP:-}}"
-[[ -n "$IP" ]] || IP=$(ask "Device IP address (e.g. 192.168.7.84):")
+IP="${DEVICE_IP:-}"
+[[ -n "$IP" ]] || IP=$(ask "DEVICE_IP missing from .env.$DEVICE — enter the box IP:")
 [[ "$IP" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "That doesn't look like an IP: '$IP'"
 D="$IP:5555"
-# Device name shown to phone remotes (Kore/Yatse) etc. Prompt up front.
-DEVNAME=$(ask "Device name for this box (phone remotes show this) [${DEVICE_NAME:-Kodi}]:" "${DEVICE_NAME:-Kodi}")
+# Device name (shown to phone remotes) comes straight from the per-device file.
+DEVNAME="${DEVICE_NAME:-Kodi}"
 DEVNAME="${DEVNAME//&/and}" # keep it XML-safe in guisettings.xml
 DEVNAME="${DEVNAME//</}"
 DEVNAME="${DEVNAME//>/}"
@@ -146,7 +150,7 @@ _adb shell "rm -rf $K && mkdir -p $K/userdata $K/addons" >/dev/null 2>&1
 # control block (kodi/kodi, auth OFF, SSL off, remote control from this AND other
 # systems on — for phone remotes like Kore/Yatse), the device name, and the
 # Expert settings level (<settinglevel>3</settinglevel> lives under <general>).
-printf '<settings version="2"><setting id="services.devicename">%s</setting><setting id="services.webserver">true</setting><setting id="services.webserverport">%s</setting><setting id="services.webserverusername">%s</setting><setting id="services.webserverpassword">%s</setting><setting id="services.webserverauthentication">false</setting><setting id="services.webserverssl">false</setting><setting id="services.esenabled">true</setting><setting id="services.esallinterfaces">true</setting></settings>' "$DEVNAME" "${KODI_WEB_PORT:-8080}" "${KODI_WEB_USER:-kodi}" "${KODI_WEB_PASS:-kodi}" >/tmp/_t7b_gs.xml
+printf '<settings version="2"><setting id="services.devicename">%s</setting><setting id="services.webserver">true</setting><setting id="services.webserverport">%s</setting><setting id="services.webserverusername">%s</setting><setting id="services.webserverpassword">%s</setting><setting id="services.webserverauthentication">false</setting><setting id="services.webserverssl">false</setting><setting id="services.esenabled">true</setting><setting id="services.esallinterfaces">true</setting><setting id="addons.unknownsources">true</setting></settings>' "$DEVNAME" "${KODI_WEB_PORT:-8080}" "${KODI_WEB_USER:-kodi}" "${KODI_WEB_PASS:-kodi}" >/tmp/_t7b_gs.xml
 _adb push /tmp/_t7b_gs.xml "$K/userdata/guisettings.xml" >/dev/null 2>&1
 # pre-grant storage so Kodi doesn't pop a permissions prompt at the TV after the
 # data wipe (Android-9 runtime grants reset on data clear). The appops line covers
