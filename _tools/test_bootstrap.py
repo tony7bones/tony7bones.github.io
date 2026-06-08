@@ -1426,6 +1426,7 @@ def test_ensure_iptv_groups_constants_match_schema():
     assert "tvGroupMode" in boot_src
     assert "customTvGroupsFile" in boot_src
     assert "customTVGroups-Network24.xml" in boot_src
+    assert "tvChannelGroupsOnly" in boot_src
 
 
 def test_ensure_iptv_groups_creates_file_when_absent(boot):
@@ -1438,6 +1439,7 @@ def test_ensure_iptv_groups_creates_file_when_absent(boot):
     assert got["tvGroupMode"] == "2"
     assert got["customTvGroupsFile"].endswith("customTVGroups-Network24.xml")
     assert "channelGroups" in got["customTvGroupsFile"]
+    assert got["tvChannelGroupsOnly"] == "true"
 
 
 def test_ensure_iptv_groups_patches_copied_file(boot):
@@ -1480,6 +1482,7 @@ def test_ensure_iptv_groups_respects_user_value_when_already_custom(boot):
             '<settings version="2">'
             '<setting id="tvGroupMode">2</setting>'
             f'<setting id="customTvGroupsFile">{good_file}</setting>'
+            '<setting id="tvChannelGroupsOnly">true</setting>'
             "</settings>"
         )
     before = open(path).read()
@@ -1487,6 +1490,7 @@ def test_ensure_iptv_groups_respects_user_value_when_already_custom(boot):
     got = _read_instance_settings(boot)
     assert got["tvGroupMode"] == "2"
     assert got["customTvGroupsFile"] == good_file
+    assert got["tvChannelGroupsOnly"] == "true"
     # No-op: content unchanged byte-for-byte.
     assert open(path).read() == before
 

@@ -588,6 +588,9 @@ IPTV_CUSTOM_TV_GROUPS_FILE_VALUE = (
     "special://userdata/addon_data/pvr.iptvsimple/channelGroups/"
     "customTVGroups-Network24.xml"
 )
+# "Only load TV channels in groups" — pvr.iptvsimple shows only channels that
+# belong to a (custom) group, hiding the ungrouped firehose. Enforced true.
+IPTV_TV_CHANNEL_GROUPS_ONLY_KEY = "tvChannelGroupsOnly"
 
 
 def _set_instance_setting(root, setting_id, value):
@@ -659,13 +662,17 @@ def _ensure_iptv_custom_tv_groups():
             )
             or changed
         )
+        changed = (
+            _set_instance_setting(root, IPTV_TV_CHANNEL_GROUPS_ONLY_KEY, "true")
+            or changed
+        )
 
         if changed:
             with open(xml_path, "w", encoding="utf-8") as f:
                 f.write(ET.tostring(root, encoding="unicode"))
             _log(
                 "_ensure_iptv_custom_tv_groups: set tvGroupMode=2 + "
-                f"customTvGroupsFile in {xml_path}"
+                f"customTvGroupsFile + tvChannelGroupsOnly in {xml_path}"
             )
         else:
             _log("_ensure_iptv_custom_tv_groups: keys already correct (no change)")
