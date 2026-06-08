@@ -1137,3 +1137,7 @@ def test_service_gates_on_modv2_and_calls_apply_path():
     assert "import default as patch" in svc
     assert "patch._apply(" in svc
     assert "waitForAbort" in svc and "abortRequested" in svc
+    # must wait for the GUI to actually render (Home window 10000), not just for
+    # the skin to be set, before applying — otherwise it races the menu build and
+    # the home comes up blank ("sometimes it doesn't continue").
+    assert "getCondVisibility" in svc and "Window.IsVisible(10000)" in svc

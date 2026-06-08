@@ -66,13 +66,28 @@ def _auto_apply():
         xbmc.log("[mod v2+ service] auto-apply failed: {}".format(e), xbmc.LOGERROR)
 
 
+def _gui_ready():
+    """True once MOD V2 is the active skin AND the Home window (id 10000) has
+    actually rendered. getSkinDir() flips to MOD V2 the moment the skin is *set* —
+    too early: applying (overwrite + ReloadSkin) while script.skinshortcuts is
+    still building the home menu leaves the home blank ('Control 9000 can't
+    focus'). Window.IsVisible(10000) means the skin has painted the home screen, so
+    it is safe to patch + reload."""
+    return xbmc.getSkinDir() == SKIN_ID and xbmc.getCondVisibility(
+        "Window.IsVisible(10000)"
+    )
+
+
 def run():
     monitor = xbmc.Monitor()
-    # Wait for the skin to finish loading (Kodi reports the previous/booting skin
-    # briefly), then act exactly once.
+    # Wait for the skin to finish loading AND the GUI to actually be up before
+    # touching the live skin — services start before the skin renders, and acting
+    # too early is the 'sometimes it comes up blank / doesn't continue' race.
     waited = 0
     while waited < _SKIN_WAIT_SECS and not monitor.abortRequested():
-        if xbmc.getSkinDir() == SKIN_ID:
+        if _gui_ready():
+            # let the freshly-painted skin settle before we overwrite + reload
+            monitor.waitForAbort(2)
             break
         if monitor.waitForAbort(3):
             return  # Kodi is shutting down

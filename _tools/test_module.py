@@ -58,7 +58,7 @@ class _FakeResp:
 def test_module_id_and_version():
     root = _addon_root()
     assert root.get("id") == "script.module.tony7bones"
-    assert root.get("version") == "1.1.0"
+    assert root.get("version") == "1.1.1"
     assert root.get("provider-name") == "tony7bones"
 
 
@@ -170,10 +170,15 @@ def lib(tmp_path, monkeypatch):
 
     class _Dialog:
         def yesno(self, *a, **k):
-            return False
+            state["yesno"] = state.get("yesno", 0) + 1
+            return state.get("yesno_return", False)
+
+        def notification(self, *a, **k):
+            state["notify"] = state.get("notify", 0) + 1
 
     xbmcgui.Dialog = _Dialog
     xbmcgui.DLG_YESNO_NO_BTN = 1
+    xbmcgui.NOTIFICATION_INFO = "info"
 
     xbmcvfs = types.ModuleType("xbmcvfs")
     temp = tmp_path / "temp"
@@ -215,6 +220,36 @@ def lib(tmp_path, monkeypatch):
 # --------------------------------------------------------------------------- #
 # Public API surface
 # --------------------------------------------------------------------------- #
+def test_restart_kodi_android_clean_quit_no_blocking_prompt(lib, monkeypatch):
+    """On Android: a clean Quit + a non-blocking notice, and NO blocking yes/no.
+    A prompt there lets the just-set skin hit the 'Keep this skin?' revert and the
+    half-rendered skin can wedge the GUI (the 'it hangs, force-kill it' symptom).
+    No RestartApp (a no-op on Android) and no hard kill (would lose settings)."""
+    import tony7bones.system as system
+
+    monkeypatch.setattr(system, "is_android", lambda: True)
+    lib.t7.restart_kodi("Setup", lambda *a, **k: None)
+    builtins = lib.state["builtins"]
+    assert any("Quit" in c for c in builtins), "Android restart must Quit"
+    assert not any("RestartApp" in c for c in builtins), (
+        "RestartApp is a no-op on Android"
+    )
+    assert lib.state.get("notify", 0) == 1, "must show a non-blocking notice"
+    assert lib.state.get("yesno", 0) == 0, "must NOT block on a yes/no on Android"
+
+
+def test_restart_kodi_desktop_uses_restartapp(lib, monkeypatch):
+    """Desktop confirms then RestartApp() (which truly cycles the app there)."""
+    import tony7bones.system as system
+
+    monkeypatch.setattr(system, "is_android", lambda: False)
+    lib.state["yesno_return"] = True  # user clicks "Restart now"
+    lib.t7.restart_kodi("Setup", lambda *a, **k: None)
+    assert any("RestartApp" in c for c in lib.state["builtins"]), (
+        "desktop restart must use RestartApp"
+    )
+
+
 def test_public_api_surface(lib):
     t7 = lib.t7
     for name in (

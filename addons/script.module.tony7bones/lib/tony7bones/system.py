@@ -97,21 +97,27 @@ def restart_kodi(title, log):
     first launch. The user always chooses Restart now / Later.
 
     * Desktop (Windows / Linux / macOS): RestartApp() truly cycles the app.
-    * Android / Fire Stick: RestartApp() is unsupported and cannot relaunch the
-      app, so we ask the user to fully close and reopen Kodi, then Quit() on
-      confirmation for a clean exit they relaunch by hand.
+    * Android / Fire Stick: RestartApp() is a no-op (it is "only implemented under
+      Windows and Linux"), so Kodi cannot relaunch itself — the user reopens it by
+      hand and the boot service finishes setup. We do NOT show a blocking prompt
+      here: the skin was just set live, so any time spent waiting lets Kodi's
+      "Keep this skin?" timeout revert it to stock, and the half-rendered new skin
+      can wedge the GUI so a yes/no never clears (the "it hangs, force-kill it"
+      symptom). Instead we show a non-blocking notice and Quit() promptly. Quit is
+      a CLEAN shutdown — it flushes the skin choice + all skin settings to disk —
+      and a hard kill (os._exit / killall) is deliberately avoided because it would
+      lose those unsaved settings.
     """
     if is_android():
-        if xbmcgui.Dialog().yesno(
+        log("restart: Android clean Quit() (prompt-free)", xbmc.LOGINFO)
+        xbmcgui.Dialog().notification(
             title,
-            "Setup is complete. Kodi must fully close and reopen to finish.\n\n"
-            "Close Kodi now? After it closes, open it again from your home "
-            "screen to finish setup.",
-            yeslabel="Close now",
-            nolabel="Later",
-        ):
-            log("restart: Android Quit()", xbmc.LOGINFO)
-            xbmc.executebuiltin("Quit()")
+            "Setup complete — closing Kodi. Reopen it to finish.",
+            xbmcgui.NOTIFICATION_INFO,
+            6000,
+        )
+        xbmc.sleep(3000)  # let the notice render; well under the skin-revert window
+        xbmc.executebuiltin("Quit")
         return
 
     if xbmcgui.Dialog().yesno(

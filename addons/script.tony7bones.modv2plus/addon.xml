@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="script.tony7bones.modv2plus"
        name="Estuary MOD V2+"
-       version="1.4.3"
+       version="1.4.4"
        provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
@@ -16,6 +16,6 @@
     <assets>
       <icon>icon.png</icon>
     </assets>
-    <news>v1.4.3: New add-on icon (Tony.7.Bones V2+ branding); Live TV lists no longer show channel numbers by default (Restore puts them back). (v1.4.2: TV opens the Guide, Favourites→Favorites, six home widgets hidden. v1.4.1: deterministic menu build on first boot.)</news>
+    <news>v1.4.4: More reliable boot — the auto-apply service now waits for the Home screen to actually render (not just for the skin to be set) before patching, fixing the occasional blank/unfinished home after a restart. (v1.4.3: new V2+ icon; channel numbers off. v1.4.2: TV opens the Guide, Favourites→Favorites, six home widgets hidden.)</news>
   </extension>
 </addon>
