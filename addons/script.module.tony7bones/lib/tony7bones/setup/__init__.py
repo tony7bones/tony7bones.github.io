@@ -25,7 +25,20 @@ __all__ = [
     "KodiHost",
     "LayerResult",
     "RealKodiHost",
+    "apply_foundation",
     "parse_env",
     "read_box_env",
     "split_list",
 ]
+
+
+def __getattr__(name):
+    """Lazily expose ``apply_foundation`` without eagerly importing
+    ``foundation`` (which imports ``xbmc`` at module top — see the parent
+    package's PEP 562 note). ``import tony7bones.setup`` stays Kodi-free;
+    only ``tony7bones.setup.apply_foundation`` access pulls the engine in."""
+    if name == "apply_foundation":
+        from .foundation import apply_foundation
+
+        return apply_foundation
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

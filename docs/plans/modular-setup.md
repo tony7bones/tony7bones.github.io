@@ -348,3 +348,32 @@ documented**.
   decoupling (lazy `__init__`), port-growth note, tautology fix.
 - **2b input:** the `KodiHost` port grows **test-driven** in 2b (it'll gain
   `dialog`/`progress`/`getAddonInfo`(version)/settings accessors as the layers need them).
+
+### Phase 2b — DONE (local commit; Foundation extraction, behavior-preserving)
+
+- **Landed:** `setup/foundation.py` with `apply_foundation(env, *, dialog=None, log) -> LayerResult` —
+  the bodies of `_install_skin` (skin closure + pvr.artwork/modv2plus direct-extract-before-resolve;
+  does NOT set `lookandfeel.skin`), `_add_file_sources`, `_trim_home_menu` (Skin.SetBool + settings.xml
+  belt-and-suspenders) MOVED verbatim. `default.py` keeps thin shims; `run()` calls `apply_foundation`
+  in the same slot and uses `foundation.ok` exactly as it used `_install_skin`'s bool (skin still
+  activated LAST).
+- **Tested:** `_tools/test_setup_foundation.py` (12 tests), mutation-verified (move modv2plus
+  extract after closure → caught; drop file-sources → caught; flip needs_skin_activation → caught).
+  Deleted the now-misplaced `test_install_skin_imports_is_installed` grep guard (it guarded
+  `default.py` but the footgun moved to `foundation.py`, where the behavioral tests cover it).
+- **Gated:** snapshot UNCHANGED; full suite green; ruff clean. **Coverage:** `foundation.py` **95%**
+  (uncovered = pre-existing defensive branches lifted verbatim + one unreachable guard).
+- **QA review:** ACCEPT (one fix-first = the grep test, done).
+
+#### Tech-debt ledger (opened in 2b — settle before/at the Phase 4 orchestrator)
+
+- **`deps`-injection seam** (`_SkinDeps`/`_BootSkinDeps` + `install_skin=/add_file_sources=/trim_home_menu=`
+  params): a TRANSITIONAL test-compat mechanism so `run()`-driven tests that patch `boot.mod.*`
+  primitives still take effect through the moved bodies. **Do NOT proliferate it to 2c/2d** —
+  prefer repointing the few legacy `boot.mod.*` unit-test patches at the new module. The Phase 4
+  orchestrator calls the **bare 3-arg** form (`apply_foundation({}, dialog, log)`, default `_SkinDeps`,
+  no injection). **Kill the seam** once `run()` is fully decomposed.
+- **`log` param dormant** — `apply_foundation` ignores it (logs via its module logger); wire layer
+  logging when the orchestrator is built.
+- **`already_done` not populated** by foundation (always implies fresh); populate when the
+  orchestrator reads it for re-entry. 2c/2d must not cargo-cult always-False `already_done`.

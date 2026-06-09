@@ -375,15 +375,21 @@ _T7B = (".tony.7.bones", "https://tony7bones.github.io/")
 
 
 def test_add_file_sources_helper_exists():
-    """The helper must exist and be wired into run() before the restart."""
+    """The helper must still be reachable (a re-export shim over the Foundation
+    layer's lifted body) and the Foundation layer it now lives in must be wired
+    into run() BEFORE the restart (Kodi caches sources.xml at startup). The exact
+    file-sources slot/order is pinned at RUNTIME by the modular_setup snapshot;
+    this guards the shim + the apply_foundation-before-restart wiring."""
     src = DEFAULT_PY.read_text()
-    assert "_add_file_sources" in src, "helper must exist"
-    assert "_add_file_sources()" in src, "helper must be invoked in run()"
-    # Must run before the restart (Kodi caches sources.xml at startup).
-    add_pos = src.rfind("_add_file_sources()")
+    assert "_add_file_sources" in src, "shim must exist"
+    assert "_add_file_sources = _foundation._add_file_sources" in src, (
+        "_add_file_sources must be a re-export shim over the Foundation layer"
+    )
+    assert "apply_foundation(" in src, "apply_foundation must be invoked in run()"
+    found_pos = src.rfind("apply_foundation(")
     restart_pos = src.rfind("restart_kodi(")
-    assert add_pos != -1 and restart_pos != -1
-    assert add_pos < restart_pos, "_add_file_sources() must come before the restart"
+    assert found_pos != -1 and restart_pos != -1
+    assert found_pos < restart_pos, "apply_foundation() must come before the restart"
 
 
 def test_add_file_sources_creates_file_when_missing(boot):
@@ -591,15 +597,21 @@ def _estuary_bools(boot):
 
 
 def test_trim_home_menu_helper_exists_and_wired_before_restart():
-    """The helper must exist and be invoked in run() BEFORE the restart (the
-    restart is what makes Estuary re-read settings.xml)."""
+    """The helper must still be reachable (a re-export shim over the Foundation
+    layer's lifted body) and the Foundation layer it now lives in must be invoked
+    in run() BEFORE the restart (the restart is what makes Estuary re-read
+    settings.xml). The exact home-trim slot/order is pinned at RUNTIME by the
+    modular_setup snapshot; this guards the shim + apply_foundation wiring."""
     src = DEFAULT_PY.read_text()
-    assert "_trim_home_menu" in src, "helper must exist"
-    assert "_trim_home_menu()" in src, "helper must be invoked in run()"
-    trim_pos = src.rfind("_trim_home_menu()")
+    assert "_trim_home_menu" in src, "shim must exist"
+    assert "_trim_home_menu = _foundation._trim_home_menu" in src, (
+        "_trim_home_menu must be a re-export shim over the Foundation layer"
+    )
+    assert "apply_foundation(" in src, "apply_foundation must be invoked in run()"
+    trim_pos = src.rfind("apply_foundation(")
     restart_pos = src.rfind("restart_kodi(")
     assert trim_pos != -1 and restart_pos != -1
-    assert trim_pos < restart_pos, "_trim_home_menu() must come before the restart"
+    assert trim_pos < restart_pos, "apply_foundation() must come before the restart"
 
 
 # The eight camel-case ids the skin XML / Skin.SetBool use (the part that
@@ -840,17 +852,6 @@ def test_video_failure_is_nonfatal(boot, monkeypatch):
         assert aid in boot.state["installed"]
     _title, msg = boot.state["ok"][-1]
     assert "Video add-ons: 0/4" in msg
-
-
-def test_install_skin_imports_is_installed():
-    """_install_skin calls is_installed; guard against the ruff-fix hook stripping
-    it (it was added before its first use once, got auto-removed as 'unused', and
-    silently turned the whole skin step into a no-op). This test pins the import."""
-    src = DEFAULT_PY.read_text()
-    import_block = src.split("from tony7bones import (")[1].split(")")[0]
-    assert "is_installed" in import_block, (
-        "is_installed must stay imported — _install_skin no-ops silently without it"
-    )
 
 
 def test_skin_install_resolves_closure_and_sets_skin(boot, monkeypatch):
