@@ -230,3 +230,49 @@ release.
   the customization playbook. P0/P1 are independent of it.
 - The orchestrator-owned terminal seam relies on the proven `system.py` primitives
   (`activate_skin` w/ the 10100/control-11 accept, `restart_kodi`, `self_uninstall`).
+
+## Execution plan & phase gate
+
+Build proceeds in **sequential, gated phases** — each phase builds on the prior phase's
+committed result, so phases do NOT run in parallel (that's what keeps the suite green at
+every step). Parallelism happens **within** a phase: the orchestrator fans out agents
+(implementer + test-author + an adversarial QA test-completeness reviewer) on independent
+pieces, integrates them, runs the gate, and commits. (These execution **phases** are the
+delivery order; the P0–P3 tags in the Action backlog are priority/owner labels scheduled
+into them.)
+
+### Phase Gate — Definition of Done (every phase)
+
+1. **Documented** — this plan / a phase-log updated: what changed, why, what's now true.
+2. **Thoroughly tested** — unit tests for all new/changed code; idempotency tests where
+   re-entrant; invariant tests (no-fork, seam-guard) where applicable; pure refactors pinned
+   against the characterization golden snapshot.
+3. **Coverage** — new modules ≥ 90% line coverage (the bar `build_iptv.py` hit), with a
+   `--cov term-missing` report and every uncovered line justified.
+4. **Green everywhere** — full `pytest _tools/ -q` + `ruff` + generated-files staleness +
+   the pre-push gate all pass.
+5. **Real-device check** — phases that change runtime behavior are wipe-and-run verified on
+   the **local Kodi 21.3 Omega** (JSON-RPC `127.0.0.1:8080`). The Mac Kodi faithfully covers
+   skin install/activation + "Keep this skin?" revert, dependency-closure installs, origin
+   stamping, instance sync, and idempotency. It does **not** cover Fire-OS-only behavior
+   (desktop Kodi _can_ self-restart; Android can't) — the manual-reopen UX and scoped-storage
+   paths get a final **real Fire TV** pass before any release.
+6. **Checked in** — committed + pushed with a phase-tagged message before the next phase opens.
+7. **QA completeness review** — an adversarial QA agent reviews each gate for what the tests
+   _miss_ before the phase is accepted.
+
+### Phases
+
+| Phase           | Deliverable                                                                                 | Runtime change? → device gate               |
+| --------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| **0**           | Extract `boot` fixture → `conftest.py`; characterization golden-snapshot of current `run()` | none — snapshot + unit only                 |
+| **1**           | Lift `env` read-then-delete into orchestrator ownership                                     | none                                        |
+| **2**           | `apply_foundation/iptv/addons` + `LayerResult` + `KodiHost` port (behavior-preserving)      | none                                        |
+| **3**           | Move `pvr.iptvsimple` → Gate 1 (first intentional behavior change)                          | yes → local Kodi                            |
+| **4**           | Fresh orchestrator + Express path (releasable end-state == monolith)                        | yes → local Kodi                            |
+| **5**           | Model A lifecycle + Guided + invariants (no-fork, seam-guard, idempotency)                  | yes → local Kodi (+ Fire TV for restart UX) |
+| **6**           | Harden: version-guard, `assert_box_complete`, CI gates, wipe-and-run matrix                 | yes → local Kodi + Fire TV                  |
+| _(7, deferred)_ | IPTV gate composition (provisioner build + N-provider apply)                                | needs `iptv` merge first                    |
+
+Per-phase loop: **brief parallel agents → integrate → run the gate → QA completeness review →
+commit/push → next phase.**
