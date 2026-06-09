@@ -276,3 +276,35 @@ into them.)
 
 Per-phase loop: **brief parallel agents → integrate → run the gate → QA completeness review →
 commit/push → next phase.**
+
+## Phase log
+
+Every phase records all four gate facts here when accepted: **tested · gated · coverage ·
+documented**.
+
+### Phase 0 — DONE (`test(modular-setup): Phase 0 …`)
+
+- **Landed:** `_tools/conftest.py` (the fake-Kodi `boot` fixture extracted from
+  `test_bootstrap.py` — verified byte-equivalent, now reusable by all modular tests);
+  `_tools/test_modular_setup.py` + `modular_setup_snapshot.json` — the characterization
+  oracle (`bare` + `full` snapshots) pinning the current `run()`'s install/enable order,
+  the activate-skin-**last** cadence, and — at **runtime**, not source-grep — the restart,
+  self-uninstall, and cancel-path wiring.
+- **What's now true:** there is a behavior oracle that every later phase is checked against
+  ("Express must reproduce the monolith"). It is hardened against silent self-rebaseline
+  (writes only under `UPDATE_SNAPSHOT=1`; refused when `CI` is set; a missing key fails loud).
+- **Tested:** 7 oracle tests incl. runtime restart/self-uninstall/cancel/skin-last
+  invariants, all **mutation-verified** (removing a call from `run()` fails the matching test).
+- **Gated:** full suite **383 passed / 1 xfailed**, `ruff` clean, zero `addons/**` change,
+  pre-push gate green, pushed.
+- **Coverage:** new-production-module ≥90% criterion **N/A** (Phase 0 added no production
+  module — test infra + oracle only). Recorded oracle reach instead: the characterization
+  test alone exercises **58%** of `bootstrap/default.py`; the full bootstrap suite reaches
+  **89%**. Unpinned lines = the env-driven IPTV/RSS + device-copy branches that are guarded
+  no-ops on a desktop no-env run — exercised in the later phases that touch them.
+- **Adversarial QA review:** caught + closed GAP 1 (silent-rebaseline footgun), GAP 2
+  (restart/self-uninstall wiring invisible to the oracle), GAP 4 (cancel path), GAP 3
+  (docstring overclaim). All fixes mutation-verified.
+- **Deferred/noted:** pre-existing `repository.diggz` vs `repository.diggz.zip` double-enable
+  quirk (faithfully pinned, do not "fix" without updating the snapshot); env-driven branch
+  coverage rises as Phases 1–3 touch those paths.
