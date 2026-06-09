@@ -40,11 +40,9 @@ No secrets are embedded in this script.
 
 import json
 import os
-from xml.etree import ElementTree as ET
 
 import xbmc
 import xbmcgui
-import xbmcvfs
 
 # Shared install library (script.module.tony7bones). All the generic machinery
 # lives here; this file keeps only the base box's configuration + base-only steps.
@@ -89,6 +87,20 @@ from tony7bones.setup.foundation import apply_foundation
 from tony7bones.setup import addons as _addons
 from tony7bones.setup.addons import apply_addons
 
+# The IPTV layer's in-Kodi CONFIG half (the pvr.iptvsimple instance-settings
+# enforcement + the device→userdata file copies) moved into the shared sublibrary
+# (Phase 2d). The lifted bodies + the layer entry point live in
+# tony7bones.setup.iptv; this module keeps thin re-export shims (below) that
+# _configure_box calls in their EXISTING slots (copy then enforce — the copy
+# BEFORE the enforce so it patches the copied file) so the characterization
+# snapshot stays byte-identical. These bodies touch only xbmc/xbmcvfs/os/ET (no
+# monkeypatched install primitives), so a plain re-export is behaviour-identical —
+# no deps-injection seam (Tech-debt ledger). NOTE: Phase 2d is CONFIG-ONLY; the
+# pvr.iptvsimple INSTALL stays in the base ADDONS list (its move to the IPTV gate
+# is the deliberate behaviour change reserved for Phase 3).
+from tony7bones.setup import iptv as _iptv
+from tony7bones.setup.iptv import apply_iptv
+
 MY_ID = "script.tony7bones.bootstrap"
 
 # Re-exported public names (env parsing now lives in tony7bones.setup.env; the
@@ -97,6 +109,7 @@ MY_ID = "script.tony7bones.bootstrap"
 __all__ = [
     "apply_addons",
     "apply_foundation",
+    "apply_iptv",
     "parse_env",
     "read_box_env",
     "split_list",
@@ -192,34 +205,13 @@ _apply_weather_from_env = _addons._apply_weather_from_env
 _apply_rss_from_env = _addons._apply_rss_from_env
 SHOW_WEATHERINFO = "show_weatherinfo"  # Estuary skin bool: weather in the top bar
 
-# Device → userdata file copies. The user places these files on the device under
-# the Android/Fire-Stick /storage/emulated/0/kodi/ tree (note the exact
-# "tony.7.bones" spelling); Setup copies each one into Kodi's userdata over any
-# default. Every file is USER-PROVIDED — Setup never downloads or creates them; it
-# only copies each when present, overwriting the destination. They carry the
-# user's private config and land in userdata/addon_data ONLY, never the repo.
-#
-# Each entry is (source-on-device, destination special:// path):
-#   * the home-screen RSS news ticker feeds (over Kodi's default RssFeeds.xml)
-#   * pvr.iptvsimple's instance settings (the IPTV add-on is already installed by
-#     the base step, so addon_data/pvr.iptvsimple/ may need creating)
-#   * pvr.iptvsimple's custom TV channel groups (the channelGroups/ subdir won't
-#     exist on a fresh box — the copy creates it)
-DEVICE_FILE_COPIES = [
-    (
-        "/storage/emulated/0/kodi/tony.7.bones/rss/RssFeeds.xml",
-        "special://home/userdata/RssFeeds.xml",
-    ),
-    (
-        "/storage/emulated/0/kodi/tony.7.bones/iptv/instance-settings-1.xml",
-        "special://home/userdata/addon_data/pvr.iptvsimple/instance-settings-1.xml",
-    ),
-    (
-        "/storage/emulated/0/kodi/tony.7.bones/iptv/customTVGroups-Network24.xml",
-        "special://home/userdata/addon_data/pvr.iptvsimple/channelGroups/"
-        "customTVGroups-Network24.xml",
-    ),
-]
+# Device → userdata file copies — MOVED to the IPTV layer (tony7bones.setup.iptv,
+# Phase 2d). Re-exported here so every existing reference and test
+# (boot.mod.DEVICE_FILE_COPIES) keeps working unchanged and there is a single
+# source of truth. _configure_box calls _copy_device_files (below) in the SAME slot
+# it occupied (BEFORE the IPTV instance-settings enforce). The copy loop touches
+# only xbmcvfs/os, so a plain re-export is behaviour-identical.
+DEVICE_FILE_COPIES = _iptv.DEVICE_FILE_COPIES
 
 
 def _set_setting(setting_id, value):
@@ -254,240 +246,46 @@ def _set_setting(setting_id, value):
 # (tony7bones.setup.addons, Phase 2c) and are re-exported above. _configure_box
 # calls _apply_weather_from_env / _apply_rss_from_env in the same slot they
 # occupied (weather/RSS config runs LATE, after the early base/video install —
-# the interleaving constraint). The device-file copies + the IPTV instance-settings
-# enforcement (below) stay here; they go to apply_iptv in Phase 2d.
-
-
-def _copy_one_device_file(src, dst_special):
-    """Copy a single USER-PROVIDED device file into userdata, guarded.
-
-    FROM the device path `src`, TO the translated `dst_special` — creating the
-    destination directory if missing (fresh boxes lack addon_data/pvr.iptvsimple/
-    and its channelGroups/ subdir) and OVERWRITING the destination if it exists.
-    GUARDED: if the source is absent (e.g. on desktop, or the user hasn't placed
-    it) this logs and skips — it never errors. Idempotent."""
-    if not xbmcvfs.exists(src):
-        _log(
-            f"_configure_box: device file not found, skipping: {src}",
-            xbmc.LOGINFO,
-        )
-        return
-    dst = xbmcvfs.translatePath(dst_special)
-    # Create the destination directory tree if it doesn't exist yet.
-    dst_dir = os.path.dirname(dst)
-    if dst_dir and not xbmcvfs.exists(dst_dir):
-        xbmcvfs.mkdirs(dst_dir)
-    # xbmcvfs.copy overwrites an existing destination.
-    if xbmcvfs.copy(src, dst):
-        _log(f"_configure_box: copied device file {src} -> {dst}")
-    else:
-        _log(
-            f"_configure_box: xbmcvfs.copy reported failure copying {src} -> {dst}",
-            xbmc.LOGERROR,
-        )
-
-
-def _copy_device_files():
-    """Copy each USER-PROVIDED device file in DEVICE_FILE_COPIES into userdata.
-
-    Data-driven loop over (src, dst) pairs: the custom RSS feeds plus the
-    pvr.iptvsimple instance settings and custom TV channel groups. Each copy
-    creates its destination dir if missing, overwrites the destination if present,
-    and is GUARDED — a missing source (or any per-file error) is logged and
-    skipped, never aborting the rest of setup. Idempotent."""
-    for src, dst_special in DEVICE_FILE_COPIES:
-        try:
-            _copy_one_device_file(src, dst_special)
-        except Exception as e:  # noqa: BLE001 - one bad file must not abort the rest
-            _log(
-                f"_copy_device_files: copy {src} failed (non-fatal): {e}",
-                xbmc.LOGERROR,
-            )
+# the interleaving constraint).
 
 
 # --------------------------------------------------------------------------- #
-# pvr.iptvsimple instance-settings keys (1a/1b — TV custom groups)
+# Device→userdata file copies + the pvr.iptvsimple instance-settings enforcement
+# — MOVED to the IPTV layer (tony7bones.setup.iptv, Phase 2d). The bodies +
+# their constants/helper (_copy_one_device_file / _copy_device_files /
+# DEVICE_FILE_COPIES / IPTV_INSTANCE_SETTINGS_SPECIAL / IPTV_TV_GROUP_MODE_* /
+# IPTV_CUSTOM_TV_GROUPS_FILE_* / IPTV_TV_CHANNEL_GROUPS_ONLY_KEY /
+# _set_instance_setting / _ensure_iptv_custom_tv_groups) now live there VERBATIM;
+# these are thin re-export shims so every existing reference and test
+# (boot.mod._copy_device_files / _ensure_iptv_custom_tv_groups / the IPTV_*
+# constants) keeps working unchanged, and _configure_box runs them in the SAME
+# slots they occupied (copy BEFORE the IPTV enforce). Both touch only
+# xbmc/xbmcvfs/os/ET (no monkeypatched install primitives), so a plain re-export
+# is behaviour-identical. Phase 2d is CONFIG-ONLY: the pvr.iptvsimple INSTALL
+# stays in the base ADDONS list (its move to the IPTV gate is the deliberate
+# Phase-3 behaviour change).
 # --------------------------------------------------------------------------- #
-# pvr.iptvsimple stores its per-instance config in
-#   addon_data/pvr.iptvsimple/instance-settings-1.xml
-# (a <settings version="2"> file keyed by setting id). These two keys make the
-# add-on serve the user's custom TV channel groups instead of "all channels":
-#
-#   * tvGroupMode = 2   -> "Custom groups" (schema enum: 0=ALL, 1=SOME, 2=CUSTOM,
-#     confirmed in resources/instance-settings.xml, option label 30038)
-#   * customTvGroupsFile -> the channelGroups/ file we copy from the device
-#
-# These are ADD-ON INSTANCE settings: Kodi's JSON-RPC Settings.SetSettingValue
-# reaches only CORE settings (system.*, weather.*, …) and has no method for
-# per-instance PVR add-on settings — so the only way to set them is to write the
-# instance-settings file directly. We already COPY the user's file here; this
-# step then ENFORCES the two keys on top of whatever was copied, so the box ends
-# up correct even if the user's file omits or mis-sets them. If the copied file
-# already has them, it's a no-op. The path uses the same special://userdata form
-# the add-on itself writes (it resolves to the same channelGroups/ dir as the
-# copy destination).
-IPTV_INSTANCE_SETTINGS_SPECIAL = (
-    "special://home/userdata/addon_data/pvr.iptvsimple/instance-settings-1.xml"
-)
-IPTV_TV_GROUP_MODE_KEY = "tvGroupMode"
-IPTV_TV_GROUP_MODE_CUSTOM = "2"  # schema enum: 2 == CUSTOM_GROUPS
-IPTV_CUSTOM_TV_GROUPS_FILE_KEY = "customTvGroupsFile"
-IPTV_CUSTOM_TV_GROUPS_FILE_VALUE = (
-    "special://userdata/addon_data/pvr.iptvsimple/channelGroups/"
-    "customTVGroups-Network24.xml"
-)
-# "Only load TV channels in groups" — pvr.iptvsimple shows only channels that
-# belong to a (custom) group, hiding the ungrouped firehose. Enforced true.
-IPTV_TV_CHANNEL_GROUPS_ONLY_KEY = "tvChannelGroupsOnly"
+# xbmcvfs is no longer referenced by THIS module's own code (the bodies that used
+# it moved to the IPTV/Add-ons layers), but several tests reach the fake-Kodi
+# module through this module — e.g. monkeypatch.setattr(boot.mod.xbmcvfs, "copy",
+# ...) and boot.mod.xbmcvfs.translatePath(...). Re-export the SAME module object
+# the moved bodies import so those patches still reach the moved code and
+# boot.mod.xbmcvfs resolves unchanged. (Patching the shared module object mutates
+# it everywhere it is imported, so a test patch on boot.mod.xbmcvfs.copy reaches
+# iptv.xbmcvfs.copy.)
+xbmcvfs = _iptv.xbmcvfs
 
+_copy_one_device_file = _iptv._copy_one_device_file
+_copy_device_files = _iptv._copy_device_files
 
-def _set_instance_setting(root, setting_id, value):
-    """Ensure <setting id="setting_id"> in `root` has exactly `value`.
-
-    Updates the element in place if present (and drops the default="true" flag,
-    since we're now overriding the default), creates it if missing. Returns True
-    if anything changed, so the caller can skip a no-op write. Mirrors how Kodi's
-    own settings writer stamps a user-set value."""
-    el = None
-    for s in root.findall("setting"):
-        if s.get("id") == setting_id:
-            el = s
-            break
-    changed = False
-    if el is None:
-        el = ET.SubElement(root, "setting")
-        el.set("id", setting_id)
-        changed = True
-    # A user-set value is no longer the schema default.
-    if el.get("default") is not None:
-        el.attrib.pop("default", None)
-        changed = True
-    if (el.text or "") != value:
-        el.text = value
-        changed = True
-    return changed
-
-
-def _ensure_iptv_custom_tv_groups(box_env=None):
-    """Enforce TV-group-mode=Custom + the custom-TV-groups file path in
-    pvr.iptvsimple's instance-settings-1.xml (1a/1b).
-
-    Runs AFTER _copy_device_files() (which may have copied the user's own
-    instance-settings-1.xml). Reads the file if present, else starts a fresh
-    <settings version="2"> tree, then ensures the two keys are correct and writes
-    back only if something changed. The destination dir is created if absent (a
-    fresh box without the copied file). Idempotent and fully defensive: any
-    failure is logged and swallowed — never aborts the rest of setup. These keys
-    cannot be set via JSON-RPC (it does not reach add-on instance settings), so a
-    direct file write is the only mechanism.
-
-    GATED: only enforces custom-group mode when the custom-groups file actually
-    exists (copied from the device, or generated from the env's IPTV_GROUPS). On a
-    no-env / no-file box, forcing tvGroupMode=2 at a MISSING file gives
-    pvr.iptvsimple an empty channel list — so we leave the all-channels default.
-
-    When `box_env` provides IPTV_GROUPS the groups file is GENERATED from it first
-    (channel-group names only — not secret); IPTV_M3U/IPTV_EPG are injected as
-    m3uUrl/epgUrl (+ remote path type); tvChannelGroupsOnly comes from
-    IPTV_GROUPS_ONLY (default true). Secret values are never logged.
-    """
-    box_env = box_env or {}
-    try:
-        groups_file = xbmcvfs.translatePath(IPTV_CUSTOM_TV_GROUPS_FILE_VALUE)
-        groups = split_list(box_env.get("IPTV_GROUPS", ""))
-        if groups:
-            os.makedirs(os.path.dirname(groups_file), exist_ok=True)
-            groot = ET.Element("customChannelGroups")
-            for name in groups:
-                ET.SubElement(groot, "channelGroupName").text = name
-            with open(groups_file, "w", encoding="utf-8") as f:
-                f.write(ET.tostring(groot, encoding="unicode"))
-            _log(
-                "_ensure_iptv_custom_tv_groups: generated %d custom group(s) from env"
-                % len(groups)
-            )
-        # The playlist SOURCE (m3u/epg) and the group MODE are independent: inject
-        # the source whenever the env supplies it, but only force CUSTOM group mode
-        # when the groups file exists (crit A — never tvGroupMode=2 at a missing
-        # file). With neither, there's nothing to do — leave the all-channels default.
-        m3u = (box_env.get("IPTV_M3U") or "").strip()
-        epg = (box_env.get("IPTV_EPG") or "").strip()
-        have_groups = os.path.exists(groups_file)
-        if not (m3u or epg or have_groups):
-            _log(
-                "_ensure_iptv_custom_tv_groups: nothing to set (no m3u/epg, no "
-                f"groups file {groups_file}) — leaving the all-channels default"
-            )
-            return
-        xml_path = xbmcvfs.translatePath(IPTV_INSTANCE_SETTINGS_SPECIAL)
-        os.makedirs(os.path.dirname(xml_path), exist_ok=True)
-
-        root = None
-        if os.path.exists(xml_path):
-            try:
-                root = ET.parse(xml_path).getroot()
-            except ET.ParseError as e:
-                _log(
-                    f"_ensure_iptv_custom_tv_groups: instance-settings-1.xml "
-                    f"malformed, recreating: {e}",
-                    xbmc.LOGERROR,
-                )
-                root = None
-        if root is None or root.tag != "settings":
-            root = ET.Element("settings")
-            root.set("version", "2")
-
-        # Playlist source (provider creds — SECRET; never logged as values).
-        changed = False
-        if m3u:
-            changed = _set_instance_setting(root, "m3uPathType", "1") or changed
-            changed = _set_instance_setting(root, "m3uUrl", m3u) or changed
-        if epg:
-            changed = _set_instance_setting(root, "epgPathType", "1") or changed
-            changed = _set_instance_setting(root, "epgUrl", epg) or changed
-        # Custom group mode — ONLY when the groups file exists.
-        only_val = "n/a"
-        if have_groups:
-            changed = (
-                _set_instance_setting(
-                    root, IPTV_TV_GROUP_MODE_KEY, IPTV_TV_GROUP_MODE_CUSTOM
-                )
-                or changed
-            )
-            changed = (
-                _set_instance_setting(
-                    root,
-                    IPTV_CUSTOM_TV_GROUPS_FILE_KEY,
-                    IPTV_CUSTOM_TV_GROUPS_FILE_VALUE,
-                )
-                or changed
-            )
-            only = (box_env.get("IPTV_GROUPS_ONLY", "true") or "true").strip().lower()
-            only_val = "true" if only in ("true", "1", "yes", "on") else "false"
-            changed = (
-                _set_instance_setting(root, IPTV_TV_CHANNEL_GROUPS_ONLY_KEY, only_val)
-                or changed
-            )
-        else:
-            _log(
-                "_ensure_iptv_custom_tv_groups: no groups file — m3u/epg set, group "
-                "mode left at the all-channels default"
-            )
-
-        if changed:
-            with open(xml_path, "w", encoding="utf-8") as f:
-                f.write(ET.tostring(root, encoding="unicode"))
-            _log(
-                "_ensure_iptv_custom_tv_groups: groups=%s only=%s m3u=%s epg=%s in %s"
-                % (have_groups, only_val, bool(m3u), bool(epg), xml_path)
-            )
-        else:
-            _log("_ensure_iptv_custom_tv_groups: keys already correct (no change)")
-    except Exception as e:  # noqa: BLE001 - never abort the rest of setup
-        _log(
-            f"_ensure_iptv_custom_tv_groups failed (non-fatal): {e}",
-            xbmc.LOGERROR,
-        )
+IPTV_INSTANCE_SETTINGS_SPECIAL = _iptv.IPTV_INSTANCE_SETTINGS_SPECIAL
+IPTV_TV_GROUP_MODE_KEY = _iptv.IPTV_TV_GROUP_MODE_KEY
+IPTV_TV_GROUP_MODE_CUSTOM = _iptv.IPTV_TV_GROUP_MODE_CUSTOM
+IPTV_CUSTOM_TV_GROUPS_FILE_KEY = _iptv.IPTV_CUSTOM_TV_GROUPS_FILE_KEY
+IPTV_CUSTOM_TV_GROUPS_FILE_VALUE = _iptv.IPTV_CUSTOM_TV_GROUPS_FILE_VALUE
+IPTV_TV_CHANNEL_GROUPS_ONLY_KEY = _iptv.IPTV_TV_CHANNEL_GROUPS_ONLY_KEY
+_set_instance_setting = _iptv._set_instance_setting
+_ensure_iptv_custom_tv_groups = _iptv._ensure_iptv_custom_tv_groups
 
 
 # The per-device config the provisioner derives from the owner's master .env and

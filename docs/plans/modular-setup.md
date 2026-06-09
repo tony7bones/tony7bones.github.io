@@ -404,3 +404,32 @@ documented**.
   already_done is False. **Real re-entry detection is the Phase-4 orchestrator's
   installed-state probes** (`is_installed`/instance-settings/origin checks), NOT this field.
   Docstring + test reworded honestly; do not build idempotence on `already_done`.
+
+### Phase 2d — DONE (local commit; IPTV-config extraction → Phase 2 decomposition COMPLETE)
+
+- **Landed:** `setup/iptv.py` — `_ensure_iptv_custom_tv_groups` (+ `_set_instance_setting` +
+  instance-settings constants) and `_copy_device_files`/`_copy_one_device_file`/`DEVICE_FILE_COPIES`
+  MOVED verbatim, plus composed `apply_iptv(env) -> LayerResult` (not called by `run()` — Phase-4).
+  `pvr.iptvsimple` INSTALL deliberately stays in base `ADDONS` (its move to the IPTV gate is the
+  **Phase 3** behavior change). `_configure_box` keeps the exact weather→copy→iptv→rss order.
+- **No deps-seam** (ledger honored); repointed 2 list-binding patches to `iptv.*`.
+- **Highest-stakes checks PASS (mutation-proven):** the `tvGroupMode=2`-only-with-groups-file gate
+  (the "empty channel list" regression) is intact; **secret safety** — m3u/epg creds are never
+  logged (only `bool(...)`), no real creds in module/tests (fakes only), instance XML lands only in
+  userdata.
+- **Review-fix:** `apply_iptv`'s change-detection was a false-negative on a device-copied box
+  (`existed_before` inference); fixed so `_ensure_iptv_custom_tv_groups` returns a truthful "wrote?"
+  signal that `apply_iptv` consumes — fixed BEFORE Phase-4 wiring, mutation-verified.
+- **Tested:** `_tools/test_setup_iptv.py` (33 tests). **Gated:** snapshot UNCHANGED; 495 passed;
+  ruff clean; secrets clean. **Coverage:** `iptv.py` **100%**. **QA review:** ACCEPT.
+
+---
+
+## Phase 2 COMPLETE — the decomposition
+
+`run()`'s install/config logic is now extracted into the `tony7bones/setup/` sublibrary:
+`foundation.py` (95%), `addons.py` (99%), `iptv.py` (100%), on `result.py`/`host.py`/`env.py`
+(100%). Each layer has a composed `apply_*(env) -> LayerResult` (built + self-tested, NOT yet
+called by `run()`). `default.py` is now thin shims; behavior is **byte-identical** (the
+characterization snapshot never moved across 2a–2d). 495 tests green. **Next: Phase 3** — the first
+deliberate behavior change (move `pvr.iptvsimple` install Foundation→IPTV gate).

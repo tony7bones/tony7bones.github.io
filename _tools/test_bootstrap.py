@@ -1195,14 +1195,20 @@ def test_default_device_file_copies_are_the_three_expected(boot):
 
 def _point_copies(boot, monkeypatch, tmp_path, mapping):
     """Repoint DEVICE_FILE_COPIES so the given special:// dests read from temp
-    files (others get a guaranteed-missing source)."""
+    files (others get a guaranteed-missing source).
+
+    Phase 2d: _copy_device_files moved to tony7bones.setup.iptv and loops over
+    THAT module's DEVICE_FILE_COPIES, so the patch targets boot.mod._iptv (the
+    repointed boot.mod patch — no deps-injection seam), not the bootstrap
+    re-export. boot.mod.DEVICE_FILE_COPIES is still read to build the mapping (it
+    is the same list object)."""
     new = []
     for src, dst in boot.mod.DEVICE_FILE_COPIES:
         if dst in mapping:
             new.append((str(mapping[dst]), dst))
         else:
             new.append((str(tmp_path / "missing" / os.path.basename(src)), dst))
-    monkeypatch.setattr(boot.mod, "DEVICE_FILE_COPIES", new)
+    monkeypatch.setattr(boot.mod._iptv, "DEVICE_FILE_COPIES", new)
 
 
 def test_copy_device_files_copies_rss_when_source_present(boot, monkeypatch, tmp_path):
@@ -1334,15 +1340,21 @@ def _make_groups_file(boot):
     return path
 
 
-def test_ensure_iptv_groups_constants_match_schema():
+def test_ensure_iptv_groups_constants_match_schema(boot):
     """The enforced values must be the schema's CUSTOM_GROUPS enum (2) and a
-    channelGroups path pointing at the Network24 file we copy."""
-    boot_src = DEFAULT_PY.read_text()
-    assert 'IPTV_TV_GROUP_MODE_CUSTOM = "2"' in boot_src
-    assert "tvGroupMode" in boot_src
-    assert "customTvGroupsFile" in boot_src
-    assert "customTVGroups-Network24.xml" in boot_src
-    assert "tvChannelGroupsOnly" in boot_src
+    channelGroups path pointing at the Network24 file we copy.
+
+    Phase 2d: the IPTV instance-settings constants moved to
+    tony7bones.setup.iptv; assert the live VALUES via the bootstrap re-exports
+    (boot.mod.*) rather than source-grepping default.py, so the check survives the
+    move and stays a behavioural assertion on the actual enforced values."""
+    assert boot.mod.IPTV_TV_GROUP_MODE_CUSTOM == "2"
+    assert boot.mod.IPTV_TV_GROUP_MODE_KEY == "tvGroupMode"
+    assert boot.mod.IPTV_CUSTOM_TV_GROUPS_FILE_KEY == "customTvGroupsFile"
+    assert boot.mod.IPTV_CUSTOM_TV_GROUPS_FILE_VALUE.endswith(
+        "customTVGroups-Network24.xml"
+    )
+    assert boot.mod.IPTV_TV_CHANNEL_GROUPS_ONLY_KEY == "tvChannelGroupsOnly"
 
 
 def test_ensure_iptv_groups_creates_file_when_absent(boot):
@@ -1581,7 +1593,9 @@ def test_apply_weather_from_env_resolves_and_writes_keys(boot, monkeypatch):
 
 
 def test_apply_weather_from_env_fallback_no_env(boot, monkeypatch):
-    monkeypatch.setattr(boot.mod._addons, "_resolve_weather_location", lambda q, **k: None)
+    monkeypatch.setattr(
+        boot.mod._addons, "_resolve_weather_location", lambda q, **k: None
+    )
     boot.mod._apply_weather_from_env({})  # no WEATHER_LOCATIONS at all
     got = _read_weather_settings(boot)
     assert got["loc1_url"] == "us/ca/sacramento"  # Sacramento default
@@ -1589,7 +1603,9 @@ def test_apply_weather_from_env_fallback_no_env(boot, monkeypatch):
 
 
 def test_apply_weather_never_empty_url_when_all_fail(boot, monkeypatch):
-    monkeypatch.setattr(boot.mod._addons, "_resolve_weather_location", lambda q, **k: None)
+    monkeypatch.setattr(
+        boot.mod._addons, "_resolve_weather_location", lambda q, **k: None
+    )
     boot.mod._apply_weather_from_env({"WEATHER_LOCATIONS": "Nowhere, ZZ; Atlantis"})
     got = _read_weather_settings(boot)
     assert got["loc1_url"] == "us/ca/sacramento" and got["loc1_url"]  # never empty
