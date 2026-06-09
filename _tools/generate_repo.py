@@ -48,6 +48,11 @@ MEDIA_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"}
 # bare URL and indexing would churn an index.html into every hosted subdir).
 _ADDONS_SPECIAL = {"hosted"}
 
+# Tooling/cache dirs that must NEVER be zipped, indexed, or mirrored. They are
+# build-time cruft (lint/test/type caches, bytecode) and leak non-deterministic
+# bytes into add-on zips if a tool happened to run in a source dir before a build.
+_CRUFT_DIRS = {"__pycache__", ".ruff_cache", ".pytest_cache", ".mypy_cache"}
+
 # Repo-root entries that are NOT canvas and must never be served-listed or pruned
 # by the canvas mirror. Everything else at the root that is a directory is treated
 # as canvas output (a mirror of a dropbox/ folder) and pruned if dropbox/ drops it.
@@ -138,7 +143,7 @@ def _zip_addon(addon_dir: str) -> tuple[ET.Element, str, str] | None:
     zip_path = os.path.join(addon_dir, zip_name)
     members = []
     for dirpath, dirs, files in os.walk(addon_dir):
-        dirs[:] = [d for d in dirs if d != "__pycache__"]
+        dirs[:] = [d for d in dirs if d not in _CRUFT_DIRS]
         dirs.sort()
         for fname in sorted(files):
             if fname.endswith(".zip") or (
@@ -215,7 +220,7 @@ def _index_tree(top: str) -> int:
     """
     count = 0
     for dirpath, dirnames, filenames in os.walk(top):
-        dirnames[:] = sorted(d for d in dirnames if d != "__pycache__")
+        dirnames[:] = sorted(d for d in dirnames if d not in _CRUFT_DIRS)
         rel = os.path.relpath(dirpath, ROOT_DIR)
         rows = ['<a href="../">Parent Directory</a>']
         for d in dirnames:
@@ -242,7 +247,7 @@ def _copy_canvas_dir(src: str, dst: str) -> None:
         skip = set()
         for n in names:
             p = os.path.join(dirname, n)
-            if n == "__pycache__" or (os.path.isfile(p) and _git_ignored(p)):
+            if n in _CRUFT_DIRS or (os.path.isfile(p) and _git_ignored(p)):
                 skip.add(n)
         return skip
 
