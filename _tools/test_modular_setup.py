@@ -215,11 +215,26 @@ def _stub_skin_and_video_success(boot, monkeypatch):
             boot.state["installed"].add(boot.mod.MODV2PLUS_ID)
         return True
 
+    # The skin closure path resolves its install primitives from the BOOTSTRAP
+    # module's globals (via foundation's _BootSkinDeps), so patch boot.mod.*. The
+    # base + video install bodies MOVED to tony7bones.setup.addons (Phase 2c) and
+    # resolve their primitives from THAT module's globals, so the SAME stubs are
+    # ALSO patched onto boot.mod._addons (the repointed boot.mod patches — no
+    # deps-injection seam, per the Tech-debt ledger). The stub OBJECTS are
+    # identical wherever they live, so the golden snapshot VALUES are unchanged;
+    # only WHERE the stub is patched moves.
+    addons = boot.mod._addons
     monkeypatch.setattr(boot.mod, "install_selection", _sel)
     monkeypatch.setattr(boot.mod, "extract_zip", _extract)
     monkeypatch.setattr(boot.mod, "install_with_deps", lambda *a, **k: True)
     monkeypatch.setattr(
         boot.mod, "_latest_zip_url", lambda aid: f"http://local/{aid}-9.9.9.zip"
+    )
+    monkeypatch.setattr(addons, "install_selection", _sel)
+    monkeypatch.setattr(addons, "extract_zip", _extract)
+    monkeypatch.setattr(addons, "install_with_deps", lambda *a, **k: True)
+    monkeypatch.setattr(
+        addons, "_latest_zip_url", lambda aid: f"http://local/{aid}-9.9.9.zip"
     )
 
 

@@ -77,55 +77,42 @@ from tony7bones.setup.env import parse_env, read_box_env, split_list
 from tony7bones.setup import foundation as _foundation
 from tony7bones.setup.foundation import apply_foundation
 
+# The ADD-ONS layer (base repos + apps install, curated video install, env-driven
+# weather + RSS writers) moved into the shared sublibrary (Phase 2c). The lifted
+# bodies + the layer entry point live in tony7bones.setup.addons; this module keeps
+# thin re-export shims (below) that run() and _configure_box call in their EXISTING
+# slots so the characterization snapshot stays byte-identical (the interleaving
+# constraint: base/video install EARLY, weather/RSS config LATE in _configure_box).
+# The moved bodies resolve their install primitives from the addons module globals,
+# so the few run()-driven tests that stubbed the base/video path patch addons.* (the
+# repointed boot.mod patches) — NO new deps-injection seam (Tech-debt ledger).
+from tony7bones.setup import addons as _addons
+from tony7bones.setup.addons import apply_addons
+
 MY_ID = "script.tony7bones.bootstrap"
 
-# Re-exported public names (env parsing now lives in tony7bones.setup.env;
-# the Foundation layer entry point in tony7bones.setup.foundation).
-__all__ = ["apply_foundation", "parse_env", "read_box_env", "split_list"]
-
-REPO_BASE = "https://tony7bones.github.io/repositories/"
-STATIC_BASE = "https://tony7bones.github.io/addons"
-
-# Add-on index base urls for the closure. The two peno64 apps live in peno64;
-# their module dependencies, the weather add-on, and the binary PVR/inputstream
-# clients all live in the official Kodi repo. The library's resolver walks
-# <requires>/<import> recursively across both (peno64 first, official last).
-OFFICIAL_BASE = "https://mirrors.kodi.tv/addons/omega"
-PENO64_BASE = (
-    "https://raw.githubusercontent.com/peno64/repository.peno64/master/repo/zips"
-)
-
-# Repo installer zips: (zip filename, addon id).
-REPO_ZIPS = [
-    ("repository.709-1.0.2.zip", "repository.709"),
-    ("repository.bugatsinho-2.8.zip", "repository.bugatsinho"),
-    ("repository.cocoscrapers-1.0.1.zip", "repository.cocoscrapers"),
-    ("repository.diggz.zip", "repository.diggz"),
-    ("repository.ivarbrandt-1.0.3.zip", "repository.ivarbrandt"),
-    ("repository.kodifitzwell-0.0.1.zip", "repository.kodifitzwell"),
-    ("repository.kodinerds-7.0.1.7.zip", "repository.kodinerds"),
-    ("repository.loop-3.0.4.zip", "repository.loop"),
-    ("repository.Magnetic-1.1.0b.zip", "repository.Magnetic"),
-    ("repository.peno64-1.5.zip", "repository.peno64"),
-    ("repository.redwizard-1.2.2.zip", "repository.redwizard"),
-    ("repository.umbrella-2.2.6.zip", "repository.umbrella"),
+# Re-exported public names (env parsing now lives in tony7bones.setup.env; the
+# Foundation layer entry point in tony7bones.setup.foundation; the Add-ons layer in
+# tony7bones.setup.addons).
+__all__ = [
+    "apply_addons",
+    "apply_foundation",
+    "parse_env",
+    "read_box_env",
+    "split_list",
 ]
 
-# First-party add-on ids installed by the generic direct-extract loop. Empty:
-# the MOD V2 skin + the MOD V2+ patch add-on are installed by _install_skin
-# (which handles their proxy-invisible deps + activation), not this loop.
-FIRST_PARTY = []
-
-# Apps installed (with dependency closure) by direct extract, in order.
-#   * script.ezmaintenanceplus / script.realdebrid — peno64 (python).
-#   * weather.multi — official repo (pure python; pulls python module deps).
-#   * pvr.iptvsimple — official repo (BINARY; pulls binary inputstream deps).
-ADDONS = [
-    "script.ezmaintenanceplus",
-    "script.realdebrid",
-    "weather.multi",
-    "pvr.iptvsimple",
-]
+# Index bases + repo/app/video constants — MOVED to the Add-ons layer
+# (tony7bones.setup.addons, Phase 2c). Re-exported here so every existing
+# reference and test (boot.mod.REPO_ZIPS / ADDONS / VIDEO_APPS / OFFICIAL_BASE …)
+# keeps working unchanged and there is a single source of truth.
+REPO_BASE = _addons.REPO_BASE
+STATIC_BASE = _addons.STATIC_BASE
+OFFICIAL_BASE = _addons.OFFICIAL_BASE
+PENO64_BASE = _addons.PENO64_BASE
+REPO_ZIPS = _addons.REPO_ZIPS
+FIRST_PARTY = _addons.FIRST_PARTY
+ADDONS = _addons.ADDONS
 
 # Estuary MOD V2 skin + the MOD V2+ patch — installed + activated by the one-shot.
 SKIN_ID = "skin.estuary.modv2"
@@ -187,21 +174,22 @@ ESTUARY_SKIN_ID = "skin.estuary"
 # Base box configuration — weather + interface preferences applied after the
 # install, before the restart. Each step is defensive (logged, never aborts).
 # --------------------------------------------------------------------------- #
-WEATHER_ADDON = "weather.multi"  # Multi Weather (installed in ADDONS)
-# Multi Weather fetches the forecast from https://weather.yahoo.com/<loc1_url>, so
-# loc1_url is the LOAD-BEARING field: with it empty the add-on logs "empty location
-# url" and clears its props (no fetch), regardless of name/lat/lon. The url format
-# the add-on itself writes is "<country>/<region>/<town>" lowercased with spaces
-# turned to dashes — for Sacramento that is "us/ca/sacramento". lat/lon are only
-# used by the optional Weatherbit/OpenWeatherMap providers (off by default) and the
-# name is just the display label. Pre-writing all four skips the interactive geocode
-# search (RunScript(weather.multi,loc1)).
-WEATHER_LOCATION = {
-    "loc1_name": "Sacramento, CA, US",
-    "loc1_url": "us/ca/sacramento",
-    "loc1_lat": "38.5816",
-    "loc1_lon": "-121.4944",
-}
+# The WEATHER provider constants + the weather/RSS env-writers MOVED to the
+# Add-ons layer (tony7bones.setup.addons, Phase 2c). Re-exported here so every
+# existing reference and test (boot.mod.WEATHER_ADDON / WEATHER_LOCATION /
+# _apply_weather_from_env / _apply_rss_from_env / _resolve_weather_location /
+# _set_weather_settings / _set_weather_location / _weather_multi_settings_path)
+# keeps working unchanged, and _configure_box calls them in the SAME slot they
+# occupied. The IPTV + device-copy halves of _configure_box stay here (they go to
+# apply_iptv in Phase 2d).
+WEATHER_ADDON = _addons.WEATHER_ADDON  # Multi Weather (installed in ADDONS)
+WEATHER_LOCATION = _addons.WEATHER_LOCATION
+_weather_multi_settings_path = _addons._weather_multi_settings_path
+_set_weather_settings = _addons._set_weather_settings
+_set_weather_location = _addons._set_weather_location
+_resolve_weather_location = _addons._resolve_weather_location
+_apply_weather_from_env = _addons._apply_weather_from_env
+_apply_rss_from_env = _addons._apply_rss_from_env
 SHOW_WEATHERINFO = "show_weatherinfo"  # Estuary skin bool: weather in the top bar
 
 # Device → userdata file copies. The user places these files on the device under
@@ -260,167 +248,14 @@ def _set_setting(setting_id, value):
 # parsed value.
 
 
-def _weather_multi_settings_path():
-    """Absolute path to Multi Weather's per-profile settings.xml."""
-    return xbmcvfs.translatePath(
-        "special://profile/addon_data/weather.multi/settings.xml"
-    )
-
-
-def _set_weather_settings(settings):
-    """Write each id->value in `settings` into Multi Weather's settings.xml,
-    creating the file/dir if missing and PRESERVING every other existing setting.
-    Idempotent; written version="2" (the add-on reads settings by id)."""
-    xml_path = _weather_multi_settings_path()
-    os.makedirs(os.path.dirname(xml_path), exist_ok=True)
-    root = None
-    if os.path.exists(xml_path):
-        try:
-            root = ET.parse(xml_path).getroot()
-        except ET.ParseError:
-            root = None
-    if root is None or root.tag != "settings":
-        root = ET.Element("settings")
-        root.set("version", "2")
-    by_id = {s.get("id"): s for s in root.findall("setting") if s.get("id")}
-    for sid, val in settings.items():
-        el = by_id.get(sid)
-        if el is None:
-            el = ET.SubElement(root, "setting")
-            el.set("id", sid)
-            by_id[sid] = el
-        el.text = val
-    with open(xml_path, "w", encoding="utf-8") as f:
-        f.write(ET.tostring(root, encoding="unicode"))
-
-
-def _set_weather_location():
-    """Fallback: Multi Weather location 1 = Sacramento (the keyless default used
-    when the env provides no resolvable locations). loc1_url is the field the
-    add-on fetches by. Idempotent; preserves other settings."""
-    _set_weather_settings(WEATHER_LOCATION)
-    _log("_configure_box: wrote Multi Weather default location (Sacramento)")
-
-
-def _resolve_weather_location(query, timeout=10, tries=2):
-    """Resolve a city name / zipcode to a Multi Weather location via Yahoo's
-    search-assist API (the trailing-slash endpoint — no redirect needed). Returns
-    {name,url,lat,lon} or None on any failure (the caller falls back). Retries the
-    network call; never raises. Mirrors how the add-on's own search builds the
-    fields: name "Town, Region, Country"; url "country/region/town"."""
-    import json as _json
-    import urllib.parse as _uparse
-    import urllib.request as _ureq
-
-    api = (
-        "https://weather.yahoo.com/_atmos/api/search-assist/locations/?query="
-        + _uparse.quote(query)
-    )
-    req = _ureq.Request(
-        api, headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
-    )
-    for _ in range(tries):
-        try:
-            with _ureq.urlopen(req, timeout=timeout) as resp:
-                data = _json.loads(resp.read().decode("utf-8"))
-            for sug in data.get("suggestions", []):
-                loc = sug.get("location") or {}
-                town = loc.get("town") or {}
-                region = loc.get("region") or {}
-                code = region.get("code") or region.get("name") or ""
-                country = (loc.get("country") or {}).get("code") or ""
-                name = town.get("name")
-                if not (name and country and town.get("latitude") is not None):
-                    continue
-                return {
-                    "name": "%s, %s, %s" % (name, code, country),
-                    "url": "%s/%s/%s"
-                    % (
-                        country.lower(),
-                        str(code).lower().replace(" ", "-"),
-                        name.lower().replace(" ", "-"),
-                    ),
-                    "lat": str(town["latitude"]),
-                    "lon": str(town["longitude"]),
-                }
-            return None
-        except Exception:  # noqa: BLE001 - best-effort; caller falls back
-            continue
-    return None
-
-
-def _apply_weather_from_env(box_env):
-    """Drive Multi Weather from the per-device env: resolve up to 5
-    WEATHER_LOCATIONS (city names or zipcodes) via Yahoo, write loc1..N (+ clear
-    the unused slots), and enable the optional Weatherbit / OpenWeatherMap upgrade
-    layers when their keys are present. Falls back to the hardcoded Sacramento
-    default when no env locations are given OR none resolve — NEVER writes an empty
-    loc_url. Defensive: logs counts/flags only (never secret values); never raises.
-    """
-    try:
-        wanted = split_list(box_env.get("WEATHER_LOCATIONS", ""))[:5]
-        settings = {}
-        resolved = 0
-        for query in wanted:
-            loc = _resolve_weather_location(query)
-            if not loc or not loc.get("url"):
-                _log(
-                    "_apply_weather: a location did not resolve — skipped",
-                    xbmc.LOGWARNING,
-                )
-                continue
-            resolved += 1
-            settings["loc%d_name" % resolved] = loc["name"]
-            settings["loc%d_url" % resolved] = loc["url"]
-            settings["loc%d_lat" % resolved] = loc["lat"]
-            settings["loc%d_lon" % resolved] = loc["lon"]
-        if resolved == 0:
-            settings.update(WEATHER_LOCATION)  # Sacramento default — never empty
-            resolved = 1
-        else:
-            for j in range(resolved + 1, 6):  # clear stale higher-numbered slots
-                for fld in ("name", "url", "lat", "lon"):
-                    settings["loc%d_%s" % (j, fld)] = ""
-        wbit = (box_env.get("WEATHERBIT_API_KEY") or "").strip()
-        owm = (box_env.get("OWM_API_KEY") or "").strip()
-        if wbit:
-            settings["WAdd"] = "true"
-            settings["API"] = wbit
-        if owm:
-            settings["WMaps"] = "true"
-            settings["MAPAPI"] = owm
-        _set_weather_settings(settings)
-        _log(
-            "_apply_weather: %d location(s) written; weatherbit=%s owm=%s"
-            % (resolved, bool(wbit), bool(owm))
-        )
-    except Exception as e:  # noqa: BLE001 - never abort the rest of setup
-        _log(f"_apply_weather failed (non-fatal): {e}", xbmc.LOGERROR)
-
-
-def _apply_rss_from_env(box_env):
-    """Generate userdata/RssFeeds.xml from the env's RSS_FEEDS (+ RSS_INTERVAL).
-    No-op when RSS_FEEDS is absent (a device-copied file / the Kodi default stands).
-    Feed URLs are not secret. Defensive: logged, never raises."""
-    feeds = split_list(box_env.get("RSS_FEEDS", ""))
-    if not feeds:
-        return
-    try:
-        interval = (box_env.get("RSS_INTERVAL") or "30").strip() or "30"
-        path = xbmcvfs.translatePath("special://home/userdata/RssFeeds.xml")
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        root = ET.Element("rssfeeds")
-        rset = ET.SubElement(root, "set")
-        rset.set("id", "1")
-        for url in feeds:
-            feed = ET.SubElement(rset, "feed")
-            feed.set("updateinterval", interval)
-            feed.text = url
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(ET.tostring(root, encoding="unicode"))
-        _log("_apply_rss: wrote %d RSS feed(s) (interval %s)" % (len(feeds), interval))
-    except Exception as e:  # noqa: BLE001 - never abort the rest of setup
-        _log(f"_apply_rss failed (non-fatal): {e}", xbmc.LOGERROR)
+# The weather/RSS env-writers + their helpers (_weather_multi_settings_path /
+# _set_weather_settings / _set_weather_location / _resolve_weather_location /
+# _apply_weather_from_env / _apply_rss_from_env) MOVED to the Add-ons layer
+# (tony7bones.setup.addons, Phase 2c) and are re-exported above. _configure_box
+# calls _apply_weather_from_env / _apply_rss_from_env in the same slot they
+# occupied (weather/RSS config runs LATE, after the early base/video install —
+# the interleaving constraint). The device-file copies + the IPTV instance-settings
+# enforcement (below) stay here; they go to apply_iptv in Phase 2d.
 
 
 def _copy_one_device_file(src, dst_special):
@@ -713,39 +548,18 @@ def _configure_box(box_env=None):
 
 
 # --------------------------------------------------------------------------- #
-# Curated video add-ons — installed unattended (no picker) in the one-tap run
+# Curated video add-ons — installed unattended (no picker) in the one-tap run.
+# The VIDEO_APPS / VIDEO_DISABLE_AFTER constants + _install_video MOVED to the
+# Add-ons layer (tony7bones.setup.addons, Phase 2c). Re-exported here so every
+# existing reference and test (boot.mod.VIDEO_APPS / VIDEO_DISABLE_AFTER /
+# _install_video) keeps working unchanged. _install_video resolves install_selection
+# from the addons module globals; the run()-driven video tests that stubbed it patch
+# addons.install_selection (the repointed boot.mod patch) — NO new deps-injection
+# seam (Tech-debt ledger). run() calls _install_video in the SAME early slot.
 # --------------------------------------------------------------------------- #
-VIDEO_APPS = [
-    "plugin.video.pov",
-    "plugin.video.the-loop",
-    "plugin.video.sporthdme",
-    "plugin.video.youtube",
-]
-# Install-then-disable: The Loop declares plugin.video.dailymotion_com as a
-# REQUIRED import nobody here uses. Installing it satisfies the dep check;
-# disabling it afterwards means it never runs and survives Loop updates with no
-# re-patching.
-VIDEO_DISABLE_AFTER = {"plugin.video.dailymotion_com"}
-
-
-def _install_video(dialog):
-    """Install the curated video add-ons + their closure, unattended.
-
-    Delegates to the shared library's install_selection (folded in from the
-    retired standalone Video Add-ons Setup): enable the source repos, build the
-    combined index from the installed repos + the official repo, resolve the
-    closure for VIDEO_APPS, extract/enable/origin-stamp it, and apply the
-    install-then-disable set. Shares this run's progress dialog. Returns how many
-    of VIDEO_APPS ended up installed. Never raises — a video failure must not
-    abort the box.
-    """
-    try:
-        return install_selection(
-            VIDEO_APPS, OFFICIAL_BASE, VIDEO_DISABLE_AFTER, dialog, _log
-        )
-    except Exception as e:  # noqa: BLE001 - video failure must not abort the run
-        _log(f"video install failed (non-fatal): {e}", xbmc.LOGERROR)
-        return 0
+VIDEO_APPS = _addons.VIDEO_APPS
+VIDEO_DISABLE_AFTER = _addons.VIDEO_DISABLE_AFTER
+_install_video = _addons._install_video
 
 
 class _BootSkinDeps:
@@ -794,54 +608,15 @@ def _install_skin(dialog):
     return _foundation._install_skin(dialog, deps=_BootSkinDeps())
 
 
-def _install_base(dialog):
-    """Run the base install: repos + first-party + apps. Returns (repo_ok, fp_ok,
-    app_ok, canceled). Shares the progress dialog with the (optional) video stage
-    so the user sees one continuous progress bar. `canceled` is True if the user
-    cancelled the progress dialog mid-install (run() then aborts with no summary,
-    exactly today's behaviour)."""
-    total = len(REPO_ZIPS) + len(FIRST_PARTY) + len(ADDONS) + 1
-    step = 0
-    repo_ok = fp_ok = app_ok = 0
-
-    # 1. repos by direct extract
-    for zip_name, _rid in REPO_ZIPS:
-        step += 1
-        if extract_zip(REPO_BASE + zip_name, dialog, int(step / total * 100), _log):
-            repo_ok += 1
-        if dialog.iscanceled():
-            return repo_ok, fp_ok, app_ok, True
-
-    # 2. first-party add-ons by direct extract
-    for addon_id in FIRST_PARTY:
-        step += 1
-        url = _latest_zip_url(addon_id)
-        if url and extract_zip(url, dialog, int(step / total * 100), _log):
-            fp_ok += 1
-        if dialog.iscanceled():
-            return repo_ok, fp_ok, app_ok, True
-
-    # 3. register + enable the repos and first-party add-ons.
-    step += 1
-    dialog.update(int(step / total * 100), "Registering add-ons...")
-    update_local_addons()
-    xbmc.sleep(3000)
-    for _zip_name, rid in REPO_ZIPS:
-        if rid:
-            _enable(rid)
-    for addon_id in FIRST_PARTY:
-        _enable(addon_id)
-
-    # 4. install each app with its dependency closure by direct extract.
-    for addon_id in ADDONS:
-        step += 1
-        dialog.update(int(step / total * 100), f"Installing {addon_id}")
-        if install_with_deps(addon_id, dialog, [PENO64_BASE], OFFICIAL_BASE, _log):
-            app_ok += 1
-        if dialog.iscanceled():
-            return repo_ok, fp_ok, app_ok, True
-
-    return repo_ok, fp_ok, app_ok, False
+# The base install (repos + first-party + apps) MOVED to the Add-ons layer
+# (tony7bones.setup.addons, Phase 2c). Re-exported here so every existing reference
+# and test (boot.mod._install_base) keeps working unchanged. It resolves its install
+# primitives (extract_zip / install_with_deps / update_local_addons / enable /
+# _latest_zip_url) from the addons module globals; the run()-driven tests that
+# stubbed the base path patch addons.* (the repointed boot.mod patches) — NO new
+# deps-injection seam (Tech-debt ledger). run() calls _install_base in the SAME early
+# slot (before video, before apply_foundation) so the interleaving is unchanged.
+_install_base = _addons._install_base
 
 
 def run():

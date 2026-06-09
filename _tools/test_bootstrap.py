@@ -32,21 +32,39 @@ ADDON_DIR = REPO_ROOT / "addons" / "script.tony7bones.bootstrap"
 ADDON_XML = ADDON_DIR / "addon.xml"
 DEFAULT_PY = ADDON_DIR / "default.py"
 REPOSITORIES = REPO_ROOT / "repositories"
+# The Add-ons layer source — the literal home of the REPO_ZIPS / ADDONS /
+# FIRST_PARTY / VIDEO_APPS constants since Phase 2c (default.py re-exports them as
+# `X = _addons.X` shims, which ast.literal_eval cannot evaluate, so the constant
+# tests parse them from their literal source here).
+ADDONS_PY = (
+    REPO_ROOT
+    / "addons"
+    / "script.module.tony7bones"
+    / "lib"
+    / "tony7bones"
+    / "setup"
+    / "addons.py"
+)
 
 
 def _addon_root():
     return ET.parse(ADDON_XML).getroot()
 
 
-def _assign(name):
-    """Return the literal value assigned to `name` in default.py (no import/exec)."""
-    tree = ast.parse(DEFAULT_PY.read_text())
+def _assign(name, src=DEFAULT_PY):
+    """Return the literal value assigned to `name` in `src` (no import/exec).
+
+    Defaults to default.py; the REPO_ZIPS / ADDONS / FIRST_PARTY / VIDEO_APPS
+    constants now live literally in tony7bones.setup.addons (Phase 2c), so those
+    tests pass `src=ADDONS_PY` — default.py only re-exports them as `X = _addons.X`
+    shims, which ast.literal_eval cannot evaluate."""
+    tree = ast.parse(Path(src).read_text())
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign):
             for tgt in node.targets:
                 if isinstance(tgt, ast.Name) and tgt.id == name:
                     return ast.literal_eval(node.value)
-    raise AssertionError(f"{name} not found in default.py")
+    raise AssertionError(f"{name} not found in {Path(src).name}")
 
 
 # --------------------------------------------------------------------------- #
@@ -92,26 +110,26 @@ def test_default_py_compiles():
 
 def test_referenced_repo_zips_exist():
     """Every repo zip the bootstrap downloads must exist in repositories/."""
-    for zip_name, _repo_id in _assign("REPO_ZIPS"):
+    for zip_name, _repo_id in _assign("REPO_ZIPS", ADDONS_PY):
         assert (REPOSITORIES / zip_name).exists(), f"missing repo zip: {zip_name}"
 
 
 def test_repo_zip_count_is_twelve():
     # repository.tony7bones (the 13th) is the host repo, already installed.
-    assert len(_assign("REPO_ZIPS")) == 12
+    assert len(_assign("REPO_ZIPS", ADDONS_PY)) == 12
 
 
 def test_addons_are_plain_id_strings_no_labels():
     """No display-name labels: ADDONS and FIRST_PARTY are lists of id strings."""
-    for item in _assign("ADDONS"):
+    for item in _assign("ADDONS", ADDONS_PY):
         assert isinstance(item, str), f"ADDONS entry is not a bare id: {item!r}"
-    for item in _assign("FIRST_PARTY"):
+    for item in _assign("FIRST_PARTY", ADDONS_PY):
         assert isinstance(item, str), f"FIRST_PARTY entry is not a bare id: {item!r}"
 
 
 def test_addons_includes_peno64_apps_weather_and_pvr():
     """Install set: the two peno64 apps plus Multi Weather and IPTV Simple."""
-    assert _assign("ADDONS") == [
+    assert _assign("ADDONS", ADDONS_PY) == [
         "script.ezmaintenanceplus",
         "script.realdebrid",
         "weather.multi",
@@ -121,7 +139,7 @@ def test_addons_includes_peno64_apps_weather_and_pvr():
 
 def test_peno64_repo_is_installed_so_apps_resolve():
     """The apps live in peno64 — its repo zip must be in the install list."""
-    repo_ids = {rid for _zip, rid in _assign("REPO_ZIPS")}
+    repo_ids = {rid for _zip, rid in _assign("REPO_ZIPS", ADDONS_PY)}
     assert "repository.peno64" in repo_ids
 
 
@@ -130,14 +148,14 @@ def test_patch_is_first_party_direct_extract():
     the first-party direct-extract list nor in the apps list — a user installs it
     by hand only if they adopt the Estuary MOD V2 skin. It stays HOST-provided
     (see test_modv2plus_is_host_provided)."""
-    assert "script.tony7bones.modv2plus" not in _assign("FIRST_PARTY")
-    assert "script.tony7bones.modv2plus" not in _assign("ADDONS")
+    assert "script.tony7bones.modv2plus" not in _assign("FIRST_PARTY", ADDONS_PY)
+    assert "script.tony7bones.modv2plus" not in _assign("ADDONS", ADDONS_PY)
 
 
 def test_first_party_is_empty():
     """Nothing is auto-installed from our Pages as a 'first-party' add-on now
     that the MOD V2 patch is opt-in. run() must skip the first-party loop."""
-    assert _assign("FIRST_PARTY") == []
+    assert _assign("FIRST_PARTY", ADDONS_PY) == []
 
 
 def test_apps_install_without_modal_installer():
@@ -168,7 +186,7 @@ def test_never_toggles_unknown_sources():
 def test_installs_weather_and_pvr_binary():
     """The install set must include the weather add-on and the binary PVR
     client, and the script must detect the platform to pick the right build."""
-    addons = _assign("ADDONS")
+    addons = _assign("ADDONS", ADDONS_PY)
     assert "weather.multi" in addons
     assert "pvr.iptvsimple" in addons
     # Binary add-ons need runtime platform detection; that now lives in the
@@ -199,7 +217,7 @@ def test_repo_zip_inner_id_matches_declared():
     """Each zip's inner addon.xml id must equal the id declared in REPO_ZIPS."""
     import zipfile
 
-    for zip_name, repo_id in _assign("REPO_ZIPS"):
+    for zip_name, repo_id in _assign("REPO_ZIPS", ADDONS_PY):
         with zipfile.ZipFile(REPOSITORIES / zip_name) as z:
             axml = next(n for n in z.namelist() if n.endswith("addon.xml"))
             root = ET.fromstring(z.read(axml))
@@ -209,8 +227,10 @@ def test_repo_zip_inner_id_matches_declared():
 
 
 def test_no_empty_addon_ids():
-    assert all(_assign("ADDONS")), "ADDONS must contain no empty ids"
-    assert all(_assign("FIRST_PARTY")), "FIRST_PARTY must contain no empty ids"
+    assert all(_assign("ADDONS", ADDONS_PY)), "ADDONS must contain no empty ids"
+    assert all(_assign("FIRST_PARTY", ADDONS_PY)), (
+        "FIRST_PARTY must contain no empty ids"
+    )
 
 
 def test_success_dialog_does_not_overclaim():
@@ -814,11 +834,13 @@ def test_video_installs_unattended(boot, monkeypatch):
         calls.append((list(selected), set(disable_ids)))
         return len(selected)
 
-    monkeypatch.setattr(boot.mod, "install_selection", _stub)
+    # The video install body moved to tony7bones.setup.addons (Phase 2c) and
+    # resolves install_selection from THAT module's globals, so patch it there (the
+    # repointed boot.mod patch — no deps-injection seam, per the Tech-debt ledger).
+    monkeypatch.setattr(boot.mod._addons, "install_selection", _stub)
     boot.mod.run()
 
-    # install_selection is now used for BOTH the video apps and the skin closure;
-    # find the video call among them.
+    # _addons.install_selection drives the video apps; find the video call.
     video_call = next((c for c in calls if "plugin.video.pov" in c[0]), None)
     assert video_call is not None, "video apps must install via install_selection"
     assert video_call[0] == [
@@ -845,7 +867,8 @@ def test_video_failure_is_nonfatal(boot, monkeypatch):
     def _boom(*a, **k):
         raise RuntimeError("video boom")
 
-    monkeypatch.setattr(boot.mod, "install_selection", _boom)
+    # Video install resolves install_selection from the addons module (Phase 2c).
+    monkeypatch.setattr(boot.mod._addons, "install_selection", _boom)
     boot.mod.run()
 
     for aid in boot.mod.ADDONS:
@@ -1538,7 +1561,7 @@ def test_apply_weather_from_env_resolves_and_writes_keys(boot, monkeypatch):
         },
     }
     monkeypatch.setattr(
-        boot.mod,
+        boot.mod._addons,
         "_resolve_weather_location",
         lambda q, **k: next((v for n, v in locs.items() if n in q), None),
     )
@@ -1558,7 +1581,7 @@ def test_apply_weather_from_env_resolves_and_writes_keys(boot, monkeypatch):
 
 
 def test_apply_weather_from_env_fallback_no_env(boot, monkeypatch):
-    monkeypatch.setattr(boot.mod, "_resolve_weather_location", lambda q, **k: None)
+    monkeypatch.setattr(boot.mod._addons, "_resolve_weather_location", lambda q, **k: None)
     boot.mod._apply_weather_from_env({})  # no WEATHER_LOCATIONS at all
     got = _read_weather_settings(boot)
     assert got["loc1_url"] == "us/ca/sacramento"  # Sacramento default
@@ -1566,7 +1589,7 @@ def test_apply_weather_from_env_fallback_no_env(boot, monkeypatch):
 
 
 def test_apply_weather_never_empty_url_when_all_fail(boot, monkeypatch):
-    monkeypatch.setattr(boot.mod, "_resolve_weather_location", lambda q, **k: None)
+    monkeypatch.setattr(boot.mod._addons, "_resolve_weather_location", lambda q, **k: None)
     boot.mod._apply_weather_from_env({"WEATHER_LOCATIONS": "Nowhere, ZZ; Atlantis"})
     got = _read_weather_settings(boot)
     assert got["loc1_url"] == "us/ca/sacramento" and got["loc1_url"]  # never empty
@@ -1574,7 +1597,7 @@ def test_apply_weather_never_empty_url_when_all_fail(boot, monkeypatch):
 
 def test_apply_weather_skips_unresolvable_keeps_resolved(boot, monkeypatch):
     monkeypatch.setattr(
-        boot.mod,
+        boot.mod._addons,
         "_resolve_weather_location",
         lambda q, **k: (
             {"name": "Reno, NV, US", "url": "us/nv/reno", "lat": "39", "lon": "-119"}

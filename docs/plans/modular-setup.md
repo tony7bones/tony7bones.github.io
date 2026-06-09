@@ -377,3 +377,30 @@ documented**.
   logging when the orchestrator is built.
 - **`already_done` not populated** by foundation (always implies fresh); populate when the
   orchestrator reads it for re-entry. 2c/2d must not cargo-cult always-False `already_done`.
+
+### Phase 2c — DONE (local commit; Add-ons extraction, behavior-preserving)
+
+- **Landed:** `setup/addons.py` — `_install_base`, `_install_video` (incl. dailymotion
+  install-then-disable), and the WEATHER + RSS env-writers from `_configure_box`, MOVED
+  verbatim, plus a composed `apply_addons(env) -> LayerResult` (built + self-tested but NOT
+  yet called by `run()` — reserved for the Phase-4 orchestrator). IPTV parts of
+  `_configure_box` (`_ensure_iptv_custom_tv_groups`, `_copy_device_files`) left in
+  `default.py` for Phase 2d.
+- **Interleaving preserved exactly:** `run()` still calls base/video install EARLY and
+  weather/RSS LATE (in `_configure_box`); the weather→copy→iptv→rss order is byte-identical.
+- **No deps-seam** (ledger honored): repointed the run()-driven test patches from `boot.mod.*`
+  to `boot.mod._addons.*`. **Oracle integrity proven** — Mutation D (removing the new patches)
+  breaks the snapshot, confirming `run()` genuinely routes install through the moved bodies;
+  A/B/C (drop a repo / app / disable-after) all trip the golden snapshot.
+- **Tested:** `_tools/test_setup_addons.py` (27 tests), mutation-verified. **Gated:** snapshot
+  UNCHANGED; 462 passed; ruff clean. **Coverage:** `addons.py` **99%** (3 uncovered =
+  defensive branches lifted verbatim from the monolith). **QA review:** ACCEPT.
+
+#### Ledger update (already_done semantics — settled the 2b open item)
+
+- `LayerResult.already_done` as a layer can compute it = **"no work was CONFIGURED"** (empty
+  install lists), **NOT "the box is already provisioned"** — install primitives can't tell
+  already-present from freshly-installed, so on a real re-entry `installed` is full and
+  already_done is False. **Real re-entry detection is the Phase-4 orchestrator's
+  installed-state probes** (`is_installed`/instance-settings/origin checks), NOT this field.
+  Docstring + test reworded honestly; do not build idempotence on `already_done`.
