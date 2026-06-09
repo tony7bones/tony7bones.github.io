@@ -308,3 +308,23 @@ documented**.
 - **Deferred/noted:** pre-existing `repository.diggz` vs `repository.diggz.zip` double-enable
   quirk (faithfully pinned, do not "fix" without updating the snapshot); env-driven branch
   coverage rises as Phases 1–3 touch those paths.
+
+### Phase 1 — DONE (local commit; behavior-preserving)
+
+- **Landed:** the per-device `.env` read-then-delete lifted OUT of `_configure_box` INTO the
+  orchestrator `run()`. `_configure_box(box_env=None)` is now a pure consumer — it never reads
+  or deletes the env file; `run()` reads once, passes the dict in, deletes after configure.
+- **What's now true:** a single coordinator owns env lifecycle — the prerequisite that lets a
+  future multi-session Guided flow run a later gate without an earlier gate having deleted the
+  env it needs.
+- **Tested:** 5 new/changed tests; **mutation-verified** — 3 mutations killed incl. the subtle
+  "delete-before-configure" (runtime ordering assertion) and "delete-removed"; remove-spies
+  path-scoped to `BOX_ENV_PATH` so they don't false-trip on `run()`'s other `os.remove` calls.
+- **Gated:** Phase 0 characterization snapshot passes **UNCHANGED** (behavior-preserving);
+  387 passed / 1 xfailed; `ruff` clean.
+- **Coverage:** `bootstrap/default.py` 89% → **92%**; env-ownership logic covered; only
+  uncovered new line is a pre-existing defensive `except OSError: pass`.
+- **QA completeness review:** ACCEPTABLE — no blocking gaps (2 optional nits noted).
+- **Push/version:** committed locally; generated zip/`addons.xml` not regenerated and version
+  not bumped — deferred to a milestone push (see Execution notes) to avoid advertising an
+  unfinished feature in the user-visible version.

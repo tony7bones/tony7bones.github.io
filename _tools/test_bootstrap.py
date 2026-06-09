@@ -290,6 +290,7 @@ import urllib.request  # noqa: E402
 # files can share the exact same fake Kodi. It is auto-discovered by pytest — the
 # tests below simply request it as a fixture argument.
 
+
 def test_no_unknown_sources_jsonrpc_during_run(boot):
     """A full run must never send a Settings.SetSettingValue for
     addons.unknownsources — that is what pops the security prompt."""
@@ -928,12 +929,15 @@ def _settings_set(boot):
 
 
 def test_configure_box_helper_exists_and_wired_before_restart():
+    # The orchestrator now passes the parsed per-device env into _configure_box,
+    # so run() calls it as `_configure_box(box_env)` (it no longer reads the env
+    # itself). The ordering invariant is unchanged: configure runs before restart.
     src = DEFAULT_PY.read_text()
-    assert "_configure_box" in src and "_configure_box()" in src
-    cfg = src.rfind("_configure_box()")
+    assert "_configure_box" in src and "_configure_box(box_env)" in src
+    cfg = src.rfind("_configure_box(box_env)")
     restart = src.rfind("restart_kodi(")
     assert cfg != -1 and restart != -1 and cfg < restart, (
-        "_configure_box() must run before the restart"
+        "_configure_box(box_env) must run before the restart"
     )
 
 
@@ -988,6 +992,143 @@ def test_run_configures_box(boot):
     s = _settings_set(boot)
     assert s.get("weather.addon") == "weather.multi"
     assert s.get("lookandfeel.enablerssfeeds") is True
+
+
+# --------------------------------------------------------------------------- #
+# Per-device env LIFECYCLE OWNERSHIP (Phase 1 of modular-setup).
+#
+# The orchestrator run() — not _configure_box — owns reading and DELETING the
+# per-device tony7bones.env. _configure_box is a pure consumer of the dict passed
+# into it: it must make ZERO read_box_env / os.remove calls. run() must read the
+# env exactly once and delete it exactly once, AFTER configuration completes. This
+# is what lets a future multi-gate Guided flow share the env across gates instead
+# of having an early layer delete it out from under a later one.
+# --------------------------------------------------------------------------- #
+def test_configure_box_does_not_read_or_delete_env(boot, monkeypatch):
+    """_configure_box must neither read_box_env nor os.remove — env lifecycle is
+    the orchestrator's job. Spies prove zero calls (mutation guard: re-adding a
+    read/delete inside _configure_box flips these counts and fails)."""
+    reads = {"n": 0}
+    removes = {"n": 0}
+    real_read = boot.mod.read_box_env
+    real_remove = boot.mod.os.remove
+
+    def _spy_read(*a, **k):
+        reads["n"] += 1
+        return real_read(*a, **k)
+
+    def _spy_remove(*a, **k):
+        removes["n"] += 1
+        return real_remove(*a, **k)
+
+    monkeypatch.setattr(boot.mod, "read_box_env", _spy_read)
+    monkeypatch.setattr(boot.mod.os, "remove", _spy_remove)
+
+    boot.mod._configure_box({"DEVICE_NAME": "Office"})
+
+    assert reads["n"] == 0, "_configure_box must not read the env (orchestrator does)"
+    assert removes["n"] == 0, (
+        "_configure_box must not delete the env (orchestrator does)"
+    )
+
+
+def test_configure_box_consumes_passed_env_not_the_file(boot, monkeypatch, tmp_path):
+    """The env _configure_box acts on is the dict PASSED IN, never one it reads from
+    BOX_ENV_PATH. Point BOX_ENV_PATH at a file with a DIFFERENT OWM key; pass an env
+    carrying its own OWM key -> the OWM key Multi Weather stores (MAPAPI) is the one
+    from the PASSED env, proving _configure_box ignored the file entirely."""
+    # A file on disk that, if _configure_box (wrongly) read it, would win.
+    envfile = tmp_path / "tony7bones.env"
+    envfile.write_text('OWM_API_KEY="from-file-should-be-ignored"\n')
+    monkeypatch.setattr(boot.mod, "BOX_ENV_PATH", str(envfile))
+
+    boot.mod._configure_box({"OWM_API_KEY": "from-passed-dict"})
+
+    path = boot.mod._weather_multi_settings_path()
+    vals = {
+        s.get("id"): (s.text or "") for s in ET.parse(path).getroot().findall("setting")
+    }
+    # MAPAPI is where _apply_weather_from_env stores the OWM key. It must reflect the
+    # PASSED dict, not the on-disk file.
+    assert vals.get("MAPAPI") == "from-passed-dict"
+    # And the file is left untouched (no delete happened in _configure_box).
+    assert envfile.exists(), "_configure_box must not delete BOX_ENV_PATH"
+
+
+def test_run_reads_env_once_and_deletes_after_configure(boot, monkeypatch, tmp_path):
+    """run() owns the env lifecycle: it reads BOX_ENV_PATH exactly once, passes the
+    parsed dict into _configure_box, and deletes the file exactly once AFTER
+    _configure_box returns. Spies record call order so 'delete after configure' is a
+    runtime observation, not a source grep."""
+    envfile = tmp_path / "tony7bones.env"
+    envfile.write_text('DEVICE_NAME="Office"\nWEATHER_LOCATIONS="Sacramento, CA"\n')
+    monkeypatch.setattr(boot.mod, "BOX_ENV_PATH", str(envfile))
+
+    events = []
+    real_read = boot.mod.read_box_env
+    real_remove = boot.mod.os.remove
+    real_cfg = boot.mod._configure_box
+
+    def _read(path, *a, **k):
+        events.append(("read", path))
+        return real_read(path, *a, **k)
+
+    def _remove(path, *a, **k):
+        # Only record removals of the env file — run() also removes other paths
+        # (self_uninstall, etc.); those are not the lifecycle under test.
+        if path == str(envfile):
+            events.append(("remove", path))
+        return real_remove(path, *a, **k)
+
+    def _cfg(*a, **k):
+        events.append(("configure_start", a[0] if a else None))
+        out = real_cfg(*a, **k)
+        events.append(("configure_end", None))
+        return out
+
+    monkeypatch.setattr(boot.mod, "read_box_env", _read)
+    monkeypatch.setattr(boot.mod.os, "remove", _remove)
+    monkeypatch.setattr(boot.mod, "_configure_box", _cfg)
+
+    boot.mod.run()
+
+    kinds = [e[0] for e in events]
+    # Exactly one read of BOX_ENV_PATH, exactly one remove of it.
+    assert kinds.count("read") == 1, f"run() must read the env once, got {events}"
+    assert kinds.count("remove") == 1, f"run() must delete the env once, got {events}"
+    read_event = next(e for e in events if e[0] == "read")
+    remove_event = next(e for e in events if e[0] == "remove")
+    assert read_event[1] == str(envfile)
+    assert remove_event[1] == str(envfile)
+    # Order: read -> configure_start -> configure_end -> remove. The delete happens
+    # AFTER configuration completes (so a future gate could still consume the env if
+    # the orchestrator chose to defer the delete).
+    assert kinds.index("read") < kinds.index("configure_start")
+    assert kinds.index("configure_end") < kinds.index("remove")
+    # And the file is actually gone (the real remove ran).
+    assert not envfile.exists(), "run() must delete the env file on the env path"
+
+
+def test_run_no_env_does_not_delete(boot, monkeypatch, tmp_path):
+    """On a no-env desktop run (BOX_ENV_PATH absent), run() reads -> {} and the
+    delete is a guarded no-op: os.remove is never called. This preserves the
+    desktop snapshot path exactly (no spurious delete attempt)."""
+    envpath = str(tmp_path / "absent" / "tony7bones.env")
+    monkeypatch.setattr(boot.mod, "BOX_ENV_PATH", envpath)
+    removes = {"env": 0}
+    real_remove = boot.mod.os.remove
+
+    def _remove(path, *a, **k):
+        # Count only attempts to delete the env file; run() removes other paths.
+        if path == envpath:
+            removes["env"] += 1
+        return real_remove(path, *a, **k)
+
+    monkeypatch.setattr(boot.mod.os, "remove", _remove)
+
+    boot.mod.run()
+
+    assert removes["env"] == 0, "no-env run must not attempt to delete the env"
 
 
 # --------------------------------------------------------------------------- #
@@ -1507,7 +1648,9 @@ def test_iptv_env_m3u_epg_never_logged(boot, monkeypatch):
 
 
 def test_apply_rss_from_env_writes_feeds(boot):
-    boot.mod._apply_rss_from_env({"RSS_FEEDS": "http://a/feed; http://b/feed", "RSS_INTERVAL": "45"})
+    boot.mod._apply_rss_from_env(
+        {"RSS_FEEDS": "http://a/feed; http://b/feed", "RSS_INTERVAL": "45"}
+    )
     path = boot.mod.xbmcvfs.translatePath("special://home/userdata/RssFeeds.xml")
     feeds = ET.parse(path).getroot().findall("set/feed")
     assert [f.text for f in feeds] == ["http://a/feed", "http://b/feed"]

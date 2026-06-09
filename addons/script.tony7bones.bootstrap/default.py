@@ -911,12 +911,15 @@ def _ensure_iptv_custom_tv_groups(box_env=None):
 
 
 # The per-device config the provisioner derives from the owner's master .env and
-# pushes to the box (read once here; absent -> built-in defaults). It is read then
-# REMOVED so its secrets do not linger on the box.
+# pushes to the box. The ORCHESTRATOR (`run()`) reads it once, passes the parsed
+# dict into `_configure_box`, and owns the read-then-DELETE so its secrets do not
+# linger on the box — `_configure_box` is a pure consumer that never touches the
+# file. (Owning the lifecycle in one coordinator is what lets a future multi-gate
+# Guided flow share the env across gates instead of deleting it mid-run.)
 BOX_ENV_PATH = "/storage/emulated/0/kodi/tony.7.bones/tony7bones.env"
 
 
-def _configure_box():
+def _configure_box(box_env=None):
     """Apply the base box's weather + interface preferences:
       * weather provider  -> Multi Weather (weather.addon)
       * Multi Weather location 1 -> Sacramento, CA, US (name + coords)
@@ -928,9 +931,13 @@ def _configure_box():
       * IPTV custom groups -> enforce tvGroupMode=Custom + the custom-TV-groups
         file path in pvr.iptvsimple's instance-settings-1.xml (after the copy)
       * Estuary top bar   -> show weather info (Skin.SetBool, persists on restart)
+
+    `box_env` is the already-parsed per-device env dict (or None/{} when no env
+    was pushed). It is PASSED IN by the orchestrator — `_configure_box` neither
+    reads nor deletes the env file; that lifecycle belongs to `run()`.
     Defensive: any failure is logged and swallowed; never aborts the run."""
     try:
-        box_env = read_box_env(BOX_ENV_PATH)
+        box_env = box_env or {}
         _set_setting("weather.addon", WEATHER_ADDON)
         _set_setting("lookandfeel.enablerssfeeds", True)
         # Weather: env-driven (up to 5 resolved locations + the upgrade keys),
@@ -952,12 +959,6 @@ def _configure_box():
             skin = ""
         if not skin or skin == ESTUARY_SKIN_ID:
             xbmc.executebuiltin(f"Skin.SetBool({SHOW_WEATHERINFO})")
-        # Read-then-remove the per-device env so its secrets do not linger on box.
-        if box_env:
-            try:
-                os.remove(BOX_ENV_PATH)
-            except OSError:
-                pass
         _log(
             "_configure_box: weather provider/location set, RSS on, "
             "device files copied if present, top-bar weather on"
@@ -1150,7 +1151,19 @@ def run():
     # file-manager sources, the Estuary home-menu trim, weather/RSS/top-bar.
     _add_file_sources()
     _trim_home_menu()
-    _configure_box()
+    # The orchestrator owns the per-device env lifecycle: read it ONCE, pass the
+    # parsed dict into the (now pure-consumer) _configure_box, then DELETE it here
+    # after configuration completes — preserving today's effective timing (the env
+    # was previously read+deleted inside _configure_box). On a no-env desktop run
+    # read yields {} and the delete is a guarded no-op. Centralizing read+delete in
+    # one coordinator is what lets a future multi-gate flow share the env safely.
+    box_env = read_box_env(BOX_ENV_PATH)
+    _configure_box(box_env)
+    if box_env:
+        try:
+            os.remove(BOX_ENV_PATH)
+        except OSError:
+            pass
     # Activate MOD V2 LAST — immediately before the restart. activate_skin sets
     # lookandfeel.skin AND clicks "Yes" on Kodi's "Keep this skin?" confirm
     # (control 11 of the yes/no dialog) so the change COMMITS. Without that accept
