@@ -1,0 +1,232 @@
+# Plan — Modular "0-1-2" Setup (Foundation / IPTV / Add-ons)
+
+> Status: **DESIGN — panel-reviewed, nothing built.** Reviewed in parallel by three
+> specialist agents (Architecture, QA/testability, Kodi-runtime). This doc is the
+> orchestrated synthesis: the architecture, the panel-resolved decisions, the risks, and
+> the prioritized action backlog. No code until the P0 decisions are confirmed.
+
+## Goal
+
+Re-architect the Tony.7.Bones Kodi setup from a **monolithic one-shot** into a **modular,
+layered, opt-in installer**. Today `script.tony7bones.bootstrap/default.py` `run()` is a
+~55-line procedure that installs everything (repos + apps + curated video + skin + config)
+in one unattended shot, restarts once, and self-uninstalls. We want three independent
+layers where **each leaves a complete, working box** and the user can stop or continue at
+each gate — driven by the same modules whether run as a Guided wizard or an Express one-shot.
+
+## The 0-1-2 model
+
+| Layer | Name                 | Contents                                                                                                                                                              | Stop here =                                 |
+| ----- | -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| **0** | **Foundation**       | Kodi + Estuary MOD V2 skin + modv2plus patch (+ the skin's required dep closure: `script.module.pvr.artwork`, skinshortcuts, image.resource.select, Outline-HD icons) | A pristine, branded Kodi — **zero content** |
+| **1** | **IPTV** (opt-in)    | `pvr.iptvsimple` + inputstream clients + `.env`-driven instances                                                                                                      | Branded Kodi + _your_ live TV               |
+| **2** | **Add-ons** (opt-in) | curated repos + base apps + video add-ons (POV, Loop, Sports HD, YouTube) + weather/RSS                                                                               | The full box                                |
+
+Each layer is its own complete box; the next is purely additive.
+
+## Core principles
+
+- **Modules are the single source of truth.** Three re-entrant functions live in the shared
+  library `script.module.tony7bones`: `apply_foundation`, `apply_iptv`, `apply_addons`.
+  **Both** the Guided wizard and the Express one-shot call the _same_ functions — no forked
+  install logic, ever.
+- **Restart-as-seam — and it's actually "activate-skin-then-restart" as one
+  orchestrator-owned terminal operation.** Modules do work but never restart and never
+  activate the skin. The orchestrator owns cadence: **Guided** restarts after each gate;
+  **Express** defers, sets `lookandfeel.skin` **last**, and restarts **once** at the end.
+  (Activation is part of the seam because setting the skin too long before the restart
+  re-triggers Kodi's "Keep this skin?" revert to stock.)
+- **Re-entrancy via installed-state, not marker files.** Each module detects what's already
+  done and no-ops it; the box's actual state _is_ the resume state. Lean on the existing
+  idempotency (`is_installed` short-circuits, `_add_file_sources` dedupes,
+  `_ensure_iptv_custom_tv_groups` writes-only-if-changed).
+
+## Module contract
+
+A small shared result type lets modules **request** terminal operations the orchestrator
+**decides**:
+
+```python
+class LayerResult:
+    layer            # "foundation" | "iptv" | "addons"
+    ok               # reached a complete state? (success/degraded — orchestrator checks BEFORE restarting)
+    already_done     # re-entry no-op'd everything
+    installed        # {addon_id: state}
+    failed           # {addon_id: reason}
+    needs_skin_activation  # foundation sets this — a REQUEST
+    needs_restart          # a REQUEST; orchestrator owns the actual restart
+```
+
+```python
+def apply_foundation(env, *, dialog=None, log) -> LayerResult   # skin closure + modv2plus + file-sources + home-trim; NO content, NO PVR; sets needs_skin_activation
+def apply_iptv(env, *, dialog=None, log) -> LayerResult         # install pvr.iptvsimple closure + write/enforce instance-settings-N.xml (N providers)
+def apply_addons(env, *, dialog=None, log) -> LayerResult       # curated repos/apps/video + origin stamp + install-then-disable + weather/RSS
+```
+
+- **`env` is passed in, never read inside a module.** The orchestrator reads the per-device
+  env once, passes the dict down, and owns the **read-then-delete** — deleting only after
+  the _last_ layer of the session (today `_configure_box` deletes it mid-run, which would
+  starve a later gate in a multi-session Guided flow).
+- **Idempotency detection** per layer (all primitives already exist):
+  - Foundation: `is_installed(SKIN_ID)` + `is_installed(MODV2PLUS_ID)` + skin enabled; _activated_ = `getSkinDir()==SKIN_ID`.
+  - IPTV: `is_installed("pvr.iptvsimple")` + instance-settings keys already correct (file check — **not** a populated channel list, which is async).
+  - Add-ons: per-id `is_installed(aid)` + non-blank origin.
+
+## Panel-resolved decisions
+
+These were independently surfaced and converged on by ≥2 of the three lenses:
+
+1. **Self-uninstall lifecycle — the keystone (all three flagged as #1 blocker).** A
+   self-deleting one-shot cannot support multi-gate/resume — delete after Gate 0 and there's
+   no body to run Gate 1. **Resolution (Model A for v1):** the orchestrator add-on _persists_
+   across gates (its home tile _is_ the "continue setup" affordance) and self-uninstalls
+   **only** on terminal Finish / completing the last layer. **Express** keeps today's clean
+   end-of-run self-uninstall; **Guided** keeps the add-on and offers an explicit "Remove
+   Setup." The shared library (`xbmc.python.module`, invisible) is **always** left installed.
+   _v2 polish:_ Model C — a tiny permanent boot service surfaces a "Continue setup"
+   notification after reopen (reuses the proven modv2plus service pattern), letting the
+   heavy orchestrator stay transient.
+2. **`pvr.iptvsimple` moves from Foundation (Layer 0) into `apply_iptv` (Gate 1).** Today
+   it's in the base `ADDONS` — so Layer 0 isn't actually content-free until it moves. This
+   creates a deliberate cross-gate dependency: `apply_iptv` must install its own PVR backend
+   (or fail loudly), never silently write instance-settings for a missing add-on.
+3. **IPTV is two halves.** The host-side **build** (`build_iptv.py` on the `iptv` branch:
+   fetch from provider portals, curate groups/favorites, m3u vs xtream modes) belongs in the
+   **provisioner**, upstream of Setup — it needs provider creds and runs on the Mac. The
+   in-Kodi **apply** (`apply_iptv`) is the thin consumer: install the PVR backend + write/
+   enforce the staged `instance-settings-N.xml` + `customTVGroups-*.xml`. Generalize the
+   apply side to **N providers** (today it's hard-wired to instance-1/Network24).
+4. **Express is the Fire TV default; Guided is the advanced/power path.** Kodi can't
+   self-restart on Android — every gate restart is a manual close+reopen. Express = **one**
+   reopen; Guided = up to **three**. Each gate's reopen must land on a _complete, working
+   box_ so it never reads as "did it freeze?"
+5. **Per-gate install ritual stays intact, not collapsed.** Each add-on-installing gate does
+   its own direct-extract (proxy/GitHub-only deps first) → `UpdateLocalAddons` → 3s settle →
+   enable → enable source repos → stamp origins → restart. Plus a **version-guard**: skip
+   extracting a shared `script.module.*` when the installed version ≥ the resolved version,
+   so a later gate can't clobber Foundation's working module with an older shadow.
+
+## Build approach — Hybrid (adversarial-review verdict)
+
+A second, **adversarial** architecture pass was run specifically to steelman a from-scratch
+"white canvas" rebuild and find what the current base genuinely costs. Verdict: **hybrid —
+fresh orchestrator + fresh module boundaries, reusing the proven engine verbatim.** Not full
+greenfield (it re-pays hardware-proven debts for no engine-layer gain); not pure
+decompose-in-place (it would graft a resumable wizard onto a self-deleting host).
+
+**The exact line — what we keep, refactor, and write fresh:**
+
+| Code                                                                                        | Disposition                                                                               | Why                                                                                                                                             |
+| ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `net.py`, `index.py`, `install.py`, `repos.py`, `system.py`                                 | **Reuse as-is**                                                                           | Hardware-earned engine. `install_selection` is _already_ the module contract. `activate_skin`/`restart_kodi` encode blood-bought Fire TV fixes. |
+| install/config bodies (`_install_*`, `_configure_box` writers, `parse_env`/`read_box_env`)  | **Reuse-but-refactor** → move into `apply_foundation/iptv/addons` returning `LayerResult` | Correct + idempotent already; only their home and the env-ownership are wrong.                                                                  |
+| `run()` tail (summary, self-uninstall placement, activate+restart ordering, single cadence) | **Write fresh** as the orchestrator seam + state machine                                  | The only genuinely wrong-shaped code (~55 lines).                                                                                               |
+| orchestrator add-on, `LayerResult`, done-probes, cadence/lifecycle/resume                   | **Write fresh**                                                                           | Net-new; no legacy to preserve.                                                                                                                 |
+| fake-Kodi `boot` fixture                                                                    | **Reuse-but-relocate** → `conftest.py`                                                    | Keystone test asset; extract, don't rebuild.                                                                                                    |
+
+**Steal greenfield's one real win — a `KodiHost` port** (an interface wrapping the `xbmc*`
+calls) **for the NEW code only**: the orchestrator + layer modules get plain
+constructor-injected fakes (retiring the fragile `sys.modules` monkeypatch for new code),
+while the proven engine keeps its existing, already-tested harness. One real upgrade, zero
+churn to proven code.
+
+**Discipline:** rebuild the lifecycle (Model A persistence + env-ownership) **before** Guided
+ships — never graft a resumable wizard onto a self-deleting host. Target sublibrary layout:
+`script.module.tony7bones/lib/tony7bones/setup/` (`result.py`, `foundation.py`, `iptv.py`,
+`addons.py`, `probes.py`, `env.py`, `host.py`) + a fresh `script.tony7bones.bootstrap`
+orchestrator (`default.py` state machine + `service.py` resume nudge). The migration sequence
+below is sequenced so every step stays green and the lifecycle is rebuilt before any Guided
+release.
+
+## Key risks & mitigations
+
+| Risk                                          | Lens           | Mitigation                                                                                                              |
+| --------------------------------------------- | -------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Self-delete kills resume                      | all            | Model A: persist orchestrator until terminal Finish                                                                     |
+| Skin reverts (timeout) if activated too early | Arch, QA, Kodi | Orchestrator sets `lookandfeel.skin` LAST before restart, both cadences; assert no step runs between activate + restart |
+| env deleted mid-run starves later gates       | Arch, QA       | Orchestrator owns read-then-delete; delete only after last layer of session                                             |
+| Partial state (extracted-but-not-enabled)     | QA, Kodi       | Test half-state recovery; real-box verify; forward-only "rollback = run again"                                          |
+| IPTV async channel sync read as failure       | Kodi           | Done-marker = instance-settings written+enabled; channel count is informational only                                    |
+| Swallowed `except` → restart into broken box  | QA             | Each module returns success/degraded; orchestrator checks `ok` BEFORE restarting a gate                                 |
+| Cross-gate shared-module clobber              | Kodi           | Version-guard on shared `script.module.*`                                                                               |
+| Proxy-invisible deps (pvr.artwork)            | Kodi           | `apply_foundation` direct-extracts before closure resolve (as today)                                                    |
+| "Complete box" is a slogan not a check        | QA             | `assert_box_complete()` + dependency-closure-completeness walk per layer                                                |
+
+## Test strategy (QA lens)
+
+- **`conftest.py` shared harness** — extract the `boot` fake-Kodi fixture from
+  `test_bootstrap.py` into a reusable fixture (keystone for all modular tests).
+- **Characterization golden snapshot** of the current `run()` before any refactor, as the
+  "Express must reproduce the monolith" oracle.
+- **Idempotency tests per module** — run twice; assert written files are **byte-identical**
+  and zero new `.zip` fetches on the second run (current tests check counts, not bytes).
+- **`test_no_fork.py`** — inject module spies; assert Guided and Express drive the _identical_
+  `(module, args)` sequence; assert Guided = per-gate restart, Express = exactly one.
+- **Seam-guard test** — grep each module for `RestartApp`/`Quit`/`restart_kodi` → assert
+  absent (restart lives only in the orchestrator).
+- **`assert_box_complete(state, layer)`** post-conditions, incl. a dependency-closure walk
+  (no dangling required import after any layer).
+- **Partial-state recovery tests** — pre-seed extracted-but-not-installed / installed-subset.
+- **Wipe-and-run matrix on real hardware** (mocks can't see skin-revert, async PVR sync,
+  proxy-invisible deps, GL-wedge from rapid restarts): Foundation-only, +IPTV, +Add-ons,
+  Express all-in-one, re-entrancy (run a layer twice), resume-after-interrupt; verify
+  "Express end-state == cumulative Guided end-state" by diffing `Addons33.db`.
+
+## Refactor sequence (keep the suite green at every step)
+
+1. **Pin** current behavior with the characterization snapshot test.
+2. **Extract** `_install_base`/`_install_skin`/`_install_video`/`_configure_box` bodies into
+   library modules with **zero logic change** (re-export shims keep current tests green).
+3. **Introduce** the orchestrator + `LayerResult`; `run()` becomes `run_express()`; assert
+   the golden snapshot still matches.
+4. **Add** `run_guided()` (wizard probes installed-state, offers next undone gate); write the
+   no-fork + per-gate-restart tests.
+5. **Only then** make behavior changes (opt-in gating, move `pvr.iptvsimple` to Gate 1, env
+   ownership move, N-provider IPTV) — each behind its own failing-then-passing test.
+
+## Action backlog
+
+**P0 — confirm/unblock before any module split**
+
+- [ ] **Confirm Model A** self-uninstall lifecycle (orchestrator persists; uninstall only on Finish). _(Arch, Kodi)_
+- [ ] Move env **read-then-delete** out of `_configure_box` into the orchestrator. _(Arch, QA)_
+- [ ] Move `pvr.iptvsimple` + inputstream closure from Foundation `ADDONS` into `apply_iptv`. _(Arch, QA, Kodi)_
+- [ ] Encode the **activate-skin-is-last-before-restart** invariant (both cadences) + a test. _(Arch, Kodi)_
+- [ ] `conftest.py` shared fake-Kodi harness + characterization golden snapshot of `run()`. _(QA)_
+
+**P1 — the decomposition**
+
+- [ ] Add `LayerResult` + `apply_foundation`/`apply_iptv`/`apply_addons` to the library (behavior-preserving extraction). _(Arch)_
+- [ ] Refactor `run()` → `_orchestrate(layers, env, cadence)`; Express = the existing tail generalized. _(Arch)_
+- [ ] Add the Guided entry point (installed-state resume probe + next-undone-gate wizard). _(Arch, Kodi)_
+- [ ] `test_no_fork.py` + per-gate-restart placement test; seam-guard grep test. _(QA)_
+- [ ] Per-module idempotency byte-equality tests; `assert_box_complete` + closure walk. _(QA)_
+- [ ] Done-state probe library fns — `foundation_done()/iptv_applied()/addons_done()` sharing modv2plus's `_is_applied/_menu_is_ours/_settings_applied`; tolerate "applied but async-in-progress." _(Kodi)_
+
+**P2 — IPTV gate composition (depends on the `iptv` branch)**
+
+- [ ] Land `build_iptv.py` into the **provisioner** (host-side build), not the add-on; port `test_build_iptv.py` to main. _(Arch, QA)_
+- [ ] Generalize `apply_iptv` / `_ensure_iptv_custom_tv_groups` to **N instances** (loop providers). _(Arch, Kodi)_
+- [ ] Cross-gate dependency test: `apply_iptv` with no `pvr.iptvsimple` → self-install or loud fail, never silent. _(QA, Kodi)_
+- [ ] IPTV done-detection = instance-settings written+enabled (not channel count). _(Kodi)_
+
+**P3 — guardrails & hardware**
+
+- [ ] Version-guard shared `script.module.*` across gates (skip if installed ≥ resolved). _(Kodi)_
+- [ ] Per-gate notification copy: "box is complete — reopen to continue." _(Kodi)_
+- [ ] CI gate: no-fork + per-module idempotency + seam-guard as required checks. _(QA)_
+- [ ] Wipe-and-run matrix doc (extend `local-kodi-verification.md`); mandatory before any modular release. _(QA, Kodi)_
+- [ ] Evaluate **Model C** resume-service for v2. _(Kodi)_
+
+## Open decisions for the owner
+
+1. **Model A confirmed for v1?** (orchestrator persists, self-uninstall only on Finish; Model C as v2 polish) — panel strongly recommends yes.
+2. **Express as Fire TV default, Guided as advanced?** — panel recommends yes.
+3. **Sequencing:** merge the `iptv` branch (`build_iptv.py`) to `main` _before_ the IPTV gate work, or keep it parallel and integrate at P2? (P0/P1 don't need it; P2 does.)
+
+## Dependencies
+
+- The IPTV gate (P2) consumes the `iptv` branch's `build_iptv.py` + `test_build_iptv.py` and
+  the customization playbook. P0/P1 are independent of it.
+- The orchestrator-owned terminal seam relies on the proven `system.py` primitives
+  (`activate_skin` w/ the 10100/control-11 accept, `restart_kodi`, `self_uninstall`).
