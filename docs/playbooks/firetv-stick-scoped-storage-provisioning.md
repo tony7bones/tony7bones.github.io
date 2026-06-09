@@ -1,13 +1,13 @@
-# Provisioning a non-rooted Fire OS 11 Stick over ADB (scoped-storage relocation)
+# Provisioning a non-rooted Fire OS 8 / Android 11 Stick over ADB (scoped-storage relocation)
 
-How the fleet provisioner (`_tools/provision-kodi.sh`) brings a **non-rooted Fire OS
-11 Stick** (e.g. `AFTKRT` — Fire TV Stick 4K Max, Fire OS 8 = Android 11) to full
-parity with the other boxes — wipe → install → Setup → MOD V2 + patch — entirely
-over adb, with no rooting and no manual installs.
+How the fleet provisioner (`_tools/provision-kodi.sh`) brings a **non-rooted Fire OS 8
+(Android 11) Stick** (e.g. `AFTKRT` — Fire TV Stick 4K Max) to full parity with the
+other boxes — wipe → install → Setup → MOD V2 + patch — entirely over adb, with no
+rooting and no manual installs.
 
 ## TL;DR
 
-A non-rooted Fire OS 11 Stick blocks adb from Kodi's data dir (scoped storage), so a
+A non-rooted Fire OS 8 / Android 11 Stick blocks adb from Kodi's data dir (scoped storage), so a
 normal adb-push provision dies at "Library didn't land." The fix is the
 **Jocala/adbLink data-relocation trick**: a one-line `/sdcard/xbmc_env.properties`
 (`xbmc.data=/sdcard/kodi_data`) plus a `MANAGE_EXTERNAL_STORAGE` grant moves Kodi's

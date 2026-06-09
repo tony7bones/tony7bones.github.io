@@ -75,7 +75,13 @@ This makes the one-shot truly hands-off: install via Setup → restart → MOD V
 applies the patch. On **Android / Fire TV**, where Kodi can't self-relaunch, the user reopens
 Kodi after Setup prompts to close — and the service applies the patch on that reopen.
 
-### What it currently ships / changes (as of 1.4.0)
+The service has grown three more responsibilities since 1.4.0: it **waits for the Home to render
+before patching** (1.4.4 — patching before the home is up left a blank menu); it **deploys and
+self-heals the six-item home menu** (1.4.5 fixed a trim race, 1.4.6 made it lay down a verbatim
+home layout and self-heal it); and it is **settings-aware** (1.4.7 — it re-applies if the look
+settings are missing from `settings.xml`, see the persistence note in §3).
+
+### What it currently ships / changes (as of 1.4.7)
 
 | File / mechanism                                        | Purpose                                                                                                                                                                                                                                                                                      |
 | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -88,7 +94,7 @@ Kodi after Setup prompts to close — and the service applies the patch on that 
 | skin strings: `WeatherIcons.path` / `WeatherIcons.name` | point all weather widgets at **Outline HD**                                                                                                                                                                                                                                                  |
 | skin settings (set on Apply, in `apply_skin_settings`)  | `show_weatherinfo` ON; splash OFF (`EnableSplashScreen`), seasonal themes OFF (`DisableThemes`); Power menu → Classic list (`powermenu_list`); plain backgrounds for Power/Settings/Search (`enable_*_background`, 1.3.5) — all opt-out flags where _setting_ the flag turns the feature off |
 | dependency: `resource.images.weathericons.outline-hd`   | the official Outline HD weather icon pack                                                                                                                                                                                                                                                    |
-| `service.py` (1.4.0)                                    | boot service that auto-applies the patch once MOD V2 is the active skin (see §1.5)                                                                                                                                                                                                           |
+| `service.py` (1.4.0+)                                   | boot service that auto-applies the patch once MOD V2 is the active skin; **waits for the Home to render** before patching (1.4.4), **deploys/self-heals the six-item home menu** (1.4.5/1.4.6), and is **settings-aware** — re-applies if the look settings are missing (1.4.7). See §1.5    |
 
 ### The two patch-isms (the service now handles #1, but know them)
 
@@ -210,6 +216,12 @@ automatic. (Keep blocking `ok()` only for genuine errors the user must read.)
   reloads _and_ skin updates.
 - **Patched XML files** live in the skin's `addons/skin.estuary.modv2/xml/` → **overwritten** by a skin
   update (hence patch-ism #1).
+- **First-boot caveat (1.4.7):** `Skin.SetBool`/`Skin.SetString` only **flush to `settings.xml` on a
+  clean shutdown**. A freshly-provisioned box that never reaches a clean shutdown on its first boot
+  therefore **lost** the look settings and showed stock. So as of 1.4.7 the look settings
+  (`show_weatherinfo`, `WeatherIcons.path`/`.name` → Outline HD, `enable_power/settings/search_background`,
+  `powermenu_list`) are written **straight to `settings.xml` on Apply** instead of only via the skin
+  builtins. The **boot service is settings-aware** to match: it re-applies if those settings are missing.
 
 ### Textures.xbt (XBTF) extraction — the "header fix"
 
@@ -262,22 +274,30 @@ loose files over repacking the XBT.)
 
 ## 6. Today's shipped releases (the arc)
 
-| Ver   | What                                                                                                                                                                                                                                    |
-| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1.0.0 | New lean add-on from omega.4 (settings-menu swap, overlay toggle, crisp white wordmark); old `script.tony7bones.modv2.patch` retired; proxy released (repository.tony7bones 1.0.14)                                                     |
-| 1.0.1 | Apply/Restore auto-reload via notification (no blocking dialog)                                                                                                                                                                         |
-| 1.0.2 | Nav wordmark sized to match the Kodi mark                                                                                                                                                                                               |
-| 1.0.3 | Top-bar clock de-bolded (thin)                                                                                                                                                                                                          |
-| 1.0.4 | Top-bar weather → stock white (49 icons extracted from `Textures.xbt`)                                                                                                                                                                  |
-| 1.1.0 | "Tony.7.Bones MOD V2+" Skin Settings category; overlay toggle moved there                                                                                                                                                               |
-| 1.2.0 | Per-item toggles (weather/clock/wordmark) + in-tab Apply/Restore buttons                                                                                                                                                                |
-| 1.3.0 | Overlay hidden by default ("Disable System Info overlay"); weather → Outline HD pack (replaced the bundled white set with a dependency)                                                                                                 |
-| 1.3.1 | Outline HD applied to the **home** weather widget too (set `WeatherIcons` skin strings); **Restore now confirms**                                                                                                                       |
-| 1.3.5 | Power/Settings/Search **backgrounds OFF** by default (the `enable_*_background` opt-out flags in `apply_skin_settings`)                                                                                                                 |
-| 1.4.0 | **Boot service** (`service.py`) — auto-applies the patch once MOD V2 is the active skin, and re-applies after a MOD V2 update (the one-tap Setup now produces a fully patched box with no manual step). Manual Apply/Restore unchanged. |
+| Ver   | What                                                                                                                                                                                                                                                              |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.0.0 | New lean add-on from omega.4 (settings-menu swap, overlay toggle, crisp white wordmark); old `script.tony7bones.modv2.patch` retired; proxy released (repository.tony7bones 1.0.14)                                                                               |
+| 1.0.1 | Apply/Restore auto-reload via notification (no blocking dialog)                                                                                                                                                                                                   |
+| 1.0.2 | Nav wordmark sized to match the Kodi mark                                                                                                                                                                                                                         |
+| 1.0.3 | Top-bar clock de-bolded (thin)                                                                                                                                                                                                                                    |
+| 1.0.4 | Top-bar weather → stock white (49 icons extracted from `Textures.xbt`)                                                                                                                                                                                            |
+| 1.1.0 | "Tony.7.Bones MOD V2+" Skin Settings category; overlay toggle moved there                                                                                                                                                                                         |
+| 1.2.0 | Per-item toggles (weather/clock/wordmark) + in-tab Apply/Restore buttons                                                                                                                                                                                          |
+| 1.3.0 | Overlay hidden by default ("Disable System Info overlay"); weather → Outline HD pack (replaced the bundled white set with a dependency)                                                                                                                           |
+| 1.3.1 | Outline HD applied to the **home** weather widget too (set `WeatherIcons` skin strings); **Restore now confirms**                                                                                                                                                 |
+| 1.3.5 | Power/Settings/Search **backgrounds OFF** by default (the `enable_*_background` opt-out flags in `apply_skin_settings`)                                                                                                                                           |
+| 1.4.0 | **Boot service** (`service.py`) — auto-applies the patch once MOD V2 is the active skin, and re-applies after a MOD V2 update (the one-tap Setup now produces a fully patched box with no manual step). Manual Apply/Restore unchanged.                           |
+| 1.4.1 | Channel numbers off in Live TV; new V2+ icon                                                                                                                                                                                                                      |
+| 1.4.2 | Home-menu tweaks: TV → Guide, Favorites, hide 6 widgets                                                                                                                                                                                                           |
+| 1.4.3 | Build the skinshortcuts home menu deterministically                                                                                                                                                                                                               |
+| 1.4.4 | Service **waits for the Home to render** before patching (patching too early left a blank menu)                                                                                                                                                                   |
+| 1.4.5 | Six-item home-menu **trim race** fixed (deploy the menu without losing items)                                                                                                                                                                                     |
+| 1.4.6 | Service lays down a **verbatim home layout** and **self-heals** the six-item menu                                                                                                                                                                                 |
+| 1.4.7 | **First-boot look-settings persistence** — look settings now write straight to `settings.xml` on Apply (skin builtins only flush on a clean shutdown, which a first boot never reaches); the boot service is **settings-aware** and re-applies if they're missing |
 
 > The 1.3.2–1.3.4 intermediate releases are not detailed here (their `<news>` is in the
-> add-on history); 1.3.5 and 1.4.0 are the load-bearing steps for the 3.0 one-shot.
+> add-on history); 1.3.5 and 1.4.0 are the load-bearing steps for the 3.0 one-shot, and
+> 1.4.7 is the load-bearing step for first-boot look-settings persistence.
 
 ---
 

@@ -48,12 +48,21 @@ knows. Implemented in `repos.set_origins()` (an `UPDATE ... WHERE origin=''`, so
 only blank rows are touched) and `repos.enable_source_repos()`. The change takes
 effect on the next Kodi start (hence the end-of-run restart).
 
-## 3. Do NOT toggle `addons.unknownsources`
+## 3. Never toggle `addons.unknownsources` at RUNTIME — pre-seed it instead
 
 That setting only gates Kodi's _install-from-zip GUI_. It has **no bearing** on
-the direct-extract + `SetAddonEnabled` path. Flipping it also pops the "access to
-personal data… Proceed?" warning. Leaving it untouched = zero prompts. The Setup
-code never touches it (see the docstring in `script.tony7bones.bootstrap/default.py`).
+the direct-extract + `SetAddonEnabled` path. Flipping it at runtime also pops the
+"access to personal data… Proceed?" warning. So the **Setup** never touches it —
+direct-extract doesn't need it, and a live toggle would only add a prompt (see the
+docstring in `script.tony7bones.bootstrap/default.py`).
+
+What changed: the value is now handled **before Kodi boots**, not at runtime. The
+**provisioner** (`_tools/provision-kodi.sh <device>`) pre-seeds
+`addons.unknownsources=true` + `addons.updatemode=1` into `guisettings.xml` while
+Kodi is **DOWN** — a pre-boot file seed, not a runtime toggle, so there is still
+zero prompt. For non-rooted Fire OS 11 Sticks the same provisioner relocates the
+data dir so the seed lands where Kodi reads it (see
+`firetv-stick-scoped-storage-provisioning.md`).
 
 ## 4. Skip optional dependencies
 
@@ -222,3 +231,24 @@ The MOD V2+ patch is NOT applied during Setup — it cannot run until MOD V2 is 
 **active** skin, which only happens after this restart, by which point the Setup
 has self-uninstalled. The `script.tony7bones.modv2plus` **boot service** closes
 that gap (see `modv2plus-dev-cycle-and-lessons.md`).
+
+## 14. Per-device `.env` injection — read-then-remove the box env file
+
+Box configuration is per-device, and the secrets (weather API keys, IPTV
+credentials) must never live in the repo or linger on the box. The mechanism
+(bootstrap 1.4.0):
+
+- The **provisioner** pushes a per-device `tony7bones.env` to
+  `BOX_ENV_PATH = /storage/emulated/0/kodi/tony.7.bones/tony7bones.env` (generated
+  from a gitignored `.env.<device>`; `.env.device.example` is the committed
+  placeholder template).
+- During Setup, `_configure_box()` reads it via `read_box_env()` and applies, in
+  order: `_apply_weather_from_env()` (up to 5 locations + Weatherbit/OWM keys),
+  `_ensure_iptv_custom_tv_groups(box_env)` (custom groups + m3u/EPG + groups-only),
+  `_apply_rss_from_env()`, and the device name/web/settings-level prefs.
+- It then **READS-THEN-REMOVES** the file (`os.remove`) so no secret lingers on
+  the box after the run.
+
+This is the runtime counterpart to the provisioner's pre-boot `guisettings.xml`
+seed (§3): the provisioner stages secrets and core settings while Kodi is down,
+the Setup consumes the env file at runtime and deletes it.

@@ -108,8 +108,12 @@ pretend `RestartApp` did anything.
 ## (C) The robust restart-and-continue pattern
 
 1. Do **all** install + config work first.
-2. Set `lookandfeel.skin` **LAST**, immediately before the restart (beats the
-   "Keep this skin?" ~timeout that silently reverts it to stock).
+2. Set `lookandfeel.skin`, then **accept Kodi's "Keep this skin?" dialog**
+   (window 10100) by clicking its Yes button — **`SendClick(11)`** — so the skin
+   persists instead of reverting to stock on the dialog's timeout. Shipped as
+   `tony7bones.system.activate_skin(skin_id, log)` (module ≥ 1.1.2). _(Do NOT rely
+   on "restart promptly to beat the timeout" — that advice was wrong; see the ⭐
+   fix section above.)_
 3. Self-uninstall (delete own dir; the restart finalizes it).
 4. **Restart, platform-correctly:**
    - **Desktop:** `RestartApp`.
@@ -155,12 +159,14 @@ State-persistence options, ranked for our case:
 
 ## (E) Gotchas we hit live this session
 
-- **"Keep this skin?" timeout** reverted `lookandfeel.skin` when set too early →
-  set it **last**, restart promptly. _(fixed)_
+- **"Keep this skin?" timeout** reverted `lookandfeel.skin` when the dialog
+  (window 10100) was never accepted → after setting the skin, **accept the dialog
+  via `SendClick(11)`** (`activate_skin`, module ≥ 1.1.2). _(fixed)_
 - **skinshortcuts builds async** → blank home until built → service must
   **build + wait**. _(fixed in modv2plus 1.4.1)_
-- **Service raced the skin load** → no-op / partial apply → needs a readiness
-  wait (see D). _(open — the main remaining fix)_
+- **Service raced the skin load** → no-op / partial apply → the service now waits
+  for the Home (window 10000) to render AND the target skin to be active before
+  applying (see D). _(SHIPPED in modv2plus ≥ 1.4.4; current 1.4.7)_
 - **Rapid force-kill cycles wedged GL init** → only a device reboot cleared it.
   Don't hammer restarts.
 - **Freshly-extracted add-ons** need `UpdateLocalAddons()` + a settle delay before
@@ -170,19 +176,25 @@ State-persistence options, ranked for our case:
 
 ## (F) Concrete recommendations for OUR Setup
 
-1. **Stop calling `RestartApp` on Fire TV.** Detect the platform; on Android show
-   a clear, intentional "Setup complete — **close Kodi and reopen it** to finish"
-   screen (not a generic dialog that reads as frozen), **or** force-close Kodi so
-   reopening is the only action left.
-2. **Harden the service readiness wait** (biggest reliability win): poll until the
-   skin is active **and** the skin/Home window has actually loaded, with a
-   timeout, before applying — not just `skin == skin.estuary.modv2`.
+1. **Platform-correct restart — SHIPPED.** Desktop uses `RestartApp`; on
+   Android / Fire TV Setup uses **`Quit`** (clean shutdown that flushes the skin)
+   plus a clear "Setup complete — **close Kodi and reopen it** to finish" message,
+   not `RestartApp` (a no-op there) and not a hard kill.
+2. **Service readiness wait — SHIPPED** (modv2plus ≥ 1.4.4; current 1.4.7): the
+   boot service polls until the skin is active **and** the Home window (10000) has
+   actually rendered, before applying — not just `skin == skin.estuary.modv2`.
 3. **Keep run-once as an idempotent state check** (Home.xml marker), not a fragile
    marker file.
 4. **Never rapid-cycle restarts** (wedges Fire TV graphics).
 5. **Evaluate a force-close** (the `plugin.close.kodi` technique) on Android so the
    end state is unambiguous (Kodi closes → user reopens), replacing the ambiguous
    "it froze" experience.
+
+> **Relocated Fire OS 11 Sticks:** on a non-rooted Fire OS 11 Stick Kodi's data
+> lives under the relocated `KODI_DATA_PATH` (e.g. `/sdcard/kodi_data/.kodi`), not
+> the default Android/data tree — so the log, guisettings, and Addons DB you read
+> to verify the restart/continue are under that path. See
+> `docs/playbooks/firetv-stick-scoped-storage-provisioning.md`.
 
 ---
 

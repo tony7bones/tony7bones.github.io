@@ -4,7 +4,7 @@ A repeatable runbook to provision a fresh Tony.7.Bones Kodi box on a Fire TV /
 Android device **entirely from your laptop** over ADB-on-network — wipe, install
 the repo, run the one-tap Setup, restart, and verify. This is the
 hardware-proven flow (bedroom TV, 2026-06-08) after the restart-and-continue
-fixes landed (module 1.1.2 / bootstrap 1.3.2 / modv2plus 1.4.4).
+fixes landed (module 1.1.3 / bootstrap 1.4.0 / modv2plus 1.4.7).
 
 > **What the Setup produces (one run):** 12 source repos + base apps + curated
 > video add-ons + Live TV (pvr.iptvsimple) + Weather (Multi→Sacramento) + RSS +
@@ -15,16 +15,26 @@ fixes landed (module 1.1.2 / bootstrap 1.3.2 / modv2plus 1.4.4).
 
 ## ⚡ Quickest path: the guided script
 
-Don't copy-paste the steps below — just run the provisioner. It asks for the
-device IP and **walks you through every step** (confirms before the wipe, waits
-while the install runs, dismisses the summary remotely when you've seen it on the
-TV, reopens, and verifies + screenshots at the end):
+Don't copy-paste the steps below — just run the provisioner. Its first argument is
+a **device name** (`.env.<device>`), **not** an IP — passing an IP errors out with
+"No per-device config". It reads everything (DEVICE_IP/name + all weather/IPTV/RSS
+config) from that file and **walks you through every step** (confirms before the
+wipe, waits while the install runs, dismisses the summary remotely when you've seen
+it on the TV, reopens, and verifies + screenshots at the end):
 
 ```bash
-_tools/provision-kodi.sh              # it will ask for the IP
-# or pass it directly:
-_tools/provision-kodi.sh 192.168.7.84
+_tools/provision-kodi.sh <device>     # bedroom | office | shield | travelstick | travelstick2
+# e.g.:
+_tools/provision-kodi.sh bedroom
 ```
+
+It only prompts for the IP if `DEVICE_IP` is missing from `.env.<device>`.
+
+> **Per-device config (bootstrap 1.4.0).** Each device's weather location, IPTV,
+> RSS, and device name come from a single gitignored `.env.<device>` file (the
+> provisioner pushes it as `tony7bones.env`; bootstrap injects, then reads it and
+> removes it). The committed placeholder is `.env.device.example` — copy it to
+> `.env.<device>` and fill it in per box.
 
 The rest of this doc is the **manual walkthrough** the script automates — useful
 for understanding what it does, debugging, or running a step by hand.
@@ -90,8 +100,9 @@ adb -s $D shell am force-stop org.xbmc.kodi; sleep 2
 # the first `adb push` dumps an add-on's *contents* loose into addons/ instead
 # of making a subdir (a real bug we hit).
 adb -s $D shell "rm -rf $K && mkdir -p $K/userdata $K/addons"
-# turn the web server on so the rest of this runbook can drive Kodi headless
-printf '<settings version="2"><setting id="services.webserver">true</setting><setting id="services.webserverport">8080</setting><setting id="services.webserverauthentication">false</setting><setting id="services.esenabled">true</setting></settings>' > /tmp/kodi_gs.xml
+# turn the web server on so the rest of this runbook can drive Kodi headless,
+# and pre-seed unknown-sources + manual-update mode (what the provisioner seeds)
+printf '<settings version="2"><setting id="services.webserver">true</setting><setting id="services.webserverport">8080</setting><setting id="services.webserverauthentication">false</setting><setting id="services.esenabled">true</setting><setting id="addons.unknownsources">true</setting><setting id="addons.updatemode">1</setting></settings>' > /tmp/kodi_gs.xml
 adb -s $D push /tmp/kodi_gs.xml "$K/userdata/guisettings.xml"
 ```
 
@@ -193,8 +204,9 @@ adb -s $D shell screencap -p /sdcard/home.png && adb -s $D pull /sdcard/home.png
 ```
 
 A good box: `skin.estuary.modv2` active, current window `Home`, patch marker `1`,
-`0` focus errors, weather `Sacramento`, and the screenshot shows the trimmed
-MOD V2+ menu (Movies / TV shows / TV / Add-ons / **Favorites** / Weather).
+`0` focus errors, weather showing the location set in `.env.<device>`, and the
+screenshot shows the trimmed MOD V2+ menu (Movies / TV shows / TV / Add-ons /
+**Favorites** / Weather).
 
 ---
 
@@ -247,3 +259,6 @@ Then verify from the notebook (step 8).
   for the modv2plus patch, and `_tools/firetv.sh` helpers.
 - `docs/playbooks/release-and-deploy.md` — how the add-ons themselves are built
   and shipped.
+- `docs/playbooks/firetv-stick-scoped-storage-provisioning.md` — provisioning a
+  **non-rooted Fire OS 8 / Android 11 Stick**, where adb can't reach Kodi's data
+  dir and the provisioner relocates it via `xbmc.data=/sdcard/kodi_data`.

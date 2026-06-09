@@ -173,23 +173,52 @@ python3 _tools/generate_repo.py       # confirm: a second run yields NO diff
 
 Create a tag for any known-good state. Current ones:
 
+- `perfectly-working-2026-06-06` — the shipped, hardware-proven one-shot state.
+- `main-rollback-2026-06-06` — the pre-one-shot `main`, for rolling back a bad release.
+- `v2.2.1` — the current `repository.tony7bones` proxy release.
+
+Historical (kept for reference):
+
 - `clean-setup-1.0.17` — a bare, clean baseline.
 - `perfectly-working-2026-06-04` — full working build before the one-shot work.
 
-## Current source versions (the shipped 3.0 one-shot, on `main`)
+## Current source versions (on `main`)
 
 | Add-on                        | Version |
 | ----------------------------- | ------- |
 | `repository.tony7bones`       | 2.2.1   |
-| `script.module.tony7bones`    | 1.1.0   |
-| `script.tony7bones.bootstrap` | 1.3.0   |
-| `script.tony7bones.modv2plus` | 1.4.0   |
+| `script.module.tony7bones`    | 1.1.3   |
+| `script.tony7bones.bootstrap` | 1.4.0   |
+| `script.tony7bones.modv2plus` | 1.4.7   |
 
-> The 3.0 one-shot (skin + MOD V2+ patch installed and activated by Setup) is
-> **deployed live and proven on a wiped Kodi and a real Fire TV**. The bumps in
-> this milestone: `script.module.tony7bones` → 1.1.0 (the `install_selection`
-> API), `script.tony7bones.bootstrap` → 1.3.0 (unattended video + the skin/patch
-> install step), `script.tony7bones.modv2plus` → 1.4.0 (the boot auto-apply
-> service; 1.3.5 added the backgrounds-off opt-out flags), and the proxy
-> `repository.tony7bones` → 2.2.1. The standalone `script.tony7bones.video` add-on
-> was removed.
+> The one-shot (skin + MOD V2+ patch installed and activated by Setup) is
+> **deployed live and proven on a wiped Kodi and a real Fire TV**. The earlier
+> milestone established the core flow: `script.module.tony7bones` → 1.1.0 (the
+> `install_selection` API), `script.tony7bones.bootstrap` → 1.3.0 (unattended
+> video + the skin/patch install step), `script.tony7bones.modv2plus` → 1.4.0
+> (the boot auto-apply service; 1.3.5 added the backgrounds-off opt-out flags),
+> and the proxy `repository.tony7bones` → 2.2.1. The standalone
+> `script.tony7bones.video` add-on was removed.
+>
+> The most recent work hardened per-device provisioning and first-boot
+> reliability:
+>
+> - **`script.tony7bones.bootstrap` → 1.4.0** — per-device `.env` configuration.
+>   Each box carries one gitignored `.env.<device>` that drives its weather / IPTV
+>   / RSS / device settings; the provisioner pushes it to the device as
+>   `tony7bones.env`, and bootstrap injects it then **reads-then-removes** it so no
+>   secrets linger. `.env.device.example` is the committed placeholder template.
+> - **`script.tony7bones.modv2plus` → 1.4.7** — first-boot persistence: the boot
+>   service now waits for the Home to render before building the menu (shipped
+>   ≥ 1.4.4), so the patched MOD V2 home renders on the first paint instead of
+>   racing the async skinshortcuts build.
+> - **`script.module.tony7bones` → 1.1.3** — the shared library now accepts Kodi's
+>   "Keep this skin?" dialog (window 10100) via `SendClick(11)` in `activate_skin`
+>   (≥ 1.1.2), so the skin persists without relying on restart timing.
+> - **The provisioner workflow** — `_tools/provision-kodi.sh <device>` reads
+>   `.env.<device>`, wipes the box, and seeds guisettings (web server, device
+>   name, settings level, `addons.unknownsources=true`, `addons.updatemode=1`)
+>   **before Kodi starts**. For non-rooted Fire OS 11 Sticks it relocates Kodi
+>   data to writable `/sdcard` — see
+>   `docs/playbooks/firetv-stick-scoped-storage-provisioning.md`. All five boxes
+>   are provisioned.

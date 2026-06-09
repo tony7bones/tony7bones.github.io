@@ -25,17 +25,19 @@ WHY and the exact code locations.
 - The four first-party add-ons (current versions):
   - `repository.tony7bones` **2.2.1** — the virtual proxy repository (local
     `127.0.0.1:61234` server; released via `deploy.py`).
-  - `script.module.tony7bones` **1.1.0** — shared LIBRARY (`xbmc.python.module`,
+  - `script.module.tony7bones` **1.1.3** — shared LIBRARY (`xbmc.python.module`,
     hidden); holds all the generic install machinery incl. `install_selection`.
-  - `script.tony7bones.bootstrap` **1.3.0** — "Tony.7.Bones Setup", the one-shot.
+  - `script.tony7bones.bootstrap` **1.4.0** — "Tony.7.Bones Setup", the one-shot.
     In ONE unattended run it installs the source repos + base apps + the curated
     video add-ons (POV, The Loop, Sports HD, YouTube, no picker), applies the
     base-box config, **AND installs + activates the Estuary MOD V2 skin + the
     MOD V2+ patch**, then self-uninstalls and restarts once.
-  - `script.tony7bones.modv2plus` **1.4.0** — "Estuary MOD V2+" skin patch. Has a
+  - `script.tony7bones.modv2plus` **1.4.7** — "Estuary MOD V2+" skin patch. Has a
     **boot service** (`service.py`) that auto-applies the patch the first time
     MOD V2 is the active skin (and re-applies after a MOD V2 update), plus a
-    manual Apply/Restore chooser + in-tab buttons for hand use.
+    manual Apply/Restore chooser + in-tab buttons for hand use. 1.4.7 adds
+    first-boot look-settings persistence (writes `settings.xml` directly; the
+    boot service is settings-aware).
 - **Retired — do not reference:** the standalone `script.tony7bones.video` (its
   install logic is folded into the shared library as `install_selection`), and
   `script.tony7bones.modv2.patch` (replaced by `script.tony7bones.modv2plus`).
@@ -44,6 +46,12 @@ WHY and the exact code locations.
   Manager source). `addons/` holds add-on source + built zips + `addons.xml` +
   `hosted/` and is what the proxy fetches via raw.githubusercontent.
   `generate_repo.py` compiles `dropbox/` → root and `addons/` → zips.
+- **Per-device `.env` config (bootstrap 1.4.0):** one gitignored `.env.<device>`
+  per box drives weather (5 locations + keys), IPTV (groups + m3u/EPG +
+  groups-only), RSS, and device name/web/settings-level. The provisioner pushes
+  it to the box as `tony7bones.env`; bootstrap injects it in `_configure_box`
+  then read-then-removes it. The committed placeholder template is
+  `.env.device.example`.
 
 ## Golden rules — install (Kodi 21 Omega)
 
@@ -54,8 +62,10 @@ WHY and the exact code locations.
    JSON-RPC `Addons.SetAddonEnabled`. (No JSON-RPC install method exists on Omega.)
 2. **Stamp `origin`** into `Addons<NN>.db` after enabling + enable the source
    repos. Blank origin = "unknown source" → The Loop modal-locks, POV menu is empty.
-3. **Don't toggle `addons.unknownsources`** — irrelevant to direct-extract and it
-   pops a warning.
+3. **Never toggle `addons.unknownsources` at RUNTIME** — direct-extract doesn't
+   need it and a live toggle pops a warning. The **provisioner** instead
+   pre-seeds `unknownsources=true` (+ `updatemode=1`) into `guisettings.xml`
+   while Kodi is DOWN — a pre-boot file seed, not a runtime toggle.
 4. **Skip `optional="true"` deps** — Kodi installs them on-demand (this is why
    Google Drive was being pulled via resolveurl).
 5. **Install-then-disable** an unwanted REQUIRED dep (The Loop → Dailymotion):
@@ -72,8 +82,13 @@ WHY and the exact code locations.
 9. A **repository** must not carry `xbmc.python.script`; a one-shot utility
    self-uninstalls; a shared lib is `xbmc.python.module` — all to avoid a
    permanent home tile.
-10. Estuary skin settings: use `Skin.SetBool(...)` (in-memory, survives shutdown);
-    a direct `settings.xml` write is clobbered on shutdown.
+10. Estuary skin settings: `Skin.SetBool(...)` is in-memory and only flushes to
+    disk on a CLEAN shutdown. That makes it the right tool when Setup will
+    trigger an orderly restart, but a FIRST boot never gets a clean shutdown, so
+    a `Skin.SetBool` made on first boot is lost. This is exactly why
+    modv2plus **1.4.7** writes `settings.xml` directly for first-boot look-settings
+    persistence — a direct write survives where the in-memory bool would be lost
+    (the settings-aware boot service then reconciles).
 11. **The closure resolver SKIPS the `127.0.0.1` proxy** (`repos.py`). So any
     first-party / GitHub-only add-on the resolver can't see — `script.module.pvr.artwork`
     (b-jesch GitHub-only) and our own `script.tony7bones.modv2plus` — must be
@@ -90,6 +105,20 @@ WHY and the exact code locations.
 14. **Wipe-and-test on a real fresh Kodi is mandatory** before shipping the
     one-shot — it catches integration bugs (skin-revert, proxy-invisible deps,
     enable-before-set) that unit tests with mocked `xbmc*` cannot.
+
+## Provisioning (per-device, pre-boot)
+
+→ `docs/playbooks/firetv-stick-scoped-storage-provisioning.md`
+
+- **`_tools/provision-kodi.sh <device>`** reads `.env.<device>`, wipes the box,
+  and seeds `guisettings.xml` (web server, device name, settings level,
+  `addons.unknownsources=true`, `addons.updatemode=1`) **before Kodi starts** —
+  an offline file seed, never a runtime toggle (see install rule 3).
+- **Fire OS 11 Stick relocation:** a non-rooted Fire OS 11 Stick can't run Kodi
+  out of `Android/data`. A per-device `KODI_DATA_PATH` outside `Android/data`
+  triggers relocation to writable `/sdcard` via `xbmc_env.properties`
+  (`xbmc.data=/sdcard/kodi_data`) + an appops `MANAGE_EXTERNAL_STORAGE` grant +
+  a first-launch retry. All 5 boxes are provisioned this way.
 
 ## Golden rules — release
 
@@ -134,5 +163,6 @@ WHY and the exact code locations.
 ## Restore points
 
 Latest known-good (3.0 one-shot, live): `perfectly-working-2026-06-06` and the
-rollback safety net `main-rollback-2026-06-06`. Older: `clean-setup-1.0.17`,
-`perfectly-working-2026-06-04`. Make a tag for any known-good state before risky work.
+rollback safety net `main-rollback-2026-06-06`. Current repo-add-on release:
+`v2.2.1`. Older: `clean-setup-1.0.17`, `perfectly-working-2026-06-04`. Make a tag
+for any known-good state before risky work.

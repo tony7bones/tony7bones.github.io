@@ -21,6 +21,10 @@ services.webserverport = 8080
 services.webserverauthentication = false
 ```
 
+> On a real device the provisioner seeds more than the webserver: it also sets the
+> **device name**, **settings level**, `addons.unknownsources = true`, and
+> `addons.updatemode = 1` (see "Fresh-profile reset" below).
+
 ## Fresh-profile reset (for clean tests)
 
 1. Quit Kodi cleanly, then force-kill:
@@ -37,6 +41,24 @@ services.webserverauthentication = false
 > **Gotcha:** Kodi **rewrites `sources.xml` on fresh-profile init** and may drop
 > a pre-seeded files source. If the `.tony7.bones` source vanishes, re-add it and
 > restart once.
+
+> **On a real device the canonical reset+seed is `_tools/provision-kodi.sh
+<device>`.** It reads `.env.<device>` (per-box weather / IPTV / RSS / device
+> config; `.env.device.example` is the committed template), wipes the box, and
+> seeds guisettings **before Kodi starts** — web server, device name, settings
+> level, `addons.unknownsources = true`, and `addons.updatemode = 1`. Use it
+> instead of hand-wiping a device profile.
+
+### Fire OS 11 Sticks — the live data dir is relocated
+
+On a **non-rooted Fire OS 11 Stick** the provisioner relocates Kodi's data
+**outside** the default `Android/data` path to writable `/sdcard` (via a
+per-device `KODI_DATA_PATH`, e.g. `/sdcard/kodi_data/.kodi`, applied through
+`xbmc_env.properties` → `xbmc.data=/sdcard/kodi_data`). **On a relocated stick the
+live data dir, `kodi.log`, the Addons DB, `guisettings.xml`, and `settings.xml`
+all live under `/sdcard/kodi_data/.kodi`, NOT the default Android/data tree** —
+target verification at THAT path. See
+`docs/playbooks/firetv-stick-scoped-storage-provisioning.md`.
 
 ## Triggering a script add-on
 
@@ -73,7 +95,7 @@ actual `GetDirectory` output is what turned "I think it works" into "it works."
 
 ## Hard lesson — a wipe-and-run is non-negotiable
 
-The 3.0 one-shot (skin + MOD V2+ patch installed and activated by Setup) passed
+The one-shot (skin + MOD V2+ patch installed and activated by Setup) passed
 **unit-green AND code-QA-green** and was still broken on a real box. A genuine
 **wipe-and-test on a fresh Kodi** (and a real Fire TV) caught **three integration
 bugs that the tests and code-only review both missed**:

@@ -38,8 +38,9 @@ disable_ids, dialog, log)` (folded in from the retired standalone video Setup).
 - `system.py` — platform tag, Android detection, self-uninstall, restart.
 
 The Setup declares `<requires><import addon="script.module.tony7bones"
-version="1.1.0"/>`, so Kodi **auto-installs the library from the repo** when the
-Setup is installed — no chicken-and-egg. The library is invisible on the home
+version="1.1.2"/>` (a **minimum** pin; the shipped library is 1.1.3), so Kodi
+**auto-installs the library from the repo** when the Setup is installed — no
+chicken-and-egg. The library is invisible on the home
 screen because it provides no executable. Keep its public API small and stable;
 bump the module version + the Setup's `<requires>` together if the contract ever
 changes.
@@ -69,7 +70,13 @@ prompts, no video picker:
 5. **Self-uninstall** the base Setup. The **shared library is left installed**.
 6. **Base-only steps:** add the File-Manager sources, trim the Estuary home menu
    to TV / Add-ons / Favourites / Weather (see `kodi-install-mechanics.md` §11),
-   then the weather/RSS/top-bar box config.
+   then the box config — which is now **per-device and `.env`-driven**.
+   `_configure_box()` reads a provisioner-staged `tony7bones.env` (at
+   `BOX_ENV_PATH = /storage/emulated/0/kodi/tony.7.bones/tony7bones.env`) via
+   `read_box_env()` and applies weather (up to 5 locations + Weatherbit/OWM keys),
+   IPTV (custom groups + m3u/EPG + groups-only), RSS, and device name/web/
+   settings-level prefs, then **reads-then-removes** the env file (`os.remove`) so
+   no secret lingers (see `kodi-install-mechanics.md` §14).
 7. **Activate MOD V2 LAST:** set `lookandfeel.skin = skin.estuary.modv2`
    **immediately before the restart** — this is load-bearing (see
    `kodi-install-mechanics.md` §13).
@@ -80,6 +87,18 @@ prompts, no video picker:
 A cancelled progress dialog mid-install aborts cleanly: no summary, no
 self-uninstall, no restart (the partial install is harmless; re-running Setup
 completes it).
+
+### Provisioner handoff
+
+The Setup no longer self-configures the box from hardcoded defaults — it depends
+on a **provisioner-staged environment**. `_tools/provision-kodi.sh <device>` seeds
+`guisettings.xml` (incl. `addons.unknownsources=true` + `addons.updatemode=1`)
+**before Kodi starts**, generates a per-device `tony7bones.env` from a gitignored
+`.env.<device>` and pushes it to `BOX_ENV_PATH`, and — for non-rooted **Fire OS 11
+sticks** — relocates the Kodi data dir outside `Android/data` (a per-device
+`KODI_DATA_PATH` triggers relocation via `xbmc_env.properties`). The Setup then
+consumes that staged env at runtime (step 6) and removes it. See
+`firetv-stick-scoped-storage-provisioning.md`.
 
 ## The curated video install (`install_selection`)
 

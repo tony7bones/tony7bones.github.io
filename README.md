@@ -35,7 +35,7 @@ The install URL is the site **root** and never changes:
 ## The add-ons
 
 Current shipped versions: `repository.tony7bones` 2.2.1 · `script.tony7bones.bootstrap`
-1.3.0 · `script.tony7bones.modv2plus` 1.4.0 · `script.module.tony7bones` 1.1.0.
+1.4.0 · `script.tony7bones.modv2plus` 1.4.7 · `script.module.tony7bones` 1.1.3.
 
 | Add-on                        | Name in Kodi                | What it is                                                                                                                                                                                                                                                                     |
 | ----------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -57,6 +57,12 @@ produces the complete box — it runs fully unattended (no prompts, no picker) a
 - adds file-manager sources, trims the Estuary home menu, sets weather/RSS/top-bar
   preferences, copies any user-placed device files;
 - shows one summary, self-uninstalls, then restarts once.
+
+Box config (weather location, IPTV custom groups + m3u/EPG, RSS feeds, device
+name) now comes from a per-device `.env.<device>` (bootstrap 1.4.0) rather than
+hard-coded values — copy the committed `.env.device.example` template, fill it in
+per box, and the provisioner / bootstrap inject it at setup time. Secrets stay
+gitignored.
 
 On desktop Kodi the restart is automatic. On Fire TV / Android, Kodi cannot
 self-restart, so Setup prompts the user to close Kodi and reopen it; on reopen MOD
@@ -141,6 +147,10 @@ The pre-push hook blocks a push unless tests pass, lint is clean, generated file
 are fresh, every changed add-on bumped its version, and the version locations on
 main agree and are tagged.
 
+The fleet provisioner `_tools/provision-kodi.sh <device>` reads `.env.<device>` to
+wipe and seed a box's guisettings (web control, device name, settings level,
+unknown sources, add-on update mode) before running Setup.
+
 ## Documentation
 
 - `docs/playbooks/kodi-install-mechanics.md` — how Setup installs add-ons on Omega
@@ -154,5 +164,7 @@ main agree and are tagged.
   ADB-on-real-Fire-TV development cycle + hard-won lessons.
 - `docs/playbooks/firetv-adb-dev.md` — driving the Fire TV over ADB + JSON-RPC
   (`_tools/firetv.sh`).
+- `docs/playbooks/firetv-stick-scoped-storage-provisioning.md` — provisioning a
+  non-rooted Fire OS 11 Stick over ADB (data relocation to writable storage).
 - `docs/plans/` — historical design docs (implemented).
 - `.claude/skills/kodi-super-agent/SKILL.md` — agent operating guide.

@@ -98,10 +98,21 @@ work directly against the full `.kodi/` tree without `run-as` or root:
 /sdcard/Android/data/org.xbmc.kodi/files/.kodi/temp/kodi.log
 ```
 
-If you ever upgrade to a Fire TV on Android 10+, the `adb shell run-as
-org.xbmc.kodi` trick only works for debuggable builds, which Kodi releases
-are not. The workaround is a rooted device or a custom adb backup extraction.
-**For this hazel/Android 9 device, direct push/pull works.**
+If you ever provision a Fire TV on Android 10+ (e.g. a non-rooted Fire OS 8 /
+Android 11 Stick), the `adb shell run-as org.xbmc.kodi` trick only works for
+debuggable builds, which Kodi releases are not — and these devices are not
+rootable. The supported path is the **non-root data-relocation method**
+(`xbmc.data=/sdcard/kodi_data` in `/sdcard/xbmc_env.properties` +
+`MANAGE_EXTERNAL_STORAGE` grant) documented in
+[`firetv-stick-scoped-storage-provisioning.md`](firetv-stick-scoped-storage-provisioning.md),
+which the fleet provisioner automates. **For this hazel/Android 9 device, direct
+push/pull works — no relocation needed.**
+
+> **See also:**
+> [`firetv-stick-scoped-storage-provisioning.md`](firetv-stick-scoped-storage-provisioning.md)
+> (non-root relocation for Fire OS 8 / Android 11 Sticks) and
+> [`install-from-notebook.md`](install-from-notebook.md) (the full from-laptop
+> provision runbook).
 
 ---
 
@@ -350,7 +361,10 @@ device advertises the randomized `e2:d8:c4` form.)
 
 This only happens on Android 10+. This device is Android 9 — if you see it,
 double-check `adb -s 192.168.7.162:5555 shell getprop ro.build.version.release`.
-If it is ≥10, you need a rooted device or to sideload via a different path.
+If it is ≥10 (e.g. a non-rooted Fire OS 8 / Android 11 Stick), use the non-root
+data-relocation method in
+[`firetv-stick-scoped-storage-provisioning.md`](firetv-stick-scoped-storage-provisioning.md)
+instead of expecting direct push to work.
 
 ### ReloadSkin has no visible effect
 
