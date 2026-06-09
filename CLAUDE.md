@@ -224,7 +224,7 @@ The generator reads from the two source trees and writes the served output (an I
 
 ### CI — `.github/workflows/generate_repo.yml`
 
-Runs the full `_tools/` test suite, `ruff`, the generator + `git status --porcelain` staleness check, and the version-consistency gate (main only). **CI never commits anything back to main** — it only validates; if generated files are stale the author must run the generator (or `deploy.py`) and commit. This is why generated zips are deterministic: a non-reproducible zip would make CI flag stale files on every run.
+Runs the full `_tools/` test suite, `ruff`, the generator + `git status --porcelain` staleness check, and the version-consistency gate (main only). **CI never commits anything back to main** — it only validates; if generated files are stale the author must run the generator (or `deploy.py`) and commit. This is why generated zips are deterministic: a non-reproducible zip would make CI flag stale files on every run. To stay deterministic the generator excludes build-time cruft dirs (`_CRUFT_DIRS`: `__pycache__`, `.ruff_cache`, `.pytest_cache`, `.mypy_cache`) from every zip/index/mirror — otherwise a lint/test cache left in an add-on source dir gets baked into the zip and silently flips CI red (this happened to `script.tony7bones.modv2plus-1.4.7.zip`, which shipped a stray `.ruff_cache/`).
 
 ### Adding a new Kodi add-on
 
