@@ -328,3 +328,23 @@ documented**.
 - **Push/version:** committed locally; generated zip/`addons.xml` not regenerated and version
   not bumped — deferred to a milestone push (see Execution notes) to avoid advertising an
   unfinished feature in the user-visible version.
+
+### Phase 2a — DONE (local commit; scaffolding, behavior-preserving)
+
+- **Landed:** the `tony7bones/setup/` sublibrary — `result.py` (`LayerResult`), `host.py`
+  (`KodiHost` port + `RealKodiHost`, lazy method-level delegation), `env.py` (env parsing
+  relocated VERBATIM out of `default.py`). `default.py` now imports the env funcs from there
+  (re-export, identity-verified). **`tony7bones/__init__.py` made lazy** (PEP 562
+  `__getattr__`) so the engine is no longer eagerly imported.
+- **What's now true:** the module-contract primitives exist, and the engine is
+  **import-decoupled** — `import tony7bones.setup.host/env/result` works with **no xbmc**
+  (proven by blocking `xbmc` at the import meta-path), while the engine still lazily requires
+  Kodi on use. So the `apply_*` layers (2b/c/d) can be unit-tested via plain fake-`KodiHost`
+  injection — no `sys.modules` xbmc monkeypatching.
+- **Tested:** `_tools/test_setup_lib.py` (incl. off-box-import + commented-out-`KEY=value`
+  guard tests); mutation-verified. **Gated:** snapshot UNCHANGED; 424 passed / 1 xfailed;
+  ruff clean. **Coverage:** `setup/` **100%**.
+- **QA completeness review:** ACCEPT; closed — commented-out-key guard test, real off-box
+  decoupling (lazy `__init__`), port-growth note, tautology fix.
+- **2b input:** the `KodiHost` port grows **test-driven** in 2b (it'll gain
+  `dialog`/`progress`/`getAddonInfo`(version)/settings accessors as the layers need them).
