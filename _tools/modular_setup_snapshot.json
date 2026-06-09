@@ -1,0 +1,481 @@
+{
+  "bare": {
+    "installed": [
+      "inputstream.ffmpegdirect",
+      "pvr.iptvsimple",
+      "repository.709",
+      "repository.Magnetic",
+      "repository.bugatsinho",
+      "repository.cocoscrapers",
+      "repository.diggz.zip",
+      "repository.ivarbrandt",
+      "repository.kodifitzwell",
+      "repository.kodinerds",
+      "repository.loop",
+      "repository.peno64",
+      "repository.redwizard",
+      "repository.umbrella",
+      "script.ezmaintenanceplus",
+      "script.module.certifi",
+      "script.module.pvr.artwork",
+      "script.module.requests",
+      "script.module.urllib3",
+      "script.realdebrid",
+      "script.tony7bones.modv2plus",
+      "weather.multi"
+    ],
+    "extracted": [
+      "inputstream.ffmpegdirect",
+      "pvr.iptvsimple",
+      "repository.709",
+      "repository.Magnetic",
+      "repository.bugatsinho",
+      "repository.cocoscrapers",
+      "repository.diggz.zip",
+      "repository.ivarbrandt",
+      "repository.kodifitzwell",
+      "repository.kodinerds",
+      "repository.loop",
+      "repository.peno64",
+      "repository.redwizard",
+      "repository.umbrella",
+      "script.ezmaintenanceplus",
+      "script.module.certifi",
+      "script.module.pvr.artwork",
+      "script.module.requests",
+      "script.module.urllib3",
+      "script.realdebrid",
+      "script.tony7bones.modv2plus",
+      "weather.multi"
+    ],
+    "disabled": [],
+    "enable_sequence": [
+      {
+        "id": "repository.709",
+        "enabled": true
+      },
+      {
+        "id": "repository.bugatsinho",
+        "enabled": true
+      },
+      {
+        "id": "repository.cocoscrapers",
+        "enabled": true
+      },
+      {
+        "id": "repository.diggz",
+        "enabled": true
+      },
+      {
+        "id": "repository.ivarbrandt",
+        "enabled": true
+      },
+      {
+        "id": "repository.kodifitzwell",
+        "enabled": true
+      },
+      {
+        "id": "repository.kodinerds",
+        "enabled": true
+      },
+      {
+        "id": "repository.loop",
+        "enabled": true
+      },
+      {
+        "id": "repository.Magnetic",
+        "enabled": true
+      },
+      {
+        "id": "repository.peno64",
+        "enabled": true
+      },
+      {
+        "id": "repository.redwizard",
+        "enabled": true
+      },
+      {
+        "id": "repository.umbrella",
+        "enabled": true
+      },
+      {
+        "id": "script.module.urllib3",
+        "enabled": true
+      },
+      {
+        "id": "script.module.certifi",
+        "enabled": true
+      },
+      {
+        "id": "script.module.requests",
+        "enabled": true
+      },
+      {
+        "id": "script.ezmaintenanceplus",
+        "enabled": true
+      },
+      {
+        "id": "script.module.urllib3",
+        "enabled": true
+      },
+      {
+        "id": "script.module.certifi",
+        "enabled": true
+      },
+      {
+        "id": "script.module.requests",
+        "enabled": true
+      },
+      {
+        "id": "script.realdebrid",
+        "enabled": true
+      },
+      {
+        "id": "script.module.urllib3",
+        "enabled": true
+      },
+      {
+        "id": "script.module.certifi",
+        "enabled": true
+      },
+      {
+        "id": "script.module.requests",
+        "enabled": true
+      },
+      {
+        "id": "weather.multi",
+        "enabled": true
+      },
+      {
+        "id": "inputstream.ffmpegdirect",
+        "enabled": true
+      },
+      {
+        "id": "pvr.iptvsimple",
+        "enabled": true
+      },
+      {
+        "id": "repository.709",
+        "enabled": true
+      },
+      {
+        "id": "repository.Magnetic",
+        "enabled": true
+      },
+      {
+        "id": "repository.bugatsinho",
+        "enabled": true
+      },
+      {
+        "id": "repository.cocoscrapers",
+        "enabled": true
+      },
+      {
+        "id": "repository.diggz.zip",
+        "enabled": true
+      },
+      {
+        "id": "repository.ivarbrandt",
+        "enabled": true
+      },
+      {
+        "id": "repository.kodifitzwell",
+        "enabled": true
+      },
+      {
+        "id": "repository.kodinerds",
+        "enabled": true
+      },
+      {
+        "id": "repository.loop",
+        "enabled": true
+      },
+      {
+        "id": "repository.peno64",
+        "enabled": true
+      },
+      {
+        "id": "repository.redwizard",
+        "enabled": true
+      },
+      {
+        "id": "repository.umbrella",
+        "enabled": true
+      },
+      {
+        "id": "repository.709",
+        "enabled": true
+      },
+      {
+        "id": "repository.Magnetic",
+        "enabled": true
+      },
+      {
+        "id": "repository.bugatsinho",
+        "enabled": true
+      },
+      {
+        "id": "repository.cocoscrapers",
+        "enabled": true
+      },
+      {
+        "id": "repository.diggz.zip",
+        "enabled": true
+      },
+      {
+        "id": "repository.ivarbrandt",
+        "enabled": true
+      },
+      {
+        "id": "repository.kodifitzwell",
+        "enabled": true
+      },
+      {
+        "id": "repository.kodinerds",
+        "enabled": true
+      },
+      {
+        "id": "repository.loop",
+        "enabled": true
+      },
+      {
+        "id": "repository.peno64",
+        "enabled": true
+      },
+      {
+        "id": "repository.redwizard",
+        "enabled": true
+      },
+      {
+        "id": "repository.umbrella",
+        "enabled": true
+      },
+      {
+        "id": "script.module.pvr.artwork",
+        "enabled": true
+      },
+      {
+        "id": "script.tony7bones.modv2plus",
+        "enabled": true
+      },
+      {
+        "id": "skin.estuary.modv2",
+        "enabled": true
+      }
+    ],
+    "settings": [
+      {
+        "setting": "weather.addon",
+        "value": "weather.multi"
+      },
+      {
+        "setting": "lookandfeel.enablerssfeeds",
+        "value": true
+      }
+    ],
+    "builtins": [
+      "UpdateLocalAddons()",
+      "UpdateLocalAddons()",
+      "UpdateLocalAddons()",
+      "UpdateLocalAddons()",
+      "UpdateLocalAddons()",
+      "UpdateLocalAddons()",
+      "Skin.SetBool(HomeMenuNoMovieButton)",
+      "Skin.SetBool(HomeMenuNoTVShowButton)",
+      "Skin.SetBool(HomeMenuNoMusicButton)",
+      "Skin.SetBool(HomeMenuNoMusicVideoButton)",
+      "Skin.SetBool(HomeMenuNoRadioButton)",
+      "Skin.SetBool(HomeMenuNoPicturesButton)",
+      "Skin.SetBool(HomeMenuNoVideosButton)",
+      "Skin.SetBool(HomeMenuNoGamesButton)",
+      "Skin.SetBool(show_weatherinfo)"
+    ],
+    "summary": [
+      "Tony.7.Bones Setup",
+      "Repos: 12/12\nApps: 4/4\nVideo add-ons: 0/4\nEstuary MOD V2: FAILED\nRestart will finish setup."
+    ],
+    "self_uninstalled": true,
+    "files": {
+      "sources_xml": [
+        {
+          "name": "special://home",
+          "path": "special://home"
+        },
+        {
+          "name": "special://kodi",
+          "path": "/storage/emulated/0/kodi/"
+        },
+        {
+          "name": ".tony.7.bones",
+          "path": "https://tony7bones.github.io/"
+        }
+      ],
+      "estuary_settings": {
+        "homemenunomoviebutton": "true",
+        "homemenunotvshowbutton": "true",
+        "homemenunomusicbutton": "true",
+        "homemenunomusicvideobutton": "true",
+        "homemenunoradiobutton": "true",
+        "homemenunopicturesbutton": "true",
+        "homemenunovideosbutton": "true",
+        "homemenunogamesbutton": "true"
+      },
+      "weather_multi_settings": {
+        "loc1_name": "Sacramento, CA, US",
+        "loc1_url": "us/ca/sacramento",
+        "loc1_lat": "38.5816",
+        "loc1_lon": "-121.4944"
+      }
+    }
+  },
+  "full": {
+    "installed": [
+      "plugin.video.dailymotion_com",
+      "plugin.video.pov",
+      "plugin.video.sporthdme",
+      "plugin.video.the-loop",
+      "plugin.video.youtube",
+      "script.module.pvr.artwork",
+      "script.tony7bones.modv2plus",
+      "skin.estuary.modv2"
+    ],
+    "extracted": [
+      "plugin.video.pov",
+      "plugin.video.sporthdme",
+      "plugin.video.the-loop",
+      "plugin.video.youtube",
+      "script.module.pvr.artwork",
+      "script.tony7bones.modv2plus",
+      "skin.estuary.modv2"
+    ],
+    "disabled": [
+      "plugin.video.dailymotion_com"
+    ],
+    "enable_sequence": [
+      {
+        "id": "repository.709",
+        "enabled": true
+      },
+      {
+        "id": "repository.bugatsinho",
+        "enabled": true
+      },
+      {
+        "id": "repository.cocoscrapers",
+        "enabled": true
+      },
+      {
+        "id": "repository.diggz",
+        "enabled": true
+      },
+      {
+        "id": "repository.ivarbrandt",
+        "enabled": true
+      },
+      {
+        "id": "repository.kodifitzwell",
+        "enabled": true
+      },
+      {
+        "id": "repository.kodinerds",
+        "enabled": true
+      },
+      {
+        "id": "repository.loop",
+        "enabled": true
+      },
+      {
+        "id": "repository.Magnetic",
+        "enabled": true
+      },
+      {
+        "id": "repository.peno64",
+        "enabled": true
+      },
+      {
+        "id": "repository.redwizard",
+        "enabled": true
+      },
+      {
+        "id": "repository.umbrella",
+        "enabled": true
+      },
+      {
+        "id": "script.module.pvr.artwork",
+        "enabled": true
+      },
+      {
+        "id": "script.tony7bones.modv2plus",
+        "enabled": true
+      },
+      {
+        "id": "skin.estuary.modv2",
+        "enabled": true
+      }
+    ],
+    "settings": [
+      {
+        "setting": "weather.addon",
+        "value": "weather.multi"
+      },
+      {
+        "setting": "lookandfeel.enablerssfeeds",
+        "value": true
+      },
+      {
+        "setting": "lookandfeel.skin",
+        "value": "skin.estuary.modv2"
+      }
+    ],
+    "builtins": [
+      "UpdateLocalAddons()",
+      "UpdateLocalAddons()",
+      "Skin.SetBool(HomeMenuNoMovieButton)",
+      "Skin.SetBool(HomeMenuNoTVShowButton)",
+      "Skin.SetBool(HomeMenuNoMusicButton)",
+      "Skin.SetBool(HomeMenuNoMusicVideoButton)",
+      "Skin.SetBool(HomeMenuNoRadioButton)",
+      "Skin.SetBool(HomeMenuNoPicturesButton)",
+      "Skin.SetBool(HomeMenuNoVideosButton)",
+      "Skin.SetBool(HomeMenuNoGamesButton)",
+      "Skin.SetBool(show_weatherinfo)"
+    ],
+    "summary": [
+      "Tony.7.Bones Setup",
+      "Repos: 12/12\nApps: 4/4\nVideo add-ons: 4/4\nEstuary MOD V2: installed\nRestart will finish setup."
+    ],
+    "self_uninstalled": true,
+    "files": {
+      "sources_xml": [
+        {
+          "name": "special://home",
+          "path": "special://home"
+        },
+        {
+          "name": "special://kodi",
+          "path": "/storage/emulated/0/kodi/"
+        },
+        {
+          "name": ".tony.7.bones",
+          "path": "https://tony7bones.github.io/"
+        }
+      ],
+      "estuary_settings": {
+        "homemenunomoviebutton": "true",
+        "homemenunotvshowbutton": "true",
+        "homemenunomusicbutton": "true",
+        "homemenunomusicvideobutton": "true",
+        "homemenunoradiobutton": "true",
+        "homemenunopicturesbutton": "true",
+        "homemenunovideosbutton": "true",
+        "homemenunogamesbutton": "true"
+      },
+      "weather_multi_settings": {
+        "loc1_name": "Sacramento, CA, US",
+        "loc1_url": "us/ca/sacramento",
+        "loc1_lat": "38.5816",
+        "loc1_lon": "-121.4944"
+      }
+    }
+  }
+}
