@@ -58,7 +58,7 @@ class _FakeResp:
 def test_module_id_and_version():
     root = _addon_root()
     assert root.get("id") == "script.module.tony7bones"
-    assert root.get("version") == "1.1.3"
+    assert root.get("version") == "1.2.0"
     assert root.get("provider-name") == "tony7bones"
 
 

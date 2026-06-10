@@ -22,43 +22,29 @@ tech-debt seam, the apply_iptv reporting bug, the zero-content guarantee). Keep 
 
 ---
 
-## ▶ VERY NEXT STEP — the MILESTONE PUSH
+## ▶ VERY NEXT STEP — the no-computer-setup track
 
-> **Phase 6 is COMPLETE** — the computer-setup track is hardened and DONE (see the Phase 6
-> entry in `docs/plans/modular-setup.md`): the keep-skin race fix (verify-then-re-assert +
-> 200 ms poll + skinshortcuts quiescence; BOTH 5b·3/5d variants live-proven, incl. a FORCED
-> lost-confirm → re-assert run), the library/bootstrap version guard (`SETUP_API` /
-> `REQUIRED_SETUP_API`), `assert_box_complete` + the dependency-closure walk (live-passed
-> in-Kodi on the Express-built box), the restart-prompt autoclose (a NEW third dialog-destroy
-> window was found live: modv2plus's post-activation patch rebuild — Kodi even segfaulted —
-> end state survived; the prompt is now lifetime-bounded), CI gates on this branch, and the
-> standing "Express not live-proven since the rewrite" gap CLOSED with a fresh full
-> unattended Express run (all 8 groups, counts == builder, POV 11 items, origins, RSS,
-> self-uninstall, env consumed, `assert_box_complete` green).
+> **The MILESTONE PUSH is DONE** — `modular-setup` is on origin with the milestone version
+> bumps: `script.module.tony7bones` **1.2.0** (the setup layers + probes +
+> `assert_box_complete` + the PVR-disabled config window + staged-IPTV consumption +
+> keep-skin hardening + the `SETUP_API` guard), `script.tony7bones.bootstrap` **1.5.0**
+> (modular Setup: Express unchanged, `run_foundation`/`run_iptv`/`run_addons` standalone,
+> Guided wizard via `SETUP_MODE=guided`, Model A lifecycle; `<requires>` now pins the
+> library at 1.2.0 — lockstep), modv2plus already 1.4.8. The proxy
+> (`repository.tony7bones`) is UNTOUCHED. The superseded `iptv` branch was deleted at the
+> push. **`main` is still the SHIPPED 3.0 one-shot state** — merging `modular-setup` →
+> `main` + the proxy release is a FUTURE owner decision, not this milestone.
 >
-> **The milestone push, in order:**
->
-> 1. Version-bump `script.module.tony7bones` + `script.tony7bones.bootstrap`
->    (`addons/<id>/addon.xml` + news; MINOR bumps — this is a feature batch), run
->    `python3 _tools/generate_repo.py`, commit the regenerated files.
-> 2. Push the `modular-setup` branch (the pre-push hook runs tests/ruff/staleness; the CI
->    workflow now gates this branch too, incl. the named invariant step).
-> 3. Delete the superseded `iptv` branch at the push.
-> 4. ~~Fire TV wipe-and-run matrix~~ — **DONE on the owner-authorized Bedroom box**
->    (192.168.7.84:5555, both legs: Express one-tap AND the `SETUP_MODE=guided` per-gate
->    manual-reopen walk; full evidence in the **Phase 6 addendum** in
->    `docs/plans/modular-setup.md`). It found + fixed TWO real bugs, both live re-verified
->    on the box: the SLOW-BOX keep-skin race (`activate_skin` now waits out skinshortcuts'
->    first build between re-asserts; suite **768 passed / 1 xfailed**) and the provisioner's
->    too-short 60 s self-close wait (whose fallback reboot killed the skin flush; now ~4 min).
->    The Bedroom box was left COMPLETE and working (MOD V2 patched, both IPTV providers ==
->    builder counts, video apps + origins, weather/RSS; at Home).
-> 5. Owner decisions still queued: optionally document `SETUP_MODE` in `.env.device.example`
->    (a protect-hook kept the agent from adding the commented block); the no-computer-setup
->    track (Setup with no provisioner/env) is a SEPARATE follow-on plan doc.
+> **Next:** the no-computer-setup track (Setup with no provisioner/env — separate plan
+> doc): the six owner answers → then N1. Also still queued: optionally document
+> `SETUP_MODE` in `.env.device.example` (a protect-hook kept the agent from adding the
+> commented block).
 
 Context: all of Phase 5 + Phase 6 are DONE — 5a (Foundation), 5b·1/2/3 (IPTV), 5c
-(`run_addons`), 5d (Guided + Model A), 6 (harden). NOTE: Kodi's `RestartApp` is a NO-OP on
+(`run_addons`), 5d (Guided + Model A), 6 (harden + the Fire TV matrix on the Bedroom box:
+both legs, two real bugs found + fixed + re-verified — the slow-box keep-skin race and the
+provisioner self-close bound; full evidence in the Phase 6 addendum in
+`docs/plans/modular-setup.md`). NOTE: Kodi's `RestartApp` is a NO-OP on
 macOS — the clean-quit+relaunch IS the real restart on the local box; drive wizard list
 dialogs over JSON-RPC with `Input.ButtonEvent` (key-level), not `Input.Select`.
 
@@ -93,13 +79,11 @@ dialogs over JSON-RPC with `Input.ButtonEvent` (key-level), not `Input.Select`.
   proof, and the unattended Express one-tap; found + fixed the SLOW-BOX keep-skin race in
   `activate_skin` and the provisioner's too-short self-close wait, both re-verified on the
   box; verbatim Android UX copy recorded; box left complete and working).
-- **NOT PUSHED** — milestone-push pending: needs `script.module.tony7bones` + `script.tony7bones.bootstrap`
-  version bumps + `--news` (modv2plus is already 1.4.8). Push the branch once 5b lands or at the next
-  coherent milestone.
-- The deploy gate (`_tools/test_installer_present.py`) is on **`main`**. The `iptv` branch is
-  **SUPERSEDED** — its deliverables (build_iptv.py + tests + playbook) are integrated on
-  `modular-setup` (Phase 5b·2, adapted to the N-provider model); **delete the branch at the
-  milestone push**.
+- **PUSHED to origin** — the milestone push landed with `script.module.tony7bones` 1.2.0 +
+  `script.tony7bones.bootstrap` 1.5.0 (modv2plus already 1.4.8; proxy untouched).
+- The deploy gate (`_tools/test_installer_present.py`) is on **`main`**. The superseded
+  `iptv` branch (deliverables integrated in Phase 5b·2) was **deleted** — origin and local —
+  at the milestone push.
 
 ---
 

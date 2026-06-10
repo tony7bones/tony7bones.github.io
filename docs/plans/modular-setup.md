@@ -1,10 +1,15 @@
 # Plan — Modular "0-1-2" Setup (Foundation / IPTV / Add-ons)
 
-> Status: **BUILD IN PROGRESS — Phases 0–3 + 5a + 5b (COMPLETE: 5b·1/5b·2/5b·3) + 5c + 5d DONE
-> (local commits on `modular-setup`, suite 733 passed / 1 xfailed); all three layers are
-> INDEPENDENTLY RUNNABLE (`run_foundation` / `run_iptv` / `run_addons`), and the **Guided
-> wizard + Model A lifecycle** (`run_guided`, env-keyed `SETUP_MODE=guided` routing in the
-> shipped `run()`, Express untouched) are live-proven; NEXT = Phase 6 (harden + Fire TV).** Design was panel-reviewed in parallel by three specialist agents
+> Status: **COMPUTER-SETUP TRACK COMPLETE + MILESTONE PUSHED — Phases 0–6 DONE incl. the
+> Fire TV matrix (suite 768 passed / 1 xfailed); all three layers are INDEPENDENTLY
+> RUNNABLE (`run_foundation` / `run_iptv` / `run_addons`), the **Guided wizard + Model A
+> lifecycle** (`run_guided`, env-keyed `SETUP_MODE=guided` routing in the shipped `run()`,
+> Express untouched) are live-proven, and the `modular-setup` branch is PUSHED to origin
+> with the milestone version bumps (`script.module.tony7bones` 1.2.0,
+> `script.tony7bones.bootstrap` 1.5.0, modv2plus 1.4.8; proxy untouched — `main` still
+> serves the shipped 3.0 one-shot state until the owner decides the main merge).
+> NEXT = the no-computer-setup track (separate plan doc; awaiting the six owner answers
+> → N1).** Design was panel-reviewed in parallel by three specialist agents
 > (Architecture, QA/testability, Kodi-runtime); this doc is the orchestrated synthesis
 > PLUS the running phase log. The design sections below are kept as written (the
 > contract); current truth lives in the **Phase log** and the **Phase 5b** section at
