@@ -210,13 +210,49 @@ _adb shell "ls $K/addons/script.module.tony7bones/lib/tony7bones/system.py" >/de
   die "Library didn't land correctly. Re-run (the wipe creates addons/ up front)."
 ok "Setup $BV + library $MV installed."
 
-# --- 4b. push the per-device config (derived from the master .env) ---------- #
+# --- 4b. host-build the curated IPTV artifacts + stage them on the box ------ #
+# The HOST half of the IPTV layer (Phase 5b·2): build_iptv.py turns the env's
+# IPTV_<N>_* blocks into curated per-provider artifacts (local playlist with the
+# full groups grammar — relabel/sort/favorites — incl. the xtream->m3u synthesis
+# pvr.iptvsimple cannot do itself, plus customTVGroups + instance-settings).
+# They are pushed to the device-convention iptv/ dir and the derived env gets
+# IPTV_STAGING_DIR so apply_iptv consumes them; on ANY failure the box falls
+# back to the 5b·1 direct-env config (m3u providers still work; xtream skips).
+IPTV_STAGED=""
+if grep -qE '^IPTV_[0-9]+_' "$ENV_FILE"; then
+  say "  building curated IPTV artifacts (host-side: fetch + curate per provider)…"
+  IPTV_OUT="$REPO_ROOT/iptv-build/$DEVICE"
+  rm -rf "$IPTV_OUT" # never push STALE artifacts from a previous run
+  if python3 "$REPO_ROOT/_tools/build_iptv.py" --env "$ENV_FILE" --out "$IPTV_OUT"; then
+    :
+  else
+    # A PARTIAL build (one provider failed) is still worth staging: apply_iptv
+    # falls back per-provider, so the built providers keep their curation.
+    warn "IPTV host build reported failures — staging what DID build; failed providers fall back to direct-env config (xtream ones will be skipped)."
+  fi
+  if ls "$IPTV_OUT"/instance-settings-*.xml >/dev/null 2>&1; then
+    IPTV_DIR="$(dirname "$BOX_ENV_PATH")/iptv"
+    _adb shell "mkdir -p $IPTV_DIR" >/dev/null 2>&1
+    if _adb push "$IPTV_OUT/." "$IPTV_DIR/" >/dev/null 2>&1; then
+      IPTV_STAGED="$IPTV_DIR"
+      ok "IPTV artifacts staged on the box ($IPTV_DIR)."
+    else
+      warn "Couldn't push the IPTV artifacts — box falls back to direct-env IPTV config."
+    fi
+  else
+    warn "No IPTV artifacts built — box falls back to direct-env config."
+  fi
+fi
+
+# --- 4c. push the per-device config (derived from the master .env) ---------- #
 # Drop DEVICE_IP (laptop-only connection metadata) and override DEVICE_NAME with
 # the prompted value. The bootstrap reads this for weather/IPTV/RSS during the
 # run, then REMOVES it. Absent .env -> nothing pushed -> bootstrap uses defaults.
 if [[ -f "$ENV_FILE" ]]; then
   grep -v '^[[:space:]]*DEVICE_IP=' "$ENV_FILE" |
     sed "s|^DEVICE_NAME=.*|DEVICE_NAME=\"$DEVNAME\"|" >/tmp/_t7b_env
+  # Point the in-Kodi half at the staged artifacts — ONLY when they landed.
+  [[ -n "$IPTV_STAGED" ]] && printf 'IPTV_STAGING_DIR="%s"\n' "$IPTV_STAGED" >>/tmp/_t7b_env
   _adb shell "mkdir -p $(dirname "$BOX_ENV_PATH")" >/dev/null 2>&1
   if _adb push /tmp/_t7b_env "$BOX_ENV_PATH" >/dev/null 2>&1; then
     ok "Per-device config pushed (weather + IPTV + RSS from .env)."

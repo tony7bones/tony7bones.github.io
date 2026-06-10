@@ -1069,3 +1069,276 @@ def test_ensure_outer_swallow_when_provider_parsing_fails(boot, monkeypatch):
     assert (
         _iptv(boot)._ensure_iptv_custom_tv_groups({"IPTV_M3U": "http://h/x"}) is False
     )
+
+
+# --------------------------------------------------------------------------- #
+# Phase 5b·2 — HOST-BUILT staged artifacts consumption (_apply_staged_provider).
+#
+# The host half (_tools/build_iptv.py, run by the provisioner) stages the
+# curated per-provider artifacts (playlist + customTVGroups + a ready
+# instance-settings-<N>.xml) and the env points at them via IPTV_STAGING_DIR.
+# The enforce consumes them FIRST per provider — this is the ONLY path an
+# xtream-mode provider can land through — falling back per-provider to the
+# 5b·1 direct-env enforce on any no/partial/malformed staging.
+# (All values fabricated — no real creds/hosts anywhere here.)
+# --------------------------------------------------------------------------- #
+_PLAYLISTS_SPECIAL = "special://userdata/addon_data/pvr.iptvsimple/playlists/"
+_GROUPS_DIR_SPECIAL = "special://userdata/addon_data/pvr.iptvsimple/channelGroups/"
+
+
+def _staged_instance_xml(tok, epg="http://iptv.example/epg?password=EPGSECRET"):
+    return (
+        '<settings version="2">\n'
+        f'  <setting id="kodi_addon_instance_name">{tok}</setting>\n'
+        '  <setting id="kodi_addon_instance_enabled">true</setting>\n'
+        '  <setting id="m3uPathType">0</setting>\n'
+        f'  <setting id="m3uPath">{_PLAYLISTS_SPECIAL}{tok}.m3u</setting>\n'
+        '  <setting id="tvGroupMode">2</setting>\n'
+        '  <setting id="customTvGroupsFile">'
+        f"{_GROUPS_DIR_SPECIAL}customTVGroups-{tok}.xml</setting>\n"
+        '  <setting id="tvChannelGroupsOnly">true</setting>\n'
+        '  <setting id="epgPathType">1</setting>\n'
+        f'  <setting id="epgUrl">{epg}</setting>\n'
+        "</settings>"
+    )
+
+
+def _stage(tmp_path, n=1, tok="Network24", playlist=True, groups=True, body=None):
+    """Write a host-style staged artifact set for instance `n` into tmp."""
+    staging = tmp_path / "staging"
+    staging.mkdir(exist_ok=True)
+    (staging / f"instance-settings-{n}.xml").write_text(
+        body if body is not None else _staged_instance_xml(tok)
+    )
+    if playlist:
+        (staging / f"{tok}.m3u").write_text(
+            '#EXTM3U\n#EXTINF:-1 group-title="X",C\nhttp://iptv.example/s\n'
+        )
+    if groups:
+        (staging / f"customTVGroups-{tok}.xml").write_text(
+            "<customChannelGroups><channelGroupName>X</channelGroupName>"
+            "</customChannelGroups>"
+        )
+    return staging
+
+
+def _staged_env(staging, n=1):
+    return {
+        f"IPTV_{n}_NAME": "Network 24",
+        f"IPTV_{n}_M3U": "http://iptv.example/remote.m3u?password=REMOTESECRET",
+        "IPTV_STAGING_DIR": str(staging),
+    }
+
+
+def test_staged_provider_applied_with_playlist_path_rewrite(boot, tmp_path):
+    """Staging present -> the staged instance file lands for instance N with
+    m3uPath REWRITTEN from the portable special:// form to the translated
+    ABSOLUTE path; the playlist + groups side-files are copied to their
+    special:// destinations; the direct-env enforce is SKIPPED (the env's
+    remote m3u URL must NOT override the staged local playlist)."""
+    staging = _stage(tmp_path)
+    wrote = _iptv(boot)._ensure_iptv_custom_tv_groups(_staged_env(staging))
+    assert wrote is True
+    got = _read_instance_n(boot, 1)
+    playlist_abs = _dst_path(boot, _PLAYLISTS_SPECIAL + "Network24.m3u")
+    assert got["m3uPath"] == playlist_abs, "m3uPath must be the translated abs path"
+    assert got["m3uPathType"] == "0"
+    assert os.path.exists(playlist_abs), "the staged playlist must be copied"
+    groups_abs = _dst_path(boot, _GROUPS_DIR_SPECIAL + "customTVGroups-Network24.xml")
+    assert os.path.exists(groups_abs), "the staged groups file must be copied"
+    # the staged config is authoritative: the env's remote URL was NOT applied
+    assert got.get("m3uUrl", "") == ""
+    assert "REMOTESECRET" not in open(_instance_path_n(boot, 1)).read()
+    # customTvGroupsFile keeps the live-proven special:// form
+    assert got["customTvGroupsFile"].startswith("special://")
+
+
+def test_staged_xtream_provider_finally_configures(boot, tmp_path, monkeypatch):
+    """THE 5b·1 GAP CLOSED: an xtream-mode provider with staged host-built
+    artifacts is CONFIGURED (instance file written), not skipped — and no
+    portal/user/pass value reaches any log line."""
+    logged = []
+    monkeypatch.setattr(
+        boot.mod.xbmc, "log", lambda msg, *a, **k: logged.append(str(msg))
+    )
+    staging = _stage(tmp_path, n=2, tok="Streamvision")
+    wrote = _iptv(boot)._ensure_iptv_custom_tv_groups(
+        {
+            "IPTV_2_NAME": "Streamvision",
+            "IPTV_2_MODE": "xtream",
+            "IPTV_2_PORTAL": "http://portal.example/PORTALSECRET",
+            "IPTV_2_USER": "USERSECRET",
+            "IPTV_2_PASS": "PASSSECRET",
+            "IPTV_STAGING_DIR": str(staging),
+        }
+    )
+    assert wrote is True
+    assert os.path.exists(_instance_path_n(boot, 2)), "xtream provider must land"
+    got = _read_instance_n(boot, 2)
+    assert got["kodi_addon_instance_name"] == "Streamvision"
+    blob = "\n".join(logged)
+    assert "skipped" not in blob, "a staged xtream provider is NOT skipped"
+    for secret in ("PORTALSECRET", "USERSECRET", "PASSSECRET", "EPGSECRET"):
+        assert secret not in blob, f"secret {secret!r} leaked into the log"
+
+
+def test_staged_missing_instance_falls_back_to_direct_env(boot, tmp_path):
+    """IPTV_STAGING_DIR set but NO staged file for this provider -> the 5b·1
+    direct-env enforce runs (remote m3uUrl + generated groups)."""
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    env = _staged_env(staging)
+    env["IPTV_1_GROUPS"] = "A; B"
+    wrote = _iptv(boot)._ensure_iptv_custom_tv_groups(env)
+    assert wrote is True
+    got = _read_instance_n(boot, 1)
+    assert got["m3uUrl"].endswith("password=REMOTESECRET")
+    assert got["m3uPathType"] == "1"
+
+
+def test_staged_partial_missing_playlist_falls_back(boot, tmp_path):
+    """A staged instance that references a MISSING playlist must NOT be applied
+    (it would point pvr at nothing = zero channels). The provider falls back to
+    the direct-env enforce instead."""
+    staging = _stage(tmp_path, playlist=False)
+    env = _staged_env(staging)
+    env["IPTV_1_GROUPS"] = "A"
+    wrote = _iptv(boot)._ensure_iptv_custom_tv_groups(env)
+    assert wrote is True
+    got = _read_instance_n(boot, 1)
+    # direct-env result, not the staged file
+    assert got["m3uUrl"].endswith("password=REMOTESECRET")
+    assert "m3uPath" not in got or not got["m3uPath"]
+
+
+def test_staged_partial_missing_groups_file_falls_back(boot, tmp_path):
+    staging = _stage(tmp_path, groups=False)
+    wrote = _iptv(boot)._ensure_iptv_custom_tv_groups(_staged_env(staging))
+    assert wrote is True  # fallback wrote the direct-env config (m3u only)
+    got = _read_instance_n(boot, 1)
+    assert got["m3uUrl"].endswith("password=REMOTESECRET")
+
+
+def test_staged_malformed_instance_falls_back(boot, tmp_path):
+    staging = _stage(tmp_path, body="<<<not xml>>>")
+    wrote = _iptv(boot)._ensure_iptv_custom_tv_groups(_staged_env(staging))
+    assert wrote is True
+    assert _read_instance_n(boot, 1)["m3uUrl"].endswith("password=REMOTESECRET")
+
+
+def test_staged_wrong_root_tag_falls_back(boot, tmp_path):
+    staging = _stage(tmp_path, body="<notsettings/>")
+    wrote = _iptv(boot)._ensure_iptv_custom_tv_groups(_staged_env(staging))
+    assert wrote is True
+    assert _read_instance_n(boot, 1)["m3uUrl"].endswith("password=REMOTESECRET")
+
+
+def test_no_staging_key_means_direct_env_even_if_files_exist(boot, tmp_path):
+    """Without IPTV_STAGING_DIR the staged path NEVER fires (no default dir) —
+    a staged-looking dir on disk is invisible until the env points at it."""
+    staging = _stage(tmp_path)
+    env = _staged_env(staging)
+    del env["IPTV_STAGING_DIR"]
+    env["IPTV_1_GROUPS"] = "A"
+    _iptv(boot)._ensure_iptv_custom_tv_groups(env)
+    got = _read_instance_n(boot, 1)
+    assert got["m3uUrl"].endswith("password=REMOTESECRET"), "direct-env path"
+    assert got["m3uPathType"] == "1"
+
+
+def test_staged_legacy_provider_consumes_when_dir_set(boot, tmp_path):
+    """The LEGACY single-instance shape also consumes staging when the env
+    explicitly points at it (the key only ever exists when the host staged)."""
+    staging = _stage(tmp_path, n=1)
+    wrote = _iptv(boot)._ensure_iptv_custom_tv_groups(
+        {
+            "IPTV_M3U": "http://iptv.example/legacy.m3u?password=p",
+            "IPTV_STAGING_DIR": str(staging),
+        }
+    )
+    assert wrote is True
+    got = _read_instance_settings(boot)
+    assert got["m3uPathType"] == "0"  # the staged local playlist won
+
+
+def test_staged_extra_instances_beyond_env_are_ignored(boot, tmp_path):
+    """The loop is ENV-driven: a stale staged instance-settings-9.xml (from a
+    previous provider count) is never applied when the env has no provider 9."""
+    staging = _stage(tmp_path, n=1)
+    _stage(tmp_path, n=9, tok="Stale")
+    _iptv(boot)._ensure_iptv_custom_tv_groups(_staged_env(staging))
+    assert os.path.exists(_instance_path_n(boot, 1))
+    assert not os.path.exists(_instance_path_n(boot, 9))
+
+
+def test_staged_no_sidefile_instance_applies_verbatim(boot, tmp_path):
+    """A staged instance with NO side-file references (remote playlist form,
+    all-channels mode) is applied as-is — nothing to validate or rewrite."""
+    body = (
+        '<settings version="2">\n'
+        '  <setting id="kodi_addon_instance_name">R</setting>\n'
+        '  <setting id="m3uPathType">1</setting>\n'
+        '  <setting id="m3uUrl">http://iptv.example/r.m3u</setting>\n'
+        '  <setting id="tvGroupMode">0</setting>\n'
+        "</settings>"
+    )
+    staging = _stage(tmp_path, body=body, playlist=False, groups=False)
+    wrote = _iptv(boot)._ensure_iptv_custom_tv_groups(_staged_env(staging))
+    assert wrote is True
+    got = _read_instance_n(boot, 1)
+    assert got["m3uUrl"] == "http://iptv.example/r.m3u"
+    assert got["tvGroupMode"] == "0"
+
+
+def test_staged_reentry_reapplies_idempotently(boot, tmp_path):
+    """Re-entry: the staged artifacts are authoritative and re-applied (same
+    bytes, harmless inside the PVR-disabled window) — the enforce stays True."""
+    staging = _stage(tmp_path)
+    env = _staged_env(staging)
+    assert _iptv(boot)._ensure_iptv_custom_tv_groups(env) is True
+    first = open(_instance_path_n(boot, 1)).read()
+    assert _iptv(boot)._ensure_iptv_custom_tv_groups(env) is True
+    assert open(_instance_path_n(boot, 1)).read() == first
+
+
+def test_staged_copy_failure_falls_back(boot, tmp_path, monkeypatch):
+    """A failing xbmcvfs.copy on a side-file aborts the staged path (logged)
+    and falls back to the direct-env enforce — never half-applies."""
+    staging = _stage(tmp_path)
+    env = _staged_env(staging)
+    env["IPTV_1_GROUPS"] = "A"
+    monkeypatch.setattr(boot.mod.xbmcvfs, "copy", lambda s, d: False)
+    wrote = _iptv(boot)._ensure_iptv_custom_tv_groups(env)
+    assert wrote is True  # the fallback still configured the provider
+    got = _read_instance_n(boot, 1)
+    assert got["m3uUrl"].endswith("password=REMOTESECRET")
+
+
+def test_apply_iptv_staged_two_providers_reports_configured(boot, tmp_path):
+    """apply_iptv end-to-end on the REAL env shape (m3u provider 1 + xtream
+    provider 2) with full staging: BOTH instances land, the layer reports
+    configured, and the whole staged consumption ran inside the PVR-disabled
+    window (the backend ends enabled with the bounce sequence)."""
+    staging = _stage(tmp_path, n=1, tok="Network24")
+    _stage(tmp_path, n=2, tok="Streamvision")
+    res = _iptv(boot).apply_iptv(
+        {
+            "IPTV_1_NAME": "Network 24",
+            "IPTV_1_MODE": "m3u",
+            "IPTV_1_M3U": "http://iptv.example/1.m3u?password=p",
+            "IPTV_2_NAME": "Streamvision",
+            "IPTV_2_MODE": "xtream",
+            "IPTV_2_PORTAL": "http://portal.example",
+            "IPTV_2_USER": "u",
+            "IPTV_2_PASS": "p",
+            "IPTV_STAGING_DIR": str(staging),
+        }
+    )
+    assert res.ok is True
+    assert res.installed.get("pvr.iptvsimple") == "configured"
+    assert os.path.exists(_instance_path_n(boot, 1))
+    assert os.path.exists(_instance_path_n(boot, 2)), (
+        "NO provider may end the run unconfigured — xtream must land via staging"
+    )
+    assert "pvr.iptvsimple" not in boot.state["disabled"]
+    assert _pvr_enable_calls(boot) == [True, False, True]

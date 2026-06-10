@@ -707,15 +707,113 @@ The two bugs above, fixed and clean-Kodi proven (channels actually load — the 
   24** real channels per group. `skin.estuary.modv2` active, pvr.iptvsimple 21.11.0 enabled, no
   `instance-settings-2.xml`, Setup self-uninstalled, staged env deleted.
 
-## Phase 5b — IN PROGRESS (step 1 DONE; steps 2–4 next)
+### Phase 5b·2 — DONE (local; the host-side IPTV build integrated — EVERY provider, xtream included, loads channels)
+
+The deferred P2 work landed: `_tools/build_iptv.py` (+ its suite + the customization
+playbook) came over from the `iptv` branch, ADAPTED to the 5b·1 N-provider model, and
+`apply_iptv` now consumes its staged artifacts — the panel's "IPTV is two halves"
+decision realised. The owner's directive "everything must be fixed" holds: on the
+acceptance run NO provider ends unconfigured (the 5b·1 xtream skip fires only on a
+box with no staging).
+
+- **The host half (`_tools/build_iptv.py`).** Per `IPTV_<N>_*` block it fetches (m3u
+  mode) or SYNTHESIZES via the Xtream player_api (xtream mode — `get_live_categories`
+  - `get_live_streams` → `…/live/<user>/<pass>/<id>.ts` URLs) a CURATED local playlist
+    applying the FULL groups grammar: selection, `> Display Label` relabel, `| sort`, and
+    `IPTV_<N>_FAVORITES` (name-substring both modes; `id:`/category pins xtream-only;
+    favorites group emitted FIRST; multi-group `group-title="Label;24/7 Favorites"` for a
+    favorite inside a selected group, favorites-only emission for one outside). It emits
+    three artifacts per provider into gitignored `iptv-build/<device>/`: `<Token>.m3u`,
+    `customTVGroups-<Token>.xml` (DISPLAY labels), `instance-settings-<N>.xml` (identity
+    keys + `m3uPathType=0` with a PORTABLE `special://…/playlists/<Token>.m3u` path +
+    remote EPG + custom group mode GATED on a non-empty group list + env
+    `GROUPS_ONLY`, forced off for blank-GROUPS curation so favorites never hide an
+    uncurated playlist). `<Token>` = the in-Kodi `_groups_file_special` derivation
+    ("Network 24" → `Network24` — the legacy filename preserved). Per-provider failures
+    are reported and skipped; exit 1 if any failed. The POC's direct-to-Kodi `provision`
+    mode is GONE — applying is the in-Kodi half's job.
+- **The in-Kodi half (`_apply_staged_provider`, iptv.py).** When the env carries
+  `IPTV_STAGING_DIR` (NO default — the key exists iff the host actually staged, so
+  legacy boxes can never drift into the staged path), each provider FIRST consumes its
+  staged artifacts inside the 5b·1 PVR-disabled window: PARSE-based (reads what the
+  staged instance file references — no naming-convention coupling), validates every
+  side-file exists BEFORE writing anything (partial staging must never point pvr at
+  missing files), copies playlist + groups to their `special://` homes, REWRITES
+  `m3uPath` to the translated absolute path (the POC-proven form; `customTvGroupsFile`
+  keeps its live-proven special:// form), then writes `instance-settings-<N>.xml`.
+  Any no/partial/malformed staging or copy failure → logged, per-provider fallback to
+  the 5b·1 direct-env enforce (whose xtream skip log now says "no staged host-built
+  config — run the host build"). Staged consumption is deliberately always-apply
+  (host artifacts are authoritative; re-copying identical bytes on re-entry is
+  harmless inside the window).
+- **Provisioner wiring (`provision-kodi.sh` step 4b).** Builds into
+  `iptv-build/<device>` (rm -rf'd first — never push STALE artifacts), pushes the dir
+  to the device-convention `/storage/emulated/0/kodi/tony.7.bones/iptv/`, and appends
+  `IPTV_STAGING_DIR` to the derived `tony7bones.env` iff the push landed. A PARTIAL
+  build (one provider failed) is still staged — apply_iptv falls back per-provider, so
+  the built providers keep their curation (QA finding: the first cut discarded the
+  good providers' artifacts on any failure).
+- **Decisions documented:** (1) staging location = gitignored `iptv-build/<device>/`
+  host-side, the existing device-convention `iptv/` dir on the box (generated
+  artifacts land exactly where hand-placed files always lived), `IPTV_STAGING_DIR`
+  env key as the ONLY pointer; (2) the xtream playlist is a staged LOCAL file, not a
+  derived URL (get.php is server-blocked — HTTP 884 — and pvr.iptvsimple Omega has no
+  Xtream mode; m3u-mode curation is ALSO a local snapshot because relabel/sort mutate
+  group-title/order, impossible against a remote URL; refreshed every provisioner
+  run); (3) favorites become a customTVGroups group via multi-group group-title
+  tagging in the synthesized playlist, label listed FIRST.
+- **Secret hygiene:** `test_secret_leak.py` extended — the value-scan now covers every
+  numbered `IPTV_<N>_M3U/EPG/PORTAL` URL plus raw `IPTV_<N>_USER`/`_PASS` (previously
+  ONLY the legacy keys — a real gap), and ANY tracked `*.m3u` is structurally
+  forbidden (host-built playlists embed creds in every channel URL). `iptv-build/`
+  was already gitignored + tracked-forbidden. The builder prints names/labels/counts
+  only; the in-Kodi staged path logs booleans only — both pinned by tests.
+- **Tested:** +73 net new tests — `test_build_iptv.py` (58: env/provider/grammar
+  parsing, token↔in-Kodi-derivation lock, m3u curation incl. favorites multi-group/
+  non-PPV preference/xtream-form rejection, xtream synthesis incl. favorites pin/
+  category folds, instance-xml gating, build/main failure + exit-code contract, no
+  creds in stdout) and `test_setup_iptv.py` (+15: staged apply with m3uPath rewrite,
+  xtream-finally-configures with zero secret leak, fallbacks for missing instance /
+  missing playlist / missing groups / malformed / wrong root / copy-failure, no-key
+  means no staged path, legacy consumption, stale extra instances ignored,
+  no-side-file instance verbatim, idempotent re-entry, apply_iptv end-to-end with the
+  REAL two-provider shape proving the PVR window still wraps everything).
+  **647 passed / 1 xfailed** (was 575), `ruff` clean, secret-leak green.
+- **Coverage:** build_iptv.py **99%** (missing: the real-network `http_get` body +
+  `__main__`), iptv.py **100%**.
+- **QA findings closed pre-commit:** the provisioner's discard-partial-build flaw and
+  the stale-staging-dir reuse (both fixed above); stale `instance-settings-<N>.xml`
+  on a REDUCED provider count is documented in the playbook as the same manual-clean
+  class as the lingering PVR-DB groups (the env-driven loop never applies them).
+- **LIVE-VERIFIED (clean Kodi, fresh profile, real `.env.local`, full flow: host
+  build → staged artifacts → `run_foundation_setup`):** the build fetched BOTH real
+  providers (Network 24 m3u: 229 ch; Streamvision xtream: 331 ch — player_api
+  synthesis worked where 5b·1 had to skip); in-Kodi `_apply_staged_provider` logged
+  `instance 1/2: applied HOST-BUILT staged config (playlist=True groups=True)`; BOTH
+  EPGs cached (19 MB + 74 MB) during the run; after the end-of-setup restart AND a
+  further clean-shutdown quit+relaunch, `instance-settings-1.xml` + `-2.xml` both
+  survive with identity/m3uPathType=0/tvGroupMode=2/groups-only intact, and JSON-RPC
+  proves the acceptance: **8 groups** — provider 1 `US Entertainment 158 /
+US News/Weather 47 / PPV Events 24` (DISPLAY labels, alpha-sorted: A&E → ABC →
+  ADULT SWIM → AMC…), provider 2 `US Entertainment 214 / US News 100 / UFC PPV 12 /
+24/7 Favorites 5` (the favorites are exactly the five curated channels, incl. the
+  two `id:`-pinned 4K feeds), `All channels` = **560 = 229+331**. MOD V2 active,
+  Setup self-uninstalled, staged env read-then-removed. (Driver note: the run was
+  triggered by patching the INSTALLED bootstrap copy's `run()` to call
+  `run_foundation_setup` with a local env path — the repo source is untouched; the
+  shipped `run()` still calls `run_express`.)
+
+## Phase 5b — IN PROGRESS (steps 1–2 DONE; steps 3–4 next)
 
 > **Status of the build:** Phases 0–3 + **5a (Foundation, incl. 5a·2/5a·3)** + **5b·1 (both
-> `apply_iptv` bugs fixed + clean-Kodi channel-load proof)** are DONE, gated, and committed LOCALLY
-> on `modular-setup` — **not pushed** (milestone-push pending: it needs the
-> `script.module.tony7bones` + `script.tony7bones.bootstrap` version bumps + a `--news`).
-> The Foundation deliverable is complete and clean-Kodi verified, and the env-gated IPTV chain now
-> PROVABLY loads channels. `run_express` (Express) and `run_foundation`/`run_foundation_setup`
-> (skin-only + env-gated IPTV chain) exist; the shipped `run()` still calls `run_express`.
+> `apply_iptv` bugs fixed + clean-Kodi channel-load proof)** + **5b·2 (host-side IPTV build
+> integrated — BOTH real providers, xtream included, live-proven loading channels)** are DONE,
+> gated, and committed LOCALLY on `modular-setup` — **not pushed** (milestone-push pending: it
+> needs the `script.module.tony7bones` + `script.tony7bones.bootstrap` version bumps + a
+> `--news`). The Foundation deliverable is complete and clean-Kodi verified, and the env-gated
+> IPTV chain now PROVABLY loads EVERY env provider's channels with the full curation grammar.
+> `run_express` (Express) and `run_foundation`/`run_foundation_setup` (skin-only + env-gated
+> IPTV chain) exist; the shipped `run()` still calls `run_express`.
 
 **5b makes the IPTV layer independently runnable AND correct.** In order:
 
@@ -724,12 +822,14 @@ The two bugs above, fixed and clean-Kodi proven (channels actually load — the 
    N-provider `IPTV_<N>_*` → N `instance-settings-<N>.xml` + N `customTVGroups-*.xml`
    generalization (legacy single-instance keys = provider 1, byte-compatible). Clean-Kodi proof:
    158/47/24 channels in the three custom groups, settings survive the shutdown flush.
-2. **Integrate the host-side IPTV build** (the deferred P2 work — **THE NEXT STEP**): bring `_tools/build_iptv.py` +
-   `_tools/test_build_iptv.py` + the customization playbook over from the **`iptv` branch** (98%-
-   covered, m3u + xtream modes) into the provisioner, and have `apply_iptv` consume its staged
-   curated `instance-settings-<N>.xml` / `customTVGroups-*.xml` (per the panel's "IPTV is two
-   halves" decision — host build + in-Kodi apply).
-3. **`run_iptv(box_env)`** — make the IPTV layer independently runnable on top of an existing
+2. ~~**Integrate the host-side IPTV build**~~ — **DONE (Phase 5b·2, see the phase log above):**
+   `_tools/build_iptv.py` + its suite + the customization playbook brought over from the `iptv`
+   branch (adapted to the 5b·1 N-provider model), wired into the provisioner (build → push →
+   `IPTV_STAGING_DIR`), with `apply_iptv` consuming the staged curated artifacts (parse-based,
+   inside the PVR-disabled window, per-provider fallback to direct-env). Clean-Kodi proof: BOTH
+   real providers load — 158/47/24 (m3u, relabelled + sorted) and 214/100/12 + the 5-channel
+   favorites group (xtream, synthesized via player_api) — surviving a clean-shutdown restart.
+3. **`run_iptv(box_env)`** (**THE NEXT STEP**) — make the IPTV layer independently runnable on top of an existing
    Foundation (install pvr backend if missing — it already fail-louds — + N-provider config), so a
    user who stopped skin-only can later add IPTV with no redo.
 4. **Gate it** (the standing four-part bar + clean-Kodi verify): on a clean Foundation box, run

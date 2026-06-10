@@ -219,6 +219,22 @@ IPTV_CHANNEL_GROUPS_DIR_SPECIAL = (
 # doubles as the pvr.iptvsimple instance id).
 _IPTV_NUMBERED_KEY = re.compile(r"^IPTV_(\d+)_([A-Z0-9_]+)$")
 
+# --------------------------------------------------------------------------- #
+# HOST-BUILT staged artifacts (Phase 5b·2 — the "IPTV is two halves" decision).
+# --------------------------------------------------------------------------- #
+# The host half (_tools/build_iptv.py, run by the provisioner) builds the
+# CURATED per-provider artifacts — the local playlist (with the full groups
+# grammar applied: display relabel, | sort, the favorites group; and for an
+# xtream-mode provider the playlist SYNTHESIZED from the Xtream player_api,
+# the only way it can load since pvr.iptvsimple Omega has no Xtream mode and
+# the provider's get.php m3u export is server-blocked), the customTVGroups
+# display-label list, and a ready instance-settings-<N>.xml. The provisioner
+# stages them on the box and points the per-device env at the dir via
+# IPTV_STAGING_DIR. There is deliberately NO default staging dir: the key is
+# present iff the host actually staged artifacts, so a legacy/un-provisioned
+# box can never accidentally enter the staged path (zero behaviour change).
+IPTV_STAGING_DIR_KEY = "IPTV_STAGING_DIR"
+
 
 def _instance_settings_special(n):
     """special:// path of pvr.iptvsimple's instance-settings file for instance n.
@@ -324,6 +340,104 @@ def _iptv_providers(box_env):
     ]
 
 
+def _apply_staged_provider(provider, staging_dir):
+    """Consume the HOST-BUILT staged artifacts for ONE provider (instance N).
+
+    PARSE-BASED consumption (no filename-convention coupling): read the staged
+    ``instance-settings-<N>.xml``, resolve every side-file it references — the
+    local playlist when ``m3uPathType=0`` and the customTVGroups file when
+    ``tvGroupMode=2`` — and require each to exist in the staging dir BEFORE
+    anything is written (a partial staging must never poison the box with an
+    instance pointing at missing files). Then copy the side-files to their
+    translated ``special://`` destinations and write the instance file, with
+    ``m3uPath`` REWRITTEN from the staged portable ``special://`` form to the
+    translated ABSOLUTE path (the form proven to load in pvr.iptvsimple;
+    ``customTvGroupsFile`` keeps its special:// form — live-proven on every
+    shipped box).
+
+    Returns True iff the staged config was FULLY applied (the caller then skips
+    the direct-env enforce for this provider); False on no/partial/malformed
+    staging or any copy failure — each logged, never raised — so the caller
+    falls back to the Phase 5b·1 direct-env behaviour. Always applies when
+    complete (the host artifacts are authoritative; re-copying identical bytes
+    on re-entry is harmless inside the PVR-disabled window). Secret values
+    (playlist/EPG URLs with creds) are never logged."""
+    n = provider["n"]
+    src = staging_dir.rstrip("/") + "/instance-settings-%d.xml" % n
+    if not xbmcvfs.exists(src):
+        return False
+    try:
+        root = ET.parse(src).getroot()
+    except Exception as e:  # noqa: BLE001 - malformed staging must only fall back
+        _log(
+            "_apply_staged_provider: staged instance-settings-%d.xml unreadable "
+            "(%s) — falling back to direct env config" % (n, e),
+            xbmc.LOGERROR,
+        )
+        return False
+    if root.tag != "settings":
+        _log(
+            "_apply_staged_provider: staged instance-settings-%d.xml is not a "
+            "<settings> file — falling back to direct env config" % n,
+            xbmc.LOGERROR,
+        )
+        return False
+    vals = {s.get("id"): (s.text or "") for s in root.findall("setting")}
+    # The side-files this instance references; each MUST be staged alongside.
+    needed = []  # (staged-src, dest special://, kind)
+    m3u_special = (vals.get("m3uPath") or "").strip()
+    if vals.get("m3uPathType") == "0" and m3u_special:
+        needed.append((m3u_special, "playlist"))
+    groups_special = (vals.get("customTvGroupsFile") or "").strip()
+    if vals.get("tvGroupMode") == IPTV_TV_GROUP_MODE_CUSTOM and groups_special:
+        needed.append((groups_special, "groups"))
+    staged = []
+    for special, kind in needed:
+        fname = special.rstrip("/").rsplit("/", 1)[-1]
+        side_src = staging_dir.rstrip("/") + "/" + fname
+        if not xbmcvfs.exists(side_src):
+            _log(
+                "_apply_staged_provider: instance %d: staged %s file %s is "
+                "MISSING — falling back to direct env config" % (n, kind, fname),
+                xbmc.LOGERROR,
+            )
+            return False
+        staged.append((side_src, special, kind))
+    # All present — copy the side-files into the profile, then the instance file.
+    for side_src, special, kind in staged:
+        dst = xbmcvfs.translatePath(special)
+        dst_dir = os.path.dirname(dst)
+        if dst_dir and not xbmcvfs.exists(dst_dir):
+            xbmcvfs.mkdirs(dst_dir)
+        if not xbmcvfs.copy(side_src, dst):
+            _log(
+                "_apply_staged_provider: instance %d: copying the staged %s "
+                "file failed — falling back to direct env config" % (n, kind),
+                xbmc.LOGERROR,
+            )
+            return False
+        if kind == "playlist":
+            # Rewrite the portable special:// form to the translated absolute
+            # path — the m3uPath form the POC proved pvr.iptvsimple loads.
+            for el in root.findall("setting"):
+                if el.get("id") == "m3uPath":
+                    el.text = dst
+    xml_path = xbmcvfs.translatePath(_instance_settings_special(n))
+    os.makedirs(os.path.dirname(xml_path), exist_ok=True)
+    with open(xml_path, "w", encoding="utf-8") as f:
+        f.write(ET.tostring(root, encoding="unicode"))
+    _log(
+        "_apply_staged_provider: instance %d: applied HOST-BUILT staged config "
+        "(playlist=%s groups=%s)"
+        % (
+            n,
+            any(k == "playlist" for *_x, k in staged),
+            any(k == "groups" for *_x, k in staged),
+        )
+    )
+    return True
+
+
 def _set_instance_setting(root, setting_id, value):
     """Ensure <setting id="setting_id"> in `root` has exactly `value`.
 
@@ -370,16 +484,20 @@ def _ensure_iptv_instance(provider):
     reference in its instance-settings schema is the ``allChannelsCatchupMode``
     CATCHUP enum, not a portal/user/pass source — and this provider's m3u export
     is server-blocked, so deriving a get.php URL would not work either. The
-    host-side build (build_iptv.py, Phase 5b step 2) owns Xtream -> m3u
-    derivation. No credentials are logged.
+    host-side build (``_tools/build_iptv.py``) owns Xtream -> m3u derivation:
+    its staged artifacts are consumed by ``_apply_staged_provider`` BEFORE this
+    direct-env body runs, so this skip only fires when staging is absent.
+    No credentials are logged.
 
     Returns True if it actually wrote/changed this instance's settings file."""
     n = provider["n"]
     if provider["mode"] == "xtream":
         _log(
-            "_ensure_iptv_custom_tv_groups: provider %d is xtream-mode — skipped "
-            "in-Kodi (pvr.iptvsimple Omega has no native Xtream connection mode; "
-            "host-side m3u derivation lands in Phase 5b step 2)" % n
+            "_ensure_iptv_custom_tv_groups: provider %d is xtream-mode with NO "
+            "staged host-built config — skipped in-Kodi (pvr.iptvsimple Omega "
+            "has no native Xtream connection mode; run the host build "
+            "_tools/build_iptv.py / the provisioner to stage it)" % n,
+            xbmc.LOGERROR,
         )
         return False
     groups_special = _groups_file_special(provider)
@@ -491,6 +609,16 @@ def _ensure_iptv_instance(provider):
 def _ensure_iptv_custom_tv_groups(box_env=None):
     """Enforce pvr.iptvsimple's per-instance settings for EVERY env provider.
 
+    Phase 5b·2: when the env carries ``IPTV_STAGING_DIR`` (the provisioner set
+    it after staging the host-built curated artifacts), each provider FIRST
+    tries ``_apply_staged_provider`` — the staged instance-settings + curated
+    playlist + display-label groups file are applied verbatim (this is how an
+    xtream-mode provider, impossible to configure from the raw env, lands; and
+    how relabel/sort/favorites reach an m3u provider). A provider with
+    no/partial/malformed staging falls back per-provider to the direct-env
+    enforce below — no provider with a usable source is ever left unconfigured
+    when its staging exists.
+
     Phase 5b·1 generalization of the old single-instance enforce: the env's
     ``IPTV_<N>_*`` provider blocks (or the legacy single-instance
     ``IPTV_M3U``/``IPTV_EPG``/``IPTV_GROUPS``/``IPTV_GROUPS_ONLY`` shape, treated
@@ -520,9 +648,15 @@ def _ensure_iptv_custom_tv_groups(box_env=None):
     """
     box_env = box_env or {}
     try:
+        # The host-staged dir — present iff the provisioner actually built and
+        # staged curated artifacts (NO default: legacy boxes never enter this).
+        staging = (box_env.get(IPTV_STAGING_DIR_KEY) or "").strip()
         wrote = False
         for provider in _iptv_providers(box_env):
             try:
+                if staging and _apply_staged_provider(provider, staging):
+                    wrote = True
+                    continue  # staged config is authoritative — skip direct env
                 wrote = _ensure_iptv_instance(provider) or wrote
             except Exception as e:  # noqa: BLE001 - one bad provider must not abort the rest
                 _log(
@@ -612,10 +746,13 @@ def apply_iptv(env, *, dialog=None, log=None):
          the file writes below; the 5a·3 live run shipped an unconfigured pvr that
          way), then
       3. copies the user's device files into userdata (guarded; skips missing), and
-      4. enforces the instance-settings (gated per provider on its groups file) —
-         ONE ``instance-settings-<N>.xml`` per env provider (``IPTV_<N>_*``; the
-         legacy single-instance keys are provider 1), xtream-mode providers skipped
-         with an honest log (host-side m3u derivation is Phase 5b step 2) — then
+      4. enforces the instance-settings — ONE ``instance-settings-<N>.xml`` per env
+         provider (``IPTV_<N>_*``; the legacy single-instance keys are provider 1).
+         With ``IPTV_STAGING_DIR`` in the env each provider first consumes the
+         HOST-BUILT staged artifacts (curated playlist + display-label groups +
+         ready instance file — the only path an xtream-mode provider can land
+         through), falling back per-provider to the direct-env enforce (gated on
+         its groups file; xtream skipped with an honest log when unstaged) — then
       5. RE-ENABLES the backend (in a ``finally``) so the fresh client instances
          start from the files just written.
 

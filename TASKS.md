@@ -22,38 +22,38 @@ tech-debt seam, the apply_iptv reporting bug, the zero-content guarantee). Keep 
 
 ---
 
-## ▶ VERY NEXT STEP — Phase 5b, step 2: integrate the host-side IPTV build (`build_iptv.py`)
+## ▶ VERY NEXT STEP — Phase 5b, step 3: `run_iptv(box_env)` — the standalone IPTV layer
 
-Phase 5b·1 (both `apply_iptv` bugs) is **DONE and clean-Kodi proven** — see the Phase 5b·1 entry in
-`docs/plans/modular-setup.md`: the PVR-disabled config window kills the instance-settings clobber,
-`IPTV_<N>_*` envs now drive N pvr.iptvsimple instances, and the acceptance landed live (the three
-custom groups loaded **158 / 47 / 24 real channels** from `.env.local`'s m3u provider; settings
-survive the shutdown flush; the xtream provider is skipped in-Kodi with an honest log).
+Phase 5b·2 (the host-side IPTV build) is **DONE and clean-Kodi proven** — see the Phase 5b·2 entry
+in `docs/plans/modular-setup.md`: `_tools/build_iptv.py` (99%-covered, m3u + xtream modes, full
+grammar incl. relabel/`| sort`/favorites) is wired into the provisioner (build → push →
+`IPTV_STAGING_DIR`), and `apply_iptv` consumes the staged curated artifacts inside the
+PVR-disabled window with per-provider fallback to the 5b·1 direct-env enforce. Acceptance landed
+live on a clean Kodi with the REAL `.env.local`: **BOTH providers load** — the m3u provider's
+relabelled+sorted groups (**158 / 47 / 24**) AND the xtream provider, synthesized host-side via
+player_api (**214 / 100 / 12** + the **5-channel 24/7 Favorites** group) — all surviving a
+clean-shutdown restart. NO provider is skipped/unconfigured anymore.
 
-Step 2 — the deferred P2 work (per `docs/plans/modular-setup.md` → "Phase 5b"):
-
-1. Bring `_tools/build_iptv.py` + `_tools/test_build_iptv.py` + the customization playbook over
-   from the **`iptv` branch** (98%-covered, m3u + xtream modes) into the provisioner.
-2. Have `apply_iptv` consume its staged curated `instance-settings-<N>.xml` /
-   `customTVGroups-*.xml` (the panel's "IPTV is two halves" decision — host build + in-Kodi apply).
-   This is where the xtream→m3u derivation (provider 2), the groups grammar's display
-   relabel + `| sort` directives, and `IPTV_<N>_FAVORITES` land (all deferred from 5b·1).
-
-Then Phase 5b step 3 (`run_iptv(box_env)` — IPTV independently runnable on an existing Foundation)
-and step 4 (gate + clean-Kodi verify). Then 5c (Add-ons layer), 5d (Guided wizard + Model A),
-6 (harden + Fire TV).
+Step 3 (per `docs/plans/modular-setup.md` → "Phase 5b"): **`run_iptv(box_env)`** — make the IPTV
+layer independently runnable on top of an existing Foundation (install the pvr backend if missing
+— it already fail-louds — + the N-provider/staged config), so a user who stopped at skin-only can
+later add IPTV with no redo. Then step 4 (gate + clean-Kodi verify of the standalone runner).
+Then 5c (Add-ons layer), 5d (Guided wizard + Model A), 6 (harden + Fire TV).
 
 ---
 
 ## Build status (modular-setup branch)
 
 - **DONE, gated, committed LOCALLY**: Phases 0–3 + 5a (Foundation, incl. 5a·2/5a·3) + **5b·1**
-  (the two `apply_iptv` bugs — clobber window + N-provider env — clean-Kodi channel-load proven).
+  (the two `apply_iptv` bugs — clobber window + N-provider env) + **5b·2** (the host-side IPTV
+  build integrated — BOTH real providers, xtream included, clean-Kodi channel-load proven with
+  the full curation grammar).
 - **NOT PUSHED** — milestone-push pending: needs `script.module.tony7bones` + `script.tony7bones.bootstrap`
   version bumps + `--news` (modv2plus is already 1.4.8). Push the branch once 5b lands or at the next
   coherent milestone.
-- The deploy gate (`_tools/test_installer_present.py`) is on **`main`**; the `iptv` branch (build_iptv.py
-  - playbook + tests) is pushed and awaits the Phase 5b integration.
+- The deploy gate (`_tools/test_installer_present.py`) is on **`main`**. The `iptv` branch's
+  deliverables (build_iptv.py + tests + playbook) are now INTEGRATED on `modular-setup`
+  (Phase 5b·2, adapted to the N-provider model) — the branch itself is superseded.
 
 ---
 
