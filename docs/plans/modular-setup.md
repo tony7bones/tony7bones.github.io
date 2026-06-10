@@ -274,8 +274,29 @@ into them.)
 | **6**           | Harden: version-guard, `assert_box_complete`, CI gates, wipe-and-run matrix                 | yes → local Kodi + Fire TV                  |
 | _(7, deferred)_ | IPTV gate composition (provisioner build + N-provider apply)                                | needs `iptv` merge first                    |
 
-Per-phase loop: **brief parallel agents → integrate → run the gate → QA completeness review →
-commit/push → next phase.**
+### ⛔ THE WORKING AGREEMENT (non-negotiable — read before touching code)
+
+**The strict per-phase order — never skip, never reorder:**
+
+> **implement → TEST → COVERAGE → GATE (full suite + ruff + secrets green) → QA completeness
+> review → real-device verify (if runtime) → DOCUMENT → only THEN commit → only THEN start the
+> next phase.**
+
+Two hard rules that have held for every phase 0–5a and MUST continue:
+
+1. **NO COMMIT until ALL gate items pass.** Tested + coverage (≥90% new code, justified) + green
+   everywhere + QA review accepted + (runtime →) clean-Kodi verified + documented. A red suite, a
+   missing test, an unreviewed change, or an undocumented phase = **do not commit.**
+2. **NO next phase until the current phase is committed green.** Phases are sequential-gated; the
+   next phase builds on the prior phase's committed result. Never start N+1 with N uncommitted or red.
+
+Every phase also gets an **adversarial QA completeness review** (a separate agent hunting what the
+tests _miss_) — its findings are closed _before_ the commit, not deferred. This is how phase 0's
+silent-rebaseline footgun, phase 2b's tech-debt seam, phase 3's equivalence proof, and phase 5a's
+zero-content guarantee were all caught pre-commit.
+
+Per-phase loop: **brief parallel agents → integrate → run the gate → QA completeness review → close
+gaps → commit → next phase.**
 
 ## Phase log
 
