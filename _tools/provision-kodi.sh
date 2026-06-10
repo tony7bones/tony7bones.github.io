@@ -351,7 +351,14 @@ for _ in 1 2 3 4; do
 done
 ok "Summary accepted — Setup is finishing (skin activate + clean close)."
 printf '  waiting for Kodi to close itself'
-for _ in $(seq 1 20); do
+# Up to ~4 min: on a real Fire TV the post-summary terminal seam is SLOW — the
+# first-ever MOD V2 load + script.skinshortcuts' first menu build (>14 s cold,
+# and activate_skin now deliberately WAITS the build out between re-asserts) +
+# the keep-skin dance + the close notice all run before the clean Quit. The old
+# 60 s bound expired mid-dance on a real Stick and the forced REBOOT below
+# killed Kodi before the clean shutdown flushed lookandfeel.skin — a stock-skin
+# box. The reboot is a last resort; give the dance the time it actually needs.
+for _ in $(seq 1 80); do
   kodi_running || break
   printf '.'
   sleep 3

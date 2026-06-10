@@ -115,8 +115,10 @@ def _wait_skin_quiescent(skin_id, log):
 
     Returns as soon as the includes file exists (plus a short grace for the
     ReloadSkin that follows the write), immediately when skinshortcuts is not
-    installed (nothing will reload), and gives up after ~15s (the build is
-    normally sub-second; never block activation on it). Never raises.
+    installed (nothing will reload), and gives up after ~30s (sub-second on a
+    desktop, but a real Fire TV took >14s for the first build — and that was
+    while concurrent re-asserts kept reloading the skin under it; never block
+    activation forever on it). Never raises.
     """
     try:
         ss_dir = xbmcvfs.translatePath("special://home/addons/script.skinshortcuts")
@@ -127,7 +129,7 @@ def _wait_skin_quiescent(skin_id, log):
                 skin_id
             )
         )
-        for _ in range(60):  # up to ~15s at 250ms
+        for _ in range(120):  # up to ~30s at 250ms
             if os.path.exists(inc):
                 xbmc.sleep(1000)  # grace: the build's ReloadSkin follows the write
                 return
@@ -160,8 +162,14 @@ def activate_skin(skin_id, log, attempts=3):
       exits early when it SEES the revert (the skin was live, then flipped
       back), and — the fundamental fix — after the settle the END STATE is
       verified via getSkinDir() and the switch is RE-ASSERTED (bounded
-      `attempts`). A re-assert runs after the destructive first build is over
-      (its includes file now exists), so the second confirm survives and the
+      `attempts`). Before each re-assert we WAIT for skinshortcuts quiescence
+      (`_wait_skin_quiescent`): on a slow real Fire TV the first build runs
+      >14s, an immediate re-assert lands INSIDE it (the fresh confirm is
+      destroyed unaccepted — Kodi treats that as "No" — even when our
+      SendClick already logged the accept), and the reload each re-assert
+      causes re-kicks the build, so all attempts can burn inside one build
+      window (observed live: 3/3 lost, box restarted on stock). Once the
+      build's includes file exists the re-asserted confirm survives and the
       accept commits.
 
     The post-accept settle also waits for skinshortcuts quiescence
@@ -235,11 +243,21 @@ def activate_skin(skin_id, log, attempts=3):
             )
             return False
         log(
-            "activate_skin: {} did not stick (attempt {}/{}) — re-asserting".format(
+            "activate_skin: {} did not stick (attempt {}/{}) — waiting for "
+            "skinshortcuts quiescence, then re-asserting".format(
                 skin_id, attempt, attempts
             ),
             xbmc.LOGWARNING,
         )
+        # THE SLOW-BOX FIX (live-proven on a real Fire TV): a re-assert fired
+        # while skinshortcuts' first build is STILL RUNNING just feeds the same
+        # destroyer — the fresh confirm is torn down unaccepted (which Kodi
+        # treats as "No" and reverts), and the skin reload the re-assert causes
+        # re-kicks the build, perpetuating the race until the attempts run out
+        # (observed: 3/3 attempts lost inside one >14s first build). Wait for
+        # the build to finish BEFORE re-asserting so the next confirm survives
+        # long enough for our accept to commit.
+        _wait_skin_quiescent(skin_id, log)
     log(
         "activate_skin: FAILED to keep {} after {} attempts".format(skin_id, attempts),
         xbmc.LOGERROR,

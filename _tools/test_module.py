@@ -348,6 +348,64 @@ def test_activate_skin_reasserts_when_confirm_destroyed_while_visible(lib):
     assert _skin_sets(lib) == 2
 
 
+def test_activate_skin_waits_out_skinshortcuts_build_before_reassert(lib):
+    """THE SLOW-BOX RACE (live-caught on a real Fire TV, Bedroom box): on slow
+    hardware skinshortcuts' FIRST menu build runs >14s — longer than a whole
+    activate_skin attempt — and every confirm raised inside the build window is
+    destroyed unaccepted (Kodi treats that as "No" and reverts), even when the
+    Yes click was already sent and logged. Immediate re-asserts land back
+    INSIDE the same window (and their skin reloads re-kick the build), so all
+    bounded attempts burn and the box restarts on stock Estuary. The fix: after
+    a lost attempt, WAIT for the build's includes file (_wait_skin_quiescent)
+    BEFORE re-asserting, so the next confirm survives and the accept commits.
+    MUTATION: removing the between-attempt _wait_skin_quiescent call makes all
+    3 attempts fire inside the build window here — ok becomes False (3 sets);
+    with the fix attempt 2 lands after the build and sticks (exactly 2 sets)."""
+    (lib.addons / "script.skinshortcuts").mkdir()
+    inc = (
+        lib.addons / "skin.estuary.modv2" / "xml" / "script-skinshortcuts-includes.xml"
+    )
+    inc.parent.mkdir(parents=True)
+    lib.state["condvis"] = False  # every in-build confirm dies before we see it
+    slept = {"ms": 0}
+
+    def _sleep(ms):
+        slept["ms"] += ms
+        # The first build finishes only after ~8s — far longer than one whole
+        # attempt (poll-break + settle ≈ 2.6s), so WITHOUT the wait even the
+        # 3rd re-assert still fires inside the build window.
+        if slept["ms"] >= 8000 and not inc.exists():
+            inc.write_text("<includes/>")
+
+    lib.xbmc.sleep = _sleep
+    seen = {"sets": 0, "calls": 0}
+    sticky = {}
+
+    def _skin_dir():
+        sets = _skin_sets(lib)
+        if sets != seen["sets"]:
+            seen["sets"], seen["calls"] = sets, 0
+            # The race is decided AT SET TIME: a switch made while the build
+            # is still running loses its confirm; one made after it sticks.
+            sticky[sets] = inc.exists()
+        seen["calls"] += 1
+        if sets >= 1 and sticky.get(sets):
+            return "skin.estuary.modv2"
+        # In-build switch: briefly live, then the destroyed-confirm revert.
+        return "skin.estuary.modv2" if seen["calls"] <= 2 else "skin.estuary"
+
+    lib.xbmc.getSkinDir = _skin_dir
+    logs = []
+    ok = lib.t7.activate_skin("skin.estuary.modv2", lambda msg, lvl=0: logs.append(msg))
+    assert ok is True, "the post-build re-assert must stick"
+    assert _skin_sets(lib) == 2, (
+        "exactly one re-assert: the wait must absorb the build, not extra sets"
+    )
+    assert any("waiting for skinshortcuts quiescence" in m for m in logs), (
+        "the between-attempt wait must be the logged path"
+    )
+
+
 def test_activate_skin_returns_false_when_skin_never_sticks(lib):
     """When every attempt reverts, activate_skin is HONEST: bounded attempts,
     then return False with a loud FAILED log — never a silent stock-Estuary
@@ -433,7 +491,10 @@ def test_wait_skin_quiescent_bounded_wait_when_build_never_finishes(lib):
         "skin.estuary.modv2", lambda msg, lvl=0: logs.append(msg)
     )
     sleeps = lib.state.get("sleeps", [])
-    assert sleeps.count(250) == 60, "bounded poll: exactly 60 x 250ms"
+    assert sleeps.count(250) == 120, (
+        "bounded poll: exactly 120 x 250ms (~30s — a real Fire TV's first "
+        "build ran >14s, so the old 15s bound was too tight for slow boxes)"
+    )
     assert any("not built within the wait" in m for m in logs)
 
 

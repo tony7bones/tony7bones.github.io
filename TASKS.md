@@ -44,10 +44,15 @@ tech-debt seam, the apply_iptv reporting bug, the zero-content guarantee). Keep 
 > 2. Push the `modular-setup` branch (the pre-push hook runs tests/ruff/staleness; the CI
 >    workflow now gates this branch too, incl. the named invariant step).
 > 3. Delete the superseded `iptv` branch at the push.
-> 4. **Fire TV wipe-and-run matrix** (Phase 6 queue item 3, deferred pending owner go-ahead —
->    it WIPES a real box): a Stick is adb-reachable (192.168.7.84:5555 "Bedroom TV"), but run
->    the matrix on an owner-designated stick (travelstick): `provision-kodi.sh` wipe →
->    Express one-tap; wipe → `SETUP_MODE=guided` → the per-gate manual-reopen UX.
+> 4. ~~Fire TV wipe-and-run matrix~~ — **DONE on the owner-authorized Bedroom box**
+>    (192.168.7.84:5555, both legs: Express one-tap AND the `SETUP_MODE=guided` per-gate
+>    manual-reopen walk; full evidence in the **Phase 6 addendum** in
+>    `docs/plans/modular-setup.md`). It found + fixed TWO real bugs, both live re-verified
+>    on the box: the SLOW-BOX keep-skin race (`activate_skin` now waits out skinshortcuts'
+>    first build between re-asserts; suite **768 passed / 1 xfailed**) and the provisioner's
+>    too-short 60 s self-close wait (whose fallback reboot killed the skin flush; now ~4 min).
+>    The Bedroom box was left COMPLETE and working (MOD V2 patched, both IPTV providers ==
+>    builder counts, video apps + origins, weather/RSS; at Home).
 > 5. Owner decisions still queued: optionally document `SETUP_MODE` in `.env.device.example`
 >    (a protect-hook kept the agent from adding the commented block); the no-computer-setup
 >    track (Setup with no provisioner/env) is a SEPARATE follow-on plan doc.
@@ -61,7 +66,7 @@ dialogs over JSON-RPC with `Input.ButtonEvent` (key-level), not `Input.Select`.
 
 ## Build status (modular-setup branch)
 
-- **DONE, gated, committed LOCALLY** (suite **767 passed / 1 xfailed**):
+- **DONE, gated, committed LOCALLY** (suite **768 passed / 1 xfailed**):
   Phases 0–3 + 5a (Foundation, incl. 5a·2/5a·3) + **5b·1** (the two `apply_iptv` bugs — clobber
   window + N-provider env) + **5b·2** (the host-side IPTV build integrated — BOTH real
   providers, xtream included, clean-Kodi channel-load proven with the full curation grammar) +
@@ -82,7 +87,12 @@ dialogs over JSON-RPC with `Input.ButtonEvent` (key-level), not `Input.Select`.
   `SETUP_API` version guard, `assert_box_complete` + the closure walk with the bundled
   system-tree fix, the restart-prompt autoclose, CI gates on this branch; live-proven incl.
   a forced lost-confirm re-assert AND the fresh full Express run — the computer-setup track
-  is COMPLETE).
+  is COMPLETE) +
+  **the Fire TV matrix** (Phase 6 addendum — BOTH legs on the real owner-authorized Bedroom
+  Stick: the Guided per-gate manual-reopen walk incl. an accidental interrupted-run resume
+  proof, and the unattended Express one-tap; found + fixed the SLOW-BOX keep-skin race in
+  `activate_skin` and the provisioner's too-short self-close wait, both re-verified on the
+  box; verbatim Android UX copy recorded; box left complete and working).
 - **NOT PUSHED** — milestone-push pending: needs `script.module.tony7bones` + `script.tony7bones.bootstrap`
   version bumps + `--news` (modv2plus is already 1.4.8). Push the branch once 5b lands or at the next
   coherent milestone.

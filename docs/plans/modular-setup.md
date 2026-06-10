@@ -1344,3 +1344,86 @@ plugin.video.dailymotion_com`, `_apply_rss: wrote 7 RSS feed(s) (interval 30)`; 
   of this phase; `SETUP_MODE=guided` (the env-key mechanism) STAYS as shipped in 5d; the
   no-computer-setup track (running Setup with no provisioner/env at all) is a separate
   follow-on plan doc — referenced here as a placeholder only, lands on its own.
+
+### Phase 6 addendum — the Fire TV wipe-and-run matrix (DONE; Bedroom box, owner-authorized) + the SLOW-BOX keep-skin race found & fixed
+
+> _(Provenance: this matrix run was itself interrupted once — the driving agent died mid-Leg-B
+> Foundation gate. The interruption became data: the in-flight gate ran to COMPLETION
+> unattended on the box (the run does not depend on its driver) and parked on its summary
+> dialog, where the resuming agent found it minutes later. Model A's installed-state probes
+> then re-offered exactly the one gate the interrupted run had genuinely lost (the reverted
+> skin, below) — no marker files, no stale state: the self-heal exactly as designed, proven on
+> real Android by accident.)_
+
+Device: the owner-authorized Bedroom Fire TV (AFTHA001, `192.168.7.84:5555`, Fire OS; Kodi
+21.3 ARM 32-bit, data in the `Android/data` sandbox — no relocation needed). Both legs ran
+with `USE_LOCAL=1`: the live site serves main's OLD monolith bootstrap, so an unpushed branch
+CANNOT be installed the production way (file-manager → repo zip) — the provisioner's
+working-tree push is the documented branch-verify mode. The only adb-driven "user" shortcuts:
+`input keyevent 23` (the remote's select/OK press) and `Addons.ExecuteAddon` (= clicking the
+Setup tile); everything else was the shipped flow.
+
+- **THE REAL ANDROID BUG (Leg B's first Foundation gate, log-stamped): the slow-box keep-skin
+  race.** On this stick script.skinshortcuts' FIRST menu build for MOD V2 runs >14 s cold —
+  longer than one whole `activate_skin` attempt — so the Phase 6 premise ("a re-assert runs
+  after the destructive first build is over") never came true: each re-assert fired straight
+  back INTO the still-running build (whose skin reload it re-kicks), each confirm was
+  destroyed unaccepted ~200 ms AFTER our SendClick had already logged "accepted"
+  (destroyed-unaccepted = "No" = revert), and all 3 attempts burned inside ONE build window:
+  `accepted keep-skin` → `did not stick` ×3 → `FAILED to keep skin.estuary.modv2 after 3
+attempts` → the gate restarted onto STOCK Estuary. **Fix (`tony7bones/system.py`):** between
+  attempts `activate_skin` now WAITS for skinshortcuts quiescence (`_wait_skin_quiescent`;
+  bound raised 15 s → 30 s) BEFORE re-asserting, so the next confirm renders after the
+  destroyer finishes. Mutation-proven test (the slow-build timeline: without the wait all 3
+  attempts land in-window → False; with it attempt 2 sticks at exactly 2 sets) + the bound pin
+  updated — suite **768 passed / 1 xfailed**, ruff + secrets green. **Live re-verify:** fixed
+  module pushed to the box, includes file deleted (recreating the fresh-box condition), the
+  wizard re-offered Foundation (the self-heal) and the re-run committed — `active and
+committed (attempt 1)` (the warm rebuild won naturally) and `lookandfeel.skin =
+skin.estuary.modv2` PERSISTED in guisettings across the clean Quit.
+- **Leg B — Guided manual-reopen UX: COMPLETE (all four offers walked as a remote user).**
+  `SETUP_MODE=guided` was injected into the DERIVED env only — a key-level diff proved the
+  pushed env == `.env.bedroom` modulo exactly {DEVICE_IP dropped, DEVICE_NAME rewritten,
+  IPTV_STAGING_DIR appended, SETUP_MODE appended}; **`.env.bedroom` itself was never
+  modified**. Verbatim Android copy — wizard title `Tony.7.Bones Setup — Guided`; offers
+  `Install Foundation (Estuary MOD V2 skin + repositories)` / `Install IPTV (live TV)` /
+  `Install Add-ons (curated content)` / `Finish — setup is complete, remove Setup`, each above
+  `Remove Setup` and `Exit (keep Setup)`. Gate summaries: Foundation `Estuary MOD V2:
+installed / Repositories + sources installed. / Kodi will restart — reopen Setup to
+continue.`; IPTV `pvr.iptvsimple: installed / Instance settings: written / …`; Add-ons
+  `Repos: 12/12 / Apps: 2/2 / Video add-ons: 4/4` — that dialog's 5th line (the restart
+  notice) is CLIPPED off the dialog under MOD V2 at 1080p (UX observation, document-only).
+  The Android restart seam is the Phase 6 autoclose, live-confirmed: notification `Setup
+complete — closing Kodi. Reopen it to finish.` + clean `Quit()`, prompt-free, ~4 s end to
+  end. Each manual reopen landed on a complete working box (skin-only → +live TV → full);
+  IPTV verified mid-walk (all 8 groups, counts == builder: 158/47/24 + 214/100/12 + 5
+  favorites with 5/5 icons, All channels 560). Finish: `finish: box verified complete
+{'foundation': True, 'iptv': True, 'addons': True}` — `assert_box_complete` IN-KODI on the
+  real box — then env consumed, self-uninstall, clean Quit.
+- **Leg A — Express one-tap: COMPLETE (second run; the first run caught a PROVISIONER bug).**
+  The provisioner's "waiting for Kodi to close itself" bound was 60 s, but the real-Fire-TV
+  terminal seam (summary OK → cold first MOD V2 load + first skinshortcuts build + the
+  keep-skin dance — now deliberately build-waiting — + close notice + clean Quit) runs longer:
+  the bound expired MID-DANCE and the fallback DEVICE REBOOT killed Kodi before the clean
+  shutdown flushed `lookandfeel.skin` — box back on stock (everything else installed, Setup
+  already self-uninstalled; the no-clean-shutdown settings-loss class, again). Fixed in
+  `_tools/provision-kodi.sh`: the bound is now ~4 min with the failure mode documented inline.
+  The clean re-run: wipe → seed → host IPTV build/stage → ONE unattended Express → `Kodi
+closed cleanly — no force-kill needed` + `Skin persisted as MOD V2` + patch/menu built; the
+  box then verified end-to-end over JSON-RPC after a FULL DEVICE REBOOT (the restart-survival
+  proof): MOD V2 active on Home, weather `Sacramento, California` 63°F, RSS on + ticker live,
+  POV 6.06.06 / The Loop 7.9 / Sports HD 0.1.85.1 / YouTube 7.4.3 all enabled, dailymotion
+  2.4.4 installed-DISABLED, origins kodifitzwell / loop / bugatsinho / xbmc.org×2, IPTV
+  counts == builder again, bootstrap de-registered, env consumed, rendered patched home
+  captured. The box was left ON, at Home, fully working (the owner's hard requirement).
+- **Android observations (document-only):** (1) ONE post-Foundation clean Quit was followed by
+  an AUTOMATIC Kodi relaunch ~20 s later — observed once, never reproduced; don't design
+  against it. (2) The first boot after the Add-ons gate wedged the Python invoker pool (Kodi
+  force-killed a hung plugin.video.youtube service; later `ExecuteAddon` calls returned OK but
+  never spawned an invoker) — a user-style close-and-reopen cleared it. (3) After the Leg A
+  provision finished, Kodi exited and CRASH-LOOPED during GL init on relaunch (the
+  provisioner's documented GPU-wedge class); a device reboot recovered it, end state fully
+  intact. (4) `GUI.ExecuteBuiltin` is NOT exposed over JSON-RPC on this build —
+  `firetv.sh`'s `_builtin` helper cannot work; drive the GUI with key events /
+  `Addons.ExecuteAddon`. (5) The one-time manual steps remain by design (PVR DB flags):
+  hide "All channels", TV sort-by-name.
