@@ -482,7 +482,10 @@ apply_iptv` as units (the Express orchestrator). `pvr.iptvsimple` INSTALL moved 
 - **NEXT: 5a device verification — a CLEAN Kodi install running `run_foundation`** → skin-only box
   (MOD V2 active, all repos present, ZERO content add-ons).
 
-### Phase 5b — DONE (local; Foundation realignment: menu-reliability fix + weather-into-Foundation)
+### Phase 5a·2 — DONE (local; Foundation realignment: menu-reliability fix + weather-into-Foundation)
+
+> _(Numbering note: this and 5a·3 are CONTINUATIONS of the Foundation layer (Phase 5a), not new
+> phases. The real Phase 5b is the IPTV layer — see "Phase 5b — NEXT" at the end of this doc.)_
 
 Two coordinated changes, both **live-verified on a clean local Kodi 21.3 Omega** running
 `run_foundation`.
@@ -526,7 +529,7 @@ Two coordinated changes, both **live-verified on a clean local Kodi 21.3 Omega**
   Outline-HD icons, the skin's Weather panel populated ("Sacramento, California — 82°F · Sunny" + full
   forecast). ZERO content add-ons; all 12 repos installed. Screenshots captured.
 
-### Phase 5c — DONE (local; Foundation additions + env-gated IPTV auto-chain)
+### Phase 5a·3 — DONE (local; Foundation finishers: our repo + autocomplete + env-gated IPTV auto-chain)
 
 Three additive Foundation changes, all unit-/mutation-verified (no live-Kodi pass yet —
 the owner runs the clean-Kodi verify).
@@ -610,5 +613,46 @@ fires, backend installs). They are exactly the IPTV-layer hardening Phase 5b own
    nothing. FIX (5b): generalize `apply_iptv` to N providers (the deferred P2 work — host-side
    `build_iptv.py` from the `iptv` branch + N `instance-settings-<N>.xml`).
 
-- **NEXT: Phase 5b** — make the IPTV + Add-ons layers independently runnable, STARTING with the two
-  `apply_iptv` fixes above; then the Guided wizard (5c).
+---
+
+## Phase 5b — NEXT (the IPTV layer; not started)
+
+> **Status of the build:** Phases 0–3 + **5a (Foundation, incl. 5a·2/5a·3)** are DONE, gated, and
+> committed LOCALLY on `modular-setup` (HEAD `b38aa09`) — **not pushed** (milestone-push pending: it
+> needs the `script.module.tony7bones` + `script.tony7bones.bootstrap` version bumps + a `--news`).
+> The Foundation deliverable is complete and clean-Kodi verified. `run_express` (Express) and
+> `run_foundation`/`run_foundation_setup` (skin-only + env-gated IPTV chain) exist; the shipped
+> `run()` still calls `run_express`.
+
+**5b makes the IPTV layer independently runnable AND correct.** Start here, in order:
+
+1. **FIX the two `apply_iptv` live-box bugs** (logged under Phase 5a·3, the live run surfaced them):
+   - **Instance-settings clobber** — write/enforce `instance-settings-*.xml` BEFORE enabling
+     pvr.iptvsimple (the running PVR client flushes stock in-memory defaults over a later file
+     write — same class as the `Skin.SetBool` clobber). Verify the Express `_configure_box` path
+     for the same latent race.
+   - **Multi-provider env gap** — `_ensure_iptv_custom_tv_groups` reads single-instance
+     `IPTV_M3U`/`IPTV_EPG`/`IPTV_GROUPS`, but the per-device `.env` uses `IPTV_<N>_*`. Generalize
+     `apply_iptv` to **N providers** → N `instance-settings-<N>.xml` + N `customTVGroups-*.xml`.
+2. **Integrate the host-side IPTV build** (the deferred P2 work): bring `_tools/build_iptv.py` +
+   `_tools/test_build_iptv.py` + the customization playbook over from the **`iptv` branch** (98%-
+   covered, m3u + xtream modes) into the provisioner, and have `apply_iptv` consume its staged
+   curated `instance-settings-<N>.xml` / `customTVGroups-*.xml` (per the panel's "IPTV is two
+   halves" decision — host build + in-Kodi apply).
+3. **`run_iptv(box_env)`** — make the IPTV layer independently runnable on top of an existing
+   Foundation (install pvr backend if missing — it already fail-louds — + N-provider config), so a
+   user who stopped skin-only can later add IPTV with no redo.
+4. **Gate it** (the standing four-part bar + clean-Kodi verify): on a clean Foundation box, run
+   `run_foundation_setup` with `.env.local` (real IPTV) → channels actually load (this is what the
+   5a·3 live run could NOT confirm because of bug #1).
+
+**Then:**
+
+- **Phase 5c — the Add-ons layer independent** (`run_addons`): the opinionated curated set (POV,
+  Loop, Sports HD, YouTube) as an opt-in layer on top of Foundation.
+- **Phase 5d — the Guided wizard + Model A lifecycle** (the panel's keystone): the orchestrator
+  persists across gates (self-uninstall only on terminal Finish); the wizard offers the next undone
+  gate using installed-state probes; the **no-fork** invariant (Guided and Express drive the same
+  `apply_*`). Wire a chosen default into the shipped `run()` (today still `run_express`).
+- **Phase 6 — harden + Fire TV** (version-guard shared modules, `assert_box_complete`, CI gates, the
+  wipe-and-run matrix on a real Stick for the Android manual-restart UX).
