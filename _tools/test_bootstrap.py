@@ -1300,9 +1300,10 @@ def test_run_reads_env_once_and_deletes_after_express(boot, monkeypatch, tmp_pat
 
 
 def test_run_no_env_does_not_delete(boot, monkeypatch, tmp_path):
-    """On a no-env desktop run (BOX_ENV_PATH absent), run() reads -> {} and the
-    delete is a guarded no-op: os.remove is never called. This preserves the
-    desktop snapshot path exactly (no spurious delete attempt)."""
+    """On a no-env run (every env candidate absent), run() routes to the
+    Guided wizard (Phase N1 — the no-computer path; routing matrix pinned in
+    test_no_computer_routing.py) and never attempts an env delete: os.remove
+    is not called for the env path, and no Express install runs."""
     envpath = str(tmp_path / "absent" / "tony7bones.env")
     monkeypatch.setattr(boot.mod, "BOX_ENV_PATH", envpath)
     removes = {"env": 0}
@@ -1319,6 +1320,10 @@ def test_run_no_env_does_not_delete(boot, monkeypatch, tmp_path):
     boot.mod.run()
 
     assert removes["env"] == 0, "no-env run must not attempt to delete the env"
+    # N1: the no-env launch is the WIZARD, not Express — nothing installs on a
+    # declined (unscripted) menu, and the wizard menu was actually shown.
+    assert boot.state["installed"] == set(), "no-env run must install nothing"
+    assert boot.state["select"], "no-env run must show the Guided wizard menu"
 
 
 # --------------------------------------------------------------------------- #

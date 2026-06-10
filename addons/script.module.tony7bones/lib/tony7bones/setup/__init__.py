@@ -30,7 +30,9 @@ from .result import LayerResult
 # direct-extract install path, so the guard lives at runtime. Bump this (and
 # the bootstrap's REQUIRED_SETUP_API) whenever the bootstrap starts depending
 # on a new library capability.
-SETUP_API = 1
+# Level 2 (Phase N1): the ordered env-source helpers (env.box_env_paths /
+# read_first_env / delete_box_envs) the bootstrap's run() routing now calls.
+SETUP_API = 2
 
 __all__ = [
     "KodiHost",

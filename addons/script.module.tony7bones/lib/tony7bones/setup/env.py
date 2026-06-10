@@ -12,9 +12,84 @@ sublibrary so the new ``setup/`` orchestrator + layer modules and the existing
 bootstrap re-export the same single implementation. No logic change.
 (``env_has_iptv`` followed in Phase 6 — same move, same reason: the probes
 module needs it for ``assert_box_complete`` and must not import the bootstrap.)
+
+Phase N1 (the no-computer track) generalized the env SOURCE from the single
+Android constant to an ORDERED path list: the provisioner's pushed file
+(``BOX_ENV_PATH`` — wins when present) first, then the PROFILE-LOCAL persisted
+env (``PROFILE_ENV_SPECIAL`` — what the on-box config collector writes; lives
+inside Kodi's own writable profile, so it works on every platform with no adb /
+scoped-storage dependency). ``box_env_paths`` / ``read_first_env`` /
+``delete_box_envs`` are the three helpers; the module stays import-clean
+without Kodi (``xbmcvfs`` is imported LAZILY, only to translate the
+``special://`` profile path, and its absence simply omits that candidate).
 """
 
+import os as _os
 import re as _re
+
+# The per-device config the provisioner derives from the owner's master .env and
+# pushes to the box (the COMPUTER-path producer). Moved here from the bootstrap
+# in Phase N1 so the path list has one home; the bootstrap re-exports it.
+BOX_ENV_PATH = "/storage/emulated/0/kodi/tony.7.bones/tony7bones.env"
+
+# The PROFILE-LOCAL env (the NO-COMPUTER-path producer — the on-box collector
+# persists here from Phase N2 on). Inside Kodi's own profile: writable
+# everywhere Kodi runs, no adb, no scoped-storage exposure.
+PROFILE_ENV_SPECIAL = (
+    "special://profile/addon_data/script.tony7bones.bootstrap/tony7bones.env"
+)
+
+
+def profile_env_path():
+    """The translated real path of the profile-local env, or ``None`` when not
+    running under Kodi (``xbmcvfs`` unavailable — pure-Python callers)."""
+    try:
+        import xbmcvfs
+
+        return xbmcvfs.translatePath(PROFILE_ENV_SPECIAL)
+    except Exception:  # noqa: BLE001 - off-Kodi: no profile path to offer
+        return None
+
+
+def box_env_paths(primary=None):
+    """The ORDERED env-source candidates: the pushed ``BOX_ENV_PATH`` (or the
+    caller's ``primary`` override) FIRST — the provisioned path is byte-compatible
+    because its file always wins — then the profile-local persisted env (omitted
+    off-Kodi)."""
+    paths = [primary or BOX_ENV_PATH]
+    profile = profile_env_path()
+    if profile:
+        paths.append(profile)
+    return paths
+
+
+def read_first_env(paths, reader=None):
+    """Read the FIRST candidate path that parses to a NON-EMPTY env dict.
+
+    An absent, unreadable, empty, or comment-only file is skipped (it carries
+    no configuration — same class as absent, so a degenerate push can never
+    shadow a real profile-local env). Returns ``{}`` when no candidate yields
+    config — the bootstrap's no-env signal (→ the Guided wizard). ``reader``
+    defaults to :func:`read_box_env`; injectable so the bootstrap's re-exported
+    (monkeypatchable) name keeps working."""
+    reader = reader or read_box_env
+    for path in paths:
+        env = reader(path)
+        if env:
+            return env
+    return {}
+
+
+def delete_box_envs(paths):
+    """Remove EVERY env candidate (guarded; a missing file is a no-op). The
+    terminal ops (Express completion, Guided Finish / Remove Setup) call this so
+    no secret-bearing env lingers in EITHER location (Model A semantics)."""
+    for path in paths:
+        try:
+            _os.remove(path)
+        except OSError:
+            pass
+
 
 # IPTV env detection: an IPTV provider is configured when the per-device env
 # carries a PLAYLIST SOURCE — a multi-provider ``IPTV_<N>_M3U`` /

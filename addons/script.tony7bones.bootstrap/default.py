@@ -39,7 +39,13 @@ No secrets are embedded in this script.
 """
 
 import json
-import os
+
+# os is no longer called by THIS module's own code (the env deletes moved to
+# tony7bones.setup.env.delete_box_envs in Phase N1), but the env-lifecycle tests
+# reach the SHARED os module object through this module (boot.mod.os.remove —
+# patching it reaches env._os.remove, the same xbmcvfs-style trick documented
+# below). Keep the re-export.
+import os  # noqa: F401 - shared-module patch point for tests (see above)
 
 import xbmc
 import xbmcgui
@@ -57,7 +63,9 @@ MY_ID = "script.tony7bones.bootstrap"
 # so the failure is one honest dialog + log line + RuntimeError instead of a
 # cryptic ImportError deep in a gate.
 # ---------------------------------------------------------------------------- #
-REQUIRED_SETUP_API = 1
+# Level 2 (Phase N1): run() depends on the library's ordered env-source helpers
+# (tony7bones.setup.env.box_env_paths / read_first_env / delete_box_envs).
+REQUIRED_SETUP_API = 2
 
 
 def _require_setup_library():
@@ -377,7 +385,20 @@ PVR_BACKEND_ID = _iptv.PVR_BACKEND_ID
 # linger on the box — `_configure_box` is a pure consumer that never touches the
 # file. (Owning the lifecycle in one coordinator is what lets a future multi-gate
 # Guided flow share the env across gates instead of deleting it mid-run.)
-BOX_ENV_PATH = "/storage/emulated/0/kodi/tony.7.bones/tony7bones.env"
+# Phase N1: the constant MOVED to tony7bones.setup.env (single source of truth
+# for the ordered env-source list); re-exported here, same value, so every
+# existing reference and test (boot.mod.BOX_ENV_PATH — incl. the monkeypatched
+# staging the env tests use) keeps working unchanged.
+BOX_ENV_PATH = _env_mod.BOX_ENV_PATH
+
+
+def _box_env_paths():
+    """The ORDERED env-source candidates (Phase N1): the provisioner's pushed
+    file (``BOX_ENV_PATH`` — wins when present, so the provisioned path is
+    byte-compatible) first, then the profile-local persisted env the on-box
+    collector writes (``env.PROFILE_ENV_SPECIAL``). Resolves THIS module's
+    ``BOX_ENV_PATH`` global late so a test's monkeypatched staging is honored."""
+    return _env_mod.box_env_paths(primary=BOX_ENV_PATH)
 
 
 def _configure_box(box_env=None):
@@ -1091,20 +1112,28 @@ _GATE_LABELS = {
     "finish": "Finish — setup is complete, remove Setup",
 }
 
+# The NO-ENV wizard's one-tap escape (Phase N1, D1): the exact old no-env
+# Express — run_express({}) with keyless-Yahoo weather and default RSS,
+# including its self-uninstall + single restart. Offered ONLY on the no-env
+# wizard (the remote-only user) while gates remain: an env-routed Guided box
+# was deliberately provisioned for the interview, and its menu surface stays
+# byte-identical to 5d. (OWNER-VETOABLE: the plan's D5 calls the entry
+# conditional; "always show it" is the documented alternative.)
+_DEFAULTS_LABEL = "Install everything with defaults"
+
 
 def _delete_box_env():
-    """Remove the per-device env file (guarded; missing file is a no-op).
+    """Remove the per-device env file(s) (guarded; missing files are no-ops).
 
     The env's lifecycle in a GUIDED session: the file SURVIVES every gate (a
     gate restart must not starve the next gate — the panel's env-ownership
     rule) and is consumed only by the TERMINAL ops (Finish / Remove Setup),
     BEFORE their restart, so no secret lingers once the wizard is done. The
     Express path keeps its own delete in run() (after the last layer),
-    unchanged."""
-    try:
-        os.remove(BOX_ENV_PATH)
-    except OSError:
-        pass
+    unchanged. Phase N1: the delete covers EVERY env-source candidate
+    (pushed ``BOX_ENV_PATH`` + the profile-local collector env) so a terminal
+    op leaves no secret in either location (Model A semantics)."""
+    _env_mod.delete_box_envs(_box_env_paths())
 
 
 def _next_gate(box_env):
@@ -1297,24 +1326,44 @@ def run_guided(box_env=None):
       * A declined offer / dialog cancel exits cleanly: nothing installed,
         nothing removed, env + Setup intact (the decline-everything path).
 
-    Degradation worth knowing (documented, accepted): if the env file is LOST
-    mid-flow (crash, manual delete), the next launch reads no ``SETUP_MODE``
-    and runs EXPRESS — which idempotently completes every remaining layer in
-    one shot and self-uninstalls (the proven "Express end-state == cumulative
-    Guided end-state" equivalence); only env-driven config (weather keys, IPTV
-    providers, RSS) is skipped until the provisioner re-pushes the env.
+    Degradation worth knowing (documented, accepted — RESHAPED by Phase N1):
+    if the env file is LOST mid-flow (crash, manual delete), the next launch
+    finds NO env and lands back in this wizard (no-env → Guided is the N1
+    default), which self-resumes from installed state — strictly better than
+    the pre-N1 silent Express completion; only env-driven config (weather
+    keys, IPTV providers, RSS) is missing until an env producer re-supplies
+    it. An env APPEARING mid-flow (a provisioner push while the wizard is
+    open) is picked up on the NEXT launch — this launch keeps the dict it
+    read at entry (read-once).
+
+    The NO-ENV wizard (Phase N1 — the remote-only/no-computer user) adds ONE
+    menu entry while gates remain: ``"Install everything with defaults"`` —
+    the exact old no-env Express one-tap (``run_express({})``: same net
+    install set, keyless-Yahoo weather, default RSS, self-uninstall + ONE
+    restart). It is a TERMINAL op, so it also consumes any env file that
+    appeared since launch (a guarded no-op in the normal no-env case). An
+    env-routed wizard (``SETUP_MODE=guided``) never shows it — that menu is
+    byte-identical to 5d.
 
     Returns an outcome string for tests/logs: ``"gate:<name>"`` (a gate ran —
-    the restart seam follows on success), ``"finished"``, ``"removed"`` or
-    ``"exit"``.
+    the restart seam follows on success), ``"finished"``, ``"removed"``,
+    ``"defaults"`` (the no-env one-tap escape completed) or ``"exit"``.
     """
     box_env = box_env or {}
+    no_env = not box_env
     while True:
         gate = _next_gate(box_env)
-        pick = xbmcgui.Dialog().select(
-            "Tony.7.Bones Setup — Guided",
-            [_GATE_LABELS[gate], "Remove Setup", "Exit (keep Setup)"],
-        )
+        options = [_GATE_LABELS[gate]]
+        # The one-tap escape: no-env wizard only, and only while there is
+        # still something to install (at "finish" it adds nothing).
+        defaults_pick = None
+        if no_env and gate != "finish":
+            defaults_pick = len(options)
+            options.append(_DEFAULTS_LABEL)
+        remove_pick = len(options)
+        options.append("Remove Setup")
+        options.append("Exit (keep Setup)")
+        pick = xbmcgui.Dialog().select("Tony.7.Bones Setup — Guided", options)
         if pick == 0:
             if gate == "finish":
                 _log("guided: terminal Finish — removing Setup")
@@ -1330,7 +1379,22 @@ def run_guided(box_env=None):
             # fall through to the menu so the user can retry or exit.
             _log(f"guided: gate '{gate}' did not complete; back to the menu")
             continue
-        if pick == 1:
+        if defaults_pick is not None and pick == defaults_pick:
+            # The no-env one-tap escape (D1): the EXACT old no-env Express —
+            # run_express({}) drives the three layers unattended, shows the
+            # one summary, self-uninstalls, activates the skin, restarts ONCE.
+            _log("guided: 'Install everything with defaults' — Express({})")
+            addons_res, _foundation_res, _iptv_res = run_express({})
+            if addons_res.ok:
+                # Terminal op: consume any env that appeared since launch
+                # (guarded no-op in the normal no-env case — Model A).
+                _delete_box_env()
+                return "defaults"
+            # Mid-install cancel: the monolith's early-return contract —
+            # nothing terminal happened; back to the menu.
+            _log("guided: defaults run cancelled; back to the menu")
+            continue
+        if pick == remove_pick:
             if xbmcgui.Dialog().yesno(
                 "Tony.7.Bones Setup",
                 "Remove Setup from this box?\n\n"
@@ -1348,31 +1412,48 @@ def run_guided(box_env=None):
 def run():
     """Entry point — read the per-device env, route Express/Guided, own the env.
 
-    The orchestrator owns the per-device env lifecycle: read it ONCE here, pass
-    the parsed dict down. ``SETUP_MODE=guided`` in the env routes to the Guided
-    wizard (which owns the env's TERMINAL delete — the file must survive every
-    gate of a multi-session flow); any other value or no env runs EXPRESS,
-    byte-identical to the pre-5d one-tap: drive the three composed layers, then
-    DELETE the env AFTER the last layer completes. On a no-env desktop run read
-    yields ``{}`` and the delete is a guarded no-op. On a mid-install CANCEL
-    the env is LEFT intact (the layers never consumed it, so re-running Setup
-    needs it) — mirroring the monolith, which returned before any env delete on
-    cancel. Centralizing read+delete in one coordinator is what lets the
-    multi-gate Guided flow share the env safely (an earlier gate must not
-    delete the env a later gate needs).
+    The orchestrator owns the per-device env lifecycle: read it ONCE here (the
+    FIRST non-empty env in the ordered source list — the provisioner's pushed
+    ``BOX_ENV_PATH`` wins, then the profile-local collector env), pass the
+    parsed dict down. Phase N1 routing (a strict superset of 5d's — D1):
+
+        env ABSENT everywhere (read -> {})       -> run_guided({})   (N1 — the
+                                                    no-computer/remote-only user)
+        env present, no SETUP_MODE / other value -> run_express(env) (unchanged —
+                                                    the provisioned one-tap)
+        env present, SETUP_MODE=guided           -> run_guided(env)  (unchanged)
+
+    The provisioned unattended one-tap CANNOT regress through this change: the
+    provisioner always pushes an env before Setup runs (and since N1 it ABORTS
+    when that push fails instead of silently degrading). The Guided wizard owns
+    the env's TERMINAL delete (the file must survive every gate of a
+    multi-session flow); the Express route deletes EVERY env candidate AFTER
+    the last layer completes. On a mid-install CANCEL the env is LEFT intact
+    (the layers never consumed it, so re-running Setup needs it) — mirroring
+    the monolith, which returned before any env delete on cancel. Centralizing
+    read+delete in one coordinator is what lets the multi-gate Guided flow
+    share the env safely (an earlier gate must not delete the env a later gate
+    needs).
     """
-    box_env = read_box_env(BOX_ENV_PATH)
+    paths = _box_env_paths()
+    # reader=read_box_env resolves THIS module's (monkeypatchable) name late —
+    # the env-lifecycle tests spy on it; behaviour identical to the library's.
+    box_env = _env_mod.read_first_env(paths, reader=read_box_env)
+    if not box_env:
+        # NO env anywhere: the remote-only user (no provisioner, no computer).
+        # The Guided wizard is the interview they need; its "Install everything
+        # with defaults" entry keeps the old one-tap one pick away (D1).
+        run_guided({})
+        return
     if (box_env.get(SETUP_MODE_KEY) or "").strip().lower() == "guided":
         run_guided(box_env)
         return
     addons_res, _foundation_res, _iptv_res = run_express(box_env)
     # Delete only after a non-cancelled run consumed the env (addons_res.ok is False
     # ONLY on a mid-install cancel — the abort path leaves the env for a re-run).
-    if box_env and addons_res.ok:
-        try:
-            os.remove(BOX_ENV_PATH)
-        except OSError:
-            pass
+    # Covers EVERY candidate so no secret lingers in either location (N1).
+    if addons_res.ok:
+        _env_mod.delete_box_envs(paths)
 
 
 if __name__ == "__main__":

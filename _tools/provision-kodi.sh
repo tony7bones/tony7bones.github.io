@@ -257,11 +257,19 @@ if [[ -f "$ENV_FILE" ]]; then
   if _adb push /tmp/_t7b_env "$BOX_ENV_PATH" >/dev/null 2>&1; then
     ok "Per-device config pushed (weather + IPTV + RSS from .env)."
   else
-    warn "Couldn't push the per-device env — box will use built-in defaults."
+    # Phase N1: a box with NO env now launches the GUIDED WIZARD (the
+    # no-computer route) — and this script's auto-dismiss would blindly press
+    # the wizard's first item. Aborting before the Setup launch is the honest
+    # move (it always was: the old silent "built-in defaults" run shipped a
+    # generic box that served nobody). Fix the adb/storage issue and re-run.
+    rm -f /tmp/_t7b_env
+    die "Couldn't push the per-device env to $BOX_ENV_PATH — aborting BEFORE launching Setup (a no-env launch opens the Guided wizard, which this unattended script must not drive). Fix the push and re-run."
   fi
   rm -f /tmp/_t7b_env
 else
-  warn "No local .env — box uses built-in defaults (keyless weather, no IPTV)."
+  # Unreachable in practice (the script dies at startup without .env.<device>),
+  # but keep the guard honest: never launch Setup env-less from this script.
+  die "No local .env — refusing to launch Setup without a per-device env (the no-env launch is the interactive Guided wizard)."
 fi
 
 # --- 5. launch + enable ----------------------------------------------------- #
