@@ -25,8 +25,13 @@ tech-debt seam, the apply_iptv reporting bug, the zero-content guarantee). Keep 
 
 ## ▶ VERY NEXT STEP — N2, the on-box config collector (no-computer-setup track)
 
-> **Phase N1 is DONE and committed on branch `no-computer-setup`** (cut from the merged
-> `main`, 2026-06-10) — routing + env-source generalization: NO env anywhere →
+> **Phase N1 is RELEASED to `main` (2026-06-10)** — `script.tony7bones.bootstrap`
+> **1.6.0** + `script.module.tony7bones` **1.3.0** (release commit `fbf4b24`, merge
+> `38b9237`; proxy untouched at 2.2.1; live-verified: the 1.6.0/1.3.0 zips serve 200
+> from raw `main`, the 1.5.0/1.2.0 zips 404). Auto-update impact on completed boxes:
+> they will pull library 1.3.0 (an import-only change — benign); the bootstrap is not
+> installed on completed boxes (it self-uninstalls). N1 = routing + env-source
+> generalization: NO env anywhere →
 > `run_guided({})` (the remote-only user lands in the wizard, with the
 > "Install everything with defaults" one-tap escape = the exact old no-env Express);
 > env present → byte-identical provisioned routing (no `SETUP_MODE` → Express,

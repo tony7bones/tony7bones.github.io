@@ -1,6 +1,9 @@
 # Plan — No-Computer Setup (repository-direct, remote-only provisioning)
 
-> Status: **N1 DONE (branch `no-computer-setup`, local) — N2 is next.** The design
+> Status: **N1 RELEASED to `main` (2026-06-10 — bootstrap 1.6.0 + library 1.3.0,
+> release `fbf4b24`, merge `38b9237`) — N1.1 / N2 are next.** Completed boxes
+> auto-update to library 1.3.0 (import-only, benign); the bootstrap is not installed
+> on completed boxes. The design
 > below is the panel-style plan; the build log at the bottom records what landed.
 > This track started AFTER the modular-setup Phase 6 hardening completed and the
 > milestone push landed the `modular-setup` branch on `main` (the wizard this plan
@@ -442,7 +445,7 @@ Same gated treatment as every modular phase, plus the no-env dimension:
 
 ## Build log
 
-### Phase N1 — DONE (local, branch `no-computer-setup`; routing + env-source generalization — the wizard is reachable with no computer)
+### Phase N1 — RELEASED to `main` 2026-06-10 (bootstrap 1.6.0 + library 1.3.0; routing + env-source generalization — the wizard is reachable with no computer)
 
 - **Owner decision encoded:** Q1 is ANSWERED — the owner confirmed no-env → Guided
   ("no computer no setup… makes no sense"). The other five open questions (Q2–Q6)
