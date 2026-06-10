@@ -5,6 +5,18 @@ one-shot flow. Design source: `../plans/one-shot-option-b-plan.md` (implemented)
 Code: `addons/script.module.tony7bones/`, `addons/script.tony7bones.bootstrap/`,
 `addons/script.tony7bones.modv2plus/`.
 
+> **Partially historical.** This describes the pre-modular one-shot flow; the
+> shipped Setup is now the **modular** one (bootstrap 1.6.0 / library 1.3.0 —
+> Express is behavior-identical to the one-shot below, but `run()` routes: no
+> env → the Guided wizard, env → Express, `SETUP_MODE=guided` → the wizard; see
+> `../plans/modular-setup.md` + `../plans/no-computer-setup.md`). The env model
+> superseded the single-path read-then-remove described below: the device root
+> is `/storage/emulated/0/_T7B/kodi/` (N1.1; legacy `kodi/tony.7.bones/` is a
+> read-only fallback), env sources are ORDERED (derived push → master →
+> profile-local), and a device-resident master `.env.<device>` is **never
+> deleted** — see `kodi-install-mechanics.md` §14 for the current mechanism.
+> The architecture sections below remain accurate.
+
 ---
 
 ## The first-party add-ons

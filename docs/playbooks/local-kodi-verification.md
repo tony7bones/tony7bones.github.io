@@ -47,7 +47,14 @@ services.webserverauthentication = false
 > config; `.env.device.example` is the committed template), wipes the box, and
 > seeds guisettings **before Kodi starts** — web server, device name, settings
 > level, `addons.unknownsources = true`, and `addons.updatemode = 1`. Use it
-> instead of hand-wiping a device profile.
+> instead of hand-wiping a device profile. It pushes the derived `tony7bones.env`
+> (and the IPTV staging) under the canonical device root
+> `/storage/emulated/0/_T7B/kodi/` (N1.1; the old `kodi/tony.7.bones/` root is a
+> read-only legacy fallback). A device-resident MASTER `.env.<device>` at that
+> root is read after the derived push and **never deleted** — a wipe-and-redo
+> works forever off it. NOTE for verification: since bootstrap 1.6.0 a **no-env
+> launch opens the Guided wizard**, not Express — triggering the bootstrap on a
+> box with no env anywhere now renders the wizard list dialog.
 
 ### Fire OS 11 Sticks — the live data dir is relocated
 

@@ -238,23 +238,37 @@ The MOD V2+ patch is NOT applied during Setup — it cannot run until MOD V2 is 
 has self-uninstalled. The `script.tony7bones.modv2plus` **boot service** closes
 that gap (see `modv2plus-dev-cycle-and-lessons.md`).
 
-## 14. Per-device `.env` injection — read-then-remove the box env file
+## 14. Per-device `.env` injection — ordered env sources, persistent master
 
 Box configuration is per-device, and the secrets (weather API keys, IPTV
 credentials) must never live in the repo or linger on the box. The mechanism
-(bootstrap 1.4.0):
+(bootstrap 1.6.0 / library 1.3.0; the `_T7B` root + master env are N1.1,
+committed on `no-computer-setup`, unreleased):
 
-- The **provisioner** pushes a per-device `tony7bones.env` to
-  `BOX_ENV_PATH = /storage/emulated/0/kodi/tony.7.bones/tony7bones.env` (generated
-  from a gitignored `.env.<device>`; `.env.device.example` is the committed
-  placeholder template).
-- During Setup, `_configure_box()` reads it via `read_box_env()` and applies, in
-  order: `_apply_weather_from_env()` (up to 5 locations + Weatherbit/OWM keys),
-  `_ensure_iptv_custom_tv_groups(box_env)` (custom groups + m3u/EPG + groups-only),
-  `_apply_rss_from_env()`, and the device name/web/settings-level prefs.
-- It then **READS-THEN-REMOVES** the file (`os.remove`) so no secret lingers on
-  the box after the run.
+- The **canonical device root** is `/storage/emulated/0/_T7B/kodi/`; the old
+  `/storage/emulated/0/kodi/tony.7.bones/` root is a read-only LEGACY fallback
+  (read second, never written). The **provisioner** derives a per-device
+  `tony7bones.env` from a gitignored `.env.<device>` and pushes it to
+  `BOX_ENV_PATH = /storage/emulated/0/_T7B/kodi/tony7bones.env`
+  (`.env.device.example` is the committed placeholder template).
+- Setup reads the env from the **ORDERED sources** (`setup/env.py
+box_env_paths`): the pushed derived env at the canonical root → the legacy
+  push path → the device-resident **MASTER** `.env.*` candidates (canonical
+  root then legacy root, sorted; read with provisioner-parity derivation —
+  `DEVICE_IP` dropped, `IPTV_STAGING_DIR` injected iff staged) → the
+  profile-local persisted env. First NON-EMPTY parse wins. No env anywhere →
+  the Guided wizard (and, on the branch, Setup scaffolds the comment-disabled
+  master template `.env.<device-name>` at the canonical root).
+- `_configure_box()` applies, in order: `_apply_weather_from_env()` (up to 5
+  locations + Weatherbit/OWM keys), `_ensure_iptv_custom_tv_groups(box_env)`
+  (custom groups + m3u/EPG + groups-only), `_apply_rss_from_env()`, and the
+  device name/web/settings-level prefs.
+- At the terminal op (Express completion / Guided Finish) the **deletable**
+  envs are removed (`deletable_env_paths`: both derived push paths + the
+  profile-local env) so no machine-derived secret lingers. The device-resident
+  **MASTER is NEVER deleted** — it is the box's persistent identity, and a Kodi
+  wipe-and-redo must keep working off the same file forever (owner contract).
 
 This is the runtime counterpart to the provisioner's pre-boot `guisettings.xml`
 seed (§3): the provisioner stages secrets and core settings while Kodi is down,
-the Setup consumes the env file at runtime and deletes it.
+the Setup consumes the env at runtime and deletes only the disposable copies.

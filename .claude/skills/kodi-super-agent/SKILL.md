@@ -22,28 +22,37 @@ WHY and the exact code locations.
 
 - Project overview, branches, releases: repo-root `CLAUDE.md` + `README.md`.
 - Architecture & one-shot flow: `docs/playbooks/one-shot-and-architecture.md`.
-- The four first-party add-ons (current versions):
+- The four first-party add-ons (current shipped versions on `main`):
   - `repository.tony7bones` **2.2.1** — the virtual proxy repository (local
     `127.0.0.1:61234` server; released via `deploy.py`).
-  - `script.module.tony7bones` **1.1.3** — shared LIBRARY (`xbmc.python.module`,
-    hidden); holds all the generic install machinery incl. `install_selection`.
-  - `script.tony7bones.bootstrap` **1.4.0** — "Tony.7.Bones Setup", the one-shot.
-    In ONE unattended run it installs the source repos + base apps + the curated
-    video add-ons (POV, The Loop, Sports HD, YouTube, no picker), applies the
-    base-box config, **AND installs + activates the Estuary MOD V2 skin + the
-    MOD V2+ patch**, then self-uninstalls and restarts once.
+  - `script.module.tony7bones` **1.3.0** — shared LIBRARY (`xbmc.python.module`,
+    hidden); holds all the generic install machinery incl. `install_selection`
+    plus the modular `setup/` layers (`foundation` / `iptv` / `addons`, `env`,
+    `probes`).
+  - `script.tony7bones.bootstrap` **1.6.0** — "Tony.7.Bones Setup", the
+    **modular** Setup. `run()` reads the per-device env from the ORDERED env
+    sources and routes: **no env anywhere → the Guided wizard** (`run_guided({})`
+    — with an "Install everything with defaults" one-tap escape equal to the old
+    no-env Express); env + `SETUP_MODE=guided` → the Guided wizard (multi-gate,
+    per-gate restarts, Model A: each gate leaves a complete working box, env
+    survives until Finish, Finish self-uninstalls); env + any other/no
+    `SETUP_MODE` → unattended **Express** (`run_express` — repos + apps + curated
+    video + MOD V2 skin install/activate + base-box config, one summary, one
+    restart, self-uninstall). The three layers are ALSO independently runnable
+    (`run_foundation` / `run_iptv` / `run_addons`), each re-entrant.
   - `script.tony7bones.modv2plus` **1.4.8** — "Estuary MOD V2+" skin patch. Has a
     **boot service** (`service.py`) that auto-applies the patch the first time
     MOD V2 is the active skin (and re-applies after a MOD V2 update), plus a
     manual Apply/Restore chooser + in-tab buttons for hand use. 1.4.7 added
     first-boot look-settings persistence (writes `settings.xml` directly; the
     boot service is settings-aware).
-- **Branch `modular-setup` (the current focus):** the monolith is being rebuilt
-  as the 0-1-2 layers (`apply_foundation` / `apply_iptv` / `apply_addons` in the
-  shared library + `run_express` / `run_foundation` / `run_foundation_setup`
-  orchestrators in the bootstrap). The shipped `run()` still calls `run_express`.
-  Plan + phase log + next-step prep: `docs/plans/modular-setup.md`; current state:
-  `TASKS.md`.
+- **Current track — `no-computer-setup`** (plan: `docs/plans/no-computer-setup.md`;
+  live state: `TASKS.md`). N1 (no-env→wizard routing + ordered env sources) is
+  RELEASED to `main` (1.6.0/1.3.0, 2026-06-10). **N1.1 is committed on the branch,
+  UNRELEASED:** the canonical `_T7B` device root + the persistent device-resident
+  master env + the no-env scaffold (live-proven on the Office Fire TV). Next: N2,
+  the on-box config collector. The modular-setup rewrite itself is SHIPPED —
+  `docs/plans/modular-setup.md` is the historical record.
 - **Retired — do not reference:** the standalone `script.tony7bones.video` (its
   install logic is folded into the shared library as `install_selection`), and
   `script.tony7bones.modv2.patch` (replaced by `script.tony7bones.modv2plus`).
@@ -52,12 +61,29 @@ WHY and the exact code locations.
   Manager source). `addons/` holds add-on source + built zips + `addons.xml` +
   `hosted/` and is what the proxy fetches via raw.githubusercontent.
   `generate_repo.py` compiles `dropbox/` → root and `addons/` → zips.
-- **Per-device `.env` config (bootstrap 1.4.0):** one gitignored `.env.<device>`
-  per box drives weather (5 locations + keys), IPTV (groups + m3u/EPG +
-  groups-only), RSS, and device name/web/settings-level. The provisioner pushes
-  it to the box as `tony7bones.env`; bootstrap injects it in `_configure_box`
-  then read-then-removes it. The committed placeholder template is
-  `.env.device.example`.
+- **Per-device `.env` config:** one `.env.<device>` per box drives weather
+  (5 locations + keys), IPTV (multi-provider `IPTV_<N>_*` blocks), RSS, and
+  device name/web/settings-level. **THREE first-class delivery modes** (owner
+  contract): (1) the adb provisioner derives + pushes `tony7bones.env`;
+  (2) a self-contained, device-resident MASTER `.env.<device>` placed at the
+  device root by any means (no adb); (3) no env → the Guided wizard (Setup
+  scaffolds the comment-disabled master template for fill-in-and-re-run; N1.1).
+  - **Canonical device root (N1.1, branch-only until released):**
+    `/storage/emulated/0/_T7B/kodi/` (layout `backups/ iptv/ media/
+repositories/ rss/ scripts/`). The old
+    `/storage/emulated/0/kodi/tony.7.bones/` root is a read-only LEGACY
+    fallback — read second, NEVER written (no push, no scaffold).
+  - **Env-source order** (`setup/env.py box_env_paths`): pushed derived
+    `tony7bones.env` at the canonical root → legacy push path → device-resident
+    MASTER `.env.*` (canonical root then legacy, sorted) → profile-local
+    persisted env. Derived-before-master: a fresh push outranks the standing
+    identity.
+  - **The MASTER is PERSISTENT — never delete it.** `deletable_env_paths`
+    structurally excludes every master; terminal ops delete only the derived
+    pushes + the profile-local env. A Kodi wipe-and-redo must keep working off
+    the same master file forever.
+  - The committed placeholder template is `.env.device.example` (the only
+    tracked `.env*`).
 
 ## Golden rules — install (Kodi 21 Omega)
 
@@ -117,8 +143,8 @@ WHY and the exact code locations.
 13. **The modv2plus boot service auto-applies the patch** once MOD V2 is the active
     skin after the restart — the patch can't run before the skin is live, and the
     Setup add-on is already gone by then. Don't try to apply the patch from Setup.
-14. **Wipe-and-test on a real fresh Kodi is mandatory** before shipping the
-    one-shot — it catches integration bugs (skin-revert, proxy-invisible deps,
+14. **Wipe-and-test on a real fresh Kodi is mandatory** before shipping Setup —
+    it catches integration bugs (skin-revert, proxy-invisible deps,
     enable-before-set) that unit tests with mocked `xbmc*` cannot.
 
 ## Provisioning (per-device, pre-boot)
@@ -128,14 +154,18 @@ WHY and the exact code locations.
 - **`_tools/provision-kodi.sh <device>`** reads `.env.<device>`, wipes the box,
   and seeds `guisettings.xml` (web server, device name, settings level,
   `addons.unknownsources=true`, `addons.updatemode=1`) **before Kodi starts** —
-  an offline file seed, never a runtime toggle (see install rule 3).
+  an offline file seed, never a runtime toggle (see install rule 3). It then
+  derives + pushes `tony7bones.env` to `BOX_ENV_PATH` (under the canonical
+  `_T7B/kodi/` root on the `no-computer-setup` branch) and **ABORTS pre-Setup
+  if the env push fails** — a no-env launch opens the Guided wizard, which
+  this unattended script must not drive.
 - **Fire OS 11 Stick relocation:** a non-rooted Fire OS 11 Stick can't run Kodi
   out of `Android/data`. A per-device `KODI_DATA_PATH` outside `Android/data`
   triggers relocation to writable `/sdcard` via `xbmc_env.properties`
   (`xbmc.data=/sdcard/kodi_data`) + an appops `MANAGE_EXTERNAL_STORAGE` grant +
   a first-launch retry. All 5 boxes are provisioned this way.
 
-## IPTV — two halves (modular-setup branch)
+## IPTV — two halves (shipped)
 
 → `docs/playbooks/iptv-channel-customization.md`
 
@@ -147,8 +177,11 @@ WHY and the exact code locations.
   favorites (multi-group tagging, `id:` pins, dead-icon healing), and emit
   per provider: `<Token>.m3u` + `customTVGroups-<Token>.xml` +
   `instance-settings-<N>.xml` into **gitignored** `iptv-build/<device>/`. The
-  provisioner pushes that dir to the device `iptv/` staging and appends
-  **`IPTV_STAGING_DIR`** to `tony7bones.env` (no default — present iff staged).
+  provisioner pushes that dir to the device `iptv/` staging (under the
+  canonical `_T7B/kodi/` root on the branch; legacy root read as fallback) and
+  appends **`IPTV_STAGING_DIR`** to `tony7bones.env` (no default — present iff
+  staged). A device-resident master gets the same key injected at read time iff
+  its sibling `iptv/` dir exists (`derive_master_env`).
 - **In-Kodi half — `apply_iptv`** (`tony7bones.setup.iptv`): installs the pvr
   backend or fails loud, then INSIDE the PVR-disabled window consumes staging
   per provider (parse-based, side-files validated, `m3uPath` rewritten to the
@@ -202,9 +235,25 @@ WHY and the exact code locations.
   submenu, installed+enabled+**origin set** in `Addons33.db`, and the rendered
   menu via `TakeScreenshot`. Read the log for the real cause; don't guess.
 
+## Standing owner rules — device work (non-negotiable)
+
+- **Always foreground Kodi on Fire devices before driving it:**
+  `am start -n org.xbmc.kodi/.Splash` (idempotent). Backgrounded Kodi still
+  answers JSON-RPC, but key events and screencaps hit the launcher — a silent
+  false-verify.
+- **Never run old code on a device.** Before any device run, push the CURRENT
+  working-tree add-on code to the box (or install from the live repo when
+  testing the production path) — a stale add-on on the box invalidates the
+  whole verify.
+- **Device runs are SYNCHRONOUS.** Drive a real box step-by-step in the current
+  session and watch each step land; don't fire-and-forget or background a
+  device sequence.
+
 ## Restore points
 
-Latest known-good (3.0 one-shot, live): `perfectly-working-2026-06-06` and the
-rollback safety net `main-rollback-2026-06-06`. Current repo-add-on release:
-`v2.2.1`. Older: `clean-setup-1.0.17`, `perfectly-working-2026-06-04`. Make a tag
-for any known-good state before risky work.
+Pre-modular-merge `main` (the shipped 3.0 one-shot state):
+`main-pre-modular-2026-06-10`. Hardware-proven 3.0 one-shot:
+`perfectly-working-2026-06-06`; rollback safety net `main-rollback-2026-06-06`.
+Current repo-add-on release: `v2.2.1`. Older: `clean-setup-1.0.17`,
+`perfectly-working-2026-06-04`. Make a tag for any known-good state before
+risky work.

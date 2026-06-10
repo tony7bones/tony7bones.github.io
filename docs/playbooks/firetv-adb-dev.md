@@ -21,8 +21,13 @@ the real Amazon Fire TV Stick 4K Max ("hazel") running Kodi 21.3 Omega.
 
 The Mac's LAN IP is `192.168.7.214`; the subnet is `192.168.7.0/24`.
 
-> **3.0 one-shot on the device.** This is still the device runbook for iterating on
-> `script.tony7bones.modv2plus`. Note two things about the shipped 3.0 flow when you
+> **The shipped Setup on the device.** This is still the device runbook for iterating
+> on `script.tony7bones.modv2plus`. The shipped flow is now the **modular Setup**
+> (bootstrap 1.6.0: no env → the Guided wizard; env → unattended Express;
+> `SETUP_MODE=guided` → the wizard). The per-device env + staging live at the
+> canonical device root `/storage/emulated/0/_T7B/kodi/` (N1.1, branch
+> `no-computer-setup`; legacy `kodi/tony.7.bones/` read-only fallback) — a master
+> `.env.<device>` there is **never deleted** by Setup. Note two things when you
 > verify it on the Fire TV: (1) the one-tap Setup now **installs and activates**
 > MOD V2 + the patch itself — you no longer Apply by hand for a fresh box; (2) Kodi
 > on Android **cannot self-restart**, so Setup prompts the user to **close** Kodi and

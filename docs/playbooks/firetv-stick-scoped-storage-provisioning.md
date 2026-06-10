@@ -51,6 +51,13 @@ now works exactly like a normal Android box.
 > `xbmc.data=/sdcard/kodi_data` → Kodi nests `.kodi` **under** it, so the real data dir
 > is `/sdcard/kodi_data/.kodi`. That nested path is the value `KODI_DATA_PATH` carries.
 
+The per-device env + IPTV staging land at the **canonical device root**
+`/storage/emulated/0/_T7B/kodi/` (N1.1, branch `no-computer-setup`) — general
+shared storage, so it is adb-writable on every Stick **without** relocation; the
+relocation above is needed only for Kodi's own data dir. The old
+`/storage/emulated/0/kodi/tony.7.bones/` root is a read-only legacy fallback. A
+device-resident master `.env.<device>` at that root is **never deleted** by Setup.
+
 ## Provisioner Fire-OS mode (automatic)
 
 `_tools/provision-kodi.sh` does all of this from a single field in the per-device

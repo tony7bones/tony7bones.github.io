@@ -24,12 +24,17 @@
                                 │
                                 ▼  provisioner pushes the dir to the box +
                                    appends IPTV_STAGING_DIR to tony7bones.env
-                /storage/emulated/0/kodi/tony.7.bones/iptv/   (device staging)
+                /storage/emulated/0/_T7B/kodi/iptv/           (device staging)
                                 │
                                 ▼  in-Kodi: apply_iptv → _apply_staged_provider
                                    (inside the PVR-DISABLED config window)
                 userdata/addon_data/pvr.iptvsimple/           ← one INSTANCE per provider
 ```
+
+> Device staging lives under the canonical device root `/storage/emulated/0/_T7B/kodi/`
+> (N1.1, branch `no-computer-setup` — boxes provisioned earlier still carry the legacy
+> `/storage/emulated/0/kodi/tony.7.bones/iptv/`, which is read as a fallback, never
+> written).
 
 **One per-device `.env` is the single source of truth.** Each `IPTV_<N>_*` block becomes
 one `pvr.iptvsimple` _instance_ (two providers = `instance-settings-1.xml` +
@@ -45,7 +50,9 @@ hand-edited, never committed.
   `customTVGroups-Network24.xml` filename is preserved).
 - **In-Kodi half** (`apply_iptv` → `_apply_staged_provider`): when the per-device env
   carries `IPTV_STAGING_DIR` (the provisioner sets it iff staging landed; there is
-  deliberately NO default), each provider consumes its staged artifacts — copy the
+  deliberately NO default — and a device-resident MASTER env gets the key injected at
+  read time iff its sibling `iptv/` dir exists, `derive_master_env`), each provider
+  consumes its staged artifacts — copy the
   playlist + groups file to their `special://` homes, rewrite `m3uPath` to the
   translated absolute path, write the instance file — all inside the PVR-disabled
   config window. Consumption is PARSE-based (it reads what the staged instance file
