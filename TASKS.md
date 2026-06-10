@@ -22,38 +22,45 @@ tech-debt seam, the apply_iptv reporting bug, the zero-content guarantee). Keep 
 
 ---
 
-## ▶ VERY NEXT STEP — Phase 5b, step 3: `run_iptv(box_env)` — the standalone IPTV layer
+## ▶ VERY NEXT STEP — Phase 5b·3: `run_iptv(box_env)` — the standalone IPTV runner
 
-Phase 5b·2 (the host-side IPTV build) is **DONE and clean-Kodi proven** — see the Phase 5b·2 entry
-in `docs/plans/modular-setup.md`: `_tools/build_iptv.py` (99%-covered, m3u + xtream modes, full
-grammar incl. relabel/`| sort`/favorites) is wired into the provisioner (build → push →
-`IPTV_STAGING_DIR`), and `apply_iptv` consumes the staged curated artifacts inside the
-PVR-disabled window with per-provider fallback to the 5b·1 direct-env enforce. Acceptance landed
-live on a clean Kodi with the REAL `.env.local`: **BOTH providers load** — the m3u provider's
-relabelled+sorted groups (**158 / 47 / 24**) AND the xtream provider, synthesized host-side via
-player_api (**214 / 100 / 12** + the **5-channel 24/7 Favorites** group) — all surviving a
-clean-shutdown restart. NO provider is skipped/unconfigured anymore.
+**Start from the prep section: `docs/plans/modular-setup.md` → "Phase 5b·3 — PREP".** It has the
+full design (mirror `run_foundation`'s shape; apply_iptv → summary → self-uninstall → ONE
+restart; NO skin touch, NO install_repos; env read-once/delete-after; re-entry safe by
+construction) — everything `run_iptv` needs already exists (`apply_iptv` owns its backend
+install-or-fail-loud, staged-first config inside the PVR-disabled window).
 
-Step 3 (per `docs/plans/modular-setup.md` → "Phase 5b"): **`run_iptv(box_env)`** — make the IPTV
-layer independently runnable on top of an existing Foundation (install the pvr backend if missing
-— it already fail-louds — + the N-provider/staged config), so a user who stopped at skin-only can
-later add IPTV with no redo. Then step 4 (gate + clean-Kodi verify of the standalone runner).
-Then 5c (Add-ons layer), 5d (Guided wizard + Model A), 6 (harden + Fire TV).
+**Acceptance bar (the standing four-part bar):** (1) unit tests incl. the no-skin-touch +
+no-install_repos invariants, backend-failure summary honesty, re-entry; ≥90% new-code coverage —
+(2) gate green (`pytest _tools/ -q` + `ruff` + secrets + deterministic regen) — (3) adversarial
+QA review — (4) clean-**Foundation**-box live verify: fresh Kodi → `run_foundation` (skin-only,
+no pvr) → stage (build_iptv + env re-push) → `run_iptv` with the real `.env.local` → backend
+installed BY THIS LAYER, both providers' JSON-RPC counts match the builder's, MOD V2 still
+active, survives a clean-shutdown restart (recipe: `local-kodi-verification.md` → "Verifying
+PVR / IPTV state").
+
+Context: Phase 5b·1 (clobber window + N-provider env), 5b·2 (host-side `build_iptv.py` build →
+staging → staged apply; both real providers load, xtream included), and the favorites-icon
+healing addendum are all **DONE and clean-Kodi proven** — see the phase log. After 5b·3:
+5c (Add-ons layer), 5d (Guided wizard + Model A), 6 (harden + Fire TV).
 
 ---
 
 ## Build status (modular-setup branch)
 
-- **DONE, gated, committed LOCALLY**: Phases 0–3 + 5a (Foundation, incl. 5a·2/5a·3) + **5b·1**
-  (the two `apply_iptv` bugs — clobber window + N-provider env) + **5b·2** (the host-side IPTV
-  build integrated — BOTH real providers, xtream included, clean-Kodi channel-load proven with
-  the full curation grammar).
+- **DONE, gated, committed LOCALLY** (HEAD `954f9f3`, suite **663 passed / 1 xfailed**):
+  Phases 0–3 + 5a (Foundation, incl. 5a·2/5a·3) + **5b·1** (the two `apply_iptv` bugs — clobber
+  window + N-provider env) + **5b·2** (the host-side IPTV build integrated — BOTH real
+  providers, xtream included, clean-Kodi channel-load proven with the full curation grammar) +
+  the **favorites-icon healing** addendum (dead xtream placeholder icons borrowed from live
+  duplicates at build time, live-proven).
 - **NOT PUSHED** — milestone-push pending: needs `script.module.tony7bones` + `script.tony7bones.bootstrap`
   version bumps + `--news` (modv2plus is already 1.4.8). Push the branch once 5b lands or at the next
   coherent milestone.
-- The deploy gate (`_tools/test_installer_present.py`) is on **`main`**. The `iptv` branch's
-  deliverables (build_iptv.py + tests + playbook) are now INTEGRATED on `modular-setup`
-  (Phase 5b·2, adapted to the N-provider model) — the branch itself is superseded.
+- The deploy gate (`_tools/test_installer_present.py`) is on **`main`**. The `iptv` branch is
+  **SUPERSEDED** — its deliverables (build_iptv.py + tests + playbook) are integrated on
+  `modular-setup` (Phase 5b·2, adapted to the N-provider model); **delete the branch at the
+  milestone push**.
 
 ---
 

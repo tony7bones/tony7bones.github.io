@@ -191,6 +191,12 @@ preserves all other settings, using the lowercase ids the skin persists —
 `Skin.HasSetting` is case-insensitive). It is a no-op when a non-Estuary skin is
 active. See `_trim_home_menu*` in `script.tony7bones.bootstrap/default.py`.
 
+> This is one instance of a **general class** — a live Kodi component flushing
+> its in-memory settings over (or never persisting) your write. The same bug
+> hit modv2plus look settings AND pvr.iptvsimple instance settings (fixed with
+> a different mechanism: disable-the-consumer-around-the-write). The full
+> pattern + decision guide: `docs/playbooks/kodi-settings-clobber.md`.
+
 ## 12. File-manager sources
 
 Edit `userdata/sources.xml`'s `<files>` section: create the file/section if

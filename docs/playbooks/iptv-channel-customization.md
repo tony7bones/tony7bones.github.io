@@ -250,7 +250,9 @@ Per-instance settings the staged artifact carries:
 > touches _core_ Kodi settings — `pvr.iptvsimple` instance settings live _only_ in that XML.
 > Write the file; Kodi reads it **at startup** (so changes need a restart). And write it
 > inside the **PVR-disabled config window** (`_pause_pvr_for_config`) or the live client
-> flushes its stale in-memory defaults back over your write (the Phase 5b·1 clobber).
+> flushes its stale in-memory defaults back over your write (the Phase 5b·1 clobber —
+> one instance of a general Kodi pattern; see `kodi-settings-clobber.md` for the class
+> and the two fix mechanisms).
 
 > **EPG binds by `tvg-id`.** Channels whose source playlist has an empty `tvg-id` show no
 > programme data — a source-data limitation, not a config bug. (Most Streamvision 24/7
@@ -279,6 +281,12 @@ python3 _tools/build_iptv.py --env .env.local --out iptv-build/local
 
 Verify by **real counts from JSON-RPC**, not assumptions: each group count should match
 the builder's printed counts, and the DISPLAY labels (not the SOURCE names) must appear.
+Add `"properties":["icon"]` to `PVR.GetChannels` to audit per-channel icons (how the
+dead-favorites-icon placeholder was caught), and always prove **restart-survival** —
+a clean-shutdown quit + relaunch, then re-check the instance files AND the counts
+(the clobber class only shows up across that flush). The full honest-PVR recipe
+(JSON-RPC payloads, PVR-DB cross-check, screenshot proof) lives in
+`local-kodi-verification.md` → "Verifying PVR / IPTV state".
 
 > **Gotcha:** don't double-background. Running `python … &` _inside_ a backgrounded shell
 > detaches stdout and you lose the verification output. Run the verify script in the

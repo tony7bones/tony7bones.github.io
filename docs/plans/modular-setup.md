@@ -1,9 +1,12 @@
 # Plan — Modular "0-1-2" Setup (Foundation / IPTV / Add-ons)
 
-> Status: **DESIGN — panel-reviewed, nothing built.** Reviewed in parallel by three
-> specialist agents (Architecture, QA/testability, Kodi-runtime). This doc is the
-> orchestrated synthesis: the architecture, the panel-resolved decisions, the risks, and
-> the prioritized action backlog. No code until the P0 decisions are confirmed.
+> Status: **BUILD IN PROGRESS — Phases 0–3 + 5a + 5b·1/5b·2 DONE (local commits on
+> `modular-setup`, HEAD `954f9f3`, suite 663 passed / 1 xfailed); NEXT = Phase 5b·3
+> (`run_iptv`).** Design was panel-reviewed in parallel by three specialist agents
+> (Architecture, QA/testability, Kodi-runtime); this doc is the orchestrated synthesis
+> PLUS the running phase log. The design sections below are kept as written (the
+> contract); current truth lives in the **Phase log** and the **Phase 5b** section at
+> the end.
 
 ## Goal
 
@@ -826,15 +829,18 @@ SIMPSONS"`); no donor → original kept + a printed note. Only favorites are
   favorites carrying the live `photo-tmdb.com/.../14330.png` icon exactly like
   the working groups. Playbook updated (favorites-icon healing section).
 
-## Phase 5b — IN PROGRESS (steps 1–2 DONE; steps 3–4 next)
+## Phase 5b — IN PROGRESS (steps 1–2 DONE incl. the icon addendum; step 3 = `run_iptv` next)
 
-> **Status of the build:** Phases 0–3 + **5a (Foundation, incl. 5a·2/5a·3)** + **5b·1 (both
-> `apply_iptv` bugs fixed + clean-Kodi channel-load proof)** + **5b·2 (host-side IPTV build
-> integrated — BOTH real providers, xtream included, live-proven loading channels)** are DONE,
-> gated, and committed LOCALLY on `modular-setup` — **not pushed** (milestone-push pending: it
-> needs the `script.module.tony7bones` + `script.tony7bones.bootstrap` version bumps + a
-> `--news`). The Foundation deliverable is complete and clean-Kodi verified, and the env-gated
-> IPTV chain now PROVABLY loads EVERY env provider's channels with the full curation grammar.
+> **Status of the build (HEAD `954f9f3`, suite 663 passed / 1 xfailed):** Phases 0–3 + **5a
+> (Foundation, incl. 5a·2/5a·3)** + **5b·1 (both `apply_iptv` bugs fixed + clean-Kodi
+> channel-load proof)** + **5b·2 (host-side IPTV build integrated — BOTH real providers,
+> xtream included, live-proven loading channels)** + the **favorites-icon healing addendum**
+> (dead xtream placeholder icons borrowed from live duplicates at build time, live-proven)
+> are DONE, gated, and committed LOCALLY on `modular-setup` — **not pushed** (milestone-push
+> pending: it needs the `script.module.tony7bones` + `script.tony7bones.bootstrap` version
+> bumps + a `--news`; the `iptv` branch is superseded and can be deleted then). The
+> Foundation deliverable is complete and clean-Kodi verified, and the env-gated IPTV chain
+> now PROVABLY loads EVERY env provider's channels with the full curation grammar.
 > `run_express` (Express) and `run_foundation`/`run_foundation_setup` (skin-only + env-gated
 > IPTV chain) exist; the shipped `run()` still calls `run_express`.
 
@@ -852,12 +858,69 @@ SIMPSONS"`); no donor → original kept + a printed note. Only favorites are
    inside the PVR-disabled window, per-provider fallback to direct-env). Clean-Kodi proof: BOTH
    real providers load — 158/47/24 (m3u, relabelled + sorted) and 214/100/12 + the 5-channel
    favorites group (xtream, synthesized via player_api) — surviving a clean-shutdown restart.
-3. **`run_iptv(box_env)`** (**THE NEXT STEP**) — make the IPTV layer independently runnable on top of an existing
-   Foundation (install pvr backend if missing — it already fail-louds — + N-provider config), so a
-   user who stopped skin-only can later add IPTV with no redo.
-4. **Gate it** (the standing four-part bar + clean-Kodi verify): on a clean Foundation box, run
-   `run_foundation_setup` with `.env.local` (real IPTV) → channels actually load (this is what the
-   5a·3 live run could NOT confirm because of bug #1).
+   Plus the **icon addendum** (dead favorite icons healed at build time, live-proven).
+3. **`run_iptv(box_env)`** (**THE NEXT STEP** — full prep below) — make the IPTV layer
+   independently runnable on top of an existing Foundation, so a user who stopped skin-only can
+   later add IPTV with no redo.
+4. **Gate it** — folded into the 5b·3 acceptance bar below (the standing four-part bar + the
+   clean-**Foundation**-box live verify).
+
+### Phase 5b·3 — PREP (start here next session): `run_iptv(box_env)` — the standalone IPTV runner
+
+**Goal.** A new bootstrap entry point `run_iptv(box_env)` that applies ONLY Layer 1 on top of
+an EXISTING Foundation box (MOD V2 active, repos installed, zero content): the 0-1-2 model's
+"stopped at skin-only, later adds live TV" story. Everything it needs already exists —
+`apply_iptv` owns its backend (install-or-fail-loud, Phase 3a), consumes staging
+(`IPTV_STAGING_DIR`) with per-provider direct-env fallback, and writes inside the PVR-disabled
+window. 5b·3 is the thin orchestrator + its gate.
+
+**Design (mirror `run_foundation`'s shape — `addons/script.tony7bones.bootstrap/default.py`):**
+
+- **Body:** progress dialog → `apply_iptv(box_env, dialog=dialog, log=_log)` → summary dialog
+  (installed/configured/FAILED per the LayerResult; honest about a skipped/unstaged provider) →
+  `self_uninstall(MY_ID, _log)` → ONE `restart_kodi(...)` (pvr.iptvsimple reads instance
+  settings at startup — honor the layer's `needs_restart` request).
+- **It must NOT touch the skin.** No `activate_skin`, no `lookandfeel.skin` — Foundation
+  already owns the active skin; re-setting it would re-arm the "Keep this skin?" revert
+  timeout for no reason. It also does NOT call `install_repos` (Foundation installed them; the
+  backend install resolves from the already-installed repos — if a repo is somehow missing,
+  `apply_iptv`'s fail-loud path reports it rather than silently reinstalling plumbing).
+- **Env lifecycle:** same coordinator pattern as `run()` — the driver reads the per-device env
+  ONCE (`read_box_env(BOX_ENV_PATH)`), passes the dict in, and deletes the env file only after
+  a successful (non-cancelled) run. Precondition for the later-opt-in story: the provisioner
+  (or a lighter re-stage) must have re-pushed `tony7bones.env` + the staged `iptv/` artifacts
+  to the box — Foundation's earlier run consumed and deleted the original env. Document this
+  in the runner's docstring.
+- **Failure semantics:** `apply_iptv` `ok=False` (backend didn't install) → summary says
+  FAILED, NO restart-into-broken-state surprises (still restart once — the box is unchanged
+  except possibly extracted-but-disabled bits — but the summary must not claim success), env
+  left intact for a re-run. Per-provider config failures stay defensive (logged, reported via
+  `installed`/`failed`).
+- **Re-entry:** running it twice is safe by construction — backend `is_installed`
+  short-circuits, staged consumption is always-apply (identical bytes, inside the window),
+  direct-env enforce is write-only-if-changed. Pin this with a test (second run →
+  `already_done` semantics honest, no duplicate instances).
+
+**Acceptance bar (the standing four-part bar, applied to 5b·3):**
+
+1. **Tests + coverage:** unit tests for the runner (mocked xbmc\*) — happy path order
+   (apply → summary → self-uninstall → restart LAST), no-skin-touch invariant (never calls
+   activate_skin / sets lookandfeel.skin), no-install_repos invariant, backend-failure
+   summary honesty, env-driven N-provider passthrough, re-entry. ≥90% new-code coverage.
+2. **Gate:** `pytest _tools/ -q` green + `ruff` + secret-leak + deterministic regen.
+3. **Adversarial QA completeness review** before commit.
+4. **Clean-FOUNDATION-box live verify:** fresh local Kodi → run `run_foundation` (skin-only,
+   NO pvr) → restart → confirm zero content. Then stage (build_iptv + env re-push, the
+   provisioner-equivalent for the local box) and trigger `run_iptv` with the real `.env.local`
+   (same driver trick as 5b·2: patch the INSTALLED bootstrap copy's `run()` — repo source
+   untouched). Prove: pvr.iptvsimple installed BY THIS LAYER, both providers configured from
+   staging, JSON-RPC group/channel counts match the builder's, MOD V2 STILL the active skin,
+   Setup self-uninstalled, and everything survives a further clean-shutdown restart
+   (the honest-PVR recipe: `docs/playbooks/local-kodi-verification.md` → "Verifying PVR /
+   IPTV state").
+
+**Out of scope for 5b·3:** wiring `run_iptv` into any shipped entry point (the shipped `run()`
+stays `run_express` until 5d), Guided-wizard UI, and the Add-ons layer (5c).
 
 **Then:**
 

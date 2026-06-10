@@ -32,12 +32,18 @@ WHY and the exact code locations.
     video add-ons (POV, The Loop, Sports HD, YouTube, no picker), applies the
     base-box config, **AND installs + activates the Estuary MOD V2 skin + the
     MOD V2+ patch**, then self-uninstalls and restarts once.
-  - `script.tony7bones.modv2plus` **1.4.7** — "Estuary MOD V2+" skin patch. Has a
+  - `script.tony7bones.modv2plus` **1.4.8** — "Estuary MOD V2+" skin patch. Has a
     **boot service** (`service.py`) that auto-applies the patch the first time
     MOD V2 is the active skin (and re-applies after a MOD V2 update), plus a
-    manual Apply/Restore chooser + in-tab buttons for hand use. 1.4.7 adds
+    manual Apply/Restore chooser + in-tab buttons for hand use. 1.4.7 added
     first-boot look-settings persistence (writes `settings.xml` directly; the
     boot service is settings-aware).
+- **Branch `modular-setup` (the current focus):** the monolith is being rebuilt
+  as the 0-1-2 layers (`apply_foundation` / `apply_iptv` / `apply_addons` in the
+  shared library + `run_express` / `run_foundation` / `run_foundation_setup`
+  orchestrators in the bootstrap). The shipped `run()` still calls `run_express`.
+  Plan + phase log + next-step prep: `docs/plans/modular-setup.md`; current state:
+  `TASKS.md`.
 - **Retired — do not reference:** the standalone `script.tony7bones.video` (its
   install logic is folded into the shared library as `install_selection`), and
   `script.tony7bones.modv2.patch` (replaced by `script.tony7bones.modv2plus`).
@@ -82,13 +88,22 @@ WHY and the exact code locations.
 9. A **repository** must not carry `xbmc.python.script`; a one-shot utility
    self-uninstalls; a shared lib is `xbmc.python.module` — all to avoid a
    permanent home tile.
-10. Estuary skin settings: `Skin.SetBool(...)` is in-memory and only flushes to
-    disk on a CLEAN shutdown. That makes it the right tool when Setup will
-    trigger an orderly restart, but a FIRST boot never gets a clean shutdown, so
-    a `Skin.SetBool` made on first boot is lost. This is exactly why
-    modv2plus **1.4.7** writes `settings.xml` directly for first-boot look-settings
-    persistence — a direct write survives where the in-memory bool would be lost
-    (the settings-aware boot service then reconciles).
+10. **Kodi clobbers settings writes — a general class**
+    (→ `docs/playbooks/kodi-settings-clobber.md`). A live component (skin,
+    PVR client) holds settings in memory and flushes at lifecycle events, so a
+    direct file write gets clobbered OR an in-memory set gets lost. Three known
+    instances, two mechanisms:
+    - Estuary skin bools: `Skin.SetBool(...)` is in-memory and only flushes on a
+      CLEAN shutdown — right before an orderly restart, LOST on a first boot.
+      modv2plus 1.4.7 therefore writes `settings.xml` directly for look settings
+      (the settings-aware boot service reconciles); the home-trim applies BOTH
+      mechanisms.
+    - **pvr.iptvsimple instance settings: write them only inside the
+      PVR-DISABLED config window** (`_pause_pvr_for_config` /
+      `_resume_pvr_after_config` in `tony7bones.setup.iptv`: disable → settle →
+      write → re-enable in a `finally`) — a live client otherwise flushes stale
+      in-memory defaults over your write on shutdown. The re-enable forces a
+      re-read, so fresh clients start from YOUR file.
 11. **The closure resolver SKIPS the `127.0.0.1` proxy** (`repos.py`). So any
     first-party / GitHub-only add-on the resolver can't see — `script.module.pvr.artwork`
     (b-jesch GitHub-only) and our own `script.tony7bones.modv2plus` — must be
@@ -119,6 +134,33 @@ WHY and the exact code locations.
   triggers relocation to writable `/sdcard` via `xbmc_env.properties`
   (`xbmc.data=/sdcard/kodi_data`) + an appops `MANAGE_EXTERNAL_STORAGE` grant +
   a first-launch retry. All 5 boxes are provisioned this way.
+
+## IPTV — two halves (modular-setup branch)
+
+→ `docs/playbooks/iptv-channel-customization.md`
+
+- **Host half — `_tools/build_iptv.py`** (provisioner step 4b, or by hand:
+  `python3 _tools/build_iptv.py --env .env.<device> --out iptv-build/<device>`).
+  Per `IPTV_<N>_*` env block: fetch the m3u OR synthesize one via the Xtream
+  `player_api` (pvr.iptvsimple Omega has NO native Xtream mode; some panels
+  block `get.php`), apply the groups grammar (`SOURCE > Display Label | sort`),
+  favorites (multi-group tagging, `id:` pins, dead-icon healing), and emit
+  per provider: `<Token>.m3u` + `customTVGroups-<Token>.xml` +
+  `instance-settings-<N>.xml` into **gitignored** `iptv-build/<device>/`. The
+  provisioner pushes that dir to the device `iptv/` staging and appends
+  **`IPTV_STAGING_DIR`** to `tony7bones.env` (no default — present iff staged).
+- **In-Kodi half — `apply_iptv`** (`tony7bones.setup.iptv`): installs the pvr
+  backend or fails loud, then INSIDE the PVR-disabled window consumes staging
+  per provider (parse-based, side-files validated, `m3uPath` rewritten to the
+  translated absolute path), falling back per-provider to the direct-env
+  enforce. One pvr.iptvsimple INSTANCE per provider (`instance-settings-<N>.xml`
+  - identity keys); legacy single-instance keys = provider 1.
+- **Staged artifacts carry creds** (every channel URL embeds user/pass) — they
+  live only in gitignored `iptv-build/` and on the box; `test_secret_leak.py`
+  bans any tracked `*.m3u`.
+- Verify IPTV honestly: JSON-RPC `PVR.GetChannelGroups` + `PVR.GetChannels`
+  (with `"properties":["icon"]`) counts vs the builder's, AND restart-survival
+  across a clean shutdown (the clobber class only shows there).
 
 ## Golden rules — release
 

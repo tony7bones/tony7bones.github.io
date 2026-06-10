@@ -117,6 +117,51 @@ bugs that the tests and code-only review both missed**:
 change shipped, wipe the profile (or `pm clear` on the device), run the full
 Setup, restart, and verify the END STATE on the real box.
 
+### Verifying PVR / IPTV state specifically
+
+"Instance-settings file written" is NOT proof channels load — the file can be
+clobbered by the live client's shutdown flush (see
+`kodi-settings-clobber.md`), the groups file can name groups that match
+nothing, or the playlist fetch can silently fail. Prove the END state:
+
+- **Groups exist with the expected names** (DISPLAY labels, not SOURCE names):
+
+  ```jsonc
+  {
+    "jsonrpc": "2.0",
+    "method": "PVR.GetChannelGroups",
+    "params": { "channeltype": "tv" },
+    "id": 1,
+  }
+  ```
+
+- **Each group carries the expected channel COUNT** (compare against the
+  builder's printed per-group counts — real numbers, not "non-empty"):
+
+  ```jsonc
+  {"jsonrpc":"2.0","method":"PVR.GetChannels","params":{"channelgroupid":<id>,"properties":["icon"]},"id":2}
+  ```
+
+  Requesting `"properties":["icon"]` also exposes per-channel icon URLs — this
+  is how the dead-favorites-icon bug was diagnosed (every favorite carried the
+  same 404 placeholder while other groups' icons differed).
+
+- **Restart-survival** — the decisive test for the clobber class: quit Kodi
+  CLEANLY (JSON-RPC `Application.Quit`, the exact flush that clobbered the
+  5a·3 box), relaunch, and re-check both the on-disk
+  `instance-settings-<N>.xml` values AND the JSON-RPC group/channel counts.
+  A config that only survives until the next clean shutdown is NOT shipped.
+- **PVR DB cross-check** when JSON-RPC seems to disagree with the screen:
+  `userdata/Database/TV<N>.db` — e.g. `SELECT sIconPath FROM channels` to
+  confirm what icon Kodi actually persisted per channel.
+- **A rendered screenshot** (`Input.ExecuteAction`/GUI nav +
+  `XBMC.TakeScreenshot` or the `TakeScreenshot` builtin) of the channel list —
+  the icon bug was only fully confirmed by SEEING the favorites row render
+  icons like the working groups.
+
+Full IPTV rebuild→re-apply→verify loop (incl. the lingering-PVR-DB-groups
+gotcha): `iptv-channel-customization.md`.
+
 ### Verifying the skin one-shot specifically
 
 After the post-Setup restart, confirm — don't assume:
