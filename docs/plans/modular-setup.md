@@ -1,9 +1,10 @@
 # Plan — Modular "0-1-2" Setup (Foundation / IPTV / Add-ons)
 
-> Status: **BUILD IN PROGRESS — Phases 0–3 + 5a + 5b (COMPLETE: 5b·1/5b·2/5b·3) + 5c DONE
-> (local commits on `modular-setup`, suite 693 passed / 1 xfailed); all three layers are now
-> INDEPENDENTLY RUNNABLE (`run_foundation` / `run_iptv` / `run_addons`); NEXT = Phase 5d
-> (Guided wizard + Model A lifecycle).** Design was panel-reviewed in parallel by three specialist agents
+> Status: **BUILD IN PROGRESS — Phases 0–3 + 5a + 5b (COMPLETE: 5b·1/5b·2/5b·3) + 5c + 5d DONE
+> (local commits on `modular-setup`, suite 733 passed / 1 xfailed); all three layers are
+> INDEPENDENTLY RUNNABLE (`run_foundation` / `run_iptv` / `run_addons`), and the **Guided
+> wizard + Model A lifecycle** (`run_guided`, env-keyed `SETUP_MODE=guided` routing in the
+> shipped `run()`, Express untouched) are live-proven; NEXT = Phase 6 (harden + Fire TV).** Design was panel-reviewed in parallel by three specialist agents
 > (Architecture, QA/testability, Kodi-runtime); this doc is the orchestrated synthesis
 > PLUS the running phase log. The design sections below are kept as written (the
 > contract); current truth lives in the **Phase log** and the **Phase 5b** section at
@@ -1093,3 +1094,127 @@ plugin.video.dailymotion_com`, `_apply_rss: wrote 7 RSS feed(s) (interval 30)`; 
   (playbook §13: write `lookandfeel.skin` into `guisettings.xml` while Kodi is fully DOWN).
   Hardening candidates: a faster confirm poll, a set-and-reconfirm after the skinshortcuts
   settle, or an offline seed in the restart slot.
+
+### Phase 5d — DONE (local; the Guided wizard + Model A lifecycle — the panel's keystone)
+
+- **Landed:** `run_guided(box_env)` in `default.py` — the multi-gate, resumable wizard — plus the
+  Model A lifecycle it rides on, and the shipped `run()` routing. The pieces:
+  - **`tony7bones/setup/probes.py` (new library module, 100% covered)** — the installed-state
+    done-probes the wizard resumes by (NEVER marker files): `foundation_done` (skin installed AND
+    `getSkinDir()==SKIN_ID` — activation is part of done-ness so a keep-skin revert self-heals by
+    re-offer), `iptv_done` (backend installed + at least ONE env provider's
+    `instance-settings-<N>.xml` exists — a FILE check, never the async channel list; "at least
+    one" because an unstaged portal-API provider can never land in-Kodi and "all" would re-offer
+    forever), `addons_done` (per-id `is_installed` over base apps + curated video; origin
+    deliberately NOT probed — the two peno64 apps ship blank origins by design, 5c-proven). All
+    defensive: a raising primitive reads "not done" (worst case = re-offering an idempotent gate).
+  - **The Model A gates** (`_guided_gate_foundation/_iptv/_addons`): each drives the SAME layer
+    seam the proven runners drive — Foundation = `_foundation_core` (repos incl. our proxy + the
+    skin/weather/menu/autocomplete layer; gate order puts Foundation FIRST so it must own the
+    repos install, exactly like `run_foundation`), IPTV/Add-ons = bare `apply_iptv`/`apply_addons`
+    — then summary → **restart ONLY on `ok`** (never restart into a failed gate; the menu returns
+    for retry/exit) and **NEVER self-uninstall**. The Foundation gate's terminal op is
+    activate-skin-IMMEDIATELY-then-restart (the keep-skin invariant, both cadences). The Add-ons
+    cancel keeps the monolith's early-return contract (no summary/restart).
+  - **The terminal ops** (`_guided_finish`): Finish (offered when all gates probe done) and the
+    explicit, CONFIRMED "Remove Setup" menu entry both run: delete the per-device env →
+    `self_uninstall` → ONE restart (the standard removal finaliser). These are the ONLY Guided
+    self-uninstalls; Express keeps its end-of-run self-uninstall untouched.
+  - **Env ownership (the panel rule realised):** the env SURVIVES every gate — gates never delete
+    it — and is consumed only by Finish/Remove, BEFORE their restart. Each reopen's `run()`
+    re-reads the surviving env, which is also what makes the wizard self-resume. The standalone
+    runners' driver contracts (read-once + delete-only-on-ok) are UNCHANGED.
+  - **`run()` routing — the Guided-reachability mechanism (⚠ OWNER-VETOABLE):** `SETUP_MODE=guided`
+    (case-insensitive) in the per-device env → `run_guided`; the key absent or any other value →
+    the byte-identical pre-5d Express one-tap. WHY env-key and not a launch dialog: a chooser
+    (even timeout-to-Express) would break the proven unattended one-tap and reshape the
+    characterization snapshot; the mode is a per-device PROVISIONING decision like everything else
+    the env drives, and the provisioner already passes `.env.<device>` through verbatim — no
+    provisioner change needed. Alternatives if vetoed: a timeout launch dialog, or a second
+    launcher entry. (Suggested doc add the protect-hook kept me from making: a commented
+    `# SETUP_MODE="guided"` block in `.env.device.example`.)
+  - **Documented degradation (accepted):** env LOST mid-Guided-flow → the next launch reads no
+    `SETUP_MODE` and runs EXPRESS, which idempotently completes every remaining layer and
+    self-uninstalls (the proven end-state equivalence); only env-driven config is skipped until a
+    re-push. Also: a DECLINED desktop per-gate restart lets the next launch offer the next gate
+    without the restart between — accepted (the user explicitly declined; modules are re-entrant).
+- **Conftest growth (additive only):** the fake `Dialog` gained `select` (recorded; scripted via
+  `state["select_queue"]`, default -1 so an unscripted test can never run a gate) and `yesno`
+  gained an optional `state["yesno_queue"]` consumed before the legacy behaviour — zero change to
+  existing tests (full suite proves it).
+- **Tested / mutation-proven:** +40 net new tests — `test_setup_probes.py` (14: each probe's
+  done/not-done/half-state/never-raises shapes incl. the reverted-skin self-heal and the
+  at-least-one-provider-file semantics), `test_run_guided.py` (23: offer order + env-gated IPTV
+  skip + resume-after-crash re-offers; each gate's install + Model A no-self-uninstall + env
+  survival + restart-only-on-ok; the Add-ons cancel contract; Finish's env→uninstall→restart
+  ORDER + guarded missing-env Finish; confirmed/declined Remove Setup; decline-everything;
+  `run()` routing incl. case-insensitivity and unknown-value→Express), `test_no_fork.py` (3 —
+  the plan's keystone invariants: the spy test proving Guided and Express drive the IDENTICAL
+  three `apply_*` exactly once with the SAME env object, Express = uninstall→activate→restart
+  exactly once vs Guided = activate→restart at gate 1 + one restart per gate + uninstall ONLY at
+  Finish; the REAL-ENGINE cumulative-Guided net-set == `EXPECTED_NET_INSTALLED` (the same frozen
+  constant Express is pinned to — equivalence by transitivity, rebaseline-proof); and the
+  head-to-head FULL-SUCCESS world diff — Express run vs Guided walk reduced to
+  installed/disabled/settings/Skin-builtins/every-profile-file and compared EQUAL).
+  **Six mutations run and killed:** self-uninstall re-added to a gate, a per-gate restart dropped,
+  a forked layer call (different body/args), a gate consuming the env, the `run()` routing
+  dropped, a step slid between activate_skin and its restart. **733 passed / 1 xfailed** (was
+  693), `ruff` clean, secret-leak green; the characterization snapshot + `EXPECTED_NET_INSTALLED`
+  pass **UNCHANGED** (Express byte-identical).
+- **Coverage:** probes.py **100%**, bootstrap default.py **97%** (every uncovered line is a
+  pre-existing defensive guard / `__main__`; ALL new Guided code covered). Generated files
+  regenerated (second regen byte-identical); no version bumps (milestone push pending).
+- **LIVE-VERIFIED (clean Kodi 21.3, fresh profile, real `.env.local` + host-staged IPTV build +
+  `SETUP_MODE=guided`; driver = the installed copy's `BOX_ENV_PATH` pointed at a local env, repo
+  source untouched):** the full multi-gate walk, every step over JSON-RPC with rendered-dialog
+  screenshots —
+  1. Launch → wizard rendered "Tony.7.Bones Setup — Guided" offering **Install Foundation** (+
+     Remove Setup / Exit). Gate ran: repos + proxy repo extracted, origins stamped, sources,
+     home-trim, env weather (5 locations, both keys); summary verbatim "Estuary MOD V2: installed
+     … reopen Setup to continue"; `activate_skin` accepted keep-skin (no race this run); skin
+     LIVE = `skin.estuary.modv2`. **Setup STILL installed + env intact after the gate (Model A
+     proven)**; zero content (pov/pvr/apps all unknown to JSON-RPC).
+  2. Clean quit + relaunch (macOS `RestartApp` no-op — the documented real restart) → skin
+     SURVIVED, modv2plus boot service applied the patch (trimmed menu + marker), Setup still
+     installed; relaunched wizard PROBED the box and offered **Install IPTV (live TV)** —
+     screenshot shows the offer rendering ON the patched MOD V2 home. Gate ran: backend installed
+     BY the layer, `instance 1/2: applied HOST-BUILT staged config`, summary "pvr.iptvsimple:
+     installed / Instance settings: written". After the restart seam: **all 8 groups, counts ==
+     the builder exactly — 158/47/24 + 214/100/12 + 5 favorites, All channels 560** —
+     restart-survival of the clobber class re-proven; env still intact.
+  3. Relaunch → wizard offered **Install Add-ons**. Gate ran: `stamped origin on 20 add-on(s)`,
+     dailymotion install-then-DISABLED, `7 RSS feed(s)` written; summary honest "Repos: 12/12 /
+     Apps: 2/2 / Video add-ons: 4/4". After the restart: POV 6.06.06 / The Loop 7.9 / Sports HD
+     0.1.85.1 / YouTube 7.4.3 installed+enabled with origins (kodifitzwell / loop / bugatsinho /
+     xbmc.org×2), dailymotion 2.4.4 disabled, POV `GetDirectory` = 11 real items, rendered home =
+     patched trimmed menu + top-bar weather (64°F) + live RSS ticker. **Each gate landed on a
+     complete working box.**
+  4. Relaunch → wizard offered **Finish — setup is complete, remove Setup** → Finish CONSUMED the
+     env, removed the add-on dir (`self-uninstall: removed …`), and after the finaliser restart
+     Setup is fully de-registered (JSON-RPC unknown; 0 rows in Addons33.db) while the box stays
+     the complete build (MOD V2 + 560 channels + content). The decline path was also live-hit
+     (an escaped wizard exits cleanly, nothing changed, Setup + env intact).
+  - **Express regression — equivalence argued, stated honestly:** no fresh full Express live run
+    was made. The argument: the `run()` diff is EXACTLY a 3-line branch guarded on a key absent
+    from every shipped env; the runtime characterization snapshot (which drives `run()` whole) and
+    `EXPECTED_NET_INSTALLED` pass UNCHANGED; the routing unit tests pin no-key/unknown-value →
+    `run_express`; and the no-fork world-diff proves the shared bodies. The pre-5d Express path
+    itself is the hardware-proven 5b·2/5c state.
+  - **Live-verify environment notes (recorded):** (a) Kodi's screenshot action on a fresh profile
+    pops a File-Browser picker (no `debug.screenshotpath`) — seed the setting first; a modal
+    stacked that way can leave the underlying select dialog focus-wedged (keys arrive,
+    "action is Select", nothing fires) — escape + relaunch recovers; drive list dialogs with
+    `Input.ButtonEvent` (key-level), not `Input.Select`. (b) The desktop per-gate restart PROMPT
+    after the Foundation gate's live skin switch can be destroyed by the skinshortcuts reload
+    (same dialog-destroy class as the 5b·3 keep-skin race) — harmless here (= "Later"; macOS's
+    real restart is the quit+relaunch anyway), but it feeds the same Phase 6 hardening item.
+    (c) The redwizard repo index 404'd server-side mid-run (`index load failed … redwizardrepo`)
+    with zero impact (12/12 repos still landed from the served zips; closures resolved from the
+    others) — the defensive multi-index design absorbing a real outage.
+  - End state archived as `Kodi.archive-5d-verified-20260610-010656`; the live profile **RESTORED**
+    to the pre-verify 5b·2 box (8 groups + MOD V2 re-confirmed over JSON-RPC).
+- **Deferred to Phase 6:** the keep-skin race hardening (now with the restart-prompt variant
+  above); per-gate Android notification copy ("box is complete — reopen to continue") and the
+  real-Stick wipe-and-run matrix incl. the Guided manual-reopen UX; version-guard +
+  `assert_box_complete`; optionally surfacing Guided without an env (a second launcher entry)
+  if the owner wants a no-provisioner path; Model C (resume-notification service) stays v2.

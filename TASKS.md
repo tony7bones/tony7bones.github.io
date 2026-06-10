@@ -22,38 +22,43 @@ tech-debt seam, the apply_iptv reporting bug, the zero-content guarantee). Keep 
 
 ---
 
-## ▶ VERY NEXT STEP — Phase 5d (Guided wizard + Model A lifecycle), then 6
+## ▶ VERY NEXT STEP — Phase 6 (harden + Fire TV)
 
-> **Phase 5b is COMPLETE** — 5b·3 (`run_iptv`) landed; see its phase entry in
-> `docs/plans/modular-setup.md`. **All three layers are now INDEPENDENTLY RUNNABLE**
-> (`run_foundation` / `run_iptv` / `run_addons` — the 5d precondition is met). The queue:
+> **Phase 5d is COMPLETE** — the Guided wizard + Model A lifecycle landed and were live-proven
+> as a full multi-gate walk on a clean local Kodi (see the 5d phase entry in
+> `docs/plans/modular-setup.md`): `run_guided` offers the next undone gate via the new
+> installed-state probes (`tony7bones.setup.probes`), the orchestrator PERSISTS across gates
+> (self-uninstall only on terminal Finish / confirmed Remove Setup), the env survives every
+> gate and is consumed only by the terminal ops, and the shipped `run()` routes
+> `SETUP_MODE=guided` (per-device env key — owner-vetoable mechanism, documented in the phase
+> log) to the wizard while staying byte-identical Express one-tap otherwise (snapshot +
+> `EXPECTED_NET_INSTALLED` unchanged). The no-fork/cadence/end-state-equivalence invariants
+> live in `_tools/test_no_fork.py`.
 >
-> 1. **Phase 5d — Guided wizard + Model A lifecycle** (the panel's keystone: the orchestrator
->    persists across gates, self-uninstall only on terminal Finish; the wizard offers the next
->    undone gate via installed-state probes; the no-fork invariant — Guided and Express drive
->    the same `apply_*`; then wire a chosen default into the shipped `run()`, today still
->    `run_express`)
-> 2. **Phase 6 — harden + Fire TV** (version-guard shared modules, `assert_box_complete`, CI
->    gates, the wipe-and-run matrix on a real Stick; plus the 5b·3-recorded keep-skin race —
->    skinshortcuts' first buildxml reload can destroy the confirm and revert the skin)
+> **Phase 6 — harden + Fire TV**, the queue:
+>
+> 1. **The keep-skin race** (5b·3-recorded, now with the 5d variant: the per-gate restart
+>    PROMPT can also be destroyed by skinshortcuts' first buildxml reload) — faster confirm
+>    poll / set-and-reconfirm / offline seed in the restart slot.
+> 2. **Version-guard shared `script.module.*` across gates**, `assert_box_complete()` +
+>    dependency-closure walk, CI gates (no-fork + idempotency + seam-guard as required checks).
+> 3. **The wipe-and-run matrix on a real Fire TV Stick** — Express one-tap AND the Guided
+>    manual-reopen UX (per-gate notification copy: "box is complete — reopen to continue");
+>    Fire TV is where the Android restart shape is real.
+> 4. Owner decisions queued: veto window on the `SETUP_MODE` env-key mechanism (alternatives:
+>    timeout launch dialog / second launcher entry); optionally document `SETUP_MODE` in
+>    `.env.device.example` (a protect-hook kept the agent from adding the commented block).
 
-Design context for 5d: `docs/plans/modular-setup.md` → "Panel-resolved decisions" #1 (Model A),
-the Phase 5 row in the phase table, and the three standalone runners as the wizard's gates.
-`run_addons`/`run_iptv` (Phases 5c/5b·3) are the freshest runner + test templates
-(`_tools/test_run_addons.py`, `_tools/test_run_iptv.py`).
-
-Context: Phase 5b·1 (clobber window + N-provider env), 5b·2 (host-side `build_iptv.py` build →
-staging → staged apply; both real providers load, xtream included), the favorites-icon healing
-addendum, **5c (`run_addons`)** and **5b·3 (`run_iptv` — clean-Foundation-box live-proven:
-backend installed by the layer, both providers' JSON-RPC counts match the builder's, MOD V2
-untouched, restart-survival)** are all **DONE** — see the phase log. NOTE: Kodi's `RestartApp`
-is a NO-OP on macOS — the clean-quit+relaunch IS the real restart on the local box.
+Context: all of Phase 5 is DONE — 5a (Foundation), 5b·1/2/3 (IPTV: clobber window, host-side
+build, `run_iptv`), 5c (`run_addons`), 5d (Guided + Model A). NOTE: Kodi's `RestartApp` is a
+NO-OP on macOS — the clean-quit+relaunch IS the real restart on the local box; drive wizard
+list dialogs over JSON-RPC with `Input.ButtonEvent` (key-level), not `Input.Select`.
 
 ---
 
 ## Build status (modular-setup branch)
 
-- **DONE, gated, committed LOCALLY** (suite **693 passed / 1 xfailed**):
+- **DONE, gated, committed LOCALLY** (suite **733 passed / 1 xfailed**):
   Phases 0–3 + 5a (Foundation, incl. 5a·2/5a·3) + **5b·1** (the two `apply_iptv` bugs — clobber
   window + N-provider env) + **5b·2** (the host-side IPTV build integrated — BOTH real
   providers, xtream included, clean-Kodi channel-load proven with the full curation grammar) +
@@ -63,7 +68,13 @@ is a NO-OP on macOS — the clean-quit+relaunch IS the real restart on the local
   live-verified, restart-survival proven) + **5b·3** (`run_iptv` — the standalone IPTV layer,
   clean-FOUNDATION-box proven: pvr backend installed BY the layer, both providers staged-applied,
   counts == builder's 158/47/24 + 214/100/12 + 5 favorites + 560 all, MOD V2 untouched,
-  restart-survival; **Phase 5b COMPLETE — all three layers independently runnable**).
+  restart-survival; **Phase 5b COMPLETE — all three layers independently runnable**) +
+  **5d** (the Guided wizard + Model A lifecycle — `run_guided` + `tony7bones.setup.probes` +
+  the `SETUP_MODE=guided` routing in the shipped `run()`; the full multi-gate walk live-proven
+  on a clean local Kodi: per-gate restarts each landing on a complete working box, Setup
+  persisting across gates, env consumed only at Finish, Finish self-uninstall; the
+  no-fork/cadence/end-state-equivalence invariants in `_tools/test_no_fork.py`; Express
+  byte-identical — snapshot + `EXPECTED_NET_INSTALLED` unchanged).
 - **NOT PUSHED** — milestone-push pending: needs `script.module.tony7bones` + `script.tony7bones.bootstrap`
   version bumps + `--news` (modv2plus is already 1.4.8). Push the branch once 5b lands or at the next
   coherent milestone.

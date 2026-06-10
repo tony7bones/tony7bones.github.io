@@ -102,6 +102,12 @@ from tony7bones.setup.addons import apply_addons
 from tony7bones.setup import iptv as _iptv
 from tony7bones.setup.iptv import apply_iptv
 
+# Installed-state done-probes for the Guided wizard (Phase 5d). The wizard
+# resumes via the box's ACTUAL state (skin active / instance file present /
+# per-id is_installed) — never marker files — so a crash, a declined restart,
+# or a reverted skin all self-heal by re-offering the incomplete gate.
+from tony7bones.setup import probes as _probes
+
 MY_ID = "script.tony7bones.bootstrap"
 
 # Re-exported public names (env parsing now lives in tony7bones.setup.env; the
@@ -116,6 +122,7 @@ __all__ = [
     "run_addons",
     "run_foundation",
     "run_foundation_setup",
+    "run_guided",
     "run_iptv",
     "split_list",
 ]
@@ -1008,20 +1015,287 @@ def run_iptv(box_env=None):
     return iptv_res
 
 
-def run():
-    """Entry point — read the per-device env, run Express, delete the env.
+# --------------------------------------------------------------------------- #
+# The Guided wizard + the Model A lifecycle (Phase 5d).
+# --------------------------------------------------------------------------- #
+# The per-device env key that routes the shipped run() to the Guided wizard.
+# ``SETUP_MODE=guided`` (case-insensitive) -> run_guided; ANY other value or the
+# key absent -> Express, byte-identical to the pre-5d one-tap (the Fire TV
+# default — panel decision #4). Why an env key and not a launch dialog: a
+# chooser prompt (even with a timeout) would break the proven UNATTENDED
+# one-tap and re-shape the characterization snapshot; the mode is a per-device
+# PROVISIONING decision, exactly like everything else the env drives. The
+# provisioner does NOT set it by default. (Owner-vetoable mechanism — the
+# documented alternatives are a timeout launch dialog or a second launcher
+# entry; see the Phase 5d log in docs/plans/modular-setup.md.)
+SETUP_MODE_KEY = "SETUP_MODE"
 
-    The orchestrator owns the per-device env lifecycle: read it ONCE here, pass the
-    parsed dict into ``run_express`` (which drives the three composed layers), then
-    DELETE it AFTER the last layer completes. On a no-env desktop run read yields
-    ``{}`` and the delete is a guarded no-op. On a mid-install CANCEL the env is
-    LEFT intact (the layers never consumed it, so re-running Setup needs it) —
-    mirroring the monolith, which returned before any env delete on cancel.
-    Centralizing read+delete in one coordinator is what lets a future multi-gate
-    Guided flow share the env safely (an earlier gate must not delete the env a
-    later gate needs).
+# The wizard's gate order (the 0-1-2 model) and the user-facing offer labels.
+_GATE_LABELS = {
+    "foundation": "Install Foundation (Estuary MOD V2 skin + repositories)",
+    "iptv": "Install IPTV (live TV)",
+    "addons": "Install Add-ons (curated content)",
+    "finish": "Finish — setup is complete, remove Setup",
+}
+
+
+def _delete_box_env():
+    """Remove the per-device env file (guarded; missing file is a no-op).
+
+    The env's lifecycle in a GUIDED session: the file SURVIVES every gate (a
+    gate restart must not starve the next gate — the panel's env-ownership
+    rule) and is consumed only by the TERMINAL ops (Finish / Remove Setup),
+    BEFORE their restart, so no secret lingers once the wizard is done. The
+    Express path keeps its own delete in run() (after the last layer),
+    unchanged."""
+    try:
+        os.remove(BOX_ENV_PATH)
+    except OSError:
+        pass
+
+
+def _next_gate(box_env):
+    """The wizard's resume probe: the next undone gate, from INSTALLED STATE.
+
+    Foundation -> IPTV (offered ONLY when the env carries a provider playlist
+    source — ``_env_has_iptv``) -> Add-ons -> "finish". Each probe reads the
+    box's actual state (tony7bones.setup.probes), never a marker file, so a
+    crash / declined restart / reverted skin self-heals: the incomplete gate is
+    simply re-offered and every layer is idempotent on re-entry."""
+    box_env = box_env or {}
+    if not _probes.foundation_done():
+        return "foundation"
+    if _env_has_iptv(box_env) and not _probes.iptv_done(box_env):
+        return "iptv"
+    if not _probes.addons_done():
+        return "addons"
+    return "finish"
+
+
+def _guided_gate_foundation(box_env):
+    """The Foundation GATE: the same install seam as ``run_foundation``
+    (``_foundation_core`` — repos incl. our proxy repo + the skin closure +
+    weather/menu/autocomplete) but with the MODEL A lifecycle: NO
+    self-uninstall (the Setup tile IS the "continue setup" affordance), and the
+    activate-skin-then-restart TERMINAL OP fires only on ``ok`` (never restart
+    into a failed gate). The restart is the gate seam: the box it lands on is a
+    complete, branded, zero-content Kodi."""
+    dialog = xbmcgui.DialogProgress()
+    dialog.create("Tony.7.Bones Setup", "Installing Foundation...")
+    res = _foundation_core(box_env, dialog)
+    dialog.close()
+
+    xbmcgui.Dialog().ok(
+        "Tony.7.Bones Setup",
+        "\n".join(
+            [
+                "Foundation:",
+                "Estuary MOD V2: {}".format("installed" if res.ok else "FAILED"),
+                "Repositories + sources installed.",
+                (
+                    "Kodi will restart — reopen Setup to continue."
+                    if res.ok
+                    else "Nothing was activated. Run this step again to retry."
+                ),
+            ]
+        ),
+    )
+    if res.ok:
+        # Activate MOD V2 LAST, immediately before the per-gate restart — ONE
+        # orchestrator-owned terminal op (the activate-skin invariant: a gap
+        # lets Kodi's "Keep this skin?" timeout silently revert it).
+        activate_skin(SKIN_ID, _log)
+        restart_kodi("Tony.7.Bones Setup", _log)
+    return res
+
+
+def _guided_gate_iptv(box_env):
+    """The IPTV GATE: the same ``apply_iptv`` Express drives (no-fork) with the
+    Model A lifecycle — NO self-uninstall, NO skin touch (Foundation owns the
+    active skin), honest summary, restart only on ``ok`` (a failed backend
+    install changed nothing, so there is nothing for a restart to finalise and
+    the user lands back on the wizard to retry/exit)."""
+    dialog = xbmcgui.DialogProgress()
+    dialog.create("Tony.7.Bones Setup", "Installing IPTV...")
+    res = apply_iptv(box_env, dialog=dialog, log=_log)
+    dialog.close()
+
+    if res.ok:
+        configured = res.installed.get(PVR_BACKEND_ID) == "configured"
+        lines = [
+            "IPTV (live TV):",
+            "pvr.iptvsimple: installed",
+            "Instance settings: {}".format(
+                "written" if configured else "unchanged (none in env, or already set)"
+            ),
+            "Kodi will restart — reopen Setup to continue.",
+        ]
+    else:
+        lines = [
+            "IPTV (live TV):",
+            "pvr.iptvsimple: FAILED",
+            "No instance settings were written.",
+            "Run this step again to retry.",
+        ]
+    xbmcgui.Dialog().ok("Tony.7.Bones Setup", "\n".join(lines))
+    if res.ok:
+        restart_kodi("Tony.7.Bones Setup", _log)
+    return res
+
+
+def _guided_gate_addons(box_env):
+    """The Add-ons GATE: the same ``apply_addons`` Express drives (no-fork)
+    with the Model A lifecycle — NO self-uninstall, NO skin touch, honest
+    per-stage counts, restart only on ``ok``. A user CANCEL mid-install
+    (``ok=False``, the layer's only not-ok path) aborts with NO summary and NO
+    restart — the monolith's early-return contract; the partial install is
+    harmless and re-offering the gate completes it."""
+    dialog = xbmcgui.DialogProgress()
+    dialog.create("Tony.7.Bones Setup", "Installing Add-ons...")
+    res = apply_addons(box_env, dialog=dialog, log=_log)
+    if not res.ok:
+        dialog.close()
+        return res
+    dialog.close()
+
+    repo_ok = _count_installed(res, [rid for _z, rid in REPO_ZIPS])
+    app_ok = _count_installed(res, ADDONS)
+    video_ok = _count_installed(res, VIDEO_APPS)
+    xbmcgui.Dialog().ok(
+        "Tony.7.Bones Setup",
+        "\n".join(
+            [
+                "Add-ons (curated content):",
+                f"Repos: {repo_ok}/{len(REPO_ZIPS)}",
+                f"Apps: {app_ok}/{len(ADDONS)}",
+                f"Video add-ons: {video_ok}/{len(VIDEO_APPS)}",
+                "Kodi will restart — reopen Setup to continue.",
+            ]
+        ),
+    )
+    restart_kodi("Tony.7.Bones Setup", _log)
+    return res
+
+
+def _guided_finish():
+    """The TERMINAL op — the ONLY place the Guided lifecycle removes Setup
+    (Model A: self-uninstall on terminal Finish / explicit Remove Setup, never
+    after a gate). Order matters: consume the env FIRST (no secret lingers and
+    the delete cannot be lost to the restart), then self-uninstall, then ONE
+    restart to finalise the removal (Kodi's next scan drops the deleted dir's
+    rows — the same shipped mechanism every standalone runner uses)."""
+    _delete_box_env()
+    self_uninstall(MY_ID, _log)
+    restart_kodi("Tony.7.Bones Setup", _log)
+
+
+_GATE_RUNNERS = {
+    "foundation": _guided_gate_foundation,
+    "iptv": _guided_gate_iptv,
+    "addons": _guided_gate_addons,
+}
+
+
+def run_guided(box_env=None):
+    """The Guided wizard — the multi-gate, resumable Setup (Phase 5d).
+
+    The panel's keystone: the orchestrator add-on PERSISTS across gates
+    (Model A) — its home tile is the "continue setup" affordance — and
+    self-uninstalls ONLY on terminal Finish or an explicit "Remove Setup".
+    Each launch probes the box's INSTALLED STATE (never marker files) and
+    offers the NEXT undone gate:
+
+        Foundation -> IPTV (env-gated: offered only when the env carries a
+        provider playlist source) -> Add-ons -> Finish
+
+    One gate per launch; each gate restarts Kodi on success (per-gate cadence —
+    desktop self-restarts, Fire TV shows the close-and-reopen notice), and each
+    restart lands on a COMPLETE, WORKING box (skin-only after Foundation; + live
+    TV after IPTV; the full box after Add-ons). Gates are UNATTENDED inside
+    (the same prompt-free ``apply_*`` bodies Express drives — the no-fork
+    invariant); the only prompts are BETWEEN gates: that is the wizard.
+
+    Lifecycle rules this function owns:
+      * NO self-uninstall after a gate — only ``_guided_finish`` (Finish, or a
+        confirmed Remove Setup) removes the add-on.
+      * The per-device env SURVIVES every gate (a later gate in a later session
+        still needs it); it is consumed (deleted) only by the terminal op,
+        BEFORE that op's restart. Re-running ``run()`` after each reopen
+        re-reads the surviving env — which still carries ``SETUP_MODE=guided``,
+        so the wizard self-resumes with no extra state.
+      * Restart ONLY on a gate's ``ok`` (never restart into a failed gate); a
+        FAILED gate returns to the wizard menu so the user can retry or exit.
+      * A declined offer / dialog cancel exits cleanly: nothing installed,
+        nothing removed, env + Setup intact (the decline-everything path).
+
+    Degradation worth knowing (documented, accepted): if the env file is LOST
+    mid-flow (crash, manual delete), the next launch reads no ``SETUP_MODE``
+    and runs EXPRESS — which idempotently completes every remaining layer in
+    one shot and self-uninstalls (the proven "Express end-state == cumulative
+    Guided end-state" equivalence); only env-driven config (weather keys, IPTV
+    providers, RSS) is skipped until the provisioner re-pushes the env.
+
+    Returns an outcome string for tests/logs: ``"gate:<name>"`` (a gate ran —
+    the restart seam follows on success), ``"finished"``, ``"removed"`` or
+    ``"exit"``.
+    """
+    box_env = box_env or {}
+    while True:
+        gate = _next_gate(box_env)
+        pick = xbmcgui.Dialog().select(
+            "Tony.7.Bones Setup — Guided",
+            [_GATE_LABELS[gate], "Remove Setup", "Exit (keep Setup)"],
+        )
+        if pick == 0:
+            if gate == "finish":
+                _log("guided: terminal Finish — removing Setup")
+                _guided_finish()
+                return "finished"
+            _log(f"guided: running gate '{gate}'")
+            res = _GATE_RUNNERS[gate](box_env)
+            if res.ok:
+                # The per-gate restart is in flight (or, on a declined desktop
+                # restart prompt, deferred by the user). One gate per launch.
+                return f"gate:{gate}"
+            # FAILED gate: no restart happened and the box is unchanged —
+            # fall through to the menu so the user can retry or exit.
+            _log(f"guided: gate '{gate}' did not complete; back to the menu")
+            continue
+        if pick == 1:
+            if xbmcgui.Dialog().yesno(
+                "Tony.7.Bones Setup",
+                "Remove Setup from this box?\n\n"
+                "Setup (and its saved device config) will be removed. You can "
+                "reinstall it any time from the Tony.7.Bones repository.",
+            ):
+                _log("guided: explicit Remove Setup confirmed")
+                _guided_finish()
+                return "removed"
+            continue  # declined — back to the menu
+        # -1 (back/cancel) or "Exit": keep Setup + env; the tile resumes later.
+        return "exit"
+
+
+def run():
+    """Entry point — read the per-device env, route Express/Guided, own the env.
+
+    The orchestrator owns the per-device env lifecycle: read it ONCE here, pass
+    the parsed dict down. ``SETUP_MODE=guided`` in the env routes to the Guided
+    wizard (which owns the env's TERMINAL delete — the file must survive every
+    gate of a multi-session flow); any other value or no env runs EXPRESS,
+    byte-identical to the pre-5d one-tap: drive the three composed layers, then
+    DELETE the env AFTER the last layer completes. On a no-env desktop run read
+    yields ``{}`` and the delete is a guarded no-op. On a mid-install CANCEL
+    the env is LEFT intact (the layers never consumed it, so re-running Setup
+    needs it) — mirroring the monolith, which returned before any env delete on
+    cancel. Centralizing read+delete in one coordinator is what lets the
+    multi-gate Guided flow share the env safely (an earlier gate must not
+    delete the env a later gate needs).
     """
     box_env = read_box_env(BOX_ENV_PATH)
+    if (box_env.get(SETUP_MODE_KEY) or "").strip().lower() == "guided":
+        run_guided(box_env)
+        return
     addons_res, _foundation_res, _iptv_res = run_express(box_env)
     # Delete only after a non-cancelled run consumed the env (addons_res.ok is False
     # ONLY on a mid-install cancel — the abort path leaves the env for a re-run).

@@ -164,6 +164,13 @@ def boot(tmp_path, monkeypatch):
             # (default False = base-only, today's behaviour); the restart prompt is
             # always declined so run() never actually restarts in tests.
             state.setdefault("yesno", []).append((title, msg))
+            # Optional scripted answers (Phase 5d, e.g. the Guided wizard's
+            # "Remove Setup?" confirm): a test may queue answers in
+            # state["yesno_queue"]; they are consumed FIRST, in order. Tests
+            # that never set the queue see the original behaviour unchanged.
+            queue = state.get("yesno_queue")
+            if queue:
+                return bool(queue.pop(0))
             if msg.startswith("Include video"):
                 return bool(state.get("also_video", False))
             return False
@@ -173,6 +180,18 @@ def boot(tmp_path, monkeypatch):
             # state['video_pick']: None = cancel, [] = nothing, else indexes.
             pick = state.get("video_pick", preselect)
             return None if pick is None else list(pick)
+
+        def select(self, title, options):
+            # Kodi's list-picker (Phase 5d: the Guided wizard menu). Every call
+            # is recorded; the pick comes from state["select_queue"] (a list of
+            # indexes, consumed in order) so a test can script a multi-step
+            # wizard walk. Default with no queue = -1 (back/cancel), so an
+            # unscripted test can never accidentally run a gate.
+            state.setdefault("select", []).append((title, list(options)))
+            queue = state.get("select_queue")
+            if queue:
+                return queue.pop(0)
+            return -1
 
     xbmcgui.DialogProgress = _DP
     xbmcgui.Dialog = _Dialog
