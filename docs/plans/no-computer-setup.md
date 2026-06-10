@@ -1,9 +1,11 @@
 # Plan — No-Computer Setup (repository-direct, remote-only provisioning)
 
-> Status: **DESIGN — panel-style plan, not yet built.** This track starts AFTER the
-> modular-setup Phase 6 hardening completes and the milestone push lands the
-> `modular-setup` branch on `main` (the wizard this plan extends must be the SHIPPED
-> wizard before a remote-only user can reach it repo-direct). It builds directly on
+> Status: **N1 DONE (branch `no-computer-setup`, local) — N2 is next.** The design
+> below is the panel-style plan; the build log at the bottom records what landed.
+> This track started AFTER the modular-setup Phase 6 hardening completed and the
+> milestone push landed the `modular-setup` branch on `main` (the wizard this plan
+> extends must be the SHIPPED wizard before a remote-only user can reach it
+> repo-direct). It builds directly on
 > `docs/plans/modular-setup.md` — the three layers (`apply_foundation` / `apply_iptv` /
 > `apply_addons`), the Guided wizard + Model A lifecycle (`run_guided`, installed-state
 > probes), and the `SETUP_MODE` routing are all REUSED, not reshaped. Phase numbering
@@ -36,6 +38,29 @@ The seam is deliberately tiny: the collector produces **the exact same env dict 
 (`WEATHER_LOCATIONS`, `IPTV_<N>_*`, `RSS_*`, `SETUP_MODE`, …) the layers already
 consume, persisted to the same read-then-terminal-delete lifecycle. Below the dict,
 **nothing forks** — same `apply_*`, same probes, same Model A, same restart seam.
+
+### The three delivery modes (the track's CONTRACT — owner directive, 2026-06-10)
+
+The owner's verbatim intent: _"We should have BOTH: the local bootstrap via adb like
+we were doing, AND the self-contained path directly from our repo with the .env file
+located on the specific device."_ All three modes are first-class and none degrades
+another:
+
+| #   | Mode                                | How the env arrives                                                                                                                      | Routing                                                     |
+| --- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| 1   | **adb provisioner**                 | `_tools/provision-kodi.sh` derives + pushes `tony7bones.env` to `BOX_ENV_PATH` (and stages IPTV artifacts)                               | env-routed: Express, or `SETUP_MODE` opt-in                 |
+| 2   | **Self-contained, user-placed env** | the file simply EXISTS at an env-source path — however the user got it there (downloader app, Send-Files-to-TV, USB, share — **no adb**) | **identical to mode 1** — the reader is provenance-agnostic |
+| 3   | **No env anywhere**                 | nothing — the remote-only user                                                                                                           | the Guided wizard (this track's reason to exist)            |
+
+One routing rule binds them: **env found → behave exactly as provisioned (Express, or
+`SETUP_MODE` routing); no env → wizard.** Mode 2 is not new code — the env reader
+never knew who wrote the file — but as of N1 it is a **documented, supported,
+test-pinned contract** (`test_user_placed_env_at_device_path_routes_identically` in
+`_tools/test_no_computer_routing.py`), not an accident of implementation. The
+repo-direct install (file-manager source → repo zip → Setup from the repository)
+plus a hand-delivered env file is a complete no-computer provisioning path TODAY for
+everything the env drives (weather keys, RSS, direct-env IPTV); only the host-built
+curated IPTV artifacts still need mode 1 until N4.
 
 ## Core principles
 
@@ -412,3 +437,131 @@ Same gated treatment as every modular phase, plus the no-env dimension:
       writes), install walkthrough page, lockstep <requires> test, milestone
       release. Gate: enumerated-inputs acceptance log + fleet-path re-verify.
 ```
+
+---
+
+## Build log
+
+### Phase N1 — DONE (local, branch `no-computer-setup`; routing + env-source generalization — the wizard is reachable with no computer)
+
+- **Owner decision encoded:** Q1 is ANSWERED — the owner confirmed no-env → Guided
+  ("no computer no setup… makes no sense"). The other five open questions (Q2–Q6)
+  were NOT needed by N1 and stay open for N2+; nothing in this phase pre-empts them.
+- **Landed (the D1 + D5-seam deliverable, exactly the plan's N1 scope):**
+  - **`run()` routing (the N1 change):** NO env anywhere (`read -> {}`) →
+    `run_guided({})` — the remote-only/no-computer user lands in the interview.
+    Env present without `SETUP_MODE` (or any non-`guided` value) → `run_express(env)`
+    UNCHANGED (the provisioned one-tap cannot regress — the provisioner always pushes
+    an env first); `SETUP_MODE=guided` → `run_guided(env)` unchanged from 5d.
+    `run_express`'s body is untouched.
+  - **Ordered env sources (`tony7bones/setup/env.py`):** `BOX_ENV_PATH` moved from the
+    bootstrap into the library (single source of truth; the bootstrap re-exports it,
+    same value, so every existing reference/monkeypatch keeps working), plus the new
+    `PROFILE_ENV_SPECIAL`
+    (`special://profile/addon_data/script.tony7bones.bootstrap/tony7bones.env` — the
+    future collector's output; inside Kodi's own writable profile, every platform, no
+    adb/scoped-storage dependency) and the three helpers: `box_env_paths()` (pushed
+    path FIRST — provisioned-path byte-compatibility by construction; profile-local
+    second; `xbmcvfs` imported LAZILY so the module stays import-clean off-Kodi and
+    simply omits the profile candidate), `read_first_env()` (first NON-EMPTY parse
+    wins; an absent/empty/comment-only file is the same class as absent — **documented
+    decision, ⚠ OWNER-VETOABLE:** a degenerate push carries no configuration, so it
+    falls through to the profile-local env and ultimately to the wizard rather than
+    masquerading as a present-but-blank winner), `delete_box_envs()` (guarded,
+    covers every candidate). `SETUP_API` 1→2 + `REQUIRED_SETUP_API` 2 (the runtime
+    pairing guard; the lockstep `<requires>` version bump is deliberately deferred to
+    the track's milestone release — no version bumps mid-track, the API guard covers
+    the stale-library pairing meanwhile, and D6's requires-min test lands with N5).
+  - **Terminal deletes cover BOTH locations (Model A):** Express completion and the
+    Guided terminal ops (`_delete_box_env`) consume EVERY env candidate; a cancelled
+    Express leaves both intact (the early-return contract — the re-run needs them).
+  - **The wizard's "Install everything with defaults" entry (D1's one-tap escape):**
+    offered ONLY on the NO-ENV wizard while gates remain (hidden at Finish — it adds
+    nothing there); runs the EXACT old no-env Express — `run_express({})` including
+    its summary, self-uninstall and single restart — and, being a terminal op, also
+    consumes any env that appeared since launch. An env-routed wizard
+    (`SETUP_MODE=guided`) NEVER shows it: its menu is byte-identical to 5d
+    (**⚠ OWNER-VETOABLE:** the conditionality — a provisioned Guided box was
+    deliberately set up for the interview and a `{}`-Express there would discard the
+    provisioned config; "always show it" is the documented alternative). A mid-install
+    cancel during the defaults run returns to the menu (nothing terminal happened).
+  - **Documented degradation RESHAPED (better than before):** an env LOST mid-Guided
+    now lands back in the wizard (which self-resumes from installed state) instead of
+    silently completing as Express; an env APPEARING mid-wizard is picked up on the
+    next launch (read-once at entry).
+  - **Provisioner honesty fix (`_tools/provision-kodi.sh`):** a FAILED env push now
+    ABORTS before launching Setup (`die`) instead of the old silent
+    "built-in defaults" degradation — the no-env launch is now an interactive wizard
+    this unattended script must not drive (its auto-dismiss would blindly press the
+    first menu item). The no-local-env guard dies too (unreachable in practice, kept
+    honest).
+- **Snapshot / Express-unchanged proof (the Phase-3/5a·2 discipline, deliberately
+  WITHOUT moving the golden file):** the conftest `boot` fixture now seeds a minimal
+  pushed env (`SETUP_MODE=express` at a tmp `BOX_ENV_PATH`), re-anchoring every
+  historical `run()`-driving scenario onto the ENV-PRESENT provisioned route.
+  `SETUP_MODE` is read by `run()`'s routing ONLY (verified: no layer carries a
+  dict-truthiness branch — the one `if not box_env` in the codebase IS the new
+  routing), so the committed characterization snapshot passes **UNCHANGED** — that
+  unchanged equality is itself the Express-unchanged proof, alongside the untouched
+  `EXPECTED_NET_INSTALLED`, the untouched `test_no_fork.py` invariants, and the
+  real-engine defaults-entry equivalence test (below). The OLD no-env Express
+  behaviour remains reachable and pinned — as the wizard's defaults entry.
+- **The three delivery modes promoted to the track's CONTRACT (owner directive,
+  encoded above):** mode 2 — the self-contained, user-placed env (downloader app,
+  Send-Files-to-TV, USB, share; **no adb**) — was always how the code behaved (the
+  env reader is provenance-agnostic by construction) but is now a documented,
+  supported, test-pinned delivery mode
+  (`test_user_placed_env_at_device_path_routes_identically`: both routes — no
+  `SETUP_MODE` → Express with the parsed dict, `SETUP_MODE=guided` → the wizard —
+  byte-identical to a provisioner-pushed env). Nothing about the adb path (mode 1)
+  is removed or degraded.
+- **Tested / mutation-proven:** suite **797 passed / 1 xfailed** (+29 vs the branch
+  point), ruff clean, secret-leak clean; `env.py` 100% covered, `default.py` 98%
+  (every miss a pre-existing defensive branch or the `__main__` guard).
+  `_tools/test_no_computer_routing.py`
+  (25 tests) pins: the full D1 routing matrix (the no-env test stubs `run_express` to
+  RAISE — reverting the routing fails loudly; the env-no-mode test stubs `run_guided`
+  to RAISE — the provisioned one-tap cannot regress to the wizard), the
+  user-placed-env provenance pin (delivery mode 2), source precedence
+  (pushed wins; profile-local is a full peer when pushed is absent; an empty pushed
+  file does NOT shadow a profile-local env), empty/malformed == no-env, terminal
+  deletes over both locations + the cancelled-Express keep, the defaults entry
+  (presence/position on no-env only, hidden at Finish, `run_express({})` exactly once,
+  the REAL-ENGINE net-set == `EXPECTED_NET_INSTALLED` + the Express self-uninstall
+  seam, cancel-returns-to-menu, late-appearing-env consumption, shifted Remove/Exit
+  indices), and the pure env helpers (order/translation, off-Kodi omission,
+  read-first/delete-guarded semantics). **Five keystone mutations were applied live
+  at this gate pass and each killed** (no-env→Express revert: 4 failures;
+  env-no-mode→Guided — express route replaced by the wizard: 26;
+  source order reversed: 3; delete-first-path-only: 2; defaults entry unconditional:
+  4); the tree was restored byte-identical after each.
+- **Live verify (this gate pass, clean local Mac Kodi 21.3; running profile backed
+  up to `Kodi.backup-n1-verify-20260610-072845`, RESTORED and relaunched after; the
+  test profile archived as `Kodi.archive-n1-verified-*`):** fresh profile,
+  working-tree Setup + library, **NO env anywhere** (`/storage` cannot exist on
+  macOS; no profile-local file) → launch renders the Guided wizard (screenshot:
+  "Tony.7.Bones Setup — Guided" with exactly Install Foundation / **Install
+  everything with defaults** / Remove Setup / Exit — 4 items). Walked the Foundation
+  gate end-to-end (~100s): proxy repo extracted, origins stamped on 6 add-ons, file
+  sources merged, home menu trimmed, keyless weather applied,
+  `activate_skin: skin.estuary.modv2 active and committed (attempt 1)`, honest
+  summary, restart prompt autoclosed; the real macOS restart (clean quit + relaunch
+  — `RestartApp` is a no-op here) booted INTO MOD V2 with the MOD V2+ patch marker
+  (`show_system_info_overlay`) applied by the boot service and live weather in the
+  top bar — the gate left a complete working box. Reopened Setup: the no-env wizard
+  RESUMED at "Install Add-ons (curated content)" (Foundation probed done, IPTV
+  correctly skipped with no env), defaults entry still present (screenshot).
+  **Delivery-mode-2 / Express non-regression proof (routing-level, stated honestly —
+  not a full Express run):** a HAND-PLACED env (no provisioner, no adb) WITHOUT
+  `SETUP_MODE` routed the next launch straight into the Express progress dialog
+  (screenshot — placed at the profile-local candidate, which this also live-proves,
+  since `/storage` does not exist on a Mac; the `BOX_ENV_PATH` candidate's identical
+  routing is unit-pinned); cancelling it left the env intact per the early-return
+  contract. The full unattended Express remains proven by the unchanged
+  snapshot/net-set suite + the modular track's live history.
+- **Continuity note:** the implementation + tests landed in one interrupted session
+  and a first gate pass (QA + live verify + this log's first draft) in a second,
+  also interrupted before TASKS.md + commit; this third pass independently RE-RAN
+  the whole gate (coverage, the five mutations, the full live verify with fresh
+  artifacts), added the delivery-mode-2 contract + its pin test per the owner
+  directive, and committed. Nothing inherited was reshaped.

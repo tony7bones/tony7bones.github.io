@@ -7,7 +7,10 @@ its install flow without a real Kodi. It was extracted verbatim from
 ``test_bootstrap.py`` so future modular setup test files can reuse the exact same
 fake Kodi (its JSON-RPC enable/extract state machine, the urlopen fake that builds
 real zips, ``special://`` path translation, and the Android ``mkdirs`` mimicry that
-refuses ``/storage`` paths). Keep its behaviour identical to that original.
+refuses ``/storage`` paths). Keep its behaviour identical to that original — the
+ONE deliberate addition since: the Phase-N1 seeded Express env (see the fixture
+body), which keeps every run()-driving test on the env-present provisioned route
+now that a no-env launch routes to the Guided wizard.
 """
 
 from __future__ import annotations
@@ -327,6 +330,21 @@ def boot(tmp_path, monkeypatch):
     spec = importlib.util.spec_from_file_location("boot_default", DEFAULT_PY)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)  # run() is __main__-guarded, so this does not run it
+
+    # Phase N1: the shipped run() routes a NO-ENV launch to the Guided wizard
+    # (the no-computer path), so the provisioned/desktop Express scenario the
+    # run()-driving tests historically pinned is the ENV-PRESENT route now. Seed
+    # the fake of the provisioner's pushed env: a minimal SETUP_MODE=express at
+    # a tmp BOX_ENV_PATH. SETUP_MODE is read by run()'s routing ONLY — every
+    # layer reads the env strictly by its own keys (no dict-truthiness branch),
+    # so this env is behaviour-identical to the old {} and the committed golden
+    # snapshot must pass UNCHANGED (that equality IS the Express-unchanged
+    # proof). Tests that need the no-env wizard route delete boot.env_file (or
+    # repoint mod.BOX_ENV_PATH); tests that stage their own env already repoint.
+    env_file = tmp_path / "tony7bones.env"
+    env_file.write_text("SETUP_MODE=express\n")
+    mod.BOX_ENV_PATH = str(env_file)
+
     estuary_settings = profile / "addon_data" / "skin.estuary" / "settings.xml"
     return types.SimpleNamespace(
         mod=mod,
@@ -335,4 +353,5 @@ def boot(tmp_path, monkeypatch):
         sysaddons=sysaddons,
         sources_xml=sources_xml,
         estuary_settings=estuary_settings,
+        env_file=env_file,
     )

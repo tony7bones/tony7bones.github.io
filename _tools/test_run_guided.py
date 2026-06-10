@@ -23,9 +23,13 @@ THE WIZARD (resume-by-installed-state):
 
 ROUTING (the shipped ``run()`` — owner-vetoable mechanism, documented in the
 phase log): ``SETUP_MODE=guided`` in the per-device env routes to the wizard;
-the key absent (or any other value) runs Express byte-identically to the
-pre-5d one-tap (the characterization snapshot + EXPECTED_NET_INSTALLED pass
-UNCHANGED — proven in test_modular_setup.py, not re-proven here).
+an env WITHOUT the key (or any other value) runs Express byte-identically to
+the pre-5d one-tap (the characterization snapshot + EXPECTED_NET_INSTALLED
+pass UNCHANGED — proven in test_modular_setup.py, not re-proven here). Since
+Phase N1 a launch with NO env anywhere ALSO routes to the wizard (the
+no-computer path) — that matrix, the ordered env sources, and the no-env
+menu's "Install everything with defaults" entry are pinned in
+test_no_computer_routing.py.
 
 The wizard dialogs are driven through the shared fake-Kodi ``boot`` fixture's
 scripted queues: ``state["select_queue"]`` (menu picks) and

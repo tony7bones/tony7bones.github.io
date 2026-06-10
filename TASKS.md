@@ -23,28 +23,36 @@ tech-debt seam, the apply_iptv reporting bug, the zero-content guarantee). Keep 
 
 ---
 
-## ▶ VERY NEXT STEP — the no-computer-setup track
+## ▶ VERY NEXT STEP — N2, the on-box config collector (no-computer-setup track)
 
-> **The MERGE to `main` is DONE (2026-06-10, owner-decided)** — merge commit `cedab3d`
-> made the modular Setup the shipped production code: `script.module.tony7bones`
-> **1.2.0** (the setup layers + probes + `assert_box_complete` + the PVR-disabled config
-> window + staged-IPTV consumption + keep-skin hardening + the `SETUP_API` guard),
-> `script.tony7bones.bootstrap` **1.5.0** (modular Setup: Express unchanged,
-> `run_foundation`/`run_iptv`/`run_addons` standalone, Guided wizard via
-> `SETUP_MODE=guided`, Model A lifecycle; `<requires>` pins the library at 1.2.0 —
-> lockstep), modv2plus **1.4.8**. The proxy (`repository.tony7bones`) is UNTOUCHED at
-> 2.2.1 — no proxy release was needed; completed boxes auto-update the library + modv2plus
-> via the proxy (verified benign: the library is import-only with no new deps, the
-> modv2plus 1.4.8 menu-redeploy is idempotent). Pre-merge `main` is tagged
-> **`main-pre-modular-2026-06-10`** (restore point). Live-verified post-push: raw `main`
-> serves the 1.5.0/1.2.0/1.4.8 zips (old 1.4.0/1.1.3/1.4.7 → 404), Pages built the merge
-> commit, all install URLs 200.
+> **Phase N1 is DONE and committed on branch `no-computer-setup`** (cut from the merged
+> `main`, 2026-06-10) — routing + env-source generalization: NO env anywhere →
+> `run_guided({})` (the remote-only user lands in the wizard, with the
+> "Install everything with defaults" one-tap escape = the exact old no-env Express);
+> env present → byte-identical provisioned routing (no `SETUP_MODE` → Express,
+> `SETUP_MODE=guided` → wizard); ordered env sources (`BOX_ENV_PATH` wins →
+> profile-local second) with terminal deletes covering both; the provisioner now
+> ABORTS pre-Setup on a failed env push. **The track's contract: THREE first-class
+> delivery modes** (owner directive) — (1) adb provisioner, (2) self-contained
+> user-placed env at a device env path (no adb — documented + test-pinned), (3) no
+> env → the Guided wizard. Full record: the N1 build-log entry in
+> `docs/plans/no-computer-setup.md`. Gate evidence: 797 passed / 1 xfailed, env.py
+> 100% / default.py 98%, five keystone mutations killed, clean-Kodi live verify
+> (no-env wizard render + Foundation gate walk + MOD V2 boot + hand-placed-env
+> Express routing).
 >
-> **Next:** a production-path device test (fresh provision + Setup installed from the live
-> repo on `main`), then the no-computer-setup track (Setup with no provisioner/env —
-> separate plan doc): the six owner answers → then N1. Also still queued: optionally
-> document `SETUP_MODE` in `.env.device.example` (a protect-hook kept the agent from
-> adding the commented block).
+> **Next: N2 — the on-box collector v1 (prefs + weather + persistence)** per the plan:
+> `setup/collect.py` (assembly/validation/persist with `SETUP_MODE=guided`), the
+> first-run interview (device name → weather city loop ≤5), `_apply_core_prefs` in
+> Foundation, the default RSS list as committed data, the conftest `input` queue.
+> N2 needs owner answers to **Q2 (ship the RSS list as public data?)** and **Q3
+> (web-server default for no-computer boxes)** — see the plan's open questions.
+> Also still queued: a production-path device test (fresh provision + Setup installed
+> from the live repo on `main`); optionally document `SETUP_MODE` in
+> `.env.device.example` (a protect-hook kept the agent from adding the commented
+> block). Pre-N1 context: the modular-setup MERGE to `main` (commit `cedab3d`,
+> 1.5.0/1.2.0/1.4.8 shipped, restore tag `main-pre-modular-2026-06-10`) is recorded
+> in `docs/plans/modular-setup.md`.
 
 Context: all of Phase 5 + Phase 6 are DONE — 5a (Foundation), 5b·1/2/3 (IPTV), 5c
 (`run_addons`), 5d (Guided + Model A), 6 (harden + the Fire TV matrix on the Bedroom box:
