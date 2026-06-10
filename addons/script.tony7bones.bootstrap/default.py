@@ -113,6 +113,7 @@ __all__ = [
     "apply_iptv",
     "parse_env",
     "read_box_env",
+    "run_addons",
     "run_foundation",
     "run_foundation_setup",
     "split_list",
@@ -766,6 +767,114 @@ def run_foundation_setup(box_env=None):
     # ONE restart finalises every freshly extracted add-on AND the self-removal.
     restart_kodi("Tony.7.Bones Setup", _log)
     return foundation_res, iptv_res
+
+
+def run_addons(box_env=None):
+    """The Add-ons orchestrator — apply Layer 2 ONLY (the curated content set).
+
+    The 0-1-2 model's "stopped at skin-only, later adds the curated content"
+    story (Phase 5c): a thin standalone runner that drives the SAME ``apply_addons``
+    the Express one-shot drives (the no-fork invariant) on top of an EXISTING
+    Foundation box, then owns the terminal seam: honest summary → self-uninstall →
+    ONE platform-aware restart. Stop here = the full box.
+
+    Body (mirrors ``run_foundation``'s proven shape):
+      1. progress dialog → ``apply_addons(box_env)`` — the base source repos + base
+         apps (script.ezmaintenanceplus / script.realdebrid), the curated video
+         add-ons (POV, The Loop, Sports HD, YouTube; ``plugin.video.dailymotion_com``
+         install-then-DISABLED) with full dependency closures + origin stamps, the
+         RSS core toggle + the env-driven RSS feeds.
+      2. summary dialog — honest per-stage counts straight from the LayerResult
+         (a partial failure shows as e.g. "Video add-ons: 2/4", never "success").
+      3. ``self_uninstall`` then ONE ``restart_kodi`` (platform-aware: desktop
+         self-restarts, Android prompts close+reopen) — the restart finalises the
+         freshly extracted add-ons AND the self-removal, honoring the layer's
+         ``needs_restart`` request.
+
+    What it must NOT do (the layer invariants):
+      * NO skin touch — no ``activate_skin``, no ``lookandfeel.skin``, no
+        ``Skin.SetBool``. Foundation owns the active skin; re-setting it would
+        re-arm Kodi's "Keep this skin?" revert timeout for no reason, and the
+        top-bar weather bool belongs to Foundation (stock Estuary) / the
+        modv2plus settings-aware service (MOD V2).
+      * NO orchestrator-level ``install_repos`` call — Foundation owns plumbing.
+        (``apply_addons``'s own base step still runs its historical idempotent
+        repo loop internally; on a Foundation box every repo extract
+        short-circuits. That is the layer's proven self-sufficiency, shared
+        verbatim with Express — not a fork.)
+      * NO ``apply_foundation`` / ``apply_iptv`` — one layer per runner.
+
+    Foundation-missing semantics (decided, not probed): run on a box WITHOUT
+    Foundation, the curated content still lands and works — ``apply_addons``'s base
+    step installs the source repos itself, so the video closures resolve; the box
+    simply is not branded (stock Estuary, no MOD V2/weather). No probe-and-abort:
+    the layer is additive and re-entrant, and a later ``run_foundation`` completes
+    the branding with no redo (re-entrancy via installed-state).
+
+    Env lifecycle: same coordinator pattern as ``run()`` — the DRIVER reads the
+    per-device env ONCE (``read_box_env(BOX_ENV_PATH)``), passes the dict in, and
+    deletes the env file only after a successful (non-cancelled) run. Precondition
+    for the later-opt-in story: the provisioner (or a lighter re-stage) must have
+    re-pushed ``tony7bones.env`` to the box — Foundation's earlier run consumed and
+    deleted the original.
+
+    Failure semantics: a user CANCEL mid-install (``ok=False``, the only not-ok
+    path in ``apply_addons``) aborts cleanly — NO summary, NO self-uninstall, NO
+    restart; the partial install is harmless and a re-run completes it (the
+    monolith's early-return contract, same as ``run_express``). Per-add-on install
+    failures stay non-fatal: the summary reports the honest counts and the box
+    still completes (restart once). Re-entry is safe by construction —
+    ``extract_zip`` / ``install_selection``'s ``is_installed`` probes short-circuit
+    an already-provisioned box; the disable-after set is re-applied (idempotent).
+
+    NOT wired into the shipped ``run()`` (still ``run_express``); a new entry
+    point for the modular flow. Returns the Add-ons ``LayerResult``.
+    """
+    box_env = box_env or {}
+    dialog = xbmcgui.DialogProgress()
+    dialog.create("Tony.7.Bones Setup", "Installing Add-ons...")
+
+    # Layer 2 ONLY — the same apply_addons Express drives (no forked install
+    # logic). It owns repos+apps+video install, origin stamps, the
+    # install-then-disable set, the RSS core toggle + env-driven RSS feeds.
+    addons_res = apply_addons(box_env, dialog=dialog, log=_log)
+    if not addons_res.ok:
+        # User cancelled mid-install: abort cleanly with NO summary, NO
+        # self-uninstall, NO restart (the monolith's early-return contract).
+        # The driver leaves the env intact so a re-run can complete the box.
+        dialog.close()
+        return addons_res
+
+    dialog.close()
+
+    # Honest summary — per-stage counts straight from the LayerResult (the same
+    # Repos/Apps/Video contract as the Express summary; no IPTV/skin lines here,
+    # those layers have their own runners).
+    repo_ok = _count_installed(addons_res, [rid for _z, rid in REPO_ZIPS])
+    app_ok = _count_installed(addons_res, ADDONS)
+    video_ok = _count_installed(addons_res, VIDEO_APPS)
+    xbmcgui.Dialog().ok(
+        "Tony.7.Bones Setup",
+        "\n".join(
+            [
+                "Add-ons (curated content):",
+                f"Repos: {repo_ok}/{len(REPO_ZIPS)}",
+                f"Apps: {app_ok}/{len(ADDONS)}",
+                f"Video add-ons: {video_ok}/{len(VIDEO_APPS)}",
+                "Restart will finish setup.",
+            ]
+        ),
+    )
+
+    # Run once, then disappear (after the summary; never raises). The shared
+    # library is a hidden module add-on and is deliberately LEFT installed.
+    self_uninstall(MY_ID, _log)
+
+    # ONE restart finalises every freshly extracted add-on AND the self-removal.
+    # NO skin activation here — Foundation owns the active skin (re-setting
+    # lookandfeel.skin would re-arm the "Keep this skin?" revert timeout).
+    restart_kodi("Tony.7.Bones Setup", _log)
+    return addons_res
 
 
 def run():

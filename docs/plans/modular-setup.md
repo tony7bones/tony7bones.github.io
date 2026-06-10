@@ -1,8 +1,8 @@
 # Plan — Modular "0-1-2" Setup (Foundation / IPTV / Add-ons)
 
-> Status: **BUILD IN PROGRESS — Phases 0–3 + 5a + 5b·1/5b·2 DONE (local commits on
-> `modular-setup`, HEAD `954f9f3`, suite 663 passed / 1 xfailed); NEXT = Phase 5b·3
-> (`run_iptv`).** Design was panel-reviewed in parallel by three specialist agents
+> Status: **BUILD IN PROGRESS — Phases 0–3 + 5a + 5b·1/5b·2 + 5c DONE (local commits on
+> `modular-setup`, suite 677 passed / 1 xfailed); NEXT = Phase 5b·3
+> (`run_iptv` — taken AFTER 5c by deliberate choice; its prep section is unchanged).** Design was panel-reviewed in parallel by three specialist agents
 > (Architecture, QA/testability, Kodi-runtime); this doc is the orchestrated synthesis
 > PLUS the running phase log. The design sections below are kept as written (the
 > contract); current truth lives in the **Phase log** and the **Phase 5b** section at
@@ -924,11 +924,87 @@ stays `run_express` until 5d), Guided-wizard UI, and the Add-ons layer (5c).
 
 **Then:**
 
-- **Phase 5c — the Add-ons layer independent** (`run_addons`): the opinionated curated set (POV,
-  Loop, Sports HD, YouTube) as an opt-in layer on top of Foundation.
+- ~~**Phase 5c — the Add-ons layer independent** (`run_addons`)~~ — **DONE (taken deliberately
+  BEFORE 5b·3 — no dependency on it; see the phase entry below).**
 - **Phase 5d — the Guided wizard + Model A lifecycle** (the panel's keystone): the orchestrator
   persists across gates (self-uninstall only on terminal Finish); the wizard offers the next undone
   gate using installed-state probes; the **no-fork** invariant (Guided and Express drive the same
   `apply_*`). Wire a chosen default into the shipped `run()` (today still `run_express`).
 - **Phase 6 — harden + Fire TV** (version-guard shared modules, `assert_box_complete`, CI gates, the
   wipe-and-run matrix on a real Stick for the Android manual-restart UX).
+
+### Phase 5c — DONE (local; the standalone Add-ons layer: `run_addons`)
+
+> _(Ordering note: 5c was deliberately done BEFORE 5b·3 (`run_iptv`) — it has no dependency on
+> it. 5b·3 stays queued as the next step; its full prep section above is unchanged.)_
+
+- **Landed:** `run_addons(box_env)` in `default.py` — a thin standalone orchestrator mirroring
+  `run_foundation`'s proven seam: progress dialog → `apply_addons(box_env)` (the SAME layer
+  function Express drives — base source repos + base apps + curated video POV/Loop/Sports HD/
+  YouTube with closures + origin stamps + the dailymotion install-then-disable + the RSS core
+  toggle + env-driven RSS feeds) → honest summary (per-stage counts straight from the
+  LayerResult: `Repos x/12, Apps x/2, Video x/4`) → `self_uninstall` → ONE platform-aware
+  `restart_kodi`. ZERO library changes — the orchestrator is the entire diff, so the no-fork
+  invariant is structural (one `apply_addons`, two callers).
+- **Layer invariants (decided + pinned):** NO skin touch — no `activate_skin`, no
+  `lookandfeel.skin`, no `Skin.SetBool` (re-setting the skin re-arms the "Keep this skin?"
+  revert timeout; the top-bar weather bool belongs to Foundation/modv2plus). NO
+  orchestrator-level `install_repos` call (Foundation owns plumbing) — the LAYER's own
+  `_install_base` keeps its historical idempotent repo loop internally, shared verbatim with
+  Express (on a Foundation box every repo extract short-circuits). NO
+  `apply_foundation`/`apply_iptv`.
+- **Foundation-missing semantics (decided, not probed):** tolerant fallback — on a box WITHOUT
+  Foundation the curated content still lands and works (`apply_addons`' base step installs the
+  source repos itself, so the video closures resolve); the box just isn't branded (stock
+  Estuary). No probe-and-abort: the layer is additive/re-entrant and a later `run_foundation`
+  completes the branding with no redo.
+- **Env lifecycle:** dict passed in; the DRIVER owns read-once (`read_box_env`) +
+  delete-only-after-success (a cancel leaves the env for a re-run) — same coordinator pattern
+  as `run()`/the 5b·3 prep. Precondition for the later-opt-in story (documented in the
+  docstring): the env must be re-pushed — Foundation's earlier run consumed the original.
+- **Failure semantics:** cancel (`ok=False`, the only not-ok path) → clean abort, NO
+  summary/uninstall/restart (the monolith's early-return contract). Per-add-on failures are
+  non-fatal: honest counts (e.g. `Video add-ons: 2/4`), box still completes with one restart.
+- **NOTE — weather is NOT this layer's job** (5a·2 moved it to Foundation; the original Phase-5c
+  bullet predates that). `run_addons` applies only RSS; the acceptance's weather evidence comes
+  from Foundation's env-driven config, proven intact on the same live box.
+- **Tested / mutation-proven:** new `_tools/test_run_addons.py` (14 tests, same fake-Kodi `boot`
+  patterns): curated set + disable-after, Foundation-less repos fallback, no-skin-touch (spy +
+  settings + builtins), real-engine no-Foundation/no-IPTV leak (installed-set + instance-file +
+  weather.addon), STRUCTURAL body test (apply_addons stubbed → no
+  install_repos/apply_foundation/apply_iptv/activate_skin), terminal ordering
+  (summary→self-uninstall→restart, restart LAST, exactly once), honest partial-failure summary,
+  real dialog-cancel abort, env passthrough verbatim + None→{}, env-driven RSS write, re-entry
+  (second run state-identical; `already_done=False` semantics pinned honestly). Mutations
+  killed: skin-activation added (2 tests), `install_repos` added to the body, `self_uninstall`
+  dropped (2), lying video count. **677 passed / 1 xfailed** (was 663), `ruff` clean, secrets
+  green; snapshot + `EXPECTED_NET_INSTALLED` pass UNCHANGED (`run_express` untouched).
+- **Coverage:** the new `run_addons` body 100% (default.py 96% — every uncovered line is a
+  pre-existing defensive guard / `__main__`). Generated files regenerated (second regen
+  byte-identical); no version bumps (deferred to the milestone push).
+- **LIVE-VERIFIED (clean Kodi 21.3, fresh profile, two-leg run with the real `.env.local`):**
+  leg 1 `run_foundation` → a proven Foundation-ONLY box (all 8 content ids NOT installed; skin
+  21.4+omega.4 + modv2plus + pvr.artwork + weather.multi + autocomplete + all repos + our proxy
+  repo installed/enabled; weather env-applied: `5 location(s) written; weatherbit=True
+owm=True`). Leg 2 `run_addons` (driver: patched INSTALLED copy's `run()`, repo source
+  untouched) → log `stamped origin on 21 add-on(s)`, `disabled after install:
+plugin.video.dailymotion_com`, `_apply_rss: wrote 7 RSS feed(s) (interval 30)`; JSON-RPC:
+  POV 6.06.06 / Loop 7.9 / Sports HD 0.1.85.1 / YouTube 7.4.3 installed+ENABLED, dailymotion
+  2.4.4 installed+DISABLED, both base apps enabled; origins stamped (kodifitzwell/loop/
+  bugatsinho/xbmc.org×2; the two peno64 base apps blank — PRE-EXISTING `install_with_deps`
+  by-design "No origins", identical under Express); RssFeeds.xml == the parsed env exactly
+  (7 feeds, interval 30) + `lookandfeel.enablerssfeeds=true`; `IPTV` instance file absent,
+  pvr.iptvsimple NOT installed; Setup self-uninstalled; staged env consumed. **MOD V2 STILL
+  the active skin after the run** (no `activate_skin` log line in leg 2 — the no-skin-touch
+  invariant live-proven). **Clean-shutdown restart-survival:** after quit+relaunch the skin,
+  RSS setting + 7 feeds, weather (5 locations + keys + provider) and all add-on states
+  survived; the modv2plus service auto-applied the patch on the real boot
+  (`show_system_info_overlay` marker present, `show_weatherinfo=true`); POV `GetDirectory`
+  **11 items** + a browsable Movies submenu (**14 items**: Trending/Popular/Premieres…);
+  rendered-home screenshot shows the patched MOD V2 trimmed menu, top-bar weather (70°F) and
+  the live RSS ticker. **Platform finding (documented):** Kodi's `RestartApp` is a NO-OP on
+  macOS (one PID across the whole run; the skin went live via `activate_skin`'s live switch) —
+  the playbook's clean-quit+relaunch IS the real restart on this box; on Fire TV the prompt-free
+  Quit() path is unaffected. The local box was RESTORED to its pre-verify state (the 5b·2 full
+  IPTV box — all 8 channel groups re-confirmed); the 5c end-state archived as
+  `Kodi.archive-5c-verified-*`.
