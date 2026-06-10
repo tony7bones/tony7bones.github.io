@@ -89,19 +89,8 @@ def self_uninstall(addon_id, log):
         log(f"self-uninstall failed (non-fatal): {e}", xbmc.LOGERROR)
 
 
-def activate_skin(skin_id, log):
-    """Switch the active skin to skin_id AND accept Kodi's "Keep this skin?"
-    confirmation so the change PERSISTS across the end-of-setup restart.
-
-    Setting lookandfeel.skin live triggers a skin reload and pops a yes/no confirm
-    (window 10100) that DEFAULTS TO REVERT on its timeout. If it is not accepted
-    before Kodi restarts/quits, Kodi rolls the skin back to the previous one — so
-    the box boots stock Estuary instead of MOD V2 (a real Fire TV install hit
-    exactly this). We set the skin, wait for the confirm to appear, then click its
-    Yes button (control 11 of the yes/no dialog) so the change commits, and let it
-    settle before the caller restarts. Verified on a real Fire TV: control 11 keeps
-    the skin with no revert.
-    """
+def _set_skin_setting(skin_id):
+    """Write lookandfeel.skin via JSON-RPC (the live skin switch)."""
     xbmc.executeJSONRPC(
         json.dumps(
             {
@@ -112,21 +101,168 @@ def activate_skin(skin_id, log):
             }
         )
     )
-    for _ in range(24):  # up to ~12s for the confirm to render
-        if xbmc.getCondVisibility("Window.IsVisible(10100)"):
-            xbmc.executebuiltin("SendClick(11)")  # control 11 == Yes (keep)
-            log(
-                "activate_skin: accepted keep-skin for {}".format(skin_id),
-                xbmc.LOGINFO,
+
+
+def _wait_skin_quiescent(skin_id, log):
+    """Bounded wait for script.skinshortcuts' first menu build for `skin_id`.
+
+    When the freshly-activated skin's `script-skinshortcuts-includes.xml` does
+    not exist yet, skinshortcuts builds it and finishes with a ReloadSkin that
+    DESTROYS any open modal dialog — live runs lost both the "Keep this skin?"
+    confirm (~270 ms after the switch; silent revert to stock) and the
+    end-of-gate restart prompt to exactly this reload. Waiting here, inside the
+    activation seam, keeps the caller's later dialogs out of the blast radius.
+
+    Returns as soon as the includes file exists (plus a short grace for the
+    ReloadSkin that follows the write), immediately when skinshortcuts is not
+    installed (nothing will reload), and gives up after ~30s (sub-second on a
+    desktop, but a real Fire TV took >14s for the first build — and that was
+    while concurrent re-asserts kept reloading the skin under it; never block
+    activation forever on it). Never raises.
+    """
+    try:
+        ss_dir = xbmcvfs.translatePath("special://home/addons/script.skinshortcuts")
+        if not os.path.isdir(ss_dir):
+            return
+        inc = xbmcvfs.translatePath(
+            "special://home/addons/{}/xml/script-skinshortcuts-includes.xml".format(
+                skin_id
             )
-            break
-        xbmc.sleep(500)
-    else:
+        )
+        for _ in range(120):  # up to ~30s at 250ms
+            if os.path.exists(inc):
+                xbmc.sleep(1000)  # grace: the build's ReloadSkin follows the write
+                return
+            xbmc.sleep(250)
         log(
-            "activate_skin: no keep-skin dialog appeared for {}".format(skin_id),
+            "activate_skin: skinshortcuts menu not built within the wait — proceeding",
             xbmc.LOGINFO,
         )
-    xbmc.sleep(2000)  # let the keep commit + the skin settle before the restart
+    except Exception:  # noqa: BLE001 - a settle helper must never break activation
+        pass
+
+
+def activate_skin(skin_id, log, attempts=3):
+    """Switch the active skin to skin_id, accept Kodi's "Keep this skin?"
+    confirmation, and VERIFY the switch actually stuck — re-asserting it if the
+    confirm was destroyed. Returns True when the skin is verified active and
+    committed, False when it would not stick (logged loud, never silent).
+
+    Setting lookandfeel.skin live triggers a skin reload and pops a yes/no
+    confirm (window 10100) that DEFAULTS TO REVERT on its timeout. Two failure
+    modes are covered, both observed on real boxes:
+
+    * The confirm times out unaccepted (the original Fire TV bug): we poll for
+      the dialog and click its Yes button (control 11) — verified on a real
+      Fire TV.
+    * The confirm is DESTROYED before our poll sees it: on a fresh box
+      script.skinshortcuts' first menu build ends in a ReloadSkin that killed
+      the confirm ~270 ms after the switch (log-proven), silently reverting the
+      skin to stock. The poll is 200 ms (fast enough to win most races), it
+      exits early when it SEES the revert (the skin was live, then flipped
+      back), and — the fundamental fix — after the settle the END STATE is
+      verified via getSkinDir() and the switch is RE-ASSERTED (bounded
+      `attempts`). Before each re-assert we WAIT for skinshortcuts quiescence
+      (`_wait_skin_quiescent`): on a slow real Fire TV the first build runs
+      >14s, an immediate re-assert lands INSIDE it (the fresh confirm is
+      destroyed unaccepted — Kodi treats that as "No" — even when our
+      SendClick already logged the accept), and the reload each re-assert
+      causes re-kicks the build, so all attempts can burn inside one build
+      window (observed live: 3/3 lost, box restarted on stock). Once the
+      build's includes file exists the re-asserted confirm survives and the
+      accept commits.
+
+    The post-accept settle also waits for skinshortcuts quiescence
+    (`_wait_skin_quiescent`) so the caller's NEXT dialog (the restart prompt —
+    the second observed victim of the same reload) is shown after the blast
+    radius, not inside it.
+
+    If the skin never even goes live and no confirm appears, the set was
+    rejected outright (skin not registered/enabled — see the install ritual);
+    re-asserting cannot fix that, so we bail after the first attempt and
+    return False honestly.
+    """
+    for attempt in range(1, attempts + 1):
+        _set_skin_setting(skin_id)
+        accepted = False
+        saw_live = False
+        for _ in range(60):  # up to ~12s at 200ms for the confirm to render
+            # Track live-ness FIRST, every iteration — including while the
+            # confirm is visible (Kodi switches the skin live, THEN shows the
+            # confirm, so the skin is already live when the dialog renders).
+            # Recording it only in the no-dialog branch missed exactly this and
+            # misread a destroyed-while-visible confirm as "never went live"
+            # (caught on the live box).
+            live_now = (xbmc.getSkinDir() or "") == skin_id
+            if live_now:
+                saw_live = True
+            if xbmc.getCondVisibility("Window.IsVisible(10100)"):
+                xbmc.executebuiltin("SendClick(11)")  # control 11 == Yes (keep)
+                accepted = True
+                log(
+                    "activate_skin: accepted keep-skin for {}".format(skin_id),
+                    xbmc.LOGINFO,
+                )
+                break
+            if saw_live and not live_now:
+                # The skin WAS live and flipped back: the confirm was destroyed
+                # unaccepted and Kodi reverted. Stop polling for a dialog that
+                # no longer exists; fall through to the verify + re-assert.
+                log(
+                    "activate_skin: keep-skin confirm lost — {} reverted "
+                    "(attempt {}/{})".format(skin_id, attempt, attempts),
+                    xbmc.LOGWARNING,
+                )
+                break
+            xbmc.sleep(200)
+        else:
+            log(
+                "activate_skin: no keep-skin dialog appeared for {}".format(skin_id),
+                xbmc.LOGINFO,
+            )
+        xbmc.sleep(2000)  # let the keep commit + the skin settle
+        # VERIFY the end state — never trust the dialog dance alone.
+        if (xbmc.getSkinDir() or "") == skin_id:
+            _wait_skin_quiescent(skin_id, log)
+            if (xbmc.getSkinDir() or "") == skin_id:
+                log(
+                    "activate_skin: {} active and committed (attempt {})".format(
+                        skin_id, attempt
+                    ),
+                    xbmc.LOGINFO,
+                )
+                return True
+        if not saw_live and not accepted:
+            # The set was rejected outright (the live switch never happened) —
+            # the skin is not a registered, enabled choice. Re-asserting the
+            # same rejected set cannot help; fail fast and loud instead.
+            log(
+                "activate_skin: {} never went live — set rejected "
+                "(skin not registered/enabled?)".format(skin_id),
+                xbmc.LOGERROR,
+            )
+            return False
+        log(
+            "activate_skin: {} did not stick (attempt {}/{}) — waiting for "
+            "skinshortcuts quiescence, then re-asserting".format(
+                skin_id, attempt, attempts
+            ),
+            xbmc.LOGWARNING,
+        )
+        # THE SLOW-BOX FIX (live-proven on a real Fire TV): a re-assert fired
+        # while skinshortcuts' first build is STILL RUNNING just feeds the same
+        # destroyer — the fresh confirm is torn down unaccepted (which Kodi
+        # treats as "No" and reverts), and the skin reload the re-assert causes
+        # re-kicks the build, perpetuating the race until the attempts run out
+        # (observed: 3/3 attempts lost inside one >14s first build). Wait for
+        # the build to finish BEFORE re-asserting so the next confirm survives
+        # long enough for our accept to commit.
+        _wait_skin_quiescent(skin_id, log)
+    log(
+        "activate_skin: FAILED to keep {} after {} attempts".format(skin_id, attempts),
+        xbmc.LOGERROR,
+    )
+    return False
 
 
 def restart_kodi(title, log):
@@ -161,11 +297,23 @@ def restart_kodi(title, log):
         xbmc.executebuiltin("Quit")
         return
 
+    # autoclose BOUNDS the prompt's lifetime (Phase 6, live-proven necessity):
+    # the box is in a reload-prone state here — the skin was just activated,
+    # and the modv2plus boot service applies its patch once MOD V2 is live,
+    # ending in a skinshortcuts rebuild + ReloadSkin that DESTROYED a
+    # still-open prompt ~45s in on a live run (Kodi then segfaulted tearing
+    # the modal down mid-reload). A destroyed dialog's answer is garbage; the
+    # autoclose answer is safe EITHER way: observed live it returns True →
+    # the restart proceeds (the unattended one-tap completes itself); a False
+    # would be the documented "Later" self-heal path (the next launch
+    # re-offers the gate / Express re-runs idempotently). 20s is
+    # human-generous and safely inside the observed destroyer window.
     if xbmcgui.Dialog().yesno(
         title,
         "Setup is complete. Kodi needs to restart to finish.\n\nRestart now?",
         yeslabel="Restart now",
         nolabel="Later",
+        autoclose=20000,
     ):
         log("restart: RestartApp()", xbmc.LOGINFO)
         xbmc.executebuiltin("RestartApp()")

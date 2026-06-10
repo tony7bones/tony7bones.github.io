@@ -346,6 +346,113 @@ def test_force_default_fontset_removed():
 
 
 # --------------------------------------------------------------------------- #
+# Runtime — the skinshortcuts caching-race fix (Part A): (re)deploying our menu
+# CLEARS the built cache for skin.estuary.modv2 AND drops the built <skin>.hash so
+# skinshortcuts regenerates from OUR menu on the next boot (defeats the stock-menu
+# race documented in service.py:_menu_is_ours).
+# --------------------------------------------------------------------------- #
+def _skinshortcuts_dir(patch_env):
+    home = patch_env.skin_root.parent.parent
+    return home / "userdata" / "addon_data" / "script.skinshortcuts"
+
+
+def test_drop_skinshortcuts_hash_removes_built_hash(patch_env):
+    """_drop_skinshortcuts_hash deletes the built <skin>.hash. This is the ISOLATED
+    step-3 contract — a stale hash present in the dir is removed. MUTATION: if the
+    hash-drop helper no-ops (or is removed), the stale hash survives and this fails."""
+    ssc = _skinshortcuts_dir(patch_env)
+    ssc.mkdir(parents=True, exist_ok=True)
+    hsh = ssc / "skin.estuary.modv2.hash"
+    hsh.write_text("STALE-STOCK-MENU-HASH")
+    dropped = patch_env.mod._drop_skinshortcuts_hash(str(ssc))
+    assert dropped is True
+    assert not hsh.exists(), (
+        "the built skin.estuary.modv2.hash must be dropped so skinshortcuts "
+        "rebuilds from OUR menu"
+    )
+
+
+def test_deploy_drops_built_hash_even_if_clear_misses_it(patch_env, monkeypatch):
+    """_deploy_skinshortcuts_menu drops the built <skin>.hash as a DISTINCT step
+    (step 3), independent of the cache-clear (step 1). Proven by stubbing the
+    cache-clear to a no-op: the hash MUST still be gone after the deploy — so the
+    hash-drop is load-bearing on its own. MUTATION: remove the _drop_skinshortcuts_hash
+    call from the deploy and, with the clear stubbed out, the stale hash survives and
+    this fails."""
+    ssc = _skinshortcuts_dir(patch_env)
+    ssc.mkdir(parents=True, exist_ok=True)
+    hsh = ssc / "skin.estuary.modv2.hash"
+    hsh.write_text("STALE-STOCK-MENU-HASH")
+    # stub the clear so ONLY the explicit hash-drop can remove the hash
+    monkeypatch.setattr(patch_env.mod, "_clear_skinshortcuts_cache", lambda: 0)
+    patch_env.mod._deploy_skinshortcuts_menu()
+    assert not hsh.exists(), (
+        "the deploy must drop the built hash as its own step, not rely on the clear"
+    )
+
+
+def test_deploy_clears_stale_built_cache(patch_env):
+    """_deploy_skinshortcuts_menu CLEARS the stale built cache for the skin (a
+    stock-menu build a live skin-switch may have raced in) before deploying ours.
+    A stale built menu file (prefixed with the skin id, NOT a .hash so only the
+    cache-clear step removes it) must be gone afterwards. MUTATION: drop the
+    cache-clear call and the stale build survives."""
+    ssc = _skinshortcuts_dir(patch_env)
+    ssc.mkdir(parents=True, exist_ok=True)
+    # a stale built menu cache from a racing STOCK build (prefixed with the skin id);
+    # a .DATA.xml, so the hash-drop (which targets only .hash) cannot remove it —
+    # only the cache-clear can.
+    stale = ssc / "skin.estuary.modv2.DATA.xml"
+    stale.write_text("<shortcuts><!-- stock menu --></shortcuts>")
+    patch_env.mod._deploy_skinshortcuts_menu()
+    assert not stale.exists(), (
+        "the stale built cache for skin.estuary.modv2 must be cleared on deploy"
+    )
+    # ...and our menu data is deployed in its place (real bytes copied).
+    assert (ssc / "mainmenu.DATA.xml").read_bytes() == MAINMENU_DATA.read_bytes(), (
+        "our trimmed mainmenu.DATA.xml must be deployed"
+    )
+
+
+def test_deploy_drops_hash_after_clearing_so_ours_survives(patch_env):
+    """The order is clear -> deploy -> drop-hash, so OUR deployed menu data survives
+    and only the (stale) hash is gone afterwards. Both invariants together: our menu
+    present AND no hash."""
+    ssc = _skinshortcuts_dir(patch_env)
+    ssc.mkdir(parents=True, exist_ok=True)
+    (ssc / "skin.estuary.modv2.hash").write_text("STALE")
+    (ssc / "skin.estuary.modv2.DATA.xml").write_text("<shortcuts/>")
+    deployed = patch_env.mod._deploy_skinshortcuts_menu()
+    assert deployed > 0, "the deploy must copy our menu files"
+    assert (ssc / "mainmenu.DATA.xml").exists(), "our menu must be deployed"
+    assert not (ssc / "skin.estuary.modv2.hash").exists(), "stale hash must be dropped"
+
+
+def test_apply_home_menu_clears_cache_and_drops_hash(patch_env):
+    """End-to-end through apply_home_menu: a racing stock build (stale .hash + stale
+    built DATA) is cleared, our menu is deployed, and the hash is dropped — so the
+    next skinshortcuts build regenerates from OUR menu. This is the full Part-A race
+    defeat as the boot service drives it."""
+    ssc = _skinshortcuts_dir(patch_env)
+    ssc.mkdir(parents=True, exist_ok=True)
+    (ssc / "skin.estuary.modv2.hash").write_text("STALE-STOCK-HASH")
+    (ssc / "skin.estuary.modv2.properties").write_text("STOCK")
+    patch_env.mod.apply_home_menu(str(patch_env.skin_root))
+    assert not (ssc / "skin.estuary.modv2.hash").exists(), (
+        "apply_home_menu must drop the stale hash"
+    )
+    # our deployed properties replaced the stale stock one
+    assert (ssc / "skin.estuary.modv2.properties").read_bytes() != b"STOCK", (
+        "apply_home_menu must replace the stale stock properties with ours"
+    )
+    # and it triggers a fresh build from our menu
+    assert any(
+        "RunScript(script.skinshortcuts,type=buildxml" in b
+        for b in patch_env.state["builtins"]
+    ), "apply_home_menu must rebuild the menu from our deployed menu"
+
+
+# --------------------------------------------------------------------------- #
 # Static contract — Home.xml (overlay gate + wordmark + untouched mark)
 # --------------------------------------------------------------------------- #
 def _group_18000_block(text):
@@ -801,6 +908,14 @@ def patch_env(tmp_path, monkeypatch):
     (addon_path / "resources" / "shortcuts" / "mainmenu.DATA.xml").write_bytes(
         MAINMENU_DATA.read_bytes()
     )
+    # seed the real shipped resources/skinshortcuts/ (the GUI-built menu DATA + the
+    # widget .properties) so _deploy_skinshortcuts_menu copies genuine bytes — the
+    # menu the caching-race fix (Part A) (re)deploys.
+    ssc_src = addon_path / "resources" / "skinshortcuts"
+    ssc_src.mkdir(parents=True)
+    for f in (ADDON_DIR / "resources" / "skinshortcuts").iterdir():
+        if f.is_file():
+            (ssc_src / f.name).write_bytes(f.read_bytes())
     # a profile dir so _clear_skinshortcuts_cache has a real path to scan
     (home / "userdata" / "addon_data" / "script.skinshortcuts").mkdir(parents=True)
 
@@ -1160,7 +1275,9 @@ def _skin_settings_vals(patch_env):
     path = home / "userdata" / "addon_data" / "skin.estuary.modv2" / "settings.xml"
     if not path.exists():
         return None
-    return {s.get("id"): (s.text or "") for s in ET.parse(path).getroot().findall("setting")}
+    return {
+        s.get("id"): (s.text or "") for s in ET.parse(path).getroot().findall("setting")
+    }
 
 
 def test_apply_skin_settings_persists_to_settings_xml(patch_env):

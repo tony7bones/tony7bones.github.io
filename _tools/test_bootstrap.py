@@ -32,21 +32,51 @@ ADDON_DIR = REPO_ROOT / "addons" / "script.tony7bones.bootstrap"
 ADDON_XML = ADDON_DIR / "addon.xml"
 DEFAULT_PY = ADDON_DIR / "default.py"
 REPOSITORIES = REPO_ROOT / "repositories"
+# The Add-ons layer source — the literal home of the REPO_ZIPS / ADDONS /
+# FIRST_PARTY / VIDEO_APPS constants since Phase 2c (default.py re-exports them as
+# `X = _addons.X` shims, which ast.literal_eval cannot evaluate, so the constant
+# tests parse them from their literal source here).
+ADDONS_PY = (
+    REPO_ROOT
+    / "addons"
+    / "script.module.tony7bones"
+    / "lib"
+    / "tony7bones"
+    / "setup"
+    / "addons.py"
+)
+# The IPTV layer source — the literal home of PVR_BACKEND_ID since Phase 3a (the
+# pvr.iptvsimple INSTALL moved here from the base ADDONS list).
+IPTV_PY = ADDONS_PY.parent / "iptv.py"
+# The Foundation layer source — the home of WEATHER_ADDON since the
+# weather-into-Foundation change (weather.multi install + config moved here from the
+# base ADDONS list — weather is branded look, not content).
+FOUNDATION_PY = ADDONS_PY.parent / "foundation.py"
+
+
+def _iptv_assign(name):
+    """Literal value assigned to `name` in the IPTV layer source (iptv.py)."""
+    return _assign(name, IPTV_PY)
 
 
 def _addon_root():
     return ET.parse(ADDON_XML).getroot()
 
 
-def _assign(name):
-    """Return the literal value assigned to `name` in default.py (no import/exec)."""
-    tree = ast.parse(DEFAULT_PY.read_text())
+def _assign(name, src=DEFAULT_PY):
+    """Return the literal value assigned to `name` in `src` (no import/exec).
+
+    Defaults to default.py; the REPO_ZIPS / ADDONS / FIRST_PARTY / VIDEO_APPS
+    constants now live literally in tony7bones.setup.addons (Phase 2c), so those
+    tests pass `src=ADDONS_PY` — default.py only re-exports them as `X = _addons.X`
+    shims, which ast.literal_eval cannot evaluate."""
+    tree = ast.parse(Path(src).read_text())
     for node in ast.walk(tree):
         if isinstance(node, ast.Assign):
             for tgt in node.targets:
                 if isinstance(tgt, ast.Name) and tgt.id == name:
                     return ast.literal_eval(node.value)
-    raise AssertionError(f"{name} not found in default.py")
+    raise AssertionError(f"{name} not found in {Path(src).name}")
 
 
 # --------------------------------------------------------------------------- #
@@ -92,36 +122,50 @@ def test_default_py_compiles():
 
 def test_referenced_repo_zips_exist():
     """Every repo zip the bootstrap downloads must exist in repositories/."""
-    for zip_name, _repo_id in _assign("REPO_ZIPS"):
+    for zip_name, _repo_id in _assign("REPO_ZIPS", ADDONS_PY):
         assert (REPOSITORIES / zip_name).exists(), f"missing repo zip: {zip_name}"
 
 
 def test_repo_zip_count_is_twelve():
     # repository.tony7bones (the 13th) is the host repo, already installed.
-    assert len(_assign("REPO_ZIPS")) == 12
+    assert len(_assign("REPO_ZIPS", ADDONS_PY)) == 12
 
 
 def test_addons_are_plain_id_strings_no_labels():
     """No display-name labels: ADDONS and FIRST_PARTY are lists of id strings."""
-    for item in _assign("ADDONS"):
+    for item in _assign("ADDONS", ADDONS_PY):
         assert isinstance(item, str), f"ADDONS entry is not a bare id: {item!r}"
-    for item in _assign("FIRST_PARTY"):
+    for item in _assign("FIRST_PARTY", ADDONS_PY):
         assert isinstance(item, str), f"FIRST_PARTY entry is not a bare id: {item!r}"
 
 
-def test_addons_includes_peno64_apps_weather_and_pvr():
-    """Install set: the two peno64 apps plus Multi Weather and IPTV Simple."""
-    assert _assign("ADDONS") == [
+def test_addons_includes_peno64_apps_only():
+    """Base ADDONS install set: ONLY the two peno64 apps.
+
+    pvr.iptvsimple moved into the IPTV layer (apply_iptv / _install_pvr_backend) and
+    weather.multi moved into the Foundation layer (apply_foundation) — so the base
+    list is content-only and carries neither the PVR backend nor the branded-look
+    weather provider. A FULL run STILL installs BOTH (pvr via apply_iptv, weather via
+    apply_foundation), proven by the net-set equivalence invariant in
+    test_modular_setup.py."""
+    assert _assign("ADDONS", ADDONS_PY) == [
         "script.ezmaintenanceplus",
         "script.realdebrid",
-        "weather.multi",
-        "pvr.iptvsimple",
     ]
+    # The moves precisely: pvr -> IPTV layer, weather -> Foundation layer.
+    assert "pvr.iptvsimple" not in _assign("ADDONS", ADDONS_PY)
+    assert "weather.multi" not in _assign("ADDONS", ADDONS_PY)
+    assert _iptv_assign("PVR_BACKEND_ID") == "pvr.iptvsimple", (
+        "apply_iptv must own the pvr.iptvsimple backend after Phase 3a"
+    )
+    assert _assign("WEATHER_ADDON", FOUNDATION_PY) == "weather.multi", (
+        "apply_foundation must own the weather.multi provider"
+    )
 
 
 def test_peno64_repo_is_installed_so_apps_resolve():
     """The apps live in peno64 — its repo zip must be in the install list."""
-    repo_ids = {rid for _zip, rid in _assign("REPO_ZIPS")}
+    repo_ids = {rid for _zip, rid in _assign("REPO_ZIPS", ADDONS_PY)}
     assert "repository.peno64" in repo_ids
 
 
@@ -130,14 +174,14 @@ def test_patch_is_first_party_direct_extract():
     the first-party direct-extract list nor in the apps list — a user installs it
     by hand only if they adopt the Estuary MOD V2 skin. It stays HOST-provided
     (see test_modv2plus_is_host_provided)."""
-    assert "script.tony7bones.modv2plus" not in _assign("FIRST_PARTY")
-    assert "script.tony7bones.modv2plus" not in _assign("ADDONS")
+    assert "script.tony7bones.modv2plus" not in _assign("FIRST_PARTY", ADDONS_PY)
+    assert "script.tony7bones.modv2plus" not in _assign("ADDONS", ADDONS_PY)
 
 
 def test_first_party_is_empty():
     """Nothing is auto-installed from our Pages as a 'first-party' add-on now
     that the MOD V2 patch is opt-in. run() must skip the first-party loop."""
-    assert _assign("FIRST_PARTY") == []
+    assert _assign("FIRST_PARTY", ADDONS_PY) == []
 
 
 def test_apps_install_without_modal_installer():
@@ -166,14 +210,37 @@ def test_never_toggles_unknown_sources():
 
 
 def test_installs_weather_and_pvr_binary():
-    """The install set must include the weather add-on and the binary PVR
-    client, and the script must detect the platform to pick the right build."""
-    addons = _assign("ADDONS")
-    assert "weather.multi" in addons
-    assert "pvr.iptvsimple" in addons
-    # Binary add-ons need runtime platform detection; that now lives in the
-    # shared library's install_with_deps (it loads the official index with the
-    # platform tag). The base Setup hands it the official base + peno64 base.
+    """A full run must install the weather add-on AND the binary PVR client, with
+    runtime platform detection picking the right build.
+
+    The HOMES are now split three ways: weather.multi moved to the Foundation layer
+    (branded look), pvr.iptvsimple moved to the IPTV layer (apply_iptv /
+    _install_pvr_backend), and neither is in the base ADDONS list anymore. Both still
+    install on a full run — the binary platform detection lives in the shared
+    library's install_with_deps (it loads the official index with the platform tag),
+    which the Foundation weather install, the base loop, and apply_iptv all drive."""
+    addons = _assign("ADDONS", ADDONS_PY)
+    assert "pvr.iptvsimple" not in addons, "pvr moved to the IPTV layer (Phase 3a)"
+    assert "weather.multi" not in addons, (
+        "weather.multi moved to the Foundation layer (weather-into-Foundation)"
+    )
+    # Foundation owns weather.multi now and resolves it from the official repo.
+    assert _assign("WEATHER_ADDON", FOUNDATION_PY) == "weather.multi"
+    fnd_src = FOUNDATION_PY.read_text()
+    assert "install_with_deps" in fnd_src, (
+        "apply_foundation must install weather.multi via install_with_deps"
+    )
+    # The IPTV layer owns the PVR backend now and resolves it from the official repo.
+    assert _iptv_assign("PVR_BACKEND_ID") == "pvr.iptvsimple"
+    iptv_src = IPTV_PY.read_text()
+    assert "install_with_deps" in iptv_src, (
+        "apply_iptv must install the PVR backend via install_with_deps "
+        "(binary platform-aware closure)"
+    )
+    assert "OFFICIAL_BASE" in iptv_src, (
+        "the IPTV backend resolves from the official repo"
+    )
+    # The base Setup still hands the official + peno64 bases to its base/video loop.
     src = DEFAULT_PY.read_text()
     assert "install_with_deps" in src
     assert "OFFICIAL_BASE" in src and "PENO64_BASE" in src
@@ -199,7 +266,7 @@ def test_repo_zip_inner_id_matches_declared():
     """Each zip's inner addon.xml id must equal the id declared in REPO_ZIPS."""
     import zipfile
 
-    for zip_name, repo_id in _assign("REPO_ZIPS"):
+    for zip_name, repo_id in _assign("REPO_ZIPS", ADDONS_PY):
         with zipfile.ZipFile(REPOSITORIES / zip_name) as z:
             axml = next(n for n in z.namelist() if n.endswith("addon.xml"))
             root = ET.fromstring(z.read(axml))
@@ -209,8 +276,10 @@ def test_repo_zip_inner_id_matches_declared():
 
 
 def test_no_empty_addon_ids():
-    assert all(_assign("ADDONS")), "ADDONS must contain no empty ids"
-    assert all(_assign("FIRST_PARTY")), "FIRST_PARTY must contain no empty ids"
+    assert all(_assign("ADDONS", ADDONS_PY)), "ADDONS must contain no empty ids"
+    assert all(_assign("FIRST_PARTY", ADDONS_PY)), (
+        "FIRST_PARTY must contain no empty ids"
+    )
 
 
 def test_success_dialog_does_not_overclaim():
@@ -283,279 +352,12 @@ def test_self_uninstall_runs_after_summary_and_before_restart():
 # --------------------------------------------------------------------------- #
 # Runtime coverage — import default.py under mocked Kodi APIs and run it
 # --------------------------------------------------------------------------- #
-import gzip as _gzip  # noqa: E402
-import importlib.util  # noqa: E402
-import io  # noqa: E402
 import json as _json  # noqa: E402
-import types  # noqa: E402
 import urllib.request  # noqa: E402
-import zipfile as _zipfile  # noqa: E402
 
-
-class _FakeResp:
-    def __init__(self, data):
-        self._data = data
-
-    def read(self):
-        return self._data
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *a):
-        return False
-
-
-@pytest.fixture
-def boot(tmp_path, monkeypatch):
-    """Import default.py with fake Kodi modules; return module + recorded state."""
-    # Fake repo index: id -> (version, [deps], path_or_None). The apps depend on
-    # the requests module, which pulls a small closure — the resolver must walk
-    # it. weather.multi is pure python; pvr.iptvsimple is BINARY and carries an
-    # explicit platform-suffixed <path>, as does its inputstream dep, exercising
-    # the binary-path branch.
-    state = {
-        "installed": set(),
-        "extracted": set(),  # zips unpacked on disk but not yet enabled
-        "disabled": set(),  # ids disabled via SetAddonEnabled enabled=false
-        "builtins": [],
-        "jsonrpc": [],
-        "ok": [],
-        "index": {
-            "script.ezmaintenanceplus": (
-                "2026.04.05.0",
-                ["script.module.requests"],
-                None,
-            ),
-            "script.realdebrid": ("0.7", ["script.module.requests"], None),
-            "script.module.requests": (
-                "2.31.0",
-                ["script.module.urllib3", "script.module.certifi", "xbmc.python"],
-                None,
-            ),
-            "script.module.urllib3": ("2.2.3", [], None),
-            "script.module.certifi": ("2023.5.7", [], None),
-            "weather.multi": ("1.1.0", ["script.module.requests"], None),
-            "pvr.iptvsimple": (
-                "21.11.0",
-                ["inputstream.ffmpegdirect", "kodi.binary.instance.pvr"],
-                "pvr.iptvsimple+osx-arm64/pvr.iptvsimple-21.11.0.zip",
-            ),
-            "inputstream.ffmpegdirect": (
-                "21.3.8",
-                ["kodi.binary.instance.inputstream"],
-                "inputstream.ffmpegdirect+osx-arm64/inputstream.ffmpegdirect-21.3.8.zip",
-            ),
-        },
-    }
-
-    xbmc = types.ModuleType("xbmc")
-    xbmc.LOGERROR = 4
-    xbmc.LOGINFO = 1
-    xbmc.LOGWARNING = 2
-    xbmc.log = lambda *a, **k: None
-    xbmc.sleep = lambda ms: None
-    # Active skin — default to Estuary so _trim_home_menu() is exercised. Tests
-    # that need another skin monkeypatch this.
-    xbmc.getSkinDir = lambda: "skin.estuary"
-    # activate_skin polls this for the "Keep this skin?" dialog; default False so
-    # it falls through quickly (the JSON-RPC skin-set still happens regardless).
-    xbmc.getCondVisibility = lambda cond: state.get("condvis", False)
-
-    def _builtin(cmd, wait=False):
-        state["builtins"].append(cmd)
-
-    xbmc.executebuiltin = _builtin
-
-    def _jsonrpc(s):
-        state["jsonrpc"].append(s)
-        d = _json.loads(s)
-        if d.get("method") == "Addons.SetAddonEnabled":
-            aid = d["params"]["addonid"]
-            enabled = d["params"].get("enabled", True)
-            if enabled:
-                # Kodi only enables an add-on it has scanned (extracted on disk).
-                if aid in state["extracted"]:
-                    state["installed"].add(aid)
-                state["disabled"].discard(aid)
-            else:
-                # Disabling leaves the add-on installed; just record the state.
-                state["disabled"].add(aid)
-        return "{}"
-
-    xbmc.executeJSONRPC = _jsonrpc
-
-    xbmcaddon = types.ModuleType("xbmcaddon")
-
-    class _Addon:
-        def __init__(self, addon_id=""):
-            if addon_id not in state["installed"]:
-                raise RuntimeError("not installed")
-
-    xbmcaddon.Addon = _Addon
-
-    xbmcgui = types.ModuleType("xbmcgui")
-
-    class _DP:
-        def create(self, *a):
-            pass
-
-        def update(self, *a):
-            pass
-
-        def iscanceled(self):
-            return False
-
-        def close(self):
-            state["builtins"].append("DialogProgress.close")
-
-    class _Dialog:
-        def ok(self, title, msg):
-            state["ok"].append((title, msg))
-
-        def yesno(self, title, msg, **kwargs):
-            # Two yes/no prompts exist now: the front-loaded "Include video
-            # add-ons?" (msg starts with "Include video") and the end-of-setup
-            # restart prompt. The "also video" answer is driven by state
-            # (default False = base-only, today's behaviour); the restart prompt is
-            # always declined so run() never actually restarts in tests.
-            state.setdefault("yesno", []).append((title, msg))
-            if msg.startswith("Include video"):
-                return bool(state.get("also_video", False))
-            return False
-
-        def multiselect(self, title, options, preselect=None):
-            state.setdefault("multiselect", []).append((title, options, preselect))
-            # state['video_pick']: None = cancel, [] = nothing, else indexes.
-            pick = state.get("video_pick", preselect)
-            return None if pick is None else list(pick)
-
-    xbmcgui.DialogProgress = _DP
-    xbmcgui.Dialog = _Dialog
-    # Kodi 21 Omega exposes this; the base Setup uses it to default the
-    # "Include video add-ons?" prompt to No.
-    xbmcgui.DLG_YESNO_NO_BTN = 1
-
-    xbmcvfs = types.ModuleType("xbmcvfs")
-    temp = tmp_path / "temp"
-    addons = tmp_path / "addons"
-    profile = tmp_path / "userdata"
-    temp.mkdir()
-    addons.mkdir()
-    profile.mkdir()
-    sources_xml = profile / "sources.xml"
-    # Record every mkdirs() call so the directory-create attempt is provable.
-    state["mkdirs"] = []
-
-    def _translate(p):
-        return (
-            p.replace("special://temp/", str(temp) + "/")
-            .replace("special://home/addons/", str(addons) + "/")
-            .replace("special://profile/", str(profile) + "/")
-            .replace("special://home/userdata/", str(profile) + "/")
-            .replace("special://userdata/", str(profile) + "/")
-        )
-
-    xbmcvfs.translatePath = _translate
-
-    def _exists(p):
-        return os.path.exists(p)
-
-    def _mkdirs(p):
-        # Record the attempt. The Android path can't be created on this host —
-        # mimic that by refusing to create absolute /storage/... paths (returns
-        # False, as Kodi's xbmcvfs.mkdirs does on failure), so the test proves
-        # the call is guarded and the source is still added.
-        state["mkdirs"].append(p)
-        if p.startswith("/storage/"):
-            return False
-        os.makedirs(p, exist_ok=True)
-        return True
-
-    def _copy(src, dst):
-        # Mimic xbmcvfs.copy: overwrite the destination, return bool success.
-        import shutil
-
-        try:
-            os.makedirs(os.path.dirname(dst), exist_ok=True)
-            shutil.copyfile(src, dst)
-            return True
-        except OSError:
-            return False
-
-    xbmcvfs.exists = _exists
-    xbmcvfs.mkdirs = _mkdirs
-    xbmcvfs.copy = _copy
-
-    for nm, mod in (
-        ("xbmc", xbmc),
-        ("xbmcaddon", xbmcaddon),
-        ("xbmcgui", xbmcgui),
-        ("xbmcvfs", xbmcvfs),
-    ):
-        monkeypatch.setitem(sys.modules, nm, mod)
-
-    def _index_xml():
-        parts = ['<?xml version="1.0"?>', "<addons>"]
-        for aid, (ver, deps, path) in state["index"].items():
-            parts.append(f'<addon id="{aid}" version="{ver}">')
-            parts.append("<requires>")
-            for d in deps:
-                parts.append(f'<import addon="{d}" version="1.0.0"/>')
-            parts.append("</requires>")
-            # binary add-ons carry an explicit <path> in the metadata extension
-            parts.append('<extension point="xbmc.addon.metadata">')
-            if path:
-                parts.append(f"<path>{path}</path>")
-            parts.append("</extension></addon>")
-        parts.append("</addons>")
-        return "".join(parts).encode("utf-8")
-
-    def _url_of(req):
-        return req.full_url if hasattr(req, "full_url") else req
-
-    def _fake_urlopen(req, timeout=None):
-        url = _url_of(req)
-        if url.endswith("addon.xml"):
-            return _FakeResp(
-                b'<addon id="script.tony7bones.modv2plus" version="1.0.0"/>'
-            )
-        if url.endswith("addons.xml") or url.endswith("addons.xml.gz"):
-            data = _index_xml()
-            return _FakeResp(_gzip.compress(data) if url.endswith(".gz") else data)
-        if url.endswith(".zip"):
-            # name pattern: .../<id>/<id>-<ver>.zip  → record the inner id
-            aid = url.rsplit("/", 1)[-1].rsplit("-", 1)[0]
-            state["extracted"].add(aid)
-            buf = io.BytesIO()
-            with _zipfile.ZipFile(buf, "w") as z:
-                z.writestr(f"{aid}/addon.xml", f'<addon id="{aid}"/>')
-            return _FakeResp(buf.getvalue())
-        return _FakeResp(b"")
-
-    monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen)
-
-    # Put the shared library (script.module.tony7bones) on sys.path exactly as
-    # Kodi does for an add-on that imports it, and purge any cached copy so the
-    # library re-binds to THIS test's mock Kodi modules (it does `import xbmc`
-    # at module load). Without the purge a prior test's mocks would leak in.
-    _LIB = REPO_ROOT / "addons" / "script.module.tony7bones" / "lib"
-    monkeypatch.syspath_prepend(str(_LIB))
-    for _name in list(sys.modules):
-        if _name == "tony7bones" or _name.startswith("tony7bones."):
-            monkeypatch.delitem(sys.modules, _name, raising=False)
-
-    spec = importlib.util.spec_from_file_location("boot_default", DEFAULT_PY)
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)  # run() is __main__-guarded, so this does not run it
-    estuary_settings = profile / "addon_data" / "skin.estuary" / "settings.xml"
-    return types.SimpleNamespace(
-        mod=mod,
-        state=state,
-        addons=addons,
-        sources_xml=sources_xml,
-        estuary_settings=estuary_settings,
-    )
+# The fake-Kodi ``boot`` fixture lives in conftest.py so the modular-setup test
+# files can share the exact same fake Kodi. It is auto-discovered by pytest — the
+# tests below simply request it as a fixture argument.
 
 
 def test_no_unknown_sources_jsonrpc_during_run(boot):
@@ -642,15 +444,21 @@ _T7B = (".tony.7.bones", "https://tony7bones.github.io/")
 
 
 def test_add_file_sources_helper_exists():
-    """The helper must exist and be wired into run() before the restart."""
+    """The helper must still be reachable (a re-export shim over the Foundation
+    layer's lifted body) and the Foundation layer it now lives in must be wired
+    into run() BEFORE the restart (Kodi caches sources.xml at startup). The exact
+    file-sources slot/order is pinned at RUNTIME by the modular_setup snapshot;
+    this guards the shim + the apply_foundation-before-restart wiring."""
     src = DEFAULT_PY.read_text()
-    assert "_add_file_sources" in src, "helper must exist"
-    assert "_add_file_sources()" in src, "helper must be invoked in run()"
-    # Must run before the restart (Kodi caches sources.xml at startup).
-    add_pos = src.rfind("_add_file_sources()")
+    assert "_add_file_sources" in src, "shim must exist"
+    assert "_add_file_sources = _foundation._add_file_sources" in src, (
+        "_add_file_sources must be a re-export shim over the Foundation layer"
+    )
+    assert "apply_foundation(" in src, "apply_foundation must be invoked in run()"
+    found_pos = src.rfind("apply_foundation(")
     restart_pos = src.rfind("restart_kodi(")
-    assert add_pos != -1 and restart_pos != -1
-    assert add_pos < restart_pos, "_add_file_sources() must come before the restart"
+    assert found_pos != -1 and restart_pos != -1
+    assert found_pos < restart_pos, "apply_foundation() must come before the restart"
 
 
 def test_add_file_sources_creates_file_when_missing(boot):
@@ -858,15 +666,21 @@ def _estuary_bools(boot):
 
 
 def test_trim_home_menu_helper_exists_and_wired_before_restart():
-    """The helper must exist and be invoked in run() BEFORE the restart (the
-    restart is what makes Estuary re-read settings.xml)."""
+    """The helper must still be reachable (a re-export shim over the Foundation
+    layer's lifted body) and the Foundation layer it now lives in must be invoked
+    in run() BEFORE the restart (the restart is what makes Estuary re-read
+    settings.xml). The exact home-trim slot/order is pinned at RUNTIME by the
+    modular_setup snapshot; this guards the shim + apply_foundation wiring."""
     src = DEFAULT_PY.read_text()
-    assert "_trim_home_menu" in src, "helper must exist"
-    assert "_trim_home_menu()" in src, "helper must be invoked in run()"
-    trim_pos = src.rfind("_trim_home_menu()")
+    assert "_trim_home_menu" in src, "shim must exist"
+    assert "_trim_home_menu = _foundation._trim_home_menu" in src, (
+        "_trim_home_menu must be a re-export shim over the Foundation layer"
+    )
+    assert "apply_foundation(" in src, "apply_foundation must be invoked in run()"
+    trim_pos = src.rfind("apply_foundation(")
     restart_pos = src.rfind("restart_kodi(")
     assert trim_pos != -1 and restart_pos != -1
-    assert trim_pos < restart_pos, "_trim_home_menu() must come before the restart"
+    assert trim_pos < restart_pos, "apply_foundation() must come before the restart"
 
 
 # The eight camel-case ids the skin XML / Skin.SetBool use (the part that
@@ -1023,7 +837,7 @@ def test_requires_the_shared_module():
     auto-installs script.module.tony7bones when this Setup is installed."""
     imp = _addon_root().find("requires/import[@addon='script.module.tony7bones']")
     assert imp is not None, "must <import> script.module.tony7bones"
-    assert imp.get("version") == "1.1.2"
+    assert imp.get("version") == "1.2.0"
 
 
 def test_imports_from_shared_module():
@@ -1069,11 +883,13 @@ def test_video_installs_unattended(boot, monkeypatch):
         calls.append((list(selected), set(disable_ids)))
         return len(selected)
 
-    monkeypatch.setattr(boot.mod, "install_selection", _stub)
+    # The video install body moved to tony7bones.setup.addons (Phase 2c) and
+    # resolves install_selection from THAT module's globals, so patch it there (the
+    # repointed boot.mod patch — no deps-injection seam, per the Tech-debt ledger).
+    monkeypatch.setattr(boot.mod._addons, "install_selection", _stub)
     boot.mod.run()
 
-    # install_selection is now used for BOTH the video apps and the skin closure;
-    # find the video call among them.
+    # _addons.install_selection drives the video apps; find the video call.
     video_call = next((c for c in calls if "plugin.video.pov" in c[0]), None)
     assert video_call is not None, "video apps must install via install_selection"
     assert video_call[0] == [
@@ -1100,24 +916,14 @@ def test_video_failure_is_nonfatal(boot, monkeypatch):
     def _boom(*a, **k):
         raise RuntimeError("video boom")
 
-    monkeypatch.setattr(boot.mod, "install_selection", _boom)
+    # Video install resolves install_selection from the addons module (Phase 2c).
+    monkeypatch.setattr(boot.mod._addons, "install_selection", _boom)
     boot.mod.run()
 
     for aid in boot.mod.ADDONS:
         assert aid in boot.state["installed"]
     _title, msg = boot.state["ok"][-1]
     assert "Video add-ons: 0/4" in msg
-
-
-def test_install_skin_imports_is_installed():
-    """_install_skin calls is_installed; guard against the ruff-fix hook stripping
-    it (it was added before its first use once, got auto-removed as 'unused', and
-    silently turned the whole skin step into a no-op). This test pins the import."""
-    src = DEFAULT_PY.read_text()
-    import_block = src.split("from tony7bones import (")[1].split(")")[0]
-    assert "is_installed" in import_block, (
-        "is_installed must stay imported — _install_skin no-ops silently without it"
-    )
 
 
 def test_skin_install_resolves_closure_and_sets_skin(boot, monkeypatch):
@@ -1141,12 +947,24 @@ def test_skin_install_resolves_closure_and_sets_skin(boot, monkeypatch):
             boot.state["installed"].add(boot.mod.MODV2PLUS_ID)
         return True
 
-    monkeypatch.setattr(boot.mod, "install_selection", _sel)
-    monkeypatch.setattr(boot.mod, "extract_zip", _extract)
-    monkeypatch.setattr(boot.mod, "install_with_deps", lambda *a, **k: True)
-    monkeypatch.setattr(
-        boot.mod, "_latest_zip_url", lambda aid: "http://local/{}-9.9.9.zip".format(aid)
-    )
+    # Phase 3a: run_express calls apply_foundation via the BARE form (the deps-
+    # injection seam is killed — Tech-debt ledger), so the skin closure resolves its
+    # primitives from the FOUNDATION module's globals, not boot.mod's. Patch the
+    # stubs onto _foundation (where the skin closure now lives) as well as boot.mod.
+    # _addons gets them too for the base/video install. (Same repointing pattern
+    # Phase 2c/2d used; the stub objects are identical, so behaviour is unchanged.)
+    for tgt in (boot.mod, boot.mod._foundation, boot.mod._addons):
+        monkeypatch.setattr(tgt, "install_selection", _sel, raising=False)
+        monkeypatch.setattr(tgt, "extract_zip", _extract, raising=False)
+        monkeypatch.setattr(
+            tgt, "install_with_deps", lambda *a, **k: True, raising=False
+        )
+        monkeypatch.setattr(
+            tgt,
+            "_latest_zip_url",
+            lambda aid: "http://local/{}-9.9.9.zip".format(aid),
+            raising=False,
+        )
     boot.mod.run()
 
     # BOTH proxy-invisible first-party pieces are direct-extracted: pvr.artwork
@@ -1169,13 +987,73 @@ def test_skin_install_resolves_closure_and_sets_skin(boot, monkeypatch):
     assert "Estuary MOD V2: installed" in msg
 
 
-def test_video_runs_before_self_uninstall_and_restart():
-    """Source ordering guard: video install -> self-uninstall -> restart."""
-    src = DEFAULT_PY.read_text()
-    iv = src.find("_install_video(dialog)")
-    un = src.find("self_uninstall(MY_ID")
-    rs = src.find('restart_kodi("Tony.7.Bones Setup"')
-    assert iv != -1 and -1 < iv < un < rs
+def test_video_runs_before_self_uninstall_and_restart(boot, monkeypatch):
+    """Ordering guard (Phase 3a): the curated video install runs BEFORE the
+    self-uninstall, which runs BEFORE the restart.
+
+    run() no longer calls a bare `_install_video(dialog)` — the video install moved
+    INTO apply_addons (Phase 2c) and run_express drives the composed layers. The
+    ORDERING INTENT is unchanged and is now pinned at RUNTIME (surviving the
+    decomposition) by spying the imported symbols run_express actually calls:
+    install_selection (which apply_addons drives to install the video closure),
+    self_uninstall, and restart_kodi — asserting that call order. The full
+    skin/video success stubs make the run reach the terminal seam."""
+    events = []
+
+    def _wrap(name):
+        real = getattr(boot.mod, name)
+
+        def _w(*a, **k):
+            events.append(name)
+            return real(*a, **k)
+
+        return _w
+
+    # Drive video install to success and reach the terminal seam (same technique as
+    # the snapshot's _stub_skin_and_video_success: patch the layer modules).
+    def _sel(selected, official_base, disable_ids, dialog, log):
+        events.append("install_selection")
+        for aid in selected:
+            boot.state["extracted"].add(aid)
+            boot.state["installed"].add(aid)
+        return len(selected)
+
+    def _extract(url, dialog, pct, log):
+        if "pvr.artwork" in url:
+            boot.state["installed"].add(boot.mod.PVR_ARTWORK_ID)
+        if "modv2plus" in url:
+            boot.state["installed"].add(boot.mod.MODV2PLUS_ID)
+        return True
+
+    for tgt in (boot.mod, boot.mod._addons, boot.mod._foundation):
+        monkeypatch.setattr(tgt, "install_selection", _sel, raising=False)
+        monkeypatch.setattr(tgt, "extract_zip", _extract, raising=False)
+        monkeypatch.setattr(
+            tgt, "install_with_deps", lambda *a, **k: True, raising=False
+        )
+        monkeypatch.setattr(
+            tgt,
+            "_latest_zip_url",
+            lambda aid: f"http://local/{aid}-9.9.9.zip",
+            raising=False,
+        )
+    monkeypatch.setattr(boot.mod._iptv, "install_with_deps", lambda *a, **k: True)
+    monkeypatch.setattr(boot.mod, "self_uninstall", _wrap("self_uninstall"))
+    monkeypatch.setattr(boot.mod, "restart_kodi", _wrap("restart_kodi"))
+
+    boot.mod.run()
+
+    # The first install_selection (video closure) precedes self_uninstall precedes
+    # restart_kodi. (install_selection also resolves the skin closure later; we pin
+    # the FIRST occurrence as the video install.)
+    assert "install_selection" in events
+    assert "self_uninstall" in events and "restart_kodi" in events
+    iv = events.index("install_selection")
+    un = events.index("self_uninstall")
+    rs = events.index("restart_kodi")
+    assert iv < un < rs, (
+        f"order must be video-install -> self-uninstall -> restart: {events}"
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -1195,14 +1073,48 @@ def _settings_set(boot):
     return out
 
 
-def test_configure_box_helper_exists_and_wired_before_restart():
-    src = DEFAULT_PY.read_text()
-    assert "_configure_box" in src and "_configure_box()" in src
-    cfg = src.rfind("_configure_box()")
-    restart = src.rfind("restart_kodi(")
-    assert cfg != -1 and restart != -1 and cfg < restart, (
-        "_configure_box() must run before the restart"
+def test_box_configuration_runs_before_restart(boot, monkeypatch):
+    """The base-box configuration (weather provider + RSS-enable core settings, the
+    Estuary top-bar weather toggle) must be applied BEFORE the restart, so Kodi
+    re-reads it on the single end-of-setup restart.
+
+    Phase 3a: run() no longer calls a monolithic `_configure_box(box_env)` — the
+    config moved INTO the composed layers (apply_addons writes the weather/RSS core
+    settings; run_express sets the top-bar weather bool) and run_express owns the
+    terminal restart. The ordering INTENT survives the decomposition and is pinned
+    at RUNTIME: the weather.addon + lookandfeel.enablerssfeeds settings and the
+    show_weatherinfo Skin.SetBool are all emitted before restart_kodi is invoked."""
+    restart_at = {"settings": None, "builtins": None}
+    real_restart = boot.mod.restart_kodi
+
+    def _restart(*a, **k):
+        # Snapshot how many config effects have landed at restart time.
+        restart_at["settings"] = list(boot.state["jsonrpc"])
+        restart_at["builtins"] = list(boot.state["builtins"])
+        return real_restart(*a, **k)
+
+    monkeypatch.setattr(boot.mod, "restart_kodi", _restart)
+    boot.mod.run()
+
+    assert restart_at["settings"] is not None, "run() must reach the restart"
+    # The two core config settings were emitted before the restart.
+    joined = "".join(restart_at["settings"])
+    assert "weather.addon" in joined, "weather provider must be set before restart"
+    assert "lookandfeel.enablerssfeeds" in joined, "RSS must be enabled before restart"
+    # The Estuary top-bar weather toggle landed before the restart too.
+    assert "Skin.SetBool(show_weatherinfo)" in restart_at["builtins"], (
+        "top-bar weather toggle must be set before the restart"
     )
+
+
+def test_configure_box_still_callable_standalone(boot):
+    """`_configure_box(box_env)` remains a callable pure-consumer helper (it neither
+    reads nor deletes the env) even though run_express no longer drives it — the
+    standalone weather/RSS/IPTV config tests below exercise it directly. This pins
+    that the helper was not deleted, only un-wired from the orchestrator path."""
+    assert callable(boot.mod._configure_box)
+    boot.mod._configure_box({})  # must not raise
+    assert _settings_set(boot).get("weather.addon") == "weather.multi"
 
 
 def test_configure_box_sets_weather_provider(boot):
@@ -1259,6 +1171,157 @@ def test_run_configures_box(boot):
 
 
 # --------------------------------------------------------------------------- #
+# Per-device env LIFECYCLE OWNERSHIP (Phase 1 of modular-setup).
+#
+# The orchestrator run() — not _configure_box — owns reading and DELETING the
+# per-device tony7bones.env. _configure_box is a pure consumer of the dict passed
+# into it: it must make ZERO read_box_env / os.remove calls. run() must read the
+# env exactly once and delete it exactly once, AFTER configuration completes. This
+# is what lets a future multi-gate Guided flow share the env across gates instead
+# of having an early layer delete it out from under a later one.
+# --------------------------------------------------------------------------- #
+def test_configure_box_does_not_read_or_delete_env(boot, monkeypatch):
+    """_configure_box must neither read_box_env nor os.remove — env lifecycle is
+    the orchestrator's job. Spies prove zero calls (mutation guard: re-adding a
+    read/delete inside _configure_box flips these counts and fails)."""
+    reads = {"n": 0}
+    removes = {"n": 0}
+    real_read = boot.mod.read_box_env
+    real_remove = boot.mod.os.remove
+
+    def _spy_read(*a, **k):
+        reads["n"] += 1
+        return real_read(*a, **k)
+
+    def _spy_remove(*a, **k):
+        removes["n"] += 1
+        return real_remove(*a, **k)
+
+    monkeypatch.setattr(boot.mod, "read_box_env", _spy_read)
+    monkeypatch.setattr(boot.mod.os, "remove", _spy_remove)
+
+    boot.mod._configure_box({"DEVICE_NAME": "Office"})
+
+    assert reads["n"] == 0, "_configure_box must not read the env (orchestrator does)"
+    assert removes["n"] == 0, (
+        "_configure_box must not delete the env (orchestrator does)"
+    )
+
+
+def test_configure_box_consumes_passed_env_not_the_file(boot, monkeypatch, tmp_path):
+    """The env _configure_box acts on is the dict PASSED IN, never one it reads from
+    BOX_ENV_PATH. Point BOX_ENV_PATH at a file with a DIFFERENT OWM key; pass an env
+    carrying its own OWM key -> the OWM key Multi Weather stores (MAPAPI) is the one
+    from the PASSED env, proving _configure_box ignored the file entirely."""
+    # A file on disk that, if _configure_box (wrongly) read it, would win.
+    envfile = tmp_path / "tony7bones.env"
+    envfile.write_text('OWM_API_KEY="from-file-should-be-ignored"\n')
+    monkeypatch.setattr(boot.mod, "BOX_ENV_PATH", str(envfile))
+
+    boot.mod._configure_box({"OWM_API_KEY": "from-passed-dict"})
+
+    path = boot.mod._weather_multi_settings_path()
+    vals = {
+        s.get("id"): (s.text or "") for s in ET.parse(path).getroot().findall("setting")
+    }
+    # MAPAPI is where _apply_weather_from_env stores the OWM key. It must reflect the
+    # PASSED dict, not the on-disk file.
+    assert vals.get("MAPAPI") == "from-passed-dict"
+    # And the file is left untouched (no delete happened in _configure_box).
+    assert envfile.exists(), "_configure_box must not delete BOX_ENV_PATH"
+
+
+def test_run_reads_env_once_and_deletes_after_express(boot, monkeypatch, tmp_path):
+    """run() owns the env lifecycle: it reads BOX_ENV_PATH exactly once, passes the
+    parsed dict into run_express (which drives the composed layers that CONSUME the
+    env), and deletes the file exactly once AFTER run_express returns. Spies record
+    call order so 'delete after the env is consumed' is a runtime observation, not a
+    source grep.
+
+    Phase 3a: run() no longer calls `_configure_box` — the env-consuming work moved
+    into run_express's composed layers (apply_addons/foundation/iptv). The lifecycle
+    INTENT is unchanged (read once -> consume -> delete after), so the spy now wraps
+    run_express (the consumer) instead of the retired _configure_box call site. The
+    delete-after-consume ordering is what lets a future multi-gate flow share the
+    env across gates."""
+    envfile = tmp_path / "tony7bones.env"
+    envfile.write_text('DEVICE_NAME="Office"\nWEATHER_LOCATIONS="Sacramento, CA"\n')
+    monkeypatch.setattr(boot.mod, "BOX_ENV_PATH", str(envfile))
+
+    events = []
+    real_read = boot.mod.read_box_env
+    real_remove = boot.mod.os.remove
+    real_express = boot.mod.run_express
+
+    def _read(path, *a, **k):
+        events.append(("read", path))
+        return real_read(path, *a, **k)
+
+    def _remove(path, *a, **k):
+        # Only record removals of the env file — run() also removes other paths
+        # (self_uninstall, etc.); those are not the lifecycle under test.
+        if path == str(envfile):
+            events.append(("remove", path))
+        return real_remove(path, *a, **k)
+
+    def _express(box_env=None, *a, **k):
+        # The env dict the orchestrator parsed is passed straight through.
+        events.append(("express_start", box_env))
+        out = real_express(box_env, *a, **k)
+        events.append(("express_end", None))
+        return out
+
+    monkeypatch.setattr(boot.mod, "read_box_env", _read)
+    monkeypatch.setattr(boot.mod.os, "remove", _remove)
+    monkeypatch.setattr(boot.mod, "run_express", _express)
+
+    boot.mod.run()
+
+    kinds = [e[0] for e in events]
+    # Exactly one read of BOX_ENV_PATH, exactly one remove of it.
+    assert kinds.count("read") == 1, f"run() must read the env once, got {events}"
+    assert kinds.count("remove") == 1, f"run() must delete the env once, got {events}"
+    read_event = next(e for e in events if e[0] == "read")
+    remove_event = next(e for e in events if e[0] == "remove")
+    assert read_event[1] == str(envfile)
+    assert remove_event[1] == str(envfile)
+    # The parsed env dict is what run_express received (read-once feeds the consumer).
+    express_event = next(e for e in events if e[0] == "express_start")
+    assert express_event[1].get("DEVICE_NAME") == "Office", (
+        "run() must pass the parsed env dict into run_express"
+    )
+    # Order: read -> express_start -> express_end -> remove. The delete happens AFTER
+    # the layers consumed the env (so a future gate could still read it if the
+    # orchestrator deferred the delete).
+    assert kinds.index("read") < kinds.index("express_start")
+    assert kinds.index("express_end") < kinds.index("remove")
+    # And the file is actually gone (the real remove ran).
+    assert not envfile.exists(), "run() must delete the env file on the env path"
+
+
+def test_run_no_env_does_not_delete(boot, monkeypatch, tmp_path):
+    """On a no-env desktop run (BOX_ENV_PATH absent), run() reads -> {} and the
+    delete is a guarded no-op: os.remove is never called. This preserves the
+    desktop snapshot path exactly (no spurious delete attempt)."""
+    envpath = str(tmp_path / "absent" / "tony7bones.env")
+    monkeypatch.setattr(boot.mod, "BOX_ENV_PATH", envpath)
+    removes = {"env": 0}
+    real_remove = boot.mod.os.remove
+
+    def _remove(path, *a, **k):
+        # Count only attempts to delete the env file; run() removes other paths.
+        if path == envpath:
+            removes["env"] += 1
+        return real_remove(path, *a, **k)
+
+    monkeypatch.setattr(boot.mod.os, "remove", _remove)
+
+    boot.mod.run()
+
+    assert removes["env"] == 0, "no-env run must not attempt to delete the env"
+
+
+# --------------------------------------------------------------------------- #
 # Device → userdata file copies (DEVICE_FILE_COPIES / _copy_device_files, called
 # from _configure_box). The sources are device /storage/emulated/0/kodi/ paths;
 # on the test host they do not exist, so we point DEVICE_FILE_COPIES at real temp
@@ -1298,14 +1361,20 @@ def test_default_device_file_copies_are_the_three_expected(boot):
 
 def _point_copies(boot, monkeypatch, tmp_path, mapping):
     """Repoint DEVICE_FILE_COPIES so the given special:// dests read from temp
-    files (others get a guaranteed-missing source)."""
+    files (others get a guaranteed-missing source).
+
+    Phase 2d: _copy_device_files moved to tony7bones.setup.iptv and loops over
+    THAT module's DEVICE_FILE_COPIES, so the patch targets boot.mod._iptv (the
+    repointed boot.mod patch — no deps-injection seam), not the bootstrap
+    re-export. boot.mod.DEVICE_FILE_COPIES is still read to build the mapping (it
+    is the same list object)."""
     new = []
     for src, dst in boot.mod.DEVICE_FILE_COPIES:
         if dst in mapping:
             new.append((str(mapping[dst]), dst))
         else:
             new.append((str(tmp_path / "missing" / os.path.basename(src)), dst))
-    monkeypatch.setattr(boot.mod, "DEVICE_FILE_COPIES", new)
+    monkeypatch.setattr(boot.mod._iptv, "DEVICE_FILE_COPIES", new)
 
 
 def test_copy_device_files_copies_rss_when_source_present(boot, monkeypatch, tmp_path):
@@ -1437,15 +1506,21 @@ def _make_groups_file(boot):
     return path
 
 
-def test_ensure_iptv_groups_constants_match_schema():
+def test_ensure_iptv_groups_constants_match_schema(boot):
     """The enforced values must be the schema's CUSTOM_GROUPS enum (2) and a
-    channelGroups path pointing at the Network24 file we copy."""
-    boot_src = DEFAULT_PY.read_text()
-    assert 'IPTV_TV_GROUP_MODE_CUSTOM = "2"' in boot_src
-    assert "tvGroupMode" in boot_src
-    assert "customTvGroupsFile" in boot_src
-    assert "customTVGroups-Network24.xml" in boot_src
-    assert "tvChannelGroupsOnly" in boot_src
+    channelGroups path pointing at the Network24 file we copy.
+
+    Phase 2d: the IPTV instance-settings constants moved to
+    tony7bones.setup.iptv; assert the live VALUES via the bootstrap re-exports
+    (boot.mod.*) rather than source-grepping default.py, so the check survives the
+    move and stays a behavioural assertion on the actual enforced values."""
+    assert boot.mod.IPTV_TV_GROUP_MODE_CUSTOM == "2"
+    assert boot.mod.IPTV_TV_GROUP_MODE_KEY == "tvGroupMode"
+    assert boot.mod.IPTV_CUSTOM_TV_GROUPS_FILE_KEY == "customTvGroupsFile"
+    assert boot.mod.IPTV_CUSTOM_TV_GROUPS_FILE_VALUE.endswith(
+        "customTVGroups-Network24.xml"
+    )
+    assert boot.mod.IPTV_TV_CHANNEL_GROUPS_ONLY_KEY == "tvChannelGroupsOnly"
 
 
 def test_ensure_iptv_groups_creates_file_when_absent(boot):
@@ -1664,7 +1739,7 @@ def test_apply_weather_from_env_resolves_and_writes_keys(boot, monkeypatch):
         },
     }
     monkeypatch.setattr(
-        boot.mod,
+        boot.mod._foundation,
         "_resolve_weather_location",
         lambda q, **k: next((v for n, v in locs.items() if n in q), None),
     )
@@ -1684,7 +1759,9 @@ def test_apply_weather_from_env_resolves_and_writes_keys(boot, monkeypatch):
 
 
 def test_apply_weather_from_env_fallback_no_env(boot, monkeypatch):
-    monkeypatch.setattr(boot.mod, "_resolve_weather_location", lambda q, **k: None)
+    monkeypatch.setattr(
+        boot.mod._foundation, "_resolve_weather_location", lambda q, **k: None
+    )
     boot.mod._apply_weather_from_env({})  # no WEATHER_LOCATIONS at all
     got = _read_weather_settings(boot)
     assert got["loc1_url"] == "us/ca/sacramento"  # Sacramento default
@@ -1692,7 +1769,9 @@ def test_apply_weather_from_env_fallback_no_env(boot, monkeypatch):
 
 
 def test_apply_weather_never_empty_url_when_all_fail(boot, monkeypatch):
-    monkeypatch.setattr(boot.mod, "_resolve_weather_location", lambda q, **k: None)
+    monkeypatch.setattr(
+        boot.mod._foundation, "_resolve_weather_location", lambda q, **k: None
+    )
     boot.mod._apply_weather_from_env({"WEATHER_LOCATIONS": "Nowhere, ZZ; Atlantis"})
     got = _read_weather_settings(boot)
     assert got["loc1_url"] == "us/ca/sacramento" and got["loc1_url"]  # never empty
@@ -1700,7 +1779,7 @@ def test_apply_weather_never_empty_url_when_all_fail(boot, monkeypatch):
 
 def test_apply_weather_skips_unresolvable_keeps_resolved(boot, monkeypatch):
     monkeypatch.setattr(
-        boot.mod,
+        boot.mod._foundation,
         "_resolve_weather_location",
         lambda q, **k: (
             {"name": "Reno, NV, US", "url": "us/nv/reno", "lat": "39", "lon": "-119"}
@@ -1775,7 +1854,9 @@ def test_iptv_env_m3u_epg_never_logged(boot, monkeypatch):
 
 
 def test_apply_rss_from_env_writes_feeds(boot):
-    boot.mod._apply_rss_from_env({"RSS_FEEDS": "http://a/feed; http://b/feed", "RSS_INTERVAL": "45"})
+    boot.mod._apply_rss_from_env(
+        {"RSS_FEEDS": "http://a/feed; http://b/feed", "RSS_INTERVAL": "45"}
+    )
     path = boot.mod.xbmcvfs.translatePath("special://home/userdata/RssFeeds.xml")
     feeds = ET.parse(path).getroot().findall("set/feed")
     assert [f.text for f in feeds] == ["http://a/feed", "http://b/feed"]
@@ -1799,3 +1880,263 @@ def test_iptv_m3u_injected_without_groups(boot):
     assert got["epgUrl"] == "http://h/epg" and got["epgPathType"] == "1"
     assert got.get("tvGroupMode") != "2"  # no groups file -> no custom mode
     assert "customTvGroupsFile" not in got
+
+
+# --------------------------------------------------------------------------- #
+# Phase 3a — run_express: the Express orchestrator that composes the three layers.
+# run() delegates to it; it owns the order, the terminal seam (skin-last + restart),
+# the summary, and the self-uninstall. These pin the orchestration directly.
+# --------------------------------------------------------------------------- #
+def _stub_layers_success(boot, monkeypatch):
+    """Make the skin + video pieces install successfully and the IPTV backend land,
+    so run_express reaches the terminal seam. Same repointing as the snapshot's
+    _stub_skin_and_video_success: patch the LAYER modules (the seam is killed)."""
+
+    def _sel(selected, official_base, disable_ids, dialog, log):
+        for aid in selected:
+            boot.state["extracted"].add(aid)
+            boot.state["installed"].add(aid)
+        for aid in disable_ids:
+            boot.state["installed"].add(aid)
+            boot.state["disabled"].add(aid)
+        return len(selected)
+
+    def _extract(url, dialog, pct, log):
+        if "pvr.artwork" in url:
+            boot.state["installed"].add(boot.mod.PVR_ARTWORK_ID)
+        if "modv2plus" in url:
+            boot.state["installed"].add(boot.mod.MODV2PLUS_ID)
+        return True
+
+    for tgt in (boot.mod, boot.mod._addons, boot.mod._foundation):
+        monkeypatch.setattr(tgt, "install_selection", _sel, raising=False)
+        monkeypatch.setattr(tgt, "extract_zip", _extract, raising=False)
+        monkeypatch.setattr(
+            tgt, "install_with_deps", lambda *a, **k: True, raising=False
+        )
+        monkeypatch.setattr(
+            tgt,
+            "_latest_zip_url",
+            lambda aid: f"http://local/{aid}-9.9.9.zip",
+            raising=False,
+        )
+    monkeypatch.setattr(boot.mod._iptv, "install_with_deps", lambda *a, **k: True)
+
+
+def test_run_express_returns_three_layerresults(boot, monkeypatch):
+    """run_express returns (addons, foundation, iptv) LayerResults on a full run, in
+    that order, each a real LayerResult for the matching layer."""
+    _stub_layers_success(boot, monkeypatch)
+    # Don't actually restart: decline / no-op restart_kodi.
+    monkeypatch.setattr(boot.mod, "restart_kodi", lambda *a, **k: None)
+    addons_res, foundation_res, iptv_res = boot.mod.run_express({})
+    assert addons_res.layer == "addons" and addons_res.ok is True
+    assert foundation_res.layer == "foundation"
+    assert iptv_res.layer == "iptv" and iptv_res.ok is True
+    # The IPTV layer owns + installed the PVR backend.
+    assert iptv_res.installed.get("pvr.iptvsimple") in ("installed", "configured")
+
+
+def test_run_express_orchestration_order_addons_foundation_iptv(boot, monkeypatch):
+    """The composed layers run in dependency order: apply_addons (source repos the
+    skin closure needs) -> apply_foundation (skin closure) -> apply_iptv. Pinned by
+    spying the three layer entry points run_express calls."""
+    order = []
+    real = {
+        "apply_addons": boot.mod.apply_addons,
+        "apply_foundation": boot.mod.apply_foundation,
+        "apply_iptv": boot.mod.apply_iptv,
+    }
+
+    def _wrap(name):
+        def _w(*a, **k):
+            order.append(name)
+            return real[name](*a, **k)
+
+        return _w
+
+    _stub_layers_success(boot, monkeypatch)
+    monkeypatch.setattr(boot.mod, "restart_kodi", lambda *a, **k: None)
+    for name in real:
+        monkeypatch.setattr(boot.mod, name, _wrap(name))
+    boot.mod.run_express({})
+    assert order == ["apply_addons", "apply_foundation", "apply_iptv"], (
+        f"layers must run addons -> foundation -> iptv, got {order}"
+    )
+
+
+def test_run_express_activates_skin_last_then_restarts(boot, monkeypatch):
+    """The skin is activated LAST (lookandfeel.skin written) immediately before the
+    restart, and only when Foundation succeeded — the activate-skin invariant that
+    stops Kodi's 'Keep this skin?' timeout from reverting to stock."""
+    _stub_layers_success(boot, monkeypatch)
+    seq = []
+    real_activate = boot.mod.activate_skin
+
+    def _activate(*a, **k):
+        seq.append("activate_skin")
+        return real_activate(*a, **k)
+
+    def _restart(*a, **k):
+        seq.append("restart")
+        # snapshot the settings emitted so far so we can assert skin was set before.
+        seq.append(("skin_last", _settings_set(boot).get("lookandfeel.skin")))
+        return None  # don't actually restart
+
+    monkeypatch.setattr(boot.mod, "activate_skin", _activate)
+    monkeypatch.setattr(boot.mod, "restart_kodi", _restart)
+    boot.mod.run_express({})
+
+    assert seq[0] == "activate_skin" and seq[1] == "restart", (
+        f"skin must be activated immediately before the restart, got {seq}"
+    )
+    assert ("skin_last", boot.mod.SKIN_ID) in seq, (
+        "lookandfeel.skin must be set (to MOD V2) before the restart"
+    )
+    # And it is the LAST core setting written.
+    last = [s for s in seq if isinstance(s, tuple)][0]
+    assert last[1] == boot.mod.SKIN_ID
+
+
+def test_run_express_self_uninstalls_after_summary_before_restart(boot, monkeypatch):
+    """run_express self-uninstalls exactly once, AFTER the summary Dialog().ok and
+    BEFORE the restart (the restart finalises the removal)."""
+    _stub_layers_success(boot, monkeypatch)
+    events = []
+    real_un = boot.mod.self_uninstall
+
+    def _un(*a, **k):
+        events.append(("uninstall", len(boot.state["ok"])))
+        return real_un(*a, **k)
+
+    monkeypatch.setattr(boot.mod, "self_uninstall", _un)
+    monkeypatch.setattr(
+        boot.mod, "restart_kodi", lambda *a, **k: events.append(("restart", None))
+    )
+    boot.mod.run_express({})
+    kinds = [e[0] for e in events]
+    assert kinds.count("uninstall") == 1, "must self-uninstall exactly once"
+    # ok dialogs shown at uninstall time >= 1 -> after the summary.
+    un_event = next(e for e in events if e[0] == "uninstall")
+    assert un_event[1] == 1, "self-uninstall must follow the summary Dialog().ok"
+    assert kinds.index("uninstall") < kinds.index("restart"), (
+        "self-uninstall must precede the restart"
+    )
+
+
+def test_run_express_cancel_returns_early_no_terminal(boot, monkeypatch):
+    """A cancelled base install (apply_addons ok=False) makes run_express abort
+    cleanly: it returns (addons_res, None, None) — no foundation/iptv results — and
+    fires NO summary / self-uninstall / restart (the monolith's early-return)."""
+    _stub_layers_success(boot, monkeypatch)
+    monkeypatch.setattr(
+        boot.mod.xbmcgui.DialogProgress, "iscanceled", lambda self: True
+    )
+    un = []
+    rs = []
+    monkeypatch.setattr(boot.mod, "self_uninstall", lambda *a, **k: un.append(1))
+    monkeypatch.setattr(boot.mod, "restart_kodi", lambda *a, **k: rs.append(1))
+    addons_res, foundation_res, iptv_res = boot.mod.run_express({})
+    assert addons_res.ok is False
+    assert foundation_res is None and iptv_res is None
+    assert un == [] and rs == [], "cancelled run must not self-uninstall or restart"
+    assert boot.state["ok"] == [], "cancelled run must show no success summary"
+
+
+def test_run_delegates_to_run_express(boot, monkeypatch):
+    """run() is a thin env-lifecycle wrapper: it reads the env, calls run_express
+    once with the parsed dict, and returns. Pin the delegation directly."""
+    calls = []
+
+    def _express(box_env=None, *a, **k):
+        calls.append(box_env)
+        # Return a non-cancelled addons_res so run()'s delete guard is exercised.
+        from tony7bones.setup.result import LayerResult
+
+        return LayerResult(layer="addons", ok=True), None, None
+
+    monkeypatch.setattr(boot.mod, "run_express", _express)
+    # No env file on this host -> read yields {} -> delete is a guarded no-op.
+    boot.mod.run()
+    assert len(calls) == 1, "run() must call run_express exactly once"
+
+
+# --------------------------------------------------------------------------- #
+# Transitional _BootSkinDeps seam + the _install_skin shim.
+#
+# run_express now calls apply_foundation via the BARE form (the seam is killed on
+# the orchestrator path — Tech-debt ledger), so these are no longer on the run()
+# path. They are STILL SHIPPED (transitional, removed when run() is fully
+# decomposed), so pin them while present so they cannot silently rot.
+# --------------------------------------------------------------------------- #
+def test_boot_skin_deps_late_binds_module_globals(boot, monkeypatch):
+    """_BootSkinDeps.__getattr__ resolves each primitive LIVE from the bootstrap
+    module's globals (late binding), so monkeypatching boot.mod.* takes effect, and
+    raises AttributeError for an unknown name."""
+    deps = boot.mod._BootSkinDeps()
+    sentinel = object()
+    monkeypatch.setattr(boot.mod, "install_selection", sentinel)
+    assert deps.install_selection is sentinel, "must late-bind the module global"
+    # 'enable' maps to the module's _enable global; 'latest_zip_url' to _latest_zip_url.
+    assert deps.enable is boot.mod._enable
+    assert deps.latest_zip_url is boot.mod._latest_zip_url
+    with pytest.raises(AttributeError):
+        _ = deps.not_a_primitive
+
+
+def test_install_skin_shim_forwards_bootstrap_deps(boot, monkeypatch):
+    """The _install_skin shim forwards a _BootSkinDeps into foundation._install_skin,
+    so a run driven through patched boot.mod.* primitives routes through them — the
+    transitional behaviour-preservation contract. Pin that the shim reaches the
+    foundation body with the bootstrap's deps object."""
+    seen = {}
+
+    def _fake_body(dialog, *, deps=None):
+        seen["deps"] = deps
+        return True
+
+    monkeypatch.setattr(boot.mod._foundation, "_install_skin", _fake_body)
+    assert boot.mod._install_skin(boot.mod.xbmcgui.DialogProgress()) is True
+    assert isinstance(seen["deps"], boot.mod._BootSkinDeps), (
+        "the shim must forward a _BootSkinDeps so boot.mod.* patches take effect"
+    )
+
+
+def test_configure_box_pauses_pvr_around_iptv_write(boot, monkeypatch):
+    """Phase 5b·1 — the legacy `_configure_box` path has the SAME clobber race as
+    apply_iptv (the monolith installed+enabled pvr.iptvsimple EARLY, then wrote
+    instance-settings LATE with the client live), so its copy+enforce slots now
+    run inside the PVR-disabled window too: with pvr installed, the enforce must
+    observe the backend DISABLED, and it must end RE-ENABLED."""
+    boot.state["installed"].add("pvr.iptvsimple")
+    seen = {}
+    real = boot.mod._ensure_iptv_custom_tv_groups
+
+    def probe(env):
+        seen["disabled_during_enforce"] = "pvr.iptvsimple" in boot.state["disabled"]
+        return real(env)
+
+    # _configure_box resolves the enforce through the boot.mod SHIM binding (the
+    # Phase-2d re-export), so the probe must replace THAT name, not the iptv
+    # module attribute the shim was bound from.
+    monkeypatch.setattr(boot.mod, "_ensure_iptv_custom_tv_groups", probe)
+    boot.mod._configure_box({"IPTV_M3U": "http://iptv.example/x?password=p"})
+    assert seen["disabled_during_enforce"] is True, (
+        "_configure_box must write IPTV config with pvr DISABLED (clobber fix)"
+    )
+    assert "pvr.iptvsimple" not in boot.state["disabled"], "must end re-enabled"
+
+
+def test_configure_box_no_pvr_pause_when_backend_absent(boot):
+    """A box without pvr.iptvsimple installed pauses nothing: `_configure_box`
+    issues NO SetAddonEnabled for the backend (the guarded no-op window)."""
+    import json as _json
+
+    boot.mod._configure_box({"IPTV_M3U": "http://iptv.example/x"})
+    pvr_toggles = [
+        _json.loads(raw)
+        for raw in boot.state["jsonrpc"]
+        if _json.loads(raw).get("method") == "Addons.SetAddonEnabled"
+        and _json.loads(raw)["params"].get("addonid") == "pvr.iptvsimple"
+    ]
+    assert pvr_toggles == [], "no pvr installed -> no pause/resume toggles"

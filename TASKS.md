@@ -1,19 +1,101 @@
 # TASKS
 
-Tracking for the Tony.7.Bones repo. Current focus: **Estuary MOD V2+** (`script.tony7bones.modv2plus`).
+Tracking for the Tony.7.Bones repo.
 
-Conventions: batch work into versioned deliverables; build bundled skin files FRESH from the current
-omega source (b-jesch Omega branch / Kodinerds omega.4); verify on the real local Kodi before shipping;
-no AI attribution anywhere. `script.*` changes ship via `generate_repo.py` + push (no proxy/deploy.py).
-
-> Shipped/done history is not tracked here — the live state lives in `addons/*/addon.xml` versions,
-> git tags, and CLAUDE.md (architecture + "Restore points"). This file holds only open work.
+> **CURRENT FOCUS: the modular "0-1-2" Setup rewrite** — branch **`modular-setup`**.
+> Full design + phase log + forward plan: **`docs/plans/modular-setup.md`** (read it first).
 
 ---
 
-## Open
+## ⛔ WORKFLOW — non-negotiable, every phase (do NOT skip or reorder)
+
+> **implement → TEST → COVERAGE (≥90% new code) → GATE (`pytest _tools/ -q` + `ruff` + secrets all
+> green) → adversarial QA completeness review → real-device verify on local Kodi (if runtime) →
+> DOCUMENT (phase log) → only THEN commit → only THEN start the next phase.**
+
+1. **NO COMMIT until ALL of the above pass.** Red suite / missing test / unreviewed change /
+   undocumented phase = do not commit.
+2. **NO next phase until the current phase is committed green.** Phases are sequential-gated.
+
+This discipline caught real bugs pre-commit in every phase (the snapshot rebaseline footgun, a
+tech-debt seam, the apply_iptv reporting bug, the zero-content guarantee). Keep it.
+
+---
+
+## ▶ VERY NEXT STEP — the no-computer-setup track
+
+> **The MILESTONE PUSH is DONE** — `modular-setup` is on origin with the milestone version
+> bumps: `script.module.tony7bones` **1.2.0** (the setup layers + probes +
+> `assert_box_complete` + the PVR-disabled config window + staged-IPTV consumption +
+> keep-skin hardening + the `SETUP_API` guard), `script.tony7bones.bootstrap` **1.5.0**
+> (modular Setup: Express unchanged, `run_foundation`/`run_iptv`/`run_addons` standalone,
+> Guided wizard via `SETUP_MODE=guided`, Model A lifecycle; `<requires>` now pins the
+> library at 1.2.0 — lockstep), modv2plus already 1.4.8. The proxy
+> (`repository.tony7bones`) is UNTOUCHED. The superseded `iptv` branch was deleted at the
+> push. **`main` is still the SHIPPED 3.0 one-shot state** — merging `modular-setup` →
+> `main` + the proxy release is a FUTURE owner decision, not this milestone.
+>
+> **Next:** the no-computer-setup track (Setup with no provisioner/env — separate plan
+> doc): the six owner answers → then N1. Also still queued: optionally document
+> `SETUP_MODE` in `.env.device.example` (a protect-hook kept the agent from adding the
+> commented block).
+
+Context: all of Phase 5 + Phase 6 are DONE — 5a (Foundation), 5b·1/2/3 (IPTV), 5c
+(`run_addons`), 5d (Guided + Model A), 6 (harden + the Fire TV matrix on the Bedroom box:
+both legs, two real bugs found + fixed + re-verified — the slow-box keep-skin race and the
+provisioner self-close bound; full evidence in the Phase 6 addendum in
+`docs/plans/modular-setup.md`). NOTE: Kodi's `RestartApp` is a NO-OP on
+macOS — the clean-quit+relaunch IS the real restart on the local box; drive wizard list
+dialogs over JSON-RPC with `Input.ButtonEvent` (key-level), not `Input.Select`.
+
+---
+
+## Build status (modular-setup branch)
+
+- **DONE, gated, committed LOCALLY** (suite **768 passed / 1 xfailed**):
+  Phases 0–3 + 5a (Foundation, incl. 5a·2/5a·3) + **5b·1** (the two `apply_iptv` bugs — clobber
+  window + N-provider env) + **5b·2** (the host-side IPTV build integrated — BOTH real
+  providers, xtream included, clean-Kodi channel-load proven with the full curation grammar) +
+  the **favorites-icon healing** addendum (dead xtream placeholder icons borrowed from live
+  duplicates at build time, live-proven) + **5c** (`run_addons` — the standalone Add-ons layer,
+  clean-Kodi proven on a Foundation-only box; MOD V2 untouched, RSS/origins/disable-after all
+  live-verified, restart-survival proven) + **5b·3** (`run_iptv` — the standalone IPTV layer,
+  clean-FOUNDATION-box proven: pvr backend installed BY the layer, both providers staged-applied,
+  counts == builder's 158/47/24 + 214/100/12 + 5 favorites + 560 all, MOD V2 untouched,
+  restart-survival; **Phase 5b COMPLETE — all three layers independently runnable**) +
+  **5d** (the Guided wizard + Model A lifecycle — `run_guided` + `tony7bones.setup.probes` +
+  the `SETUP_MODE=guided` routing in the shipped `run()`; the full multi-gate walk live-proven
+  on a clean local Kodi: per-gate restarts each landing on a complete working box, Setup
+  persisting across gates, env consumed only at Finish, Finish self-uninstall; the
+  no-fork/cadence/end-state-equivalence invariants in `_tools/test_no_fork.py`; Express
+  byte-identical — snapshot + `EXPECTED_NET_INSTALLED` unchanged) +
+  **6** (harden — the keep-skin verify-then-re-assert fix + quiescence settle, the
+  `SETUP_API` version guard, `assert_box_complete` + the closure walk with the bundled
+  system-tree fix, the restart-prompt autoclose, CI gates on this branch; live-proven incl.
+  a forced lost-confirm re-assert AND the fresh full Express run — the computer-setup track
+  is COMPLETE) +
+  **the Fire TV matrix** (Phase 6 addendum — BOTH legs on the real owner-authorized Bedroom
+  Stick: the Guided per-gate manual-reopen walk incl. an accidental interrupted-run resume
+  proof, and the unattended Express one-tap; found + fixed the SLOW-BOX keep-skin race in
+  `activate_skin` and the provisioner's too-short self-close wait, both re-verified on the
+  box; verbatim Android UX copy recorded; box left complete and working).
+- **PUSHED to origin** — the milestone push landed with `script.module.tony7bones` 1.2.0 +
+  `script.tony7bones.bootstrap` 1.5.0 (modv2plus already 1.4.8; proxy untouched).
+- The deploy gate (`_tools/test_installer_present.py`) is on **`main`**. The superseded
+  `iptv` branch (deliverables integrated in Phase 5b·2) was **deleted** — origin and local —
+  at the milestone push.
+
+---
+
+## Backlog — Estuary MOD V2+ (`script.tony7bones.modv2plus`), lower priority
 
 - [ ] **Settings menu order toggle** — "Skin Settings first", default ON; off = stock order. _Harder_ (list item order isn't cleanly conditional).
 - [ ] **Re-skin the MOD V2+ add-on icon** to reflect the "+" branding (currently reuses the old patch icon).
 - [ ] **Localized `strings.po`** for our category labels/help (currently literal text).
 - [ ] **`drop/` staging folder** at the repo root — a staging area for incoming files/assets. _Purpose/usage to confirm before building._
+
+> Conventions: batch work into versioned deliverables; build bundled skin files FRESH from current
+> omega source (b-jesch Omega / Kodinerds omega.4); verify on real local Kodi before shipping; no AI
+> attribution anywhere. `script.*` changes ship via `generate_repo.py` + push (no proxy/deploy.py).
+> Shipped/done history is not tracked here — live state lives in `addons/*/addon.xml` versions, git
+> tags, and CLAUDE.md.

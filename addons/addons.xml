@@ -27,7 +27,7 @@ v2.2.1: 3.0: one-shot now installs + activates Estuary MOD V2 and applies the MO
             </assets>
         </extension>
     </addon>
-    <addon id="script.module.tony7bones" name="Tony.7.Bones Shared Library" version="1.1.3" provider-name="tony7bones">
+    <addon id="script.module.tony7bones" name="Tony.7.Bones Shared Library" version="1.2.0" provider-name="tony7bones">
         <requires>
             <import addon="xbmc.python" version="3.0.0" />
         </requires>
@@ -41,13 +41,14 @@ v2.2.1: 3.0: one-shot now installs + activates Estuary MOD V2 and applies the MO
             </assets>
             <summary lang="en_GB">Shared install library for the Tony.7.Bones Setup add-ons</summary>
             <description lang="en_GB">Internal Python library used by the Tony.7.Bones Setup add-ons. It is not runnable on its own and does not appear on the home screen; it provides the shared add-on install, dependency-resolution and Kodi-integration machinery the Setup add-ons depend on.</description>
+            <news>v1.2.0: Modular Setup layers — re-entrant apply_foundation/apply_iptv/apply_addons (each leaves a complete working box), installed-state probes + assert_box_complete (dependency-closure walk), the PVR-disabled config window for pvr.iptvsimple instance-settings writes, staged-IPTV artifact consumption (host-built m3u/groups/instance files), keep-skin activation hardening (verify-then-re-assert with skinshortcuts quiescence), and the SETUP_API version guard.</news>
         </extension>
     </addon>
-    <addon id="script.tony7bones.bootstrap" name="Tony.7.Bones Setup" version="1.4.0" provider-name="tony7bones">
+    <addon id="script.tony7bones.bootstrap" name="Tony.7.Bones Setup" version="1.5.0" provider-name="tony7bones">
         <requires>
             <import addon="xbmc.python" version="3.0.0" />
             <import addon="xbmc.addon" version="12.0.0" />
-            <import addon="script.module.tony7bones" version="1.1.2" />
+            <import addon="script.module.tony7bones" version="1.2.0" />
         </requires>
         <extension point="xbmc.python.script" library="default.py">
             <provides>executable</provides>
@@ -58,10 +59,10 @@ v2.2.1: 3.0: one-shot now installs + activates Estuary MOD V2 and applies the MO
             <license>GPL-2.0-or-later</license>
             <summary lang="en_GB">Tony.7.Bones Kodi Setup</summary>
             <description lang="en_GB">Installs repositories and add-ons for a personal Kodi build.</description>
-            <news>v1.4.0: Per-device config from one .env — the provisioner derives a per-device tony7bones.env and the Setup reads it to set weather (up to 5 locations + optional Weatherbit/OpenWeatherMap keys), IPTV (custom groups + m3u/EPG), and RSS feeds, then removes it; built-in defaults when absent. (v1.3.3: Live TV now loads only the custom channel groups — the Setup enforces pvr.iptvsimple's "Only load TV channels in groups" (tvChannelGroupsOnly) alongside the custom-groups mode + file. (v1.3.2: Reliable skin activation — Setup now ACCEPTS Kodi's "Keep this skin?" confirmation when it switches to Estuary MOD V2, so the choice persists across the end-of-setup restart instead of reverting to stock Estuary. (v1.3.1: Adds three File-Manager sources — "special://home" (special://home), "special://kodi" (/storage/emulated/0/kodi/), and ".tony.7.bones" (https://tony7bones.github.io/). New sources de-dupe by name and path; and ANY existing source pointing at the repo URL — with or without a trailing slash, under any label — is renamed to ".tony.7.bones". (v1.3.0: one-shot also installs + activates the Estuary MOD V2 skin and the MOD V2+ patch auto-applies via its service.)</news>
+            <news>v1.5.0: Modular Setup — Express one-tap unchanged; three standalone layers (run_foundation, run_iptv, run_addons), each leaving a complete working box; Guided wizard via SETUP_MODE=guided with per-gate restarts and the Model A lifecycle (Setup persists across gates, env consumed at Finish, then self-uninstalls); shared-library SETUP_API compatibility guard. (v1.4.0: Per-device config from one .env — the provisioner derives a per-device tony7bones.env and the Setup reads it to set weather (up to 5 locations + optional Weatherbit/OpenWeatherMap keys), IPTV (custom groups + m3u/EPG), and RSS feeds, then removes it; built-in defaults when absent. (v1.3.3: Live TV now loads only the custom channel groups — the Setup enforces pvr.iptvsimple's "Only load TV channels in groups" (tvChannelGroupsOnly) alongside the custom-groups mode + file. (v1.3.2: Reliable skin activation — Setup now ACCEPTS Kodi's "Keep this skin?" confirmation when it switches to Estuary MOD V2, so the choice persists across the end-of-setup restart instead of reverting to stock Estuary. (v1.3.1: Adds three File-Manager sources — "special://home" (special://home), "special://kodi" (/storage/emulated/0/kodi/), and ".tony.7.bones" (https://tony7bones.github.io/). New sources de-dupe by name and path; and ANY existing source pointing at the repo URL — with or without a trailing slash, under any label — is renamed to ".tony.7.bones". (v1.3.0: one-shot also installs + activates the Estuary MOD V2 skin and the MOD V2+ patch auto-applies via its service.)</news>
         </extension>
     </addon>
-    <addon id="script.tony7bones.modv2plus" name="Estuary MOD V2+" version="1.4.7" provider-name="tony7bones">
+    <addon id="script.tony7bones.modv2plus" name="Estuary MOD V2+" version="1.4.8" provider-name="tony7bones">
         <requires>
             <import addon="xbmc.python" version="3.0.0" />
             <import addon="resource.images.weathericons.outline-hd" version="0.0.3" />
@@ -75,7 +76,7 @@ v2.2.1: 3.0: one-shot now installs + activates Estuary MOD V2 and applies the MO
             <assets>
                 <icon>icon.png</icon>
             </assets>
-            <news>v1.4.7: First-boot persistence fix — the look settings (weather in the header, Outline HD icons, plain Power/Settings/Search backgrounds, classic power menu) now write straight to settings.xml on apply, so a freshly-provisioned box shows them on the FIRST boot instead of stock; the boot service also re-applies them if they are ever missing (settings-aware gate). (v1.4.6: Home menu now deploys the exact saved layout verbatim — the six-item trim, Movies/TV shows open POV, TV opens the Guide, the Favorites relabel, and the Movies List / TV Shows List widgets — and self-heals (re-deploys) if a skin update or a build race ever resets it. (v1.4.5: Home menu now reliably trims to six items even when Setup's live skin-switch raced script.skinshortcuts into caching the full stock menu — the service detects the un-trimmed menu and rebuilds it on the next boot. (v1.4.4: the auto-apply service now waits for the Home screen to actually render (not just for the skin to be set) before patching, fixing the occasional blank/unfinished home after a restart. (v1.4.3: new V2+ icon; channel numbers off. v1.4.2: TV opens the Guide, Favourites→Favorites, six home widgets hidden.)</news>
+            <news>v1.4.8: Home menu reliability fix — (re)deploying our home menu now CLEARS script.skinshortcuts' built cache for skin.estuary.modv2 AND drops the built menu hash in one step, so skinshortcuts always regenerates from OUR trimmed menu (Live TV, Movies/TV shows, Add-ons, Favorites, Weather) on the next boot. Defeats the caching race where a live skin-switch built and cached the stock Estuary menu before our menu deployed, leaving the wrong menu on a fresh box. (v1.4.7: First-boot persistence fix — the look settings (weather in the header, Outline HD icons, plain Power/Settings/Search backgrounds, classic power menu) now write straight to settings.xml on apply, so a freshly-provisioned box shows them on the FIRST boot instead of stock; the boot service also re-applies them if they are ever missing (settings-aware gate). (v1.4.6: Home menu now deploys the exact saved layout verbatim — the six-item trim, Movies/TV shows open POV, TV opens the Guide, the Favorites relabel, and the Movies List / TV Shows List widgets — and self-heals (re-deploys) if a skin update or a build race ever resets it. (v1.4.5: Home menu now reliably trims to six items even when Setup's live skin-switch raced script.skinshortcuts into caching the full stock menu — the service detects the un-trimmed menu and rebuilds it on the next boot. (v1.4.4: the auto-apply service now waits for the Home screen to actually render (not just for the skin to be set) before patching, fixing the occasional blank/unfinished home after a restart. (v1.4.3: new V2+ icon; channel numbers off. v1.4.2: TV opens the Guide, Favourites→Favorites, six home widgets hidden.)</news>
         </extension>
     </addon>
 </addons>

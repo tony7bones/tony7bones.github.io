@@ -5,8 +5,11 @@ on:
     # Branch pushes only — tag pushes (from deploy.py's atomic main+tag push)
     # re-point at main's HEAD, which already ran; and on a tag checkout the
     # consistency gate can't resolve the main branch, so the tag run fails spuriously.
+    # modular-setup added in Phase 6 so the setup-rewrite invariants gate that
+    # branch in CI too (the version-consistency step stays main-only below).
     branches:
       - main
+      - modular-setup
     paths:
       - "addons/**"
       - "dropbox/**"
@@ -35,6 +38,18 @@ jobs:
       - name: Run tests
         run: python3 -m pytest _tools/ -q
 
+      # The full suite above already runs these; this named re-run exists so a
+      # broken setup-rewrite KEYSTONE invariant (Express/Guided no-fork +
+      # cadence + end-state equivalence; the library/bootstrap version guard;
+      # the installed-state probes incl. assert_box_complete) fails as its own
+      # loudly-named check, not a needle in the suite log. Phase 6.
+      - name: Setup invariant gates (no-fork / version guard / probes)
+        run: >
+          python3 -m pytest -q
+          _tools/test_no_fork.py
+          _tools/test_version_guard.py
+          _tools/test_setup_probes.py
+
       - name: Lint
         run: ruff check _tools/
 
@@ -54,7 +69,10 @@ jobs:
 
       - name: Version-consistency gate
         # Backstop for the local pre-push hook: every version-bearing location
-        # on main must agree and be tagged.
+        # on main must agree and be tagged. MAIN ONLY — a feature branch
+        # legitimately carries unbumped/untagged versions until its milestone
+        # push (the bump lands with the release, per the release playbook).
+        if: github.ref == 'refs/heads/main'
         run: |
           git fetch --quiet --tags origin
           python3 _tools/check_consistency.py

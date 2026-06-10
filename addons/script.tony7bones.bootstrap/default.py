@@ -40,15 +40,83 @@ No secrets are embedded in this script.
 
 import json
 import os
-from xml.etree import ElementTree as ET
 
 import xbmc
 import xbmcgui
-import xbmcvfs
+
+MY_ID = "script.tony7bones.bootstrap"
+
+# ---------------------------------------------------------------------------- #
+# Shared-library compatibility guard (Phase 6). REQUIRED_SETUP_API is the
+# setup-API capability level this bootstrap NEEDS from script.module.tony7bones;
+# the library declares the level it SHIPS (tony7bones.setup.SETUP_API). A
+# too-old library paired with a too-new bootstrap (a cross-gate update skew, or
+# a sideload that bypassed Kodi's <requires> check — our own direct-extract
+# install path does exactly that) must fail LOUD AND HONEST at launch, never
+# crash weird mid-install. The guard runs BEFORE the real library imports below
+# so the failure is one honest dialog + log line + RuntimeError instead of a
+# cryptic ImportError deep in a gate.
+# ---------------------------------------------------------------------------- #
+REQUIRED_SETUP_API = 1
+
+
+def _require_setup_library():
+    """Verify the installed shared library carries the setup API this bootstrap
+    needs. Returns silently when compatible; otherwise logs ERROR, shows ONE
+    honest "update the library from the repository" dialog, and raises."""
+    detail = None
+    try:
+        import importlib
+
+        # A genuinely old library is missing the setup modules outright —
+        # probe the newest capability surface the bootstrap depends on.
+        importlib.import_module("tony7bones.setup.probes")
+        from tony7bones import setup as _setup_probe
+
+        api = int(getattr(_setup_probe, "SETUP_API", 0))
+        if api >= REQUIRED_SETUP_API:
+            return
+        detail = "library SETUP_API {} < required {}".format(api, REQUIRED_SETUP_API)
+    except Exception as e:  # noqa: BLE001 - any import failure = incompatible
+        detail = "library import failed: {}".format(e)
+    installed = "unknown"
+    try:
+        import xbmcaddon
+
+        installed = xbmcaddon.Addon("script.module.tony7bones").getAddonInfo("version")
+    except Exception:  # noqa: BLE001 - version is informational only
+        pass
+    xbmc.log(
+        "[{}] shared library INCOMPATIBLE: {} "
+        "(installed script.module.tony7bones: {})".format(MY_ID, detail, installed),
+        xbmc.LOGERROR,
+    )
+    try:
+        xbmcgui.Dialog().ok(
+            "Tony.7.Bones Setup",
+            "\n".join(
+                [
+                    "Setup needs a newer version of its shared library",
+                    "(script.module.tony7bones, installed: {}).".format(installed),
+                    "",
+                    "Update it from the Tony.7.Bones repository,",
+                    "then run Setup again.",
+                ]
+            ),
+        )
+    except Exception:  # noqa: BLE001 - the dialog must not mask the real error
+        pass
+    raise RuntimeError(
+        "script.tony7bones.bootstrap requires a newer script.module.tony7bones "
+        "({})".format(detail)
+    )
+
+
+_require_setup_library()
 
 # Shared install library (script.module.tony7bones). All the generic machinery
 # lives here; this file keeps only the base box's configuration + base-only steps.
-from tony7bones import (
+from tony7bones import (  # noqa: E402 - deliberately after the compat guard
     activate_skin,
     extract_zip,
     install_selection,
@@ -58,53 +126,86 @@ from tony7bones import (
     self_uninstall,
     update_local_addons,
 )
-from tony7bones import enable as _enable
+from tony7bones import enable as _enable  # noqa: E402
 
-MY_ID = "script.tony7bones.bootstrap"
+# Per-device .env parsing moved into the shared sublibrary (Phase 2a); re-export
+# the same three names here so every existing reference and every test that
+# reaches them via this module (boot.mod.parse_env / read_box_env / split_list)
+# keeps working unchanged. Listed in __all__ so they are not pruned as "unused"
+# (this module re-exports them, but does call read_box_env in run()).
+from tony7bones.setup import env as _env_mod  # noqa: E402
+from tony7bones.setup.env import parse_env, read_box_env, split_list  # noqa: E402
 
-REPO_BASE = "https://tony7bones.github.io/repositories/"
-STATIC_BASE = "https://tony7bones.github.io/addons"
+# The Foundation layer (skin closure + file-sources + home-trim) moved into the
+# shared sublibrary (Phase 2b). The lifted bodies + the layer entry point live in
+# tony7bones.setup.foundation; this module keeps thin shims (below) that delegate
+# to them so every existing reference and test (boot.mod._install_skin /
+# _add_file_sources / _trim_home_menu / _latest_zip_url + the SKIN_ID/PVR_ARTWORK
+# constants) keeps working unchanged, and run() calls apply_foundation in the
+# EXACT slot those three functions occupied.
+from tony7bones.setup import foundation as _foundation  # noqa: E402
+from tony7bones.setup.foundation import apply_foundation  # noqa: E402
 
-# Add-on index base urls for the closure. The two peno64 apps live in peno64;
-# their module dependencies, the weather add-on, and the binary PVR/inputstream
-# clients all live in the official Kodi repo. The library's resolver walks
-# <requires>/<import> recursively across both (peno64 first, official last).
-OFFICIAL_BASE = "https://mirrors.kodi.tv/addons/omega"
-PENO64_BASE = (
-    "https://raw.githubusercontent.com/peno64/repository.peno64/master/repo/zips"
-)
+# The ADD-ONS layer (base repos + apps install, curated video install, env-driven
+# weather + RSS writers) moved into the shared sublibrary (Phase 2c). The lifted
+# bodies + the layer entry point live in tony7bones.setup.addons; this module keeps
+# thin re-export shims (below) that run() and _configure_box call in their EXISTING
+# slots so the characterization snapshot stays byte-identical (the interleaving
+# constraint: base/video install EARLY, weather/RSS config LATE in _configure_box).
+# The moved bodies resolve their install primitives from the addons module globals,
+# so the few run()-driven tests that stubbed the base/video path patch addons.* (the
+# repointed boot.mod patches) — NO new deps-injection seam (Tech-debt ledger).
+from tony7bones.setup import addons as _addons  # noqa: E402
+from tony7bones.setup.addons import apply_addons  # noqa: E402
 
-# Repo installer zips: (zip filename, addon id).
-REPO_ZIPS = [
-    ("repository.709-1.0.2.zip", "repository.709"),
-    ("repository.bugatsinho-2.8.zip", "repository.bugatsinho"),
-    ("repository.cocoscrapers-1.0.1.zip", "repository.cocoscrapers"),
-    ("repository.diggz.zip", "repository.diggz"),
-    ("repository.ivarbrandt-1.0.3.zip", "repository.ivarbrandt"),
-    ("repository.kodifitzwell-0.0.1.zip", "repository.kodifitzwell"),
-    ("repository.kodinerds-7.0.1.7.zip", "repository.kodinerds"),
-    ("repository.loop-3.0.4.zip", "repository.loop"),
-    ("repository.Magnetic-1.1.0b.zip", "repository.Magnetic"),
-    ("repository.peno64-1.5.zip", "repository.peno64"),
-    ("repository.redwizard-1.2.2.zip", "repository.redwizard"),
-    ("repository.umbrella-2.2.6.zip", "repository.umbrella"),
+# The IPTV layer's in-Kodi CONFIG half (the pvr.iptvsimple instance-settings
+# enforcement + the device→userdata file copies) moved into the shared sublibrary
+# (Phase 2d). The lifted bodies + the layer entry point live in
+# tony7bones.setup.iptv; this module keeps thin re-export shims (below) that
+# _configure_box calls in their EXISTING slots (copy then enforce — the copy
+# BEFORE the enforce so it patches the copied file) so the characterization
+# snapshot stays byte-identical. These bodies touch only xbmc/xbmcvfs/os/ET (no
+# monkeypatched install primitives), so a plain re-export is behaviour-identical —
+# no deps-injection seam (Tech-debt ledger). NOTE: Phase 2d is CONFIG-ONLY; the
+# pvr.iptvsimple INSTALL stays in the base ADDONS list (its move to the IPTV gate
+# is the deliberate behaviour change reserved for Phase 3).
+from tony7bones.setup import iptv as _iptv  # noqa: E402
+from tony7bones.setup.iptv import apply_iptv  # noqa: E402
+
+# Installed-state done-probes for the Guided wizard (Phase 5d). The wizard
+# resumes via the box's ACTUAL state (skin active / instance file present /
+# per-id is_installed) — never marker files — so a crash, a declined restart,
+# or a reverted skin all self-heal by re-offering the incomplete gate.
+from tony7bones.setup import probes as _probes  # noqa: E402
+
+# Re-exported public names (env parsing now lives in tony7bones.setup.env; the
+# Foundation layer entry point in tony7bones.setup.foundation; the Add-ons layer in
+# tony7bones.setup.addons).
+__all__ = [
+    "apply_addons",
+    "apply_foundation",
+    "apply_iptv",
+    "parse_env",
+    "read_box_env",
+    "run_addons",
+    "run_foundation",
+    "run_foundation_setup",
+    "run_guided",
+    "run_iptv",
+    "split_list",
 ]
 
-# First-party add-on ids installed by the generic direct-extract loop. Empty:
-# the MOD V2 skin + the MOD V2+ patch add-on are installed by _install_skin
-# (which handles their proxy-invisible deps + activation), not this loop.
-FIRST_PARTY = []
-
-# Apps installed (with dependency closure) by direct extract, in order.
-#   * script.ezmaintenanceplus / script.realdebrid — peno64 (python).
-#   * weather.multi — official repo (pure python; pulls python module deps).
-#   * pvr.iptvsimple — official repo (BINARY; pulls binary inputstream deps).
-ADDONS = [
-    "script.ezmaintenanceplus",
-    "script.realdebrid",
-    "weather.multi",
-    "pvr.iptvsimple",
-]
+# Index bases + repo/app/video constants — MOVED to the Add-ons layer
+# (tony7bones.setup.addons, Phase 2c). Re-exported here so every existing
+# reference and test (boot.mod.REPO_ZIPS / ADDONS / VIDEO_APPS / OFFICIAL_BASE …)
+# keeps working unchanged and there is a single source of truth.
+REPO_BASE = _addons.REPO_BASE
+STATIC_BASE = _addons.STATIC_BASE
+OFFICIAL_BASE = _addons.OFFICIAL_BASE
+PENO64_BASE = _addons.PENO64_BASE
+REPO_ZIPS = _addons.REPO_ZIPS
+FIRST_PARTY = _addons.FIRST_PARTY
+ADDONS = _addons.ADDONS
 
 # Estuary MOD V2 skin + the MOD V2+ patch — installed + activated by the one-shot.
 SKIN_ID = "skin.estuary.modv2"
@@ -144,315 +245,53 @@ def _latest_zip_url(addon_id):
 
 
 # --------------------------------------------------------------------------- #
-# File-Manager sources (base-only configuration + merge)
+# File-Manager sources + Estuary home-menu trim — MOVED to the Foundation layer
+# (tony7bones.setup.foundation, Phase 2b). The bodies + their constants/helpers
+# (REPO_SOURCE_*, FILE_SOURCES, _sources_xml_path, _make_files_source,
+# ESTUARY_HIDE_SETTINGS, _estuary_settings_path, _trim_home_menu_setbool/writefile)
+# now live there VERBATIM; these are thin re-export shims so every existing
+# reference and test (boot.mod._add_file_sources / _trim_home_menu) keeps working,
+# and apply_foundation runs them in the same slot they occupied in run(). Both
+# touch only xbmc/xbmcvfs (no monkeypatched install primitives), so a plain
+# re-export is behaviour-identical.
 # --------------------------------------------------------------------------- #
-# (display name, path). The "special://kodi" source's path is the Android/Fire
-# Stick internal storage dir — we try to create it (harmless no-op off Android)
-# but always add the source entry regardless.
-# Our repo's bare URL is special: ANY existing source pointing at it (with OR
-# without a trailing slash, under ANY label) is NORMALIZED to REPO_SOURCE_NAME +
-# the canonical REPO_SOURCE_URL by _add_file_sources (not just deduped).
-REPO_SOURCE_NAME = ".tony.7.bones"
-REPO_SOURCE_URL = "https://tony7bones.github.io/"
-FILE_SOURCES = [
-    ("special://home", "special://home"),
-    ("special://kodi", "/storage/emulated/0/kodi/"),
-    (REPO_SOURCE_NAME, REPO_SOURCE_URL),
-]
+_add_file_sources = _foundation._add_file_sources
+_trim_home_menu = _foundation._trim_home_menu
 
-
-def _sources_xml_path():
-    """Resolve the absolute path to userdata/sources.xml via xbmcvfs."""
-    p = xbmcvfs.translatePath("special://profile/sources.xml")
-    if not p:
-        p = xbmcvfs.translatePath("special://home/userdata/sources.xml")
-    return p
-
-
-def _make_files_source(parent, name, path):
-    """Append a standard <source> entry to the given <files> element."""
-    src = ET.SubElement(parent, "source")
-    ET.SubElement(src, "name").text = name
-    p = ET.SubElement(src, "path")
-    p.set("pathversion", "1")
-    p.text = path
-    ET.SubElement(src, "allowsharing").text = "true"
-
-
-def _add_file_sources():
-    """Add our File-Manager sources to userdata/sources.xml.
-
-    Edits the <files> section in place: creates the file/structure if missing,
-    PRESERVES every existing source, and DEDUPES new ones on both name and path so
-    a second run adds nothing. Special case — the repo source is NORMALIZED: any
-    existing source whose path is our bare URL (with or without a trailing slash,
-    under ANY label) is renamed to REPO_SOURCE_NAME with the canonical
-    REPO_SOURCE_URL, and slash-variant duplicates collapse to one. For the Android
-    internal-storage path we attempt mkdirs first (guarded) but add the source
-    entry either way. Fully defensive: any error is logged and the rest of setup
-    continues. The end-of-setup restart is what makes Kodi pick up the new sources
-    (it caches sources.xml at startup).
-    """
-    try:
-        xml_path = _sources_xml_path()
-
-        # Parse the existing file, or start a fresh <sources> tree.
-        root = None
-        if xml_path and os.path.exists(xml_path):
-            try:
-                root = ET.parse(xml_path).getroot()
-            except ET.ParseError as e:
-                _log(f"sources.xml malformed, recreating: {e}", xbmc.LOGERROR)
-                root = None
-        if root is None or root.tag != "sources":
-            root = ET.Element("sources")
-
-        # Ensure a <files> section with a leading <default> element exists.
-        files = root.find("files")
-        if files is None:
-            files = ET.SubElement(root, "files")
-        if files.find("default") is None:
-            # Prepend <default> so the section matches Kodi's canonical shape.
-            default = ET.Element("default")
-            files.insert(0, default)
-
-        changed = False
-        # Normalize the repo source: ANY existing <files> source whose path is our
-        # bare URL — with OR without a trailing slash, under ANY label — is renamed
-        # to the canonical REPO_SOURCE_NAME + REPO_SOURCE_URL. Deliberate (not a
-        # dedupe): claim the repo source under one known name however it was added.
-        repo_key = REPO_SOURCE_URL.rstrip("/")
-        for s in files.findall("source"):
-            if (s.findtext("path") or "").strip().rstrip("/") == repo_key:
-                name_el = s.find("name")
-                if name_el is None:
-                    name_el = ET.SubElement(s, "name")
-                if name_el.text != REPO_SOURCE_NAME:
-                    name_el.text = REPO_SOURCE_NAME
-                    changed = True
-                path_el = s.find("path")
-                if (
-                    path_el is not None
-                    and (path_el.text or "").strip() != REPO_SOURCE_URL
-                ):
-                    path_el.text = REPO_SOURCE_URL
-                    changed = True
-        # Collapse any duplicates the normalization produced (e.g. both slash
-        # variants existed) down to a single canonical repo source.
-        seen_repo = False
-        for s in list(files.findall("source")):
-            is_repo = (s.findtext("name") or "") == REPO_SOURCE_NAME and (
-                s.findtext("path") or ""
-            ).strip() == REPO_SOURCE_URL
-            if is_repo:
-                if seen_repo:
-                    files.remove(s)
-                    changed = True
-                else:
-                    seen_repo = True
-
-        # Existing names/paths in <files> — dedupe new sources against both.
-        have_names = {
-            (s.findtext("name") or "").strip() for s in files.findall("source")
-        }
-        have_paths = {
-            (s.findtext("path") or "").strip() for s in files.findall("source")
-        }
-
-        added = 0
-        for name, path in FILE_SOURCES:
-            # The Android internal-storage dir: try to create it, guarded.
-            if path == "/storage/emulated/0/kodi/":
-                try:
-                    if not xbmcvfs.exists(path):
-                        xbmcvfs.mkdirs(path)
-                except Exception as e:  # noqa: BLE001 - non-Android: harmless
-                    _log(
-                        f"mkdirs {path} skipped (expected off Android): {e}",
-                        xbmc.LOGINFO,
-                    )
-            if name in have_names or path in have_paths:
-                continue  # dedupe: already present by name or path
-            _make_files_source(files, name, path)
-            have_names.add(name)
-            have_paths.add(path)
-            added += 1
-
-        if added or changed:
-            data = ET.tostring(root, encoding="unicode")
-            with open(xml_path, "w", encoding="utf-8") as f:
-                f.write(data)
-            _log(f"file sources updated ({added} added) in {xml_path}", xbmc.LOGINFO)
-        else:
-            _log("file sources already present (no change)", xbmc.LOGINFO)
-    except Exception as e:  # noqa: BLE001 - never abort the rest of setup
-        _log(f"_add_file_sources failed (non-fatal): {e}", xbmc.LOGERROR)
-
-
-# --------------------------------------------------------------------------- #
-# Estuary home-menu trim (base-only configuration + merge)
-# --------------------------------------------------------------------------- #
-# Each home item in Estuary's xml/Home.xml is gated by
-#   <visible>!Skin.HasSetting(HomeMenuNo<X>Button)</visible>,
-# so setting the matching skin BOOLEAN true HIDES that item. We hide eight and
-# leave the four we keep (TV/Live TV, Add-ons/Programs, Favourites, Weather)
-# visible. Two ids per item: the camel-case ID the skin XML / Skin.SetBool use,
-# and the LOWERCASE id the skin persists into settings.xml. Skin.HasSetting() is
-# case-insensitive, so the skin reads either back.
-#
-# Both mechanisms are applied: Skin.SetBool() sets the in-memory value (which the
-# shutdown persists, surviving the restart), and a direct settings.xml merge is
-# the belt-and-suspenders fallback (covers a not-yet-loaded skin, preserves all
-# other settings).
+# Still referenced by _configure_box's top-bar-weather guard (it only sets the
+# Estuary skin bool on the stock Estuary skin) — kept here, mirrored in foundation.
 ESTUARY_SKIN_ID = "skin.estuary"
-
-ESTUARY_HIDE_SETTINGS = [
-    ("HomeMenuNoMovieButton", "homemenunomoviebutton"),  # Movies
-    ("HomeMenuNoTVShowButton", "homemenunotvshowbutton"),  # TV shows
-    ("HomeMenuNoMusicButton", "homemenunomusicbutton"),  # Music
-    ("HomeMenuNoMusicVideoButton", "homemenunomusicvideobutton"),  # Music videos
-    ("HomeMenuNoRadioButton", "homemenunoradiobutton"),  # Radio
-    ("HomeMenuNoPicturesButton", "homemenunopicturesbutton"),  # Pictures
-    ("HomeMenuNoVideosButton", "homemenunovideosbutton"),  # Videos
-    ("HomeMenuNoGamesButton", "homemenunogamesbutton"),  # Games
-]
-
-
-def _estuary_settings_path():
-    """Absolute path to skin.estuary's per-profile settings.xml."""
-    return xbmcvfs.translatePath(
-        "special://profile/addon_data/skin.estuary/settings.xml"
-    )
-
-
-def _trim_home_menu_setbool():
-    """Set the eight hide-booleans in the ACTIVE skin's live memory via
-    Skin.SetBool. This is what survives the end-of-setup restart: Kodi rewrites
-    settings.xml from memory on shutdown, so the in-memory true persists."""
-    for camel, _low in ESTUARY_HIDE_SETTINGS:
-        xbmc.executebuiltin(f"Skin.SetBool({camel})")
-
-
-def _trim_home_menu_writefile():
-    """Merge the eight hide-booleans (= true) into skin.estuary's settings.xml,
-    creating the file/dir if missing and PRESERVING every other existing setting.
-    Belt-and-suspenders behind _trim_home_menu_setbool(). Idempotent."""
-    xml_path = _estuary_settings_path()
-    os.makedirs(os.path.dirname(xml_path), exist_ok=True)
-
-    root = None
-    if os.path.exists(xml_path):
-        try:
-            root = ET.parse(xml_path).getroot()
-        except ET.ParseError as e:
-            _log(f"skin.estuary settings.xml malformed, recreating: {e}", xbmc.LOGERROR)
-            root = None
-    if root is None or root.tag != "settings":
-        root = ET.Element("settings")
-
-    by_id = {
-        (s.get("id") or "").lower(): s for s in root.findall("setting") if s.get("id")
-    }
-
-    changed = 0
-    for _camel, low in ESTUARY_HIDE_SETTINGS:
-        el = by_id.get(low)
-        if el is None:
-            el = ET.SubElement(root, "setting")
-            el.set("id", low)
-            el.set("type", "bool")
-            by_id[low] = el
-        elif not el.get("type"):
-            el.set("type", "bool")
-        if (el.text or "").strip().lower() != "true":
-            changed += 1
-        el.text = "true"
-
-    with open(xml_path, "w", encoding="utf-8") as f:
-        f.write(ET.tostring(root, encoding="unicode"))
-    _log(
-        f"_trim_home_menu: wrote 8 hide-bools ({changed} changed) to {xml_path}",
-        xbmc.LOGINFO,
-    )
-
-
-def _trim_home_menu():
-    """Trim the stock Estuary home menu to TV, Add-ons, Favourites, Weather.
-
-    Hides the other eight items by forcing each Estuary HomeMenuNo<X>Button
-    boolean true. Applies BOTH mechanisms (Skin.SetBool live value + a settings.xml
-    merge). Guard: only meaningful on the stock Estuary skin — when another skin
-    is active this is a safe no-op. Idempotent and defensive (any failure is
-    logged and swallowed; touches ONLY skin.estuary's settings).
-    """
-    try:
-        skin = ""
-        try:
-            skin = xbmc.getSkinDir() or ""
-        except Exception:  # noqa: BLE001 - older/edge Kodi: treat as unknown
-            skin = ""
-        if skin and skin != ESTUARY_SKIN_ID:
-            _log(
-                f"_trim_home_menu: active skin is {skin}, "
-                "not skin.estuary — skipping (no-op)",
-                xbmc.LOGINFO,
-            )
-            return
-        _trim_home_menu_setbool()
-        _trim_home_menu_writefile()
-    except Exception as e:  # noqa: BLE001 - never abort the rest of setup
-        _log(f"_trim_home_menu failed (non-fatal): {e}", xbmc.LOGERROR)
 
 
 # --------------------------------------------------------------------------- #
 # Base box configuration — weather + interface preferences applied after the
 # install, before the restart. Each step is defensive (logged, never aborts).
 # --------------------------------------------------------------------------- #
-WEATHER_ADDON = "weather.multi"  # Multi Weather (installed in ADDONS)
-# Multi Weather fetches the forecast from https://weather.yahoo.com/<loc1_url>, so
-# loc1_url is the LOAD-BEARING field: with it empty the add-on logs "empty location
-# url" and clears its props (no fetch), regardless of name/lat/lon. The url format
-# the add-on itself writes is "<country>/<region>/<town>" lowercased with spaces
-# turned to dashes — for Sacramento that is "us/ca/sacramento". lat/lon are only
-# used by the optional Weatherbit/OpenWeatherMap providers (off by default) and the
-# name is just the display label. Pre-writing all four skips the interactive geocode
-# search (RunScript(weather.multi,loc1)).
-WEATHER_LOCATION = {
-    "loc1_name": "Sacramento, CA, US",
-    "loc1_url": "us/ca/sacramento",
-    "loc1_lat": "38.5816",
-    "loc1_lon": "-121.4944",
-}
+# The WEATHER provider constants + the weather env-writers MOVED to the Foundation
+# layer (tony7bones.setup.foundation) — weather is part of the branded look, not
+# content. The RSS env-writer stays in the Add-ons layer. Re-exported here so every
+# existing reference and test (boot.mod.WEATHER_ADDON / WEATHER_LOCATION /
+# _apply_weather_from_env / _apply_rss_from_env / _resolve_weather_location /
+# _set_weather_settings / _set_weather_location / _weather_multi_settings_path)
+# keeps working unchanged. The IPTV + device-copy halves of _configure_box stay
+# here (they go to apply_iptv in Phase 2d).
+WEATHER_ADDON = _foundation.WEATHER_ADDON  # Multi Weather (installed by Foundation)
+WEATHER_LOCATION = _foundation.WEATHER_LOCATION
+_weather_multi_settings_path = _foundation._weather_multi_settings_path
+_set_weather_settings = _foundation._set_weather_settings
+_set_weather_location = _foundation._set_weather_location
+_resolve_weather_location = _foundation._resolve_weather_location
+_apply_weather_from_env = _foundation._apply_weather_from_env
+_apply_rss_from_env = _addons._apply_rss_from_env
 SHOW_WEATHERINFO = "show_weatherinfo"  # Estuary skin bool: weather in the top bar
 
-# Device → userdata file copies. The user places these files on the device under
-# the Android/Fire-Stick /storage/emulated/0/kodi/ tree (note the exact
-# "tony.7.bones" spelling); Setup copies each one into Kodi's userdata over any
-# default. Every file is USER-PROVIDED — Setup never downloads or creates them; it
-# only copies each when present, overwriting the destination. They carry the
-# user's private config and land in userdata/addon_data ONLY, never the repo.
-#
-# Each entry is (source-on-device, destination special:// path):
-#   * the home-screen RSS news ticker feeds (over Kodi's default RssFeeds.xml)
-#   * pvr.iptvsimple's instance settings (the IPTV add-on is already installed by
-#     the base step, so addon_data/pvr.iptvsimple/ may need creating)
-#   * pvr.iptvsimple's custom TV channel groups (the channelGroups/ subdir won't
-#     exist on a fresh box — the copy creates it)
-DEVICE_FILE_COPIES = [
-    (
-        "/storage/emulated/0/kodi/tony.7.bones/rss/RssFeeds.xml",
-        "special://home/userdata/RssFeeds.xml",
-    ),
-    (
-        "/storage/emulated/0/kodi/tony.7.bones/iptv/instance-settings-1.xml",
-        "special://home/userdata/addon_data/pvr.iptvsimple/instance-settings-1.xml",
-    ),
-    (
-        "/storage/emulated/0/kodi/tony.7.bones/iptv/customTVGroups-Network24.xml",
-        "special://home/userdata/addon_data/pvr.iptvsimple/channelGroups/"
-        "customTVGroups-Network24.xml",
-    ),
-]
+# Device → userdata file copies — MOVED to the IPTV layer (tony7bones.setup.iptv,
+# Phase 2d). Re-exported here so every existing reference and test
+# (boot.mod.DEVICE_FILE_COPIES) keeps working unchanged and there is a single
+# source of truth. _configure_box calls _copy_device_files (below) in the SAME slot
+# it occupied (BEFORE the IPTV instance-settings enforce). The copy loop touches
+# only xbmcvfs/os, so a plain re-export is behaviour-identical.
+DEVICE_FILE_COPIES = _iptv.DEVICE_FILE_COPIES
 
 
 def _set_setting(setting_id, value):
@@ -473,450 +312,75 @@ def _set_setting(setting_id, value):
 # --------------------------------------------------------------------------- #
 # Per-device config (tony7bones.env) parsing.
 # --------------------------------------------------------------------------- #
-# The provisioner derives a per-device `tony7bones.env` (KEY=value, shell-style)
-# from the owner's master .env and pushes it to the box; this reads it and feeds
-# the values into the existing idempotent settings writers. Pure-Python + no Kodi
-# deps so it is unit-testable in isolation. NEVER log a parsed value (secrets).
-def parse_env(text):
-    """Parse KEY=value config text into a dict. Tolerant of the real .env shape:
-    blank lines and full-line `#` comments are ignored; a value may be single- or
-    double-quoted (quotes stripped, inline `#` kept if inside quotes); an UNquoted
-    value drops an inline `# comment`; CRLF is handled; a line without `=` is
-    skipped. Values stay raw strings — callers split `;`-lists via split_list()."""
-    env = {}
-    for raw in text.splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, val = line.partition("=")
-        key = key.strip()
-        val = val.strip()
-        if val[:1] in ("'", '"'):
-            val = val[1:].split(val[0], 1)[0]  # quoted body up to the closing quote
-        else:
-            val = val.split("#", 1)[0].strip()  # drop inline comment when unquoted
-        if key:
-            env[key] = val
-    return env
+# The implementations of parse_env / read_box_env / split_list moved VERBATIM
+# into the shared `tony7bones.setup.env` sublibrary (Phase 2a); they are imported
+# at the top of this file and re-exported below so every existing reference (and
+# every test that reaches them via `boot.mod.parse_env` / `read_box_env` /
+# `split_list`) keeps working unchanged. Pure-Python + no Kodi deps; NEVER log a
+# parsed value.
 
 
-def split_list(value, sep=";"):
-    """Split a `sep`-delimited multi-value field; trim each item, drop empties."""
-    return [item.strip() for item in (value or "").split(sep) if item.strip()]
-
-
-def read_box_env(path):
-    """Read + parse the per-device tony7bones.env at `path`. Returns {} when the
-    file is absent or unreadable (the no-env fallback — never raises)."""
-    try:
-        with open(path, encoding="utf-8") as fh:
-            return parse_env(fh.read())
-    except OSError:
-        return {}
-
-
-def _weather_multi_settings_path():
-    """Absolute path to Multi Weather's per-profile settings.xml."""
-    return xbmcvfs.translatePath(
-        "special://profile/addon_data/weather.multi/settings.xml"
-    )
-
-
-def _set_weather_settings(settings):
-    """Write each id->value in `settings` into Multi Weather's settings.xml,
-    creating the file/dir if missing and PRESERVING every other existing setting.
-    Idempotent; written version="2" (the add-on reads settings by id)."""
-    xml_path = _weather_multi_settings_path()
-    os.makedirs(os.path.dirname(xml_path), exist_ok=True)
-    root = None
-    if os.path.exists(xml_path):
-        try:
-            root = ET.parse(xml_path).getroot()
-        except ET.ParseError:
-            root = None
-    if root is None or root.tag != "settings":
-        root = ET.Element("settings")
-        root.set("version", "2")
-    by_id = {s.get("id"): s for s in root.findall("setting") if s.get("id")}
-    for sid, val in settings.items():
-        el = by_id.get(sid)
-        if el is None:
-            el = ET.SubElement(root, "setting")
-            el.set("id", sid)
-            by_id[sid] = el
-        el.text = val
-    with open(xml_path, "w", encoding="utf-8") as f:
-        f.write(ET.tostring(root, encoding="unicode"))
-
-
-def _set_weather_location():
-    """Fallback: Multi Weather location 1 = Sacramento (the keyless default used
-    when the env provides no resolvable locations). loc1_url is the field the
-    add-on fetches by. Idempotent; preserves other settings."""
-    _set_weather_settings(WEATHER_LOCATION)
-    _log("_configure_box: wrote Multi Weather default location (Sacramento)")
-
-
-def _resolve_weather_location(query, timeout=10, tries=2):
-    """Resolve a city name / zipcode to a Multi Weather location via Yahoo's
-    search-assist API (the trailing-slash endpoint — no redirect needed). Returns
-    {name,url,lat,lon} or None on any failure (the caller falls back). Retries the
-    network call; never raises. Mirrors how the add-on's own search builds the
-    fields: name "Town, Region, Country"; url "country/region/town"."""
-    import json as _json
-    import urllib.parse as _uparse
-    import urllib.request as _ureq
-
-    api = (
-        "https://weather.yahoo.com/_atmos/api/search-assist/locations/?query="
-        + _uparse.quote(query)
-    )
-    req = _ureq.Request(
-        api, headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
-    )
-    for _ in range(tries):
-        try:
-            with _ureq.urlopen(req, timeout=timeout) as resp:
-                data = _json.loads(resp.read().decode("utf-8"))
-            for sug in data.get("suggestions", []):
-                loc = sug.get("location") or {}
-                town = loc.get("town") or {}
-                region = loc.get("region") or {}
-                code = region.get("code") or region.get("name") or ""
-                country = (loc.get("country") or {}).get("code") or ""
-                name = town.get("name")
-                if not (name and country and town.get("latitude") is not None):
-                    continue
-                return {
-                    "name": "%s, %s, %s" % (name, code, country),
-                    "url": "%s/%s/%s"
-                    % (
-                        country.lower(),
-                        str(code).lower().replace(" ", "-"),
-                        name.lower().replace(" ", "-"),
-                    ),
-                    "lat": str(town["latitude"]),
-                    "lon": str(town["longitude"]),
-                }
-            return None
-        except Exception:  # noqa: BLE001 - best-effort; caller falls back
-            continue
-    return None
-
-
-def _apply_weather_from_env(box_env):
-    """Drive Multi Weather from the per-device env: resolve up to 5
-    WEATHER_LOCATIONS (city names or zipcodes) via Yahoo, write loc1..N (+ clear
-    the unused slots), and enable the optional Weatherbit / OpenWeatherMap upgrade
-    layers when their keys are present. Falls back to the hardcoded Sacramento
-    default when no env locations are given OR none resolve — NEVER writes an empty
-    loc_url. Defensive: logs counts/flags only (never secret values); never raises.
-    """
-    try:
-        wanted = split_list(box_env.get("WEATHER_LOCATIONS", ""))[:5]
-        settings = {}
-        resolved = 0
-        for query in wanted:
-            loc = _resolve_weather_location(query)
-            if not loc or not loc.get("url"):
-                _log(
-                    "_apply_weather: a location did not resolve — skipped",
-                    xbmc.LOGWARNING,
-                )
-                continue
-            resolved += 1
-            settings["loc%d_name" % resolved] = loc["name"]
-            settings["loc%d_url" % resolved] = loc["url"]
-            settings["loc%d_lat" % resolved] = loc["lat"]
-            settings["loc%d_lon" % resolved] = loc["lon"]
-        if resolved == 0:
-            settings.update(WEATHER_LOCATION)  # Sacramento default — never empty
-            resolved = 1
-        else:
-            for j in range(resolved + 1, 6):  # clear stale higher-numbered slots
-                for fld in ("name", "url", "lat", "lon"):
-                    settings["loc%d_%s" % (j, fld)] = ""
-        wbit = (box_env.get("WEATHERBIT_API_KEY") or "").strip()
-        owm = (box_env.get("OWM_API_KEY") or "").strip()
-        if wbit:
-            settings["WAdd"] = "true"
-            settings["API"] = wbit
-        if owm:
-            settings["WMaps"] = "true"
-            settings["MAPAPI"] = owm
-        _set_weather_settings(settings)
-        _log(
-            "_apply_weather: %d location(s) written; weatherbit=%s owm=%s"
-            % (resolved, bool(wbit), bool(owm))
-        )
-    except Exception as e:  # noqa: BLE001 - never abort the rest of setup
-        _log(f"_apply_weather failed (non-fatal): {e}", xbmc.LOGERROR)
-
-
-def _apply_rss_from_env(box_env):
-    """Generate userdata/RssFeeds.xml from the env's RSS_FEEDS (+ RSS_INTERVAL).
-    No-op when RSS_FEEDS is absent (a device-copied file / the Kodi default stands).
-    Feed URLs are not secret. Defensive: logged, never raises."""
-    feeds = split_list(box_env.get("RSS_FEEDS", ""))
-    if not feeds:
-        return
-    try:
-        interval = (box_env.get("RSS_INTERVAL") or "30").strip() or "30"
-        path = xbmcvfs.translatePath("special://home/userdata/RssFeeds.xml")
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        root = ET.Element("rssfeeds")
-        rset = ET.SubElement(root, "set")
-        rset.set("id", "1")
-        for url in feeds:
-            feed = ET.SubElement(rset, "feed")
-            feed.set("updateinterval", interval)
-            feed.text = url
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(ET.tostring(root, encoding="unicode"))
-        _log("_apply_rss: wrote %d RSS feed(s) (interval %s)" % (len(feeds), interval))
-    except Exception as e:  # noqa: BLE001 - never abort the rest of setup
-        _log(f"_apply_rss failed (non-fatal): {e}", xbmc.LOGERROR)
-
-
-def _copy_one_device_file(src, dst_special):
-    """Copy a single USER-PROVIDED device file into userdata, guarded.
-
-    FROM the device path `src`, TO the translated `dst_special` — creating the
-    destination directory if missing (fresh boxes lack addon_data/pvr.iptvsimple/
-    and its channelGroups/ subdir) and OVERWRITING the destination if it exists.
-    GUARDED: if the source is absent (e.g. on desktop, or the user hasn't placed
-    it) this logs and skips — it never errors. Idempotent."""
-    if not xbmcvfs.exists(src):
-        _log(
-            f"_configure_box: device file not found, skipping: {src}",
-            xbmc.LOGINFO,
-        )
-        return
-    dst = xbmcvfs.translatePath(dst_special)
-    # Create the destination directory tree if it doesn't exist yet.
-    dst_dir = os.path.dirname(dst)
-    if dst_dir and not xbmcvfs.exists(dst_dir):
-        xbmcvfs.mkdirs(dst_dir)
-    # xbmcvfs.copy overwrites an existing destination.
-    if xbmcvfs.copy(src, dst):
-        _log(f"_configure_box: copied device file {src} -> {dst}")
-    else:
-        _log(
-            f"_configure_box: xbmcvfs.copy reported failure copying {src} -> {dst}",
-            xbmc.LOGERROR,
-        )
-
-
-def _copy_device_files():
-    """Copy each USER-PROVIDED device file in DEVICE_FILE_COPIES into userdata.
-
-    Data-driven loop over (src, dst) pairs: the custom RSS feeds plus the
-    pvr.iptvsimple instance settings and custom TV channel groups. Each copy
-    creates its destination dir if missing, overwrites the destination if present,
-    and is GUARDED — a missing source (or any per-file error) is logged and
-    skipped, never aborting the rest of setup. Idempotent."""
-    for src, dst_special in DEVICE_FILE_COPIES:
-        try:
-            _copy_one_device_file(src, dst_special)
-        except Exception as e:  # noqa: BLE001 - one bad file must not abort the rest
-            _log(
-                f"_copy_device_files: copy {src} failed (non-fatal): {e}",
-                xbmc.LOGERROR,
-            )
+# The weather/RSS env-writers + their helpers (_weather_multi_settings_path /
+# _set_weather_settings / _set_weather_location / _resolve_weather_location /
+# _apply_weather_from_env / _apply_rss_from_env) MOVED to the Add-ons layer
+# (tony7bones.setup.addons, Phase 2c) and are re-exported above. _configure_box
+# calls _apply_weather_from_env / _apply_rss_from_env in the same slot they
+# occupied (weather/RSS config runs LATE, after the early base/video install —
+# the interleaving constraint).
 
 
 # --------------------------------------------------------------------------- #
-# pvr.iptvsimple instance-settings keys (1a/1b — TV custom groups)
+# Device→userdata file copies + the pvr.iptvsimple instance-settings enforcement
+# — MOVED to the IPTV layer (tony7bones.setup.iptv, Phase 2d). The bodies +
+# their constants/helper (_copy_one_device_file / _copy_device_files /
+# DEVICE_FILE_COPIES / IPTV_INSTANCE_SETTINGS_SPECIAL / IPTV_TV_GROUP_MODE_* /
+# IPTV_CUSTOM_TV_GROUPS_FILE_* / IPTV_TV_CHANNEL_GROUPS_ONLY_KEY /
+# _set_instance_setting / _ensure_iptv_custom_tv_groups) now live there VERBATIM;
+# these are thin re-export shims so every existing reference and test
+# (boot.mod._copy_device_files / _ensure_iptv_custom_tv_groups / the IPTV_*
+# constants) keeps working unchanged, and _configure_box runs them in the SAME
+# slots they occupied (copy BEFORE the IPTV enforce). Both touch only
+# xbmc/xbmcvfs/os/ET (no monkeypatched install primitives), so a plain re-export
+# is behaviour-identical. Phase 2d is CONFIG-ONLY: the pvr.iptvsimple INSTALL
+# stays in the base ADDONS list (its move to the IPTV gate is the deliberate
+# Phase-3 behaviour change).
 # --------------------------------------------------------------------------- #
-# pvr.iptvsimple stores its per-instance config in
-#   addon_data/pvr.iptvsimple/instance-settings-1.xml
-# (a <settings version="2"> file keyed by setting id). These two keys make the
-# add-on serve the user's custom TV channel groups instead of "all channels":
-#
-#   * tvGroupMode = 2   -> "Custom groups" (schema enum: 0=ALL, 1=SOME, 2=CUSTOM,
-#     confirmed in resources/instance-settings.xml, option label 30038)
-#   * customTvGroupsFile -> the channelGroups/ file we copy from the device
-#
-# These are ADD-ON INSTANCE settings: Kodi's JSON-RPC Settings.SetSettingValue
-# reaches only CORE settings (system.*, weather.*, …) and has no method for
-# per-instance PVR add-on settings — so the only way to set them is to write the
-# instance-settings file directly. We already COPY the user's file here; this
-# step then ENFORCES the two keys on top of whatever was copied, so the box ends
-# up correct even if the user's file omits or mis-sets them. If the copied file
-# already has them, it's a no-op. The path uses the same special://userdata form
-# the add-on itself writes (it resolves to the same channelGroups/ dir as the
-# copy destination).
-IPTV_INSTANCE_SETTINGS_SPECIAL = (
-    "special://home/userdata/addon_data/pvr.iptvsimple/instance-settings-1.xml"
-)
-IPTV_TV_GROUP_MODE_KEY = "tvGroupMode"
-IPTV_TV_GROUP_MODE_CUSTOM = "2"  # schema enum: 2 == CUSTOM_GROUPS
-IPTV_CUSTOM_TV_GROUPS_FILE_KEY = "customTvGroupsFile"
-IPTV_CUSTOM_TV_GROUPS_FILE_VALUE = (
-    "special://userdata/addon_data/pvr.iptvsimple/channelGroups/"
-    "customTVGroups-Network24.xml"
-)
-# "Only load TV channels in groups" — pvr.iptvsimple shows only channels that
-# belong to a (custom) group, hiding the ungrouped firehose. Enforced true.
-IPTV_TV_CHANNEL_GROUPS_ONLY_KEY = "tvChannelGroupsOnly"
+# xbmcvfs is no longer referenced by THIS module's own code (the bodies that used
+# it moved to the IPTV/Add-ons layers), but several tests reach the fake-Kodi
+# module through this module — e.g. monkeypatch.setattr(boot.mod.xbmcvfs, "copy",
+# ...) and boot.mod.xbmcvfs.translatePath(...). Re-export the SAME module object
+# the moved bodies import so those patches still reach the moved code and
+# boot.mod.xbmcvfs resolves unchanged. (Patching the shared module object mutates
+# it everywhere it is imported, so a test patch on boot.mod.xbmcvfs.copy reaches
+# iptv.xbmcvfs.copy.)
+xbmcvfs = _iptv.xbmcvfs
 
+_copy_one_device_file = _iptv._copy_one_device_file
+_copy_device_files = _iptv._copy_device_files
 
-def _set_instance_setting(root, setting_id, value):
-    """Ensure <setting id="setting_id"> in `root` has exactly `value`.
-
-    Updates the element in place if present (and drops the default="true" flag,
-    since we're now overriding the default), creates it if missing. Returns True
-    if anything changed, so the caller can skip a no-op write. Mirrors how Kodi's
-    own settings writer stamps a user-set value."""
-    el = None
-    for s in root.findall("setting"):
-        if s.get("id") == setting_id:
-            el = s
-            break
-    changed = False
-    if el is None:
-        el = ET.SubElement(root, "setting")
-        el.set("id", setting_id)
-        changed = True
-    # A user-set value is no longer the schema default.
-    if el.get("default") is not None:
-        el.attrib.pop("default", None)
-        changed = True
-    if (el.text or "") != value:
-        el.text = value
-        changed = True
-    return changed
-
-
-def _ensure_iptv_custom_tv_groups(box_env=None):
-    """Enforce TV-group-mode=Custom + the custom-TV-groups file path in
-    pvr.iptvsimple's instance-settings-1.xml (1a/1b).
-
-    Runs AFTER _copy_device_files() (which may have copied the user's own
-    instance-settings-1.xml). Reads the file if present, else starts a fresh
-    <settings version="2"> tree, then ensures the two keys are correct and writes
-    back only if something changed. The destination dir is created if absent (a
-    fresh box without the copied file). Idempotent and fully defensive: any
-    failure is logged and swallowed — never aborts the rest of setup. These keys
-    cannot be set via JSON-RPC (it does not reach add-on instance settings), so a
-    direct file write is the only mechanism.
-
-    GATED: only enforces custom-group mode when the custom-groups file actually
-    exists (copied from the device, or generated from the env's IPTV_GROUPS). On a
-    no-env / no-file box, forcing tvGroupMode=2 at a MISSING file gives
-    pvr.iptvsimple an empty channel list — so we leave the all-channels default.
-
-    When `box_env` provides IPTV_GROUPS the groups file is GENERATED from it first
-    (channel-group names only — not secret); IPTV_M3U/IPTV_EPG are injected as
-    m3uUrl/epgUrl (+ remote path type); tvChannelGroupsOnly comes from
-    IPTV_GROUPS_ONLY (default true). Secret values are never logged.
-    """
-    box_env = box_env or {}
-    try:
-        groups_file = xbmcvfs.translatePath(IPTV_CUSTOM_TV_GROUPS_FILE_VALUE)
-        groups = split_list(box_env.get("IPTV_GROUPS", ""))
-        if groups:
-            os.makedirs(os.path.dirname(groups_file), exist_ok=True)
-            groot = ET.Element("customChannelGroups")
-            for name in groups:
-                ET.SubElement(groot, "channelGroupName").text = name
-            with open(groups_file, "w", encoding="utf-8") as f:
-                f.write(ET.tostring(groot, encoding="unicode"))
-            _log(
-                "_ensure_iptv_custom_tv_groups: generated %d custom group(s) from env"
-                % len(groups)
-            )
-        # The playlist SOURCE (m3u/epg) and the group MODE are independent: inject
-        # the source whenever the env supplies it, but only force CUSTOM group mode
-        # when the groups file exists (crit A — never tvGroupMode=2 at a missing
-        # file). With neither, there's nothing to do — leave the all-channels default.
-        m3u = (box_env.get("IPTV_M3U") or "").strip()
-        epg = (box_env.get("IPTV_EPG") or "").strip()
-        have_groups = os.path.exists(groups_file)
-        if not (m3u or epg or have_groups):
-            _log(
-                "_ensure_iptv_custom_tv_groups: nothing to set (no m3u/epg, no "
-                f"groups file {groups_file}) — leaving the all-channels default"
-            )
-            return
-        xml_path = xbmcvfs.translatePath(IPTV_INSTANCE_SETTINGS_SPECIAL)
-        os.makedirs(os.path.dirname(xml_path), exist_ok=True)
-
-        root = None
-        if os.path.exists(xml_path):
-            try:
-                root = ET.parse(xml_path).getroot()
-            except ET.ParseError as e:
-                _log(
-                    f"_ensure_iptv_custom_tv_groups: instance-settings-1.xml "
-                    f"malformed, recreating: {e}",
-                    xbmc.LOGERROR,
-                )
-                root = None
-        if root is None or root.tag != "settings":
-            root = ET.Element("settings")
-            root.set("version", "2")
-
-        # Playlist source (provider creds — SECRET; never logged as values).
-        changed = False
-        if m3u:
-            changed = _set_instance_setting(root, "m3uPathType", "1") or changed
-            changed = _set_instance_setting(root, "m3uUrl", m3u) or changed
-        if epg:
-            changed = _set_instance_setting(root, "epgPathType", "1") or changed
-            changed = _set_instance_setting(root, "epgUrl", epg) or changed
-        # Custom group mode — ONLY when the groups file exists.
-        only_val = "n/a"
-        if have_groups:
-            changed = (
-                _set_instance_setting(
-                    root, IPTV_TV_GROUP_MODE_KEY, IPTV_TV_GROUP_MODE_CUSTOM
-                )
-                or changed
-            )
-            changed = (
-                _set_instance_setting(
-                    root,
-                    IPTV_CUSTOM_TV_GROUPS_FILE_KEY,
-                    IPTV_CUSTOM_TV_GROUPS_FILE_VALUE,
-                )
-                or changed
-            )
-            only = (box_env.get("IPTV_GROUPS_ONLY", "true") or "true").strip().lower()
-            only_val = "true" if only in ("true", "1", "yes", "on") else "false"
-            changed = (
-                _set_instance_setting(root, IPTV_TV_CHANNEL_GROUPS_ONLY_KEY, only_val)
-                or changed
-            )
-        else:
-            _log(
-                "_ensure_iptv_custom_tv_groups: no groups file — m3u/epg set, group "
-                "mode left at the all-channels default"
-            )
-
-        if changed:
-            with open(xml_path, "w", encoding="utf-8") as f:
-                f.write(ET.tostring(root, encoding="unicode"))
-            _log(
-                "_ensure_iptv_custom_tv_groups: groups=%s only=%s m3u=%s epg=%s in %s"
-                % (have_groups, only_val, bool(m3u), bool(epg), xml_path)
-            )
-        else:
-            _log("_ensure_iptv_custom_tv_groups: keys already correct (no change)")
-    except Exception as e:  # noqa: BLE001 - never abort the rest of setup
-        _log(
-            f"_ensure_iptv_custom_tv_groups failed (non-fatal): {e}",
-            xbmc.LOGERROR,
-        )
+IPTV_INSTANCE_SETTINGS_SPECIAL = _iptv.IPTV_INSTANCE_SETTINGS_SPECIAL
+IPTV_TV_GROUP_MODE_KEY = _iptv.IPTV_TV_GROUP_MODE_KEY
+IPTV_TV_GROUP_MODE_CUSTOM = _iptv.IPTV_TV_GROUP_MODE_CUSTOM
+IPTV_CUSTOM_TV_GROUPS_FILE_KEY = _iptv.IPTV_CUSTOM_TV_GROUPS_FILE_KEY
+IPTV_CUSTOM_TV_GROUPS_FILE_VALUE = _iptv.IPTV_CUSTOM_TV_GROUPS_FILE_VALUE
+IPTV_TV_CHANNEL_GROUPS_ONLY_KEY = _iptv.IPTV_TV_CHANNEL_GROUPS_ONLY_KEY
+_set_instance_setting = _iptv._set_instance_setting
+_ensure_iptv_custom_tv_groups = _iptv._ensure_iptv_custom_tv_groups
+# The IPTV layer's own PVR backend id (Phase 3a moved its install into apply_iptv);
+# run_iptv's summary reads the per-backend state from the LayerResult by this id.
+PVR_BACKEND_ID = _iptv.PVR_BACKEND_ID
 
 
 # The per-device config the provisioner derives from the owner's master .env and
-# pushes to the box (read once here; absent -> built-in defaults). It is read then
-# REMOVED so its secrets do not linger on the box.
+# pushes to the box. The ORCHESTRATOR (`run()`) reads it once, passes the parsed
+# dict into `_configure_box`, and owns the read-then-DELETE so its secrets do not
+# linger on the box — `_configure_box` is a pure consumer that never touches the
+# file. (Owning the lifecycle in one coordinator is what lets a future multi-gate
+# Guided flow share the env across gates instead of deleting it mid-run.)
 BOX_ENV_PATH = "/storage/emulated/0/kodi/tony.7.bones/tony7bones.env"
 
 
-def _configure_box():
+def _configure_box(box_env=None):
     """Apply the base box's weather + interface preferences:
       * weather provider  -> Multi Weather (weather.addon)
       * Multi Weather location 1 -> Sacramento, CA, US (name + coords)
@@ -928,19 +392,35 @@ def _configure_box():
       * IPTV custom groups -> enforce tvGroupMode=Custom + the custom-TV-groups
         file path in pvr.iptvsimple's instance-settings-1.xml (after the copy)
       * Estuary top bar   -> show weather info (Skin.SetBool, persists on restart)
+
+    `box_env` is the already-parsed per-device env dict (or None/{} when no env
+    was pushed). It is PASSED IN by the orchestrator — `_configure_box` neither
+    reads nor deletes the env file; that lifecycle belongs to `run()`.
     Defensive: any failure is logged and swallowed; never aborts the run."""
     try:
-        box_env = read_box_env(BOX_ENV_PATH)
+        box_env = box_env or {}
         _set_setting("weather.addon", WEATHER_ADDON)
         _set_setting("lookandfeel.enablerssfeeds", True)
         # Weather: env-driven (up to 5 resolved locations + the upgrade keys),
         # falling back to the keyless Sacramento default when no env is present.
         _apply_weather_from_env(box_env)
-        # Copy the user's device files into userdata (guarded; skips any missing).
-        _copy_device_files()
-        # IPTV from env: generate groups + inject m3u/epg, then enforce group mode
-        # (gated on the groups file). Falls back to the device-copied file / no-op.
-        _ensure_iptv_custom_tv_groups(box_env)
+        # Device-copy + IPTV enforce run inside the PVR-DISABLED window (the Phase
+        # 5b·1 clobber fix): both write pvr.iptvsimple's instance-settings files
+        # directly, and a LIVE pvr client (installed + enabled EARLY by the base
+        # step in this legacy monolith order) flushes its stale in-memory defaults
+        # back over direct file writes. Guarded: a box without pvr installed
+        # pauses nothing (the helpers no-op, and the resume only runs if paused).
+        paused = _iptv._pause_pvr_for_config()
+        try:
+            # Copy the user's device files into userdata (guarded; skips missing).
+            _copy_device_files()
+            # IPTV from env: generate groups + inject m3u/epg, then enforce group
+            # mode (gated on the groups file). Falls back to the device-copied
+            # file / no-op.
+            _ensure_iptv_custom_tv_groups(box_env)
+        finally:
+            if paused:
+                _iptv._resume_pvr_after_config()
         # RSS ticker feeds from env (writes userdata/RssFeeds.xml; else no-op).
         _apply_rss_from_env(box_env)
         # The top-bar toggle is an Estuary skin bool; set it live so the restart
@@ -952,12 +432,6 @@ def _configure_box():
             skin = ""
         if not skin or skin == ESTUARY_SKIN_ID:
             xbmc.executebuiltin(f"Skin.SetBool({SHOW_WEATHERINFO})")
-        # Read-then-remove the per-device env so its secrets do not linger on box.
-        if box_env:
-            try:
-                os.remove(BOX_ENV_PATH)
-            except OSError:
-                pass
         _log(
             "_configure_box: weather provider/location set, RSS on, "
             "device files copied if present, top-bar weather on"
@@ -967,169 +441,173 @@ def _configure_box():
 
 
 # --------------------------------------------------------------------------- #
-# Curated video add-ons — installed unattended (no picker) in the one-tap run
+# Curated video add-ons — installed unattended (no picker) in the one-tap run.
+# The VIDEO_APPS / VIDEO_DISABLE_AFTER constants + _install_video MOVED to the
+# Add-ons layer (tony7bones.setup.addons, Phase 2c). Re-exported here so every
+# existing reference and test (boot.mod.VIDEO_APPS / VIDEO_DISABLE_AFTER /
+# _install_video) keeps working unchanged. _install_video resolves install_selection
+# from the addons module globals; the run()-driven video tests that stubbed it patch
+# addons.install_selection (the repointed boot.mod patch) — NO new deps-injection
+# seam (Tech-debt ledger). run() calls _install_video in the SAME early slot.
 # --------------------------------------------------------------------------- #
-VIDEO_APPS = [
-    "plugin.video.pov",
-    "plugin.video.the-loop",
-    "plugin.video.sporthdme",
-    "plugin.video.youtube",
-]
-# Install-then-disable: The Loop declares plugin.video.dailymotion_com as a
-# REQUIRED import nobody here uses. Installing it satisfies the dep check;
-# disabling it afterwards means it never runs and survives Loop updates with no
-# re-patching.
-VIDEO_DISABLE_AFTER = {"plugin.video.dailymotion_com"}
+VIDEO_APPS = _addons.VIDEO_APPS
+VIDEO_DISABLE_AFTER = _addons.VIDEO_DISABLE_AFTER
+_install_video = _addons._install_video
 
 
-def _install_video(dialog):
-    """Install the curated video add-ons + their closure, unattended.
+class _BootSkinDeps:
+    """The install primitives the Foundation skin step needs, resolved LIVE from
+    THIS module's globals on every access. Injected into
+    foundation._install_skin so a run() driven through monkeypatched
+    boot.mod.install_selection / extract_zip / install_with_deps / _latest_zip_url
+    routes through the patched functions — behaviour-identical to the monolith,
+    which resolved those names in this module. (Late binding via __getattr__ on a
+    name->global map is what lets monkeypatch.setattr(boot.mod, ...) take effect.)"""
 
-    Delegates to the shared library's install_selection (folded in from the
-    retired standalone Video Add-ons Setup): enable the source repos, build the
-    combined index from the installed repos + the official repo, resolve the
-    closure for VIDEO_APPS, extract/enable/origin-stamp it, and apply the
-    install-then-disable set. Shares this run's progress dialog. Returns how many
-    of VIDEO_APPS ended up installed. Never raises — a video failure must not
-    abort the box.
-    """
-    try:
-        return install_selection(
-            VIDEO_APPS, OFFICIAL_BASE, VIDEO_DISABLE_AFTER, dialog, _log
-        )
-    except Exception as e:  # noqa: BLE001 - video failure must not abort the run
-        _log(f"video install failed (non-fatal): {e}", xbmc.LOGERROR)
-        return 0
+    # name (as foundation calls it) -> (this module's global name, import default).
+    # __getattr__ reads globals() FIRST so monkeypatch.setattr(boot.mod, ...) wins
+    # (late binding); the import default is the captured object, present so the
+    # imports are real references (ruff) and a fallback if the global is absent.
+    # is_installed in particular MUST stay imported — _install_skin no-ops silently
+    # without it (the ruff-fix-hook footgun the bootstrap test pins).
+    _MAP = {
+        "install_selection": ("install_selection", install_selection),
+        "install_with_deps": ("install_with_deps", install_with_deps),
+        "extract_zip": ("extract_zip", extract_zip),
+        "is_installed": ("is_installed", is_installed),
+        "update_local_addons": ("update_local_addons", update_local_addons),
+        "enable": ("_enable", _enable),
+        "latest_zip_url": ("_latest_zip_url", None),
+    }
+
+    def __getattr__(self, name):
+        entry = self._MAP.get(name)
+        if entry is None:
+            raise AttributeError(name)
+        gname, default = entry
+        return globals().get(gname, default)
 
 
 def _install_skin(dialog):
-    """Install + activate Estuary MOD V2 and the MOD V2+ patch, unattended.
+    """Install Estuary MOD V2 + the MOD V2+ patch — thin shim over the Foundation
+    layer's lifted body (tony7bones.setup.foundation._install_skin).
 
-    Two pieces are INVISIBLE to the closure resolver because it skips our
-    127.0.0.1 proxy (repos.py): script.module.pvr.artwork (b-jesch GitHub-only)
-    and our OWN first-party patch add-on script.tony7bones.modv2plus. Both are
-    direct-extracted here. install_selection then resolves the rest of the skin's
-    closure (skin.estuary.modv2 + skinshortcuts + image.resource.select from
-    Kodinerds; pvr.artwork already satisfied) from the installed repos.
+    The body MOVED into the shared sublibrary (Phase 2b); this shim forwards THIS
+    module's (monkeypatchable) install primitives via _BootSkinDeps so behaviour —
+    including every test that patches boot.mod.install_selection / extract_zip /
+    _latest_zip_url and drives run() — is identical to the monolith. Returns True
+    if the skin installed; never raises. lookandfeel.skin is still set LAST in
+    run() (the activate-skin invariant), not here."""
+    return _foundation._install_skin(dialog, deps=_BootSkinDeps())
 
-    Then we rescan + settle + enable everything we direct-extracted BEFORE setting
-    lookandfeel.skin: a freshly-extracted skin must be registered AND enabled or
-    Kodi silently rejects the skin setting and the box boots stock Estuary (the
-    bug the fresh-Kodi test caught). The single end-of-Setup restart then activates
-    MOD V2 (no "Keep this skin?" modal); modv2plus's boot service auto-applies the
-    patch once MOD V2 is live. Returns True if the skin installed. Never raises.
+
+# The base install (repos + first-party + apps) MOVED to the Add-ons layer
+# (tony7bones.setup.addons, Phase 2c). Re-exported here so every existing reference
+# and test (boot.mod._install_base) keeps working unchanged. It resolves its install
+# primitives (extract_zip / install_with_deps / update_local_addons / enable /
+# _latest_zip_url) from the addons module globals; the run()-driven tests that
+# stubbed the base path patch addons.* (the repointed boot.mod patches) — NO new
+# deps-injection seam (Tech-debt ledger). run() calls _install_base in the SAME early
+# slot (before video, before apply_foundation) so the interleaving is unchanged.
+_install_base = _addons._install_base
+
+# The reusable repo-install loop (extract + register + enable all REPO_ZIPS +
+# FIRST_PARTY) EXTRACTED out of _install_base (Phase 5a) so the Foundation layer can
+# establish ALL our repos independently — the skin closure resolves from them.
+# Re-exported here so run_foundation (and any test) can reach it via boot.mod.
+install_repos = _addons.install_repos
+
+
+def _count_installed(result, ids):
+    """How many of `ids` the layer reports installed (state != failed)."""
+    return sum(1 for aid in ids if aid in result.installed)
+
+
+def run_express(box_env=None):
+    """The Express orchestrator — the one-shot path (``run()`` delegates here).
+
+    Phase 3a: ``run_express`` drives the three COMPOSED layers as UNITS, in a
+    dependency-correct order, and owns the terminal seam + the env lifecycle + the
+    summary + the self-uninstall. This is the first deliberate behaviour change —
+    the operation ORDER becomes LAYERED (each ``apply_*`` runs install+config
+    together) instead of the monolith's INTERLEAVED order (base/video install EARLY,
+    weather/IPTV/RSS config LATE). The NET END-STATE is unchanged (proven by the
+    equivalence test in test_modular_setup.py); only the order/timing differs.
+
+    Order rationale (dependency-correct):
+      1. ``apply_addons`` — base source repos + base apps + curated video + the
+         env-driven weather/RSS. Must run FIRST: the Foundation skin closure resolves
+         the Estuary MOD V2 skin from the installed source repos (Kodinerds etc.), so
+         the repos must exist before the skin install. A user cancel here aborts the
+         whole run cleanly (no summary/uninstall/restart) — exactly the monolith's
+         early-return contract.
+      2. ``apply_foundation`` — the Estuary MOD V2 skin + MOD V2+ patch closure (it
+         direct-extracts the proxy-invisible pvr.artwork + modv2plus first, then
+         resolves the rest from the repos addons installed in step 1), then the two
+         content-free base-config steps (File-Manager sources + Estuary home-trim).
+         It does NOT set ``lookandfeel.skin`` — that is the orchestrator's terminal
+         seam below (set LAST).
+      3. ``apply_iptv`` — install pvr.iptvsimple (its INSTALL moved here from the
+         base ADDONS in Phase 3a; install-or-fail-loud) + the device-file copy +
+         the instance-settings enforce.
+
+    The per-device env is read ONCE by ``run()`` and passed in here; this
+    orchestrator deletes it (in ``run()``) only AFTER the last layer, so a future
+    multi-gate Guided flow can share it. The skin is activated LAST (only if
+    Foundation reached ``ok``) immediately before the single restart, so Kodi's
+    "Keep this skin?" timeout cannot silently revert it.
+
+    Returns the three LayerResults (addons, foundation, iptv) for inspection /
+    testing; ``None`` for the layers skipped on a mid-install cancel.
     """
-    try:
-        if dialog is not None:
-            dialog.update(0, "Installing Estuary MOD V2 skin...")
-        # 1. pvr.artwork (GitHub-only, proxy-invisible) + its module deps, direct.
-        if not is_installed(PVR_ARTWORK_ID):
-            extract_zip(
-                f"{HOSTED_BASE}/{PVR_ARTWORK_ID}/{PVR_ARTWORK_ZIP}", dialog, 100, _log
-            )
-        for dep in PVR_ARTWORK_DEPS:
-            install_with_deps(dep, dialog, [], OFFICIAL_BASE, _log)
-        # 2. our MOD V2+ patch add-on is proxy-only too -> direct-extract it (live
-        #    version) + pull its outline-hd weather-icon dep from the official repo.
-        if not is_installed(MODV2PLUS_ID):
-            url = _latest_zip_url(MODV2PLUS_ID)
-            if url:
-                extract_zip(url, dialog, 100, _log)
-        install_with_deps(OUTLINE_HD_ID, dialog, [], OFFICIAL_BASE, _log)
-        # 3. the skin + its remaining closure from the installed repos + official.
-        install_selection([SKIN_ID], OFFICIAL_BASE, set(), dialog, _log)
-        # 4. rescan + settle + enable everything so the skin is a registered,
-        #    enabled choice BEFORE we set it (else Kodi keeps stock Estuary).
-        update_local_addons()
-        xbmc.sleep(3000)
-        for aid in (PVR_ARTWORK_ID, MODV2PLUS_ID, SKIN_ID):
-            _enable(aid)
-        xbmc.sleep(1000)
-        # NOTE: lookandfeel.skin is set LAST in run(), immediately before the
-        # restart — NOT here. A long gap between the skin-set and the restart lets
-        # Kodi's "Keep this skin?" safety timeout silently revert the choice (the
-        # bug the fresh-Kodi test caught); setting it right before the restart
-        # persists it to guisettings on shutdown.
-        return is_installed(SKIN_ID)
-    except Exception as e:  # noqa: BLE001 - a skin failure must not abort the box
-        _log(f"skin install failed (non-fatal): {e}", xbmc.LOGERROR)
-        return False
-
-
-def _install_base(dialog):
-    """Run the base install: repos + first-party + apps. Returns (repo_ok, fp_ok,
-    app_ok, canceled). Shares the progress dialog with the (optional) video stage
-    so the user sees one continuous progress bar. `canceled` is True if the user
-    cancelled the progress dialog mid-install (run() then aborts with no summary,
-    exactly today's behaviour)."""
-    total = len(REPO_ZIPS) + len(FIRST_PARTY) + len(ADDONS) + 1
-    step = 0
-    repo_ok = fp_ok = app_ok = 0
-
-    # 1. repos by direct extract
-    for zip_name, _rid in REPO_ZIPS:
-        step += 1
-        if extract_zip(REPO_BASE + zip_name, dialog, int(step / total * 100), _log):
-            repo_ok += 1
-        if dialog.iscanceled():
-            return repo_ok, fp_ok, app_ok, True
-
-    # 2. first-party add-ons by direct extract
-    for addon_id in FIRST_PARTY:
-        step += 1
-        url = _latest_zip_url(addon_id)
-        if url and extract_zip(url, dialog, int(step / total * 100), _log):
-            fp_ok += 1
-        if dialog.iscanceled():
-            return repo_ok, fp_ok, app_ok, True
-
-    # 3. register + enable the repos and first-party add-ons.
-    step += 1
-    dialog.update(int(step / total * 100), "Registering add-ons...")
-    update_local_addons()
-    xbmc.sleep(3000)
-    for _zip_name, rid in REPO_ZIPS:
-        if rid:
-            _enable(rid)
-    for addon_id in FIRST_PARTY:
-        _enable(addon_id)
-
-    # 4. install each app with its dependency closure by direct extract.
-    for addon_id in ADDONS:
-        step += 1
-        dialog.update(int(step / total * 100), f"Installing {addon_id}")
-        if install_with_deps(addon_id, dialog, [PENO64_BASE], OFFICIAL_BASE, _log):
-            app_ok += 1
-        if dialog.iscanceled():
-            return repo_ok, fp_ok, app_ok, True
-
-    return repo_ok, fp_ok, app_ok, False
-
-
-def run():
+    box_env = box_env or {}
     dialog = xbmcgui.DialogProgress()
     dialog.create("Tony.7.Bones Setup", "Starting setup...")
 
-    # --- base install (source repos + base apps) ---
-    repo_ok, _fp_ok, app_ok, canceled = _install_base(dialog)
-    if canceled:
+    # --- Layer 2 (Add-ons): base repos + apps + curated video + weather/RSS ---
+    # FIRST, because the Foundation skin closure resolves from the source repos this
+    # layer installs. A cancelled base install is the only abort path (ok=False).
+    addons_res = apply_addons(box_env, dialog=dialog, log=_log)
+    if not addons_res.ok:
         # User cancelled mid-install: abort cleanly with NO summary, NO
         # self-uninstall, NO restart. The partial install is harmless and
-        # re-running Setup completes it.
-        return dialog.close()
+        # re-running Setup completes it (the monolith's early-return contract).
+        dialog.close()
+        return addons_res, None, None
 
-    # --- video add-ons (unattended — no picker, part of one-tap onboarding) ---
-    video_ok = _install_video(dialog)
+    # --- Layer 0 (Foundation): Estuary MOD V2 skin closure + sources + home-trim ---
+    # AFTER add-ons so the source repos the skin closure resolves from exist. The
+    # seam is killed here (Tech-debt ledger): the orchestrator calls the BARE form —
+    # no install_skin=/add_file_sources=/trim_home_menu= injection — so the layer
+    # uses its own _SkinDeps (resolved from foundation's globals).
+    foundation_res = apply_foundation(box_env, dialog=dialog, log=_log)
 
-    # --- Estuary MOD V2 skin + MOD V2+ patch: install + activate. The patch
-    #     itself auto-applies via modv2plus's boot service once MOD V2 is live
-    #     after the end-of-Setup restart (the patch cannot run before the skin is
-    #     active, and Setup is gone by then). ---
-    skin_ok = _install_skin(dialog)
+    # --- Layer 1 (IPTV): install pvr.iptvsimple (or fail loud) + config ---
+    # Its pvr.iptvsimple INSTALL moved here from the base ADDONS in Phase 3a — so in
+    # a full Express run the NET installed set is unchanged (pvr still installed,
+    # just via this layer). Also drives the device-file copy + instance-settings.
+    iptv_res = apply_iptv(box_env, dialog=dialog, log=_log)
+
+    # The top-bar weather toggle was an Estuary skin bool set inline in the
+    # monolith's _configure_box; keep it as an orchestrator step (it persists on the
+    # restart). Guard: only meaningful on the stock Estuary skin.
+    skin = ""
+    try:
+        skin = xbmc.getSkinDir() or ""
+    except Exception:  # noqa: BLE001
+        skin = ""
+    if not skin or skin == ESTUARY_SKIN_ID:
+        xbmc.executebuiltin(f"Skin.SetBool({SHOW_WEATHERINFO})")
 
     dialog.close()
 
-    # --- one combined summary ---
+    skin_ok = foundation_res.ok
+
+    # --- one combined summary (same Repos/Apps/Video/skin contract; + IPTV) ---
+    repo_ok = _count_installed(addons_res, [rid for _z, rid in REPO_ZIPS])
+    app_ok = _count_installed(addons_res, ADDONS)
+    video_ok = _count_installed(addons_res, VIDEO_APPS)
+    iptv_ok = iptv_res.ok and bool(iptv_res.installed)
     xbmcgui.Dialog().ok(
         "Tony.7.Bones Setup",
         "\n".join(
@@ -1137,6 +615,7 @@ def run():
                 f"Repos: {repo_ok}/{len(REPO_ZIPS)}",
                 f"Apps: {app_ok}/{len(ADDONS)}",
                 f"Video add-ons: {video_ok}/{len(VIDEO_APPS)}",
+                "IPTV: {}".format("installed" if iptv_ok else "skipped"),
                 "Estuary MOD V2: {}".format("installed" if skin_ok else "FAILED"),
                 "Restart will finish setup.",
             ]
@@ -1146,11 +625,7 @@ def run():
     # Run once, then disappear (after the summary; never raises). The shared
     # library is a hidden module add-on and is deliberately LEFT installed.
     self_uninstall(MY_ID, _log)
-    # Base-box configuration — applied before the restart so Kodi re-reads it:
-    # file-manager sources, the Estuary home-menu trim, weather/RSS/top-bar.
-    _add_file_sources()
-    _trim_home_menu()
-    _configure_box()
+
     # Activate MOD V2 LAST — immediately before the restart. activate_skin sets
     # lookandfeel.skin AND clicks "Yes" on Kodi's "Keep this skin?" confirm
     # (control 11 of the yes/no dialog) so the change COMMITS. Without that accept
@@ -1161,6 +636,743 @@ def run():
         activate_skin(SKIN_ID, _log)
     # ONE restart finalises every freshly extracted add-on AND the self-removal.
     restart_kodi("Tony.7.Bones Setup", _log)
+    return addons_res, foundation_res, iptv_res
+
+
+# IPTV env detection — MOVED to the shared sublibrary (tony7bones.setup.env,
+# Phase 6) so the installed-state probes can use the same gate for
+# assert_box_complete without importing the bootstrap. Semantics unchanged: an
+# IPTV provider is configured when the per-device env carries a PLAYLIST SOURCE
+# (``IPTV_<N>_M3U`` / ``IPTV_<N>_PORTAL`` or the single-instance ``IPTV_M3U`` /
+# ``IPTV_PORTAL``) with a non-empty value; ``IPTV_EPG`` / ``IPTV_GROUPS`` alone
+# do NOT count (no playlist = no channels). Re-exported here so every existing
+# reference and test (boot.mod._env_has_iptv / _IPTV_PROVIDER_KEY) keeps
+# working unchanged and there is a single source of truth.
+_IPTV_PROVIDER_KEY = _env_mod._IPTV_PROVIDER_KEY
+_env_has_iptv = _env_mod.env_has_iptv
+
+
+def _foundation_core(box_env, dialog):
+    """The shared Foundation install body both Foundation runners call.
+
+    Installs ALL our source repos (incl. our own ``repository.tony7bones`` proxy repo)
+    via ``install_repos``, then runs ``apply_foundation`` (the Estuary MOD V2 skin
+    closure + the proxy-invisible pvr.artwork/modv2plus direct-extracts + Outline-HD +
+    weather.multi + the keyboard autocomplete utility + File-Manager sources + the
+    home-menu trim), then sets the top-bar weather skin bool. It does NOT set
+    ``lookandfeel.skin`` and does NOT restart — the terminal seam belongs to the
+    caller (``run_foundation`` / ``run_foundation_setup``), which sets the skin LAST
+    and restarts ONCE so the env can be shared across an IPTV chain without a premature
+    restart. Returns the Foundation ``LayerResult``.
+
+    Factored out so ``run_foundation`` (pure skin-only) and ``run_foundation_setup``
+    (skin + optional IPTV chain) share ONE install seam and can never drift apart.
+    """
+    box_env = box_env or {}
+    # 1. ALL our source repos + our own proxy repo (plumbing) — the skin closure
+    #    resolves from them, and the proxy repo is the lifeline (updates/opt-ins).
+    install_repos(dialog)
+
+    # 2. the Foundation layer: skin closure + modv2plus/pvr.artwork direct-extract +
+    #    Outline-HD + weather.multi + autocomplete + File-Manager sources (incl. the
+    #    .tony.7.bones proxy source) + home-trim. ZERO content. Does NOT set
+    #    lookandfeel.skin (the caller's seam owns that).
+    foundation_res = apply_foundation(box_env, dialog=dialog, log=_log)
+
+    # The top-bar weather toggle is an Estuary skin bool (persists on the restart);
+    # only meaningful on the stock Estuary skin — keep it as an orchestrator step.
+    skin = ""
+    try:
+        skin = xbmc.getSkinDir() or ""
+    except Exception:  # noqa: BLE001
+        skin = ""
+    if not skin or skin == ESTUARY_SKIN_ID:
+        xbmc.executebuiltin(f"Skin.SetBool({SHOW_WEATHERINFO})")
+
+    return foundation_res
+
+
+def run_foundation(box_env=None):
+    """The Foundation orchestrator — install Layer 0 ONLY (a skin-only deliverable).
+
+    Stop here = a pristine, BRANDED Kodi with ZERO content: the Estuary MOD V2 skin
+    (+ the MOD V2+ patch, applied post-restart by modv2plus's boot service), the
+    skin's required dependency closure, ALL our source repositories (plumbing, not
+    content), the File-Manager sources, and a trimmed home menu — and NOTHING else.
+
+    Foundation is content-free BY CONSTRUCTION: it does NOT call ``apply_addons``
+    (no base apps ezmaintenanceplus / realdebrid / weather.multi, no curated video
+    POV / Loop / Sports HD / YouTube, no weather/RSS) and does NOT call ``apply_iptv``
+    (no pvr.iptvsimple, no IPTV). The ONLY add-ons it installs are the skin closure
+    (skin.estuary.modv2 + skinshortcuts + image.resource.select + the proxy-invisible
+    script.module.pvr.artwork + our script.tony7bones.modv2plus + the Outline-HD
+    weather icons) on top of the source repos.
+
+    Order rationale (dependency-correct):
+      1. ``install_repos`` — extract + register + enable ALL our source repos (the 12
+         REPO_ZIPS). The Estuary MOD V2 skin closure resolves the skin + skinshortcuts
+         + image.resource.select from these installed repos (Kodinerds etc.), so they
+         MUST exist before the skin install. ``repository.tony7bones`` (the virtual
+         proxy) is the HOST add-on shipping this Setup — already installed/running —
+         and is additionally registered as the ``.tony.7.bones`` File-Manager SOURCE
+         by ``apply_foundation``'s ``_add_file_sources`` below, so the proxy repo is
+         fully established without re-installing the host.
+      2. ``apply_foundation`` — the skin closure (it direct-extracts the proxy-invisible
+         pvr.artwork + modv2plus FIRST, then resolves the rest from the repos installed
+         in step 1) + the two content-free base-config steps (File-Manager sources +
+         the Estuary home-trim). It does NOT set ``lookandfeel.skin`` — that is the
+         terminal seam below (set LAST).
+      3. set ``lookandfeel.skin`` LAST (only if Foundation reached ``ok``), then ONE
+         restart, then self-uninstall (skin-only = done).
+
+    The skin is activated LAST, immediately before the single restart, so Kodi's
+    "Keep this skin?" timeout cannot silently revert it. After the restart MOD V2 is
+    active and modv2plus's boot service auto-applies the patch (the Setup is gone by
+    then). Returns the Foundation ``LayerResult``.
+    """
+    box_env = box_env or {}
+    dialog = xbmcgui.DialogProgress()
+    dialog.create("Tony.7.Bones Setup", "Installing Foundation...")
+
+    # Repos (incl. our proxy repo) + the Foundation layer (skin/weather/menu/
+    # autocomplete) — the shared install seam. PURE skin-only: this runner NEVER
+    # touches IPTV (apply_iptv is reserved for run_foundation_setup).
+    foundation_res = _foundation_core(box_env, dialog)
+
+    dialog.close()
+
+    skin_ok = foundation_res.ok
+    # Repos are plumbing (install_repos installs them; they are not recorded in
+    # foundation_res.installed, which holds the skin id). The summary reports the
+    # branded-box result — skin install + "repositories + sources installed".
+    xbmcgui.Dialog().ok(
+        "Tony.7.Bones Setup",
+        "\n".join(
+            [
+                "Foundation (skin-only):",
+                "Estuary MOD V2: {}".format("installed" if skin_ok else "FAILED"),
+                "Repositories + sources installed.",
+                "Restart will finish setup.",
+            ]
+        ),
+    )
+
+    # Run once, then disappear (after the summary; never raises). The shared
+    # library is a hidden module add-on and is deliberately LEFT installed.
+    self_uninstall(MY_ID, _log)
+
+    # Activate MOD V2 LAST — immediately before the restart (the activate-skin
+    # invariant). Only when Foundation reached ok.
+    if skin_ok:
+        activate_skin(SKIN_ID, _log)
+    # ONE restart finalises every freshly extracted add-on AND the self-removal.
+    restart_kodi("Tony.7.Bones Setup", _log)
+    return foundation_res
+
+
+def run_foundation_setup(box_env=None):
+    """Foundation + an env-gated IPTV chain — the skin-with-optional-live-TV runner.
+
+    Composes the SAME Foundation install seam as ``run_foundation`` (``_foundation_core``
+    → repos incl. our proxy repo + the skin/weather/menu/autocomplete layer) and THEN,
+    **iff the per-device env carries IPTV provider values** (``_env_has_iptv`` — any
+    ``IPTV_<N>_M3U`` / ``IPTV_<N>_PORTAL`` or the single-instance ``IPTV_M3U`` /
+    ``IPTV_PORTAL`` / ``IPTV_EPG``), chains the IPTV layer: ``apply_iptv`` installs
+    pvr.iptvsimple (+ its binary inputstream closure) and writes the instance-settings
+    (custom group mode + the env's m3u/epg). With NO IPTV env it stops at the skin-only
+    box — byte-identical to ``run_foundation`` (no pvr.iptvsimple, no IPTV).
+
+    Terminal seam (shared, owned HERE — never in a layer): set ``lookandfeel.skin``
+    LAST (only when Foundation reached ``ok``), restart ONCE, then self-uninstall. The
+    skin is activated immediately before the restart so Kodi's "Keep this skin?"
+    timeout cannot silently revert it; the single restart finalises every freshly
+    extracted add-on (skin + optionally pvr.iptvsimple) AND the self-removal. The env
+    is read ONCE upstream (``run()``) and shared across both the Foundation and IPTV
+    layers here before any restart, so the IPTV chain is never starved.
+
+    NOT wired into the shipped ``run()`` yet (still ``run_express``); this is a new
+    entry point for the modular flow. Returns ``(foundation_res, iptv_res)`` —
+    ``iptv_res`` is ``None`` when the env has no IPTV provider (the skin-only path).
+    """
+    box_env = box_env or {}
+    dialog = xbmcgui.DialogProgress()
+    dialog.create("Tony.7.Bones Setup", "Installing Foundation...")
+
+    # Foundation install seam (repos incl. proxy + skin/weather/menu/autocomplete).
+    foundation_res = _foundation_core(box_env, dialog)
+
+    # IPTV auto-chain — ONLY when the env actually carries a provider playlist source.
+    # With none, this stays a pure skin-only box (identical to run_foundation).
+    iptv_res = None
+    if _env_has_iptv(box_env):
+        iptv_res = apply_iptv(box_env, dialog=dialog, log=_log)
+
+    dialog.close()
+
+    skin_ok = foundation_res.ok
+    iptv_ok = bool(iptv_res and iptv_res.ok and iptv_res.installed)
+    lines = [
+        "Foundation:",
+        "Estuary MOD V2: {}".format("installed" if skin_ok else "FAILED"),
+        "Repositories + sources installed.",
+    ]
+    if iptv_res is not None:
+        lines.append("IPTV: {}".format("installed" if iptv_ok else "skipped"))
+    lines.append("Restart will finish setup.")
+    xbmcgui.Dialog().ok("Tony.7.Bones Setup", "\n".join(lines))
+
+    # Run once, then disappear (after the summary; never raises).
+    self_uninstall(MY_ID, _log)
+
+    # Activate MOD V2 LAST — immediately before the restart (the activate-skin
+    # invariant). Only when Foundation reached ok.
+    if skin_ok:
+        activate_skin(SKIN_ID, _log)
+    # ONE restart finalises every freshly extracted add-on AND the self-removal.
+    restart_kodi("Tony.7.Bones Setup", _log)
+    return foundation_res, iptv_res
+
+
+def run_addons(box_env=None):
+    """The Add-ons orchestrator — apply Layer 2 ONLY (the curated content set).
+
+    The 0-1-2 model's "stopped at skin-only, later adds the curated content"
+    story (Phase 5c): a thin standalone runner that drives the SAME ``apply_addons``
+    the Express one-shot drives (the no-fork invariant) on top of an EXISTING
+    Foundation box, then owns the terminal seam: honest summary → self-uninstall →
+    ONE platform-aware restart. Stop here = the full box.
+
+    Body (mirrors ``run_foundation``'s proven shape):
+      1. progress dialog → ``apply_addons(box_env)`` — the base source repos + base
+         apps (script.ezmaintenanceplus / script.realdebrid), the curated video
+         add-ons (POV, The Loop, Sports HD, YouTube; ``plugin.video.dailymotion_com``
+         install-then-DISABLED) with full dependency closures + origin stamps, the
+         RSS core toggle + the env-driven RSS feeds.
+      2. summary dialog — honest per-stage counts straight from the LayerResult
+         (a partial failure shows as e.g. "Video add-ons: 2/4", never "success").
+      3. ``self_uninstall`` then ONE ``restart_kodi`` (platform-aware: desktop
+         self-restarts, Android prompts close+reopen) — the restart finalises the
+         freshly extracted add-ons AND the self-removal, honoring the layer's
+         ``needs_restart`` request.
+
+    What it must NOT do (the layer invariants):
+      * NO skin touch — no ``activate_skin``, no ``lookandfeel.skin``, no
+        ``Skin.SetBool``. Foundation owns the active skin; re-setting it would
+        re-arm Kodi's "Keep this skin?" revert timeout for no reason, and the
+        top-bar weather bool belongs to Foundation (stock Estuary) / the
+        modv2plus settings-aware service (MOD V2).
+      * NO orchestrator-level ``install_repos`` call — Foundation owns plumbing.
+        (``apply_addons``'s own base step still runs its historical idempotent
+        repo loop internally; on a Foundation box every repo extract
+        short-circuits. That is the layer's proven self-sufficiency, shared
+        verbatim with Express — not a fork.)
+      * NO ``apply_foundation`` / ``apply_iptv`` — one layer per runner.
+
+    Foundation-missing semantics (decided, not probed): run on a box WITHOUT
+    Foundation, the curated content still lands and works — ``apply_addons``'s base
+    step installs the source repos itself, so the video closures resolve; the box
+    simply is not branded (stock Estuary, no MOD V2/weather). No probe-and-abort:
+    the layer is additive and re-entrant, and a later ``run_foundation`` completes
+    the branding with no redo (re-entrancy via installed-state).
+
+    Env lifecycle: same coordinator pattern as ``run()`` — the DRIVER reads the
+    per-device env ONCE (``read_box_env(BOX_ENV_PATH)``), passes the dict in, and
+    deletes the env file only after a successful (non-cancelled) run. Precondition
+    for the later-opt-in story: the provisioner (or a lighter re-stage) must have
+    re-pushed ``tony7bones.env`` to the box — Foundation's earlier run consumed and
+    deleted the original.
+
+    Failure semantics: a user CANCEL mid-install (``ok=False``, the only not-ok
+    path in ``apply_addons``) aborts cleanly — NO summary, NO self-uninstall, NO
+    restart; the partial install is harmless and a re-run completes it (the
+    monolith's early-return contract, same as ``run_express``). Per-add-on install
+    failures stay non-fatal: the summary reports the honest counts and the box
+    still completes (restart once). Re-entry is safe by construction —
+    ``extract_zip`` / ``install_selection``'s ``is_installed`` probes short-circuit
+    an already-provisioned box; the disable-after set is re-applied (idempotent).
+
+    NOT wired into the shipped ``run()`` (still ``run_express``); a new entry
+    point for the modular flow. Returns the Add-ons ``LayerResult``.
+    """
+    box_env = box_env or {}
+    dialog = xbmcgui.DialogProgress()
+    dialog.create("Tony.7.Bones Setup", "Installing Add-ons...")
+
+    # Layer 2 ONLY — the same apply_addons Express drives (no forked install
+    # logic). It owns repos+apps+video install, origin stamps, the
+    # install-then-disable set, the RSS core toggle + env-driven RSS feeds.
+    addons_res = apply_addons(box_env, dialog=dialog, log=_log)
+    if not addons_res.ok:
+        # User cancelled mid-install: abort cleanly with NO summary, NO
+        # self-uninstall, NO restart (the monolith's early-return contract).
+        # The driver leaves the env intact so a re-run can complete the box.
+        dialog.close()
+        return addons_res
+
+    dialog.close()
+
+    # Honest summary — per-stage counts straight from the LayerResult (the same
+    # Repos/Apps/Video contract as the Express summary; no IPTV/skin lines here,
+    # those layers have their own runners).
+    repo_ok = _count_installed(addons_res, [rid for _z, rid in REPO_ZIPS])
+    app_ok = _count_installed(addons_res, ADDONS)
+    video_ok = _count_installed(addons_res, VIDEO_APPS)
+    xbmcgui.Dialog().ok(
+        "Tony.7.Bones Setup",
+        "\n".join(
+            [
+                "Add-ons (curated content):",
+                f"Repos: {repo_ok}/{len(REPO_ZIPS)}",
+                f"Apps: {app_ok}/{len(ADDONS)}",
+                f"Video add-ons: {video_ok}/{len(VIDEO_APPS)}",
+                "Restart will finish setup.",
+            ]
+        ),
+    )
+
+    # Run once, then disappear (after the summary; never raises). The shared
+    # library is a hidden module add-on and is deliberately LEFT installed.
+    self_uninstall(MY_ID, _log)
+
+    # ONE restart finalises every freshly extracted add-on AND the self-removal.
+    # NO skin activation here — Foundation owns the active skin (re-setting
+    # lookandfeel.skin would re-arm the "Keep this skin?" revert timeout).
+    restart_kodi("Tony.7.Bones Setup", _log)
+    return addons_res
+
+
+def run_iptv(box_env=None):
+    """The IPTV orchestrator — apply Layer 1 ONLY (live TV on an existing box).
+
+    The 0-1-2 model's "stopped at skin-only, later adds live TV" story
+    (Phase 5b·3): a thin standalone runner that drives the SAME ``apply_iptv``
+    the Express one-shot drives (the no-fork invariant) on top of an EXISTING
+    Foundation box, then owns the terminal seam: honest summary →
+    self-uninstall → ONE platform-aware restart. Stop here = branded Kodi +
+    your live TV.
+
+    Body (mirrors ``run_foundation``/``run_addons``'s proven shape):
+      1. progress dialog → ``apply_iptv(box_env)`` — install pvr.iptvsimple
+         (+ its binary inputstream closure, platform-resolved from the OFFICIAL
+         repo) or FAIL LOUD, then — inside the PVR-DISABLED config window (the
+         5b·1 clobber fix) — the guarded device-file copy and ONE
+         ``instance-settings-<N>.xml`` per env provider: the HOST-BUILT staged
+         artifacts first when the env carries ``IPTV_STAGING_DIR`` (curated
+         playlist + display-label groups + ready instance file — the only path
+         a portal-API provider can land through), per-provider fallback to the
+         direct-env enforce.
+      2. summary dialog — honest, straight from the LayerResult: the backend
+         state plus whether instance settings were actually WRITTEN this run
+         ("unchanged" when the env carries no provider or the files were
+         already correct — never a false "configured").
+      3. ``self_uninstall`` then ONE ``restart_kodi`` (platform-aware) — the
+         restart finalises the freshly extracted backend AND the self-removal,
+         honoring the layer's ``needs_restart`` request (pvr.iptvsimple reads
+         instance settings at startup).
+
+    What it must NOT do (the layer invariants):
+      * NO skin touch — no ``activate_skin``, no ``lookandfeel.skin``, no
+        ``Skin.SetBool``. Foundation owns the active skin; re-setting it would
+        re-arm Kodi's "Keep this skin?" revert timeout for no reason.
+      * NO ``install_repos`` — Foundation owns plumbing. ``apply_iptv``
+        resolves its backend's platform closure straight from the OFFICIAL
+        repo (``iptv.OFFICIAL_BASE``), so it needs none of our source repos;
+        on a Foundation-less box the backend still installs and the config
+        still lands (the box simply is not branded — same tolerant
+        Foundation-missing semantics as ``run_addons``, no probe-and-abort).
+      * NO ``apply_foundation`` / ``apply_addons`` — one layer per runner.
+
+    Env lifecycle: same coordinator pattern as ``run()`` — the DRIVER reads the
+    per-device env ONCE (``read_box_env(BOX_ENV_PATH)``), passes the dict in,
+    and deletes the env file only after a successful (``ok``) run. PRECONDITION
+    for the later-opt-in story: the provisioner (or a lighter re-stage) must
+    have re-pushed ``tony7bones.env`` AND the staged ``iptv/`` artifacts to the
+    box — Foundation's earlier run consumed and deleted the original env, and
+    the staged curated artifacts only exist where the host build put them
+    (provisioner step 4b: build → push → ``IPTV_STAGING_DIR``). No new
+    transport is invented here.
+
+    Failure semantics (``ok=False`` — the backend did not install, the ONE
+    hard-failure path in ``apply_iptv``; there is NO user-cancel path through
+    this layer by construction — ``install_with_deps`` never polls the
+    dialog's cancel button, unlike the Add-ons layer's per-repo loop): the
+    summary says FAILED and that nothing was configured (``apply_iptv`` wrote
+    no instance-settings — fail-loud means no half-config), then the runner
+    still self-uninstalls and restarts ONCE — the box is unchanged except
+    possibly extracted-but-disabled bits, so the restart lands on the same
+    working Foundation box, never a broken one. The driver leaves the env
+    intact (delete-only-on-ok) and Foundation guarantees our proxy repo is
+    installed, so the retry is a one-tap Setup reinstall + re-run.
+    Per-provider config failures stay defensive inside the layer (logged,
+    skipped; the other providers still apply).
+
+    Re-entry is safe by construction: the backend ``is_installed``
+    short-circuits, staged consumption is always-apply (identical bytes,
+    inside the PVR-disabled window), and the direct-env enforce is
+    write-only-if-changed — a second identical run reports
+    ``already_done=True`` (backend present, nothing newly written) and leaves
+    the box state byte-identical.
+
+    NOT wired into the shipped ``run()`` (still ``run_express``); a new entry
+    point for the modular flow (wired by Phase 5d). Returns the IPTV
+    ``LayerResult``.
+    """
+    box_env = box_env or {}
+    dialog = xbmcgui.DialogProgress()
+    dialog.create("Tony.7.Bones Setup", "Installing IPTV...")
+
+    # Layer 1 ONLY — the same apply_iptv Express drives (no forked install
+    # logic). It owns the backend install-or-fail-loud, the PVR-disabled
+    # config window, staged-first consumption, and the N-provider enforce.
+    iptv_res = apply_iptv(box_env, dialog=dialog, log=_log)
+
+    dialog.close()
+
+    # Honest summary — straight from the LayerResult. "configured" means the
+    # enforce actually WROTE instance-settings this run; "installed" means the
+    # backend landed but nothing was written (no env provider, or the files
+    # were already correct) — say "unchanged", never claim fresh config.
+    if iptv_res.ok:
+        configured = iptv_res.installed.get(PVR_BACKEND_ID) == "configured"
+        lines = [
+            "IPTV (live TV):",
+            "pvr.iptvsimple: installed",
+            "Instance settings: {}".format(
+                "written" if configured else "unchanged (none in env, or already set)"
+            ),
+            "Restart will finish setup.",
+        ]
+    else:
+        # Fail-loud contract: the backend did not install and apply_iptv wrote
+        # NO instance-settings. Say so; the restart below lands on the box as
+        # it was (re-run = reinstall Setup from our repo; the env is kept by
+        # the driver's delete-only-on-ok).
+        lines = [
+            "IPTV (live TV):",
+            "pvr.iptvsimple: FAILED",
+            "No instance settings were written.",
+            "Re-run Setup to retry after the restart.",
+        ]
+    xbmcgui.Dialog().ok("Tony.7.Bones Setup", "\n".join(lines))
+
+    # Run once, then disappear (after the summary; never raises). The shared
+    # library is a hidden module add-on and is deliberately LEFT installed.
+    self_uninstall(MY_ID, _log)
+
+    # ONE restart finalises the freshly extracted backend AND the self-removal
+    # (pvr.iptvsimple reads instance settings at startup — the layer's
+    # needs_restart request). NO skin activation here — Foundation owns the
+    # active skin (re-setting lookandfeel.skin would re-arm the "Keep this
+    # skin?" revert timeout).
+    restart_kodi("Tony.7.Bones Setup", _log)
+    return iptv_res
+
+
+# --------------------------------------------------------------------------- #
+# The Guided wizard + the Model A lifecycle (Phase 5d).
+# --------------------------------------------------------------------------- #
+# The per-device env key that routes the shipped run() to the Guided wizard.
+# ``SETUP_MODE=guided`` (case-insensitive) -> run_guided; ANY other value or the
+# key absent -> Express, byte-identical to the pre-5d one-tap (the Fire TV
+# default — panel decision #4). Why an env key and not a launch dialog: a
+# chooser prompt (even with a timeout) would break the proven UNATTENDED
+# one-tap and re-shape the characterization snapshot; the mode is a per-device
+# PROVISIONING decision, exactly like everything else the env drives. The
+# provisioner does NOT set it by default. (Owner-vetoable mechanism — the
+# documented alternatives are a timeout launch dialog or a second launcher
+# entry; see the Phase 5d log in docs/plans/modular-setup.md.)
+SETUP_MODE_KEY = "SETUP_MODE"
+
+# The wizard's gate order (the 0-1-2 model) and the user-facing offer labels.
+_GATE_LABELS = {
+    "foundation": "Install Foundation (Estuary MOD V2 skin + repositories)",
+    "iptv": "Install IPTV (live TV)",
+    "addons": "Install Add-ons (curated content)",
+    "finish": "Finish — setup is complete, remove Setup",
+}
+
+
+def _delete_box_env():
+    """Remove the per-device env file (guarded; missing file is a no-op).
+
+    The env's lifecycle in a GUIDED session: the file SURVIVES every gate (a
+    gate restart must not starve the next gate — the panel's env-ownership
+    rule) and is consumed only by the TERMINAL ops (Finish / Remove Setup),
+    BEFORE their restart, so no secret lingers once the wizard is done. The
+    Express path keeps its own delete in run() (after the last layer),
+    unchanged."""
+    try:
+        os.remove(BOX_ENV_PATH)
+    except OSError:
+        pass
+
+
+def _next_gate(box_env):
+    """The wizard's resume probe: the next undone gate, from INSTALLED STATE.
+
+    Foundation -> IPTV (offered ONLY when the env carries a provider playlist
+    source — ``_env_has_iptv``) -> Add-ons -> "finish". Each probe reads the
+    box's actual state (tony7bones.setup.probes), never a marker file, so a
+    crash / declined restart / reverted skin self-heals: the incomplete gate is
+    simply re-offered and every layer is idempotent on re-entry."""
+    box_env = box_env or {}
+    if not _probes.foundation_done():
+        return "foundation"
+    if _env_has_iptv(box_env) and not _probes.iptv_done(box_env):
+        return "iptv"
+    if not _probes.addons_done():
+        return "addons"
+    return "finish"
+
+
+def _guided_gate_foundation(box_env):
+    """The Foundation GATE: the same install seam as ``run_foundation``
+    (``_foundation_core`` — repos incl. our proxy repo + the skin closure +
+    weather/menu/autocomplete) but with the MODEL A lifecycle: NO
+    self-uninstall (the Setup tile IS the "continue setup" affordance), and the
+    activate-skin-then-restart TERMINAL OP fires only on ``ok`` (never restart
+    into a failed gate). The restart is the gate seam: the box it lands on is a
+    complete, branded, zero-content Kodi."""
+    dialog = xbmcgui.DialogProgress()
+    dialog.create("Tony.7.Bones Setup", "Installing Foundation...")
+    res = _foundation_core(box_env, dialog)
+    dialog.close()
+
+    xbmcgui.Dialog().ok(
+        "Tony.7.Bones Setup",
+        "\n".join(
+            [
+                "Foundation:",
+                "Estuary MOD V2: {}".format("installed" if res.ok else "FAILED"),
+                "Repositories + sources installed.",
+                (
+                    "Kodi will restart — reopen Setup to continue."
+                    if res.ok
+                    else "Nothing was activated. Run this step again to retry."
+                ),
+            ]
+        ),
+    )
+    if res.ok:
+        # Activate MOD V2 LAST, immediately before the per-gate restart — ONE
+        # orchestrator-owned terminal op (the activate-skin invariant: a gap
+        # lets Kodi's "Keep this skin?" timeout silently revert it).
+        activate_skin(SKIN_ID, _log)
+        restart_kodi("Tony.7.Bones Setup", _log)
+    return res
+
+
+def _guided_gate_iptv(box_env):
+    """The IPTV GATE: the same ``apply_iptv`` Express drives (no-fork) with the
+    Model A lifecycle — NO self-uninstall, NO skin touch (Foundation owns the
+    active skin), honest summary, restart only on ``ok`` (a failed backend
+    install changed nothing, so there is nothing for a restart to finalise and
+    the user lands back on the wizard to retry/exit)."""
+    dialog = xbmcgui.DialogProgress()
+    dialog.create("Tony.7.Bones Setup", "Installing IPTV...")
+    res = apply_iptv(box_env, dialog=dialog, log=_log)
+    dialog.close()
+
+    if res.ok:
+        configured = res.installed.get(PVR_BACKEND_ID) == "configured"
+        lines = [
+            "IPTV (live TV):",
+            "pvr.iptvsimple: installed",
+            "Instance settings: {}".format(
+                "written" if configured else "unchanged (none in env, or already set)"
+            ),
+            "Kodi will restart — reopen Setup to continue.",
+        ]
+    else:
+        lines = [
+            "IPTV (live TV):",
+            "pvr.iptvsimple: FAILED",
+            "No instance settings were written.",
+            "Run this step again to retry.",
+        ]
+    xbmcgui.Dialog().ok("Tony.7.Bones Setup", "\n".join(lines))
+    if res.ok:
+        restart_kodi("Tony.7.Bones Setup", _log)
+    return res
+
+
+def _guided_gate_addons(box_env):
+    """The Add-ons GATE: the same ``apply_addons`` Express drives (no-fork)
+    with the Model A lifecycle — NO self-uninstall, NO skin touch, honest
+    per-stage counts, restart only on ``ok``. A user CANCEL mid-install
+    (``ok=False``, the layer's only not-ok path) aborts with NO summary and NO
+    restart — the monolith's early-return contract; the partial install is
+    harmless and re-offering the gate completes it."""
+    dialog = xbmcgui.DialogProgress()
+    dialog.create("Tony.7.Bones Setup", "Installing Add-ons...")
+    res = apply_addons(box_env, dialog=dialog, log=_log)
+    if not res.ok:
+        dialog.close()
+        return res
+    dialog.close()
+
+    repo_ok = _count_installed(res, [rid for _z, rid in REPO_ZIPS])
+    app_ok = _count_installed(res, ADDONS)
+    video_ok = _count_installed(res, VIDEO_APPS)
+    xbmcgui.Dialog().ok(
+        "Tony.7.Bones Setup",
+        "\n".join(
+            [
+                "Add-ons (curated content):",
+                f"Repos: {repo_ok}/{len(REPO_ZIPS)}",
+                f"Apps: {app_ok}/{len(ADDONS)}",
+                f"Video add-ons: {video_ok}/{len(VIDEO_APPS)}",
+                "Kodi will restart — reopen Setup to continue.",
+            ]
+        ),
+    )
+    restart_kodi("Tony.7.Bones Setup", _log)
+    return res
+
+
+def _guided_finish(box_env=None):
+    """The TERMINAL op — the ONLY place the Guided lifecycle removes Setup
+    (Model A: self-uninstall on terminal Finish / explicit Remove Setup, never
+    after a gate). Order matters: consume the env FIRST (no secret lingers and
+    the delete cannot be lost to the restart), then self-uninstall, then ONE
+    restart to finalise the removal (Kodi's next scan drops the deleted dir's
+    rows — the same shipped mechanism every standalone runner uses).
+
+    Before consuming anything it runs the ``assert_box_complete`` verification
+    (Phase 6) and LOGS the honest outcome. INFORM, never block: Finish is only
+    offered when every gate probes done, but an explicit Remove Setup on a
+    half-built box is legal — the user must still be able to remove Setup, so
+    an incomplete box logs a WARNING instead of aborting the removal."""
+    try:
+        state = _probes.assert_box_complete(box_env or {})
+        _log("finish: box verified complete {}".format(state))
+    except AssertionError as e:
+        _log("finish: {}".format(e), xbmc.LOGWARNING)
+    except Exception as e:  # noqa: BLE001 - the check must never block removal
+        _log(
+            "finish: completeness check failed (non-fatal): {}".format(e),
+            xbmc.LOGWARNING,
+        )
+    _delete_box_env()
+    self_uninstall(MY_ID, _log)
+    restart_kodi("Tony.7.Bones Setup", _log)
+
+
+_GATE_RUNNERS = {
+    "foundation": _guided_gate_foundation,
+    "iptv": _guided_gate_iptv,
+    "addons": _guided_gate_addons,
+}
+
+
+def run_guided(box_env=None):
+    """The Guided wizard — the multi-gate, resumable Setup (Phase 5d).
+
+    The panel's keystone: the orchestrator add-on PERSISTS across gates
+    (Model A) — its home tile is the "continue setup" affordance — and
+    self-uninstalls ONLY on terminal Finish or an explicit "Remove Setup".
+    Each launch probes the box's INSTALLED STATE (never marker files) and
+    offers the NEXT undone gate:
+
+        Foundation -> IPTV (env-gated: offered only when the env carries a
+        provider playlist source) -> Add-ons -> Finish
+
+    One gate per launch; each gate restarts Kodi on success (per-gate cadence —
+    desktop self-restarts, Fire TV shows the close-and-reopen notice), and each
+    restart lands on a COMPLETE, WORKING box (skin-only after Foundation; + live
+    TV after IPTV; the full box after Add-ons). Gates are UNATTENDED inside
+    (the same prompt-free ``apply_*`` bodies Express drives — the no-fork
+    invariant); the only prompts are BETWEEN gates: that is the wizard.
+
+    Lifecycle rules this function owns:
+      * NO self-uninstall after a gate — only ``_guided_finish`` (Finish, or a
+        confirmed Remove Setup) removes the add-on.
+      * The per-device env SURVIVES every gate (a later gate in a later session
+        still needs it); it is consumed (deleted) only by the terminal op,
+        BEFORE that op's restart. Re-running ``run()`` after each reopen
+        re-reads the surviving env — which still carries ``SETUP_MODE=guided``,
+        so the wizard self-resumes with no extra state.
+      * Restart ONLY on a gate's ``ok`` (never restart into a failed gate); a
+        FAILED gate returns to the wizard menu so the user can retry or exit.
+      * A declined offer / dialog cancel exits cleanly: nothing installed,
+        nothing removed, env + Setup intact (the decline-everything path).
+
+    Degradation worth knowing (documented, accepted): if the env file is LOST
+    mid-flow (crash, manual delete), the next launch reads no ``SETUP_MODE``
+    and runs EXPRESS — which idempotently completes every remaining layer in
+    one shot and self-uninstalls (the proven "Express end-state == cumulative
+    Guided end-state" equivalence); only env-driven config (weather keys, IPTV
+    providers, RSS) is skipped until the provisioner re-pushes the env.
+
+    Returns an outcome string for tests/logs: ``"gate:<name>"`` (a gate ran —
+    the restart seam follows on success), ``"finished"``, ``"removed"`` or
+    ``"exit"``.
+    """
+    box_env = box_env or {}
+    while True:
+        gate = _next_gate(box_env)
+        pick = xbmcgui.Dialog().select(
+            "Tony.7.Bones Setup — Guided",
+            [_GATE_LABELS[gate], "Remove Setup", "Exit (keep Setup)"],
+        )
+        if pick == 0:
+            if gate == "finish":
+                _log("guided: terminal Finish — removing Setup")
+                _guided_finish(box_env)
+                return "finished"
+            _log(f"guided: running gate '{gate}'")
+            res = _GATE_RUNNERS[gate](box_env)
+            if res.ok:
+                # The per-gate restart is in flight (or, on a declined desktop
+                # restart prompt, deferred by the user). One gate per launch.
+                return f"gate:{gate}"
+            # FAILED gate: no restart happened and the box is unchanged —
+            # fall through to the menu so the user can retry or exit.
+            _log(f"guided: gate '{gate}' did not complete; back to the menu")
+            continue
+        if pick == 1:
+            if xbmcgui.Dialog().yesno(
+                "Tony.7.Bones Setup",
+                "Remove Setup from this box?\n\n"
+                "Setup (and its saved device config) will be removed. You can "
+                "reinstall it any time from the Tony.7.Bones repository.",
+            ):
+                _log("guided: explicit Remove Setup confirmed")
+                _guided_finish(box_env)
+                return "removed"
+            continue  # declined — back to the menu
+        # -1 (back/cancel) or "Exit": keep Setup + env; the tile resumes later.
+        return "exit"
+
+
+def run():
+    """Entry point — read the per-device env, route Express/Guided, own the env.
+
+    The orchestrator owns the per-device env lifecycle: read it ONCE here, pass
+    the parsed dict down. ``SETUP_MODE=guided`` in the env routes to the Guided
+    wizard (which owns the env's TERMINAL delete — the file must survive every
+    gate of a multi-session flow); any other value or no env runs EXPRESS,
+    byte-identical to the pre-5d one-tap: drive the three composed layers, then
+    DELETE the env AFTER the last layer completes. On a no-env desktop run read
+    yields ``{}`` and the delete is a guarded no-op. On a mid-install CANCEL
+    the env is LEFT intact (the layers never consumed it, so re-running Setup
+    needs it) — mirroring the monolith, which returned before any env delete on
+    cancel. Centralizing read+delete in one coordinator is what lets the
+    multi-gate Guided flow share the env safely (an earlier gate must not
+    delete the env a later gate needs).
+    """
+    box_env = read_box_env(BOX_ENV_PATH)
+    if (box_env.get(SETUP_MODE_KEY) or "").strip().lower() == "guided":
+        run_guided(box_env)
+        return
+    addons_res, _foundation_res, _iptv_res = run_express(box_env)
+    # Delete only after a non-cancelled run consumed the env (addons_res.ok is False
+    # ONLY on a mid-install cancel — the abort path leaves the env for a re-run).
+    if box_env and addons_res.ok:
+        try:
+            os.remove(BOX_ENV_PATH)
+        except OSError:
+            pass
 
 
 if __name__ == "__main__":

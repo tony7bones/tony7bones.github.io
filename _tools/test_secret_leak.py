@@ -30,8 +30,10 @@ def _tracked():
 
 def test_secret_artifacts_not_tracked():
     """The gitignored config artifacts must never be tracked: any *.env (incl.
-    the per-device tony7bones.env), the iptv-build/ staging dir, and *_custom.m3u
-    curated playlists. (.env.example is allowed — it does not end in `.env`.)"""
+    the per-device tony7bones.env), the iptv-build/ staging dir, and ANY *.m3u
+    playlist (host-built curated playlists carry provider creds in every
+    channel URL — they live only in gitignored staging / the box profile).
+    (.env.example is allowed — it does not end in `.env`.)"""
     offenders = [
         f
         for f in _tracked()
@@ -41,7 +43,7 @@ def test_secret_artifacts_not_tracked():
         )
         or os.path.basename(f).endswith(".env")
         or f.startswith("iptv-build/")
-        or os.path.basename(f).endswith("_custom.m3u")
+        or os.path.basename(f).endswith(".m3u")
     ]
     assert not offenders, f"secret-bearing artifacts are TRACKED: {offenders}"
 
@@ -64,17 +66,27 @@ def _read_env(path):
 
 def _secret_tokens(env):
     """High-signal secret substrings to forbid in tracked files: the two weather
-    API keys and the IPTV provider host / username / password from the m3u/epg."""
+    API keys, the IPTV provider host / username / password from every m3u/epg/
+    portal URL (legacy AND numbered ``IPTV_<N>_*`` shapes), and the raw
+    ``IPTV_<N>_USER`` / ``IPTV_<N>_PASS`` xtream credentials."""
     tokens = set()
     for k in ("WEATHERBIT_API_KEY", "OWM_API_KEY"):
         if env.get(k):
             tokens.add(env[k])
-    for k in ("IPTV_M3U", "IPTV_EPG"):
-        url = env.get(k, "")
-        for pat in (r"https?://([^/:]+)", r"username=([^&]+)", r"password=([^&]+)"):
-            m = re.search(pat, url)
-            if m:
-                tokens.add(m.group(1))
+    url_key = re.compile(r"^IPTV(?:_\d+)?_(?:M3U|EPG|PORTAL)$")
+    cred_key = re.compile(r"^IPTV(?:_\d+)?_(?:USER|PASS)$")
+    for k, val in env.items():
+        if url_key.match(k):
+            for pat in (
+                r"https?://([^/:]+)",
+                r"username=([^&]+)",
+                r"password=([^&]+)",
+            ):
+                m = re.search(pat, val)
+                if m:
+                    tokens.add(m.group(1))
+        elif cred_key.match(k) and val:
+            tokens.add(val)
     return {t for t in tokens if len(t) >= 6}
 
 
