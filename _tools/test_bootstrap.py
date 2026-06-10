@@ -837,7 +837,7 @@ def test_requires_the_shared_module():
     auto-installs script.module.tony7bones when this Setup is installed."""
     imp = _addon_root().find("requires/import[@addon='script.module.tony7bones']")
     assert imp is not None, "must <import> script.module.tony7bones"
-    assert imp.get("version") == "1.2.0"
+    assert imp.get("version") == "1.3.0"
 
 
 def test_imports_from_shared_module():

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="script.module.tony7bones"
        name="Tony.7.Bones Shared Library"
-       version="1.2.0"
+       version="1.3.0"
        provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
@@ -26,6 +26,6 @@
     </assets>
     <summary lang="en_GB">Shared install library for the Tony.7.Bones Setup add-ons</summary>
     <description lang="en_GB">Internal Python library used by the Tony.7.Bones Setup add-ons. It is not runnable on its own and does not appear on the home screen; it provides the shared add-on install, dependency-resolution and Kodi-integration machinery the Setup add-ons depend on.</description>
-    <news>v1.2.0: Modular Setup layers — re-entrant apply_foundation/apply_iptv/apply_addons (each leaves a complete working box), installed-state probes + assert_box_complete (dependency-closure walk), the PVR-disabled config window for pvr.iptvsimple instance-settings writes, staged-IPTV artifact consumption (host-built m3u/groups/instance files), keep-skin activation hardening (verify-then-re-assert with skinshortcuts quiescence), and the SETUP_API version guard.</news>
+    <news>v1.3.0: Ordered env-source layer — BOX_ENV_PATH (pushed env wins) then the profile-local env, with read_first_env/box_env_paths/delete_box_envs helpers and terminal deletes covering every candidate; SETUP_API 2. (v1.2.0: Modular Setup layers — re-entrant apply_foundation/apply_iptv/apply_addons (each leaves a complete working box), installed-state probes + assert_box_complete (dependency-closure walk), the PVR-disabled config window for pvr.iptvsimple instance-settings writes, staged-IPTV artifact consumption (host-built m3u/groups/instance files), keep-skin activation hardening (verify-then-re-assert with skinshortcuts quiescence), and the SETUP_API version guard.)</news>
   </extension>
 </addon>
