@@ -398,11 +398,12 @@ BOX_ENV_PATH = _env_mod.BOX_ENV_PATH
 
 def _box_env_paths():
     """The ORDERED env-source candidates (Phase N1, N1.1): the provisioner's
-    pushed file (``BOX_ENV_PATH`` under the ``_T7B`` root — wins when present,
-    so the provisioned path is byte-compatible), then the LEGACY push path
-    (pre-``_T7B`` boxes), then the device-resident MASTER ``.env.*``
-    candidates (canonical root, then legacy root — the persistent identity,
-    never deleted), then the profile-local persisted env the on-box collector
+    pushed file (``BOX_ENV_PATH`` under the ``_T7B/kodi`` staging tree — wins
+    when present, so the provisioned path is byte-compatible), then the LEGACY
+    push path (pre-``_T7B`` boxes), then the device-resident MASTER
+    candidates (``env.*`` / ``.env.*``, dot-optional — brand root → staging
+    tree → legacy root, the persistent identity, never deleted), then the
+    profile-local persisted env the on-box collector
     writes (``env.PROFILE_ENV_SPECIAL``). Resolves THIS module's
     ``BOX_ENV_PATH`` global late so a test's monkeypatched staging is honored.
     The multiple-masters warning logs FILE PATHS only, never values."""
@@ -1459,11 +1460,12 @@ def _device_name():
 
 def _scaffold_master_env():
     """The N1.1 scaffold duty: with NO env anywhere, CREATE the device-resident
-    master template ``.env.<device-name>`` in the staging dir for the user to
-    fill in and re-run. Placeholders only (every line comment-disabled — an
-    unedited scaffold stays the no-env class); never overwrites; guarded and
-    non-fatal where the staging root cannot exist (macOS/desktop: logged
-    skip). Returns the created path or ``None``."""
+    master template ``env.<device-name>`` (NO leading dot — the owner's
+    convention) at the BRAND ROOT (``_T7B/``) for the user to fill in and
+    re-run. Placeholders only (every line comment-disabled — an unedited
+    scaffold stays the no-env class); never overwrites; guarded and non-fatal
+    where the brand root cannot exist (macOS/desktop: logged skip). Returns the
+    created path or ``None``."""
     try:
         with open(_ENV_TEMPLATE_RESOURCE, encoding="utf-8") as fh:
             template = fh.read()

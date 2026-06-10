@@ -59,10 +59,15 @@ command -v adb >/dev/null 2>&1 || die "adb not found. Install it: brew install a
 # Provides defaults (DEVICE_IP / DEVICE_NAME / KODI_WEB_* / SETTINGS_LEVEL) and is
 # the source we derive the per-device tony7bones.env from (pushed to the box;
 # absent .env -> built-in defaults, exactly like the bootstrap's own fallback).
-# Per-device env path on the box (matches the bootstrap's BOX_ENV_PATH; read then
-# REMOVED by the bootstrap so its secrets don't linger). N1.1: lives under the
-# CANONICAL device root /storage/emulated/0/_T7B/kodi/ (the old
-# kodi/tony.7.bones/ root is a read-only legacy fallback — never push there).
+# Per-device DERIVED env path on the box (matches the bootstrap's BOX_ENV_PATH;
+# read then REMOVED by the bootstrap so its secrets don't linger). N1.1: the
+# DERIVED push + the IPTV staging live under the STAGING tree
+# /storage/emulated/0/_T7B/kodi/ (the old kodi/tony.7.bones/ root is a read-only
+# legacy fallback — never push there). NOTE: this is the machine-derived push
+# ONLY. The owner's PERSISTENT MASTER env lives ONE LEVEL UP at the BRAND ROOT
+# /storage/emulated/0/_T7B/env.<device> (no leading dot) — placed by hand, never
+# pushed or deleted by this script or the bootstrap; the bootstrap scans the
+# brand root FIRST, then this staging tree, then the legacy root.
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEVICE_ROOT="/storage/emulated/0/_T7B/kodi"
 BOX_ENV_PATH="$DEVICE_ROOT/tony7bones.env"

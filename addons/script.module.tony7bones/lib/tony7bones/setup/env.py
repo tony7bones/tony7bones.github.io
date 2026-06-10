@@ -25,31 +25,47 @@ without Kodi (``xbmcvfs`` is imported LAZILY, only to translate the
 
 Phase N1.1 adds the CANONICAL DEVICE ROOT and the DEVICE-RESIDENT MASTER env.
 
-The canonical on-box root is ``/storage/emulated/0/_T7B/kodi/`` (owner
-directive, 2026-06-10 — layout: ``backups/ iptv/ media/ repositories/ rss/
-scripts/``). The old ``/storage/emulated/0/kodi/tony.7.bones/`` root is a
-LEGACY FALLBACK only: still READ (already-provisioned boxes have files there
-today) but never written to — no scaffold, no push target.
+The canonical brand root is ``/storage/emulated/0/_T7B/`` (owner directive,
+2026-06-10). Two distinct jobs live under it:
 
-The MASTER env is the owner's editing copy ``.env.<device>`` placed (by ANY
-means — adb, downloader app, USB, share) in a device root. It is the box's
-PERSISTENT identity: read after the derived pushes (the freshest deliberate
-provisioning act outranks the standing identity) and before profile-local,
-applied through the provisioner-parity derivation (:func:`derive_master_env`),
-and **NEVER deleted** — the terminal delete set (:func:`deletable_env_paths`)
-deliberately excludes every master so a Kodi wipe-and-redo works forever off
-the same file. When NO env exists anywhere, Setup SCAFFOLDS the master
-template (:func:`scaffold_master_env`) at the CANONICAL root for the user to
-fill in and re-run.
+  * the BRAND ROOT itself (``_T7B/``) is where the owner PLACES the
+    device-resident MASTER env (e.g. ``_T7B/env.office``) — confirmed by
+    physical placement on every box — and where Setup SCAFFOLDS a new master;
+  * the STAGING tree (``_T7B/kodi/`` — layout ``backups/ iptv/ media/
+    repositories/ rss/ scripts/``) is where the provisioner pushes the derived
+    ``tony7bones.env`` and stages the IPTV artifacts.
+
+The old ``/storage/emulated/0/kodi/tony.7.bones/`` root is a LEGACY FALLBACK
+only: still READ (already-provisioned boxes have files there today) but never
+written to — no scaffold, no push target.
+
+The MASTER env is the owner's editing copy placed (by ANY means — adb,
+downloader app, USB, share) in a device root. Its basename is matched
+DOT-OPTIONALLY: the owner uses ``env.<device>`` (no leading dot — the physical
+convention); the committed example/template uses ``.env.<device>`` (leading
+dot). BOTH are recognised. It is the box's PERSISTENT identity: read after the
+derived pushes (the freshest deliberate provisioning act outranks the standing
+identity) and before profile-local, applied through the provisioner-parity
+derivation (:func:`derive_master_env`), and **NEVER deleted** — the terminal
+delete set (:func:`deletable_env_paths`) deliberately excludes every master so
+a Kodi wipe-and-redo works forever off the same file. The MASTER is scanned
+across, in order: the BRAND ROOT (``_T7B/`` — PRIMARY, where the owner places
+it) → the STAGING tree (``_T7B/kodi/``) → the LEGACY root. When NO env exists
+anywhere, Setup SCAFFOLDS the master template (:func:`scaffold_master_env`) as
+``_T7B/env.<device>`` (no leading dot — the owner's convention) at the BRAND
+ROOT for the user to fill in and re-run.
 """
 
 import os as _os
 import re as _re
 
-# The CANONICAL device root (N1.1, owner directive) and the LEGACY root it
-# replaces. The legacy root is read-only fallback: devices provisioned before
-# N1.1 still carry files there, so every reader scans it AFTER the canonical
-# root; nothing ever writes there again.
+# The CANONICAL brand root (N1.1, owner directive — where the owner PLACES the
+# master env and where Setup scaffolds it), the STAGING tree beneath it (the
+# provisioner's push target + IPTV staging), and the LEGACY root they replace.
+# The legacy root is read-only fallback: devices provisioned before N1.1 still
+# carry files there, so every reader scans it AFTER the canonical roots; nothing
+# ever writes there again.
+BRAND_ROOT = "/storage/emulated/0/_T7B"
 DEVICE_ROOT = "/storage/emulated/0/_T7B/kodi"
 LEGACY_DEVICE_ROOT = "/storage/emulated/0/kodi/tony.7.bones"
 
@@ -82,11 +98,24 @@ def profile_env_path():
 
 
 def staging_dir(primary=None):
-    """The CANONICAL on-box staging root — the dir holding the pushed env, the
-    master ``.env.<device>``, and the ``iptv/`` artifact staging. Derived from
-    the primary candidate so a test's monkeypatched ``BOX_ENV_PATH`` carries
-    its whole staging dir along."""
+    """The CANONICAL on-box STAGING root — the dir holding the pushed derived
+    env and the ``iptv/`` artifact staging (``_T7B/kodi/`` in production).
+    Derived from the primary candidate so a test's monkeypatched
+    ``BOX_ENV_PATH`` carries its whole staging dir along."""
     return _os.path.dirname(primary or BOX_ENV_PATH)
+
+
+def brand_root(primary=None):
+    """The BRAND ROOT (``_T7B/``) — where the owner PLACES the master env and
+    where Setup scaffolds it (one level ABOVE the staging tree). Derived from
+    the primary candidate: when the staging dir is the production ``…/kodi``
+    leaf, the brand root is its parent; otherwise (a test's flat tmp staging,
+    or any non-``kodi`` layout) the brand root IS the staging dir, so existing
+    fixtures that drop masters beside the pushed env keep resolving."""
+    staging = staging_dir(primary)
+    if _os.path.basename(staging) == "kodi":
+        return _os.path.dirname(staging)
+    return staging
 
 
 def legacy_staging_dir():
@@ -107,50 +136,92 @@ def derived_env_paths(primary=None):
     return paths
 
 
+# A device-resident MASTER env basename is ``env.<device>`` OR ``.env.<device>``
+# (dot-OPTIONAL — the owner places the no-dot form on the box; the committed
+# example/template uses the dot form). The ``<device>`` suffix must be non-empty
+# (``env`` / ``.env`` bare are not masters). Editor/build/example artifacts that
+# happen to start ``env.`` (``env.bak``, ``env.py``, ``env.swp``, the committed
+# ``…device.example`` template, …) are explicitly EXCLUDED so a stray file on
+# the box never routes (owner directive N1.1: "exclude obvious non-env matches").
+_MASTER_NAME = _re.compile(r"^\.?env\..+$")
+# Suffix denylist for the dot-optional master match — backup/editor/source
+# artifacts, never a device config. ``.example`` covers the committed template.
+_NON_MASTER_SUFFIXES = (
+    ".example",
+    ".bak",
+    ".orig",
+    ".tmp",
+    ".swp",
+    ".swo",
+    ".old",
+    ".save",
+    ".py",
+    ".pyc",
+    ".pyo",
+    ".sample",
+    "~",
+)
+
+
+def is_master_env_filename(name):
+    """True for a MASTER env BASENAME — ``env.<device>`` or ``.env.<device>``
+    (dot-optional) — excluding obvious non-config artifacts (``*.example``,
+    ``*.bak``, ``*.py``, editor swap files, …; see ``_NON_MASTER_SUFFIXES``)."""
+    name = name or ""
+    if not _MASTER_NAME.match(name):
+        return False
+    return not name.endswith(_NON_MASTER_SUFFIXES)
+
+
 def is_master_env_path(path):
-    """True for a device-resident MASTER env (basename ``.env.<something>``) —
-    the user-placed/scaffolded persistent identity file, as opposed to the
-    derived ``tony7bones.env`` push or the profile-local collector env."""
-    return _os.path.basename(path or "").startswith(".env.")
+    """True for a device-resident MASTER env path — the user-placed/scaffolded
+    persistent identity file (basename ``env.<device>`` or ``.env.<device>``,
+    dot-optional), as opposed to the derived ``tony7bones.env`` push or the
+    profile-local collector env."""
+    return is_master_env_filename(_os.path.basename(path or ""))
 
 
 def master_env_roots(primary=None):
-    """The roots scanned for MASTER envs, ordered: canonical first, legacy
-    second (read-only fallback). Deduped."""
-    roots = [staging_dir(primary)]
-    legacy = legacy_staging_dir()
-    if legacy not in roots:
-        roots.append(legacy)
+    """The roots scanned for MASTER envs, ordered: the BRAND ROOT first (``_T7B/``
+    — PRIMARY, where the owner physically places the master), then the STAGING
+    tree (``_T7B/kodi/`` — the prior N1.1 location, kept as fallback), then the
+    LEGACY root (read-only fallback). Deduped — in a flat test layout the brand
+    root and staging dir coincide."""
+    roots = []
+    for root in (brand_root(primary), staging_dir(primary), legacy_staging_dir()):
+        if root not in roots:
+            roots.append(root)
     return roots
 
 
 def _masters_in(root):
-    """Sorted ``.env.*`` files in one root; ``[]`` when the root is unreadable
-    or absent (off-device — neither ``/storage`` root exists on macOS)."""
+    """Sorted MASTER-env files in one root (basename ``env.*`` or ``.env.*``,
+    dot-optional, ``*.example`` excluded); ``[]`` when the root is unreadable or
+    absent (off-device — no ``/storage`` root exists on macOS)."""
     try:
         return sorted(
             _os.path.join(root, n)
             for n in _os.listdir(root)
-            if n.startswith(".env.") and _os.path.isfile(_os.path.join(root, n))
+            if is_master_env_filename(n) and _os.path.isfile(_os.path.join(root, n))
         )
     except OSError:
         return []
 
 
 def master_env_paths(primary=None, log=None):
-    """The device-resident MASTER env candidates: every ``.env.*`` file in the
-    canonical root (sorted), then every one in the legacy root (sorted) —
-    deterministic, canonical root wins. More than one IN TOTAL is a
-    misconfiguration — warn through ``log`` (FILE PATHS only, never values)
-    and let the ordered read pick the first NON-EMPTY one (same
-    skip-degenerate semantics as every other candidate). Off-device (no
-    root exists) returns ``[]``."""
+    """The device-resident MASTER env candidates: every master file (basename
+    ``env.*`` or ``.env.*``, dot-optional) in the BRAND ROOT (sorted), then the
+    STAGING tree (sorted), then the LEGACY root (sorted) — deterministic, brand
+    root wins. More than one IN TOTAL is a misconfiguration — warn through
+    ``log`` (FILE PATHS only, never values) and let the ordered read pick the
+    first NON-EMPTY one (same skip-degenerate semantics as every other
+    candidate). Off-device (no root exists) returns ``[]``."""
     paths = []
     for root in master_env_roots(primary):
         paths.extend(_masters_in(root))
     if len(paths) > 1 and log:
         log(
-            "multiple master envs: {} — reading in canonical-root-first sorted "
+            "multiple master envs: {} — reading in brand-root-first sorted "
             "order, first non-empty wins".format(", ".join(paths))
         )
     return paths
@@ -175,9 +246,18 @@ def derive_master_env(env, path):
     env = dict(env)
     env.pop("DEVICE_IP", None)
     if "IPTV_STAGING_DIR" not in env:
-        iptv_dir = _os.path.join(_os.path.dirname(path), "iptv")
-        if _os.path.isdir(iptv_dir):
-            env["IPTV_STAGING_DIR"] = iptv_dir
+        # The IPTV artifacts stage under the STAGING tree (``_T7B/kodi/iptv/``).
+        # A master placed AT the staging tree finds ``iptv/`` as a sibling; a
+        # master placed at the BRAND ROOT (``_T7B/env.office``) finds it one
+        # level down under ``kodi/`` — check both, sibling first.
+        master_dir = _os.path.dirname(path)
+        for iptv_dir in (
+            _os.path.join(master_dir, "iptv"),
+            _os.path.join(master_dir, "kodi", "iptv"),
+        ):
+            if _os.path.isdir(iptv_dir):
+                env["IPTV_STAGING_DIR"] = iptv_dir
+                break
     return env
 
 
@@ -189,8 +269,9 @@ def box_env_paths(primary=None, log=None):
          byte-compatible by construction,
       2. the LEGACY push path (boxes provisioned before the ``_T7B`` root
          move),
-      3. the device-resident MASTER ``.env.*`` candidates — canonical root
-         then legacy root, each sorted (the persistent identity),
+      3. the device-resident MASTER candidates (``env.*`` / ``.env.*``,
+         dot-optional) — brand root → staging tree → legacy root, each sorted
+         (the persistent identity),
       4. the profile-local persisted env (omitted off-Kodi).
 
     Derived-before-master because a derived push is a fresh, deliberate
@@ -297,20 +378,21 @@ def scaffold_template_text(template_text):
 
 def scaffold_master_env(device_name, template_text, primary=None, log=None):
     """Create the device-resident master env TEMPLATE (the N1.1 scaffold duty:
-    no env anywhere → Setup CREATES ``.env.<device-name>`` at the CANONICAL
-    root — never the legacy one — for the user to fill in and re-run).
+    no env anywhere → Setup CREATES ``env.<device-name>`` — NO leading dot, the
+    owner's convention — at the BRAND ROOT (``_T7B/``) for the user to fill in
+    and re-run. Never the staging tree or the legacy root).
 
     Guarantees: NEVER overwrites anything (skipped when ANY master already
-    exists at EITHER root — also avoids proliferating masters — and the
-    create itself is ``open(..., "x")``, race-safe); creates the staging dirs;
-    guarded and non-fatal where the staging root cannot exist
-    (macOS/off-device: the OSError is logged through ``log`` and the scaffold
-    is SKIPPED — the desktop user has a computer path by definition). Returns
-    the created path, or ``None`` when nothing was created."""
+    exists at ANY scanned root — also avoids proliferating masters — and the
+    create itself is ``open(..., "x")``, race-safe); creates the brand-root
+    dir; guarded and non-fatal where the root cannot exist (macOS/off-device:
+    the OSError is logged through ``log`` and the scaffold is SKIPPED — the
+    desktop user has a computer path by definition). Returns the created path,
+    or ``None`` when nothing was created."""
     if master_env_paths(primary):
         return None
-    root = staging_dir(primary)
-    path = _os.path.join(root, ".env." + sanitize_device_name(device_name))
+    root = brand_root(primary)
+    path = _os.path.join(root, "env." + sanitize_device_name(device_name))
     try:
         _os.makedirs(root, exist_ok=True)
         with open(path, "x", encoding="utf-8") as fh:

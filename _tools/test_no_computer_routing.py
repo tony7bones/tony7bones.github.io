@@ -469,27 +469,31 @@ def test_no_env_wizard_remove_setup_at_shifted_index(boot, monkeypatch):
 # --------------------------------------------------------------------------- #
 # The env helpers themselves (pure-Python unit pins).
 # --------------------------------------------------------------------------- #
-def test_box_env_paths_order_and_profile_translation(boot):
+def test_box_env_paths_order_and_profile_translation(boot, tmp_path):
     """Pushed path FIRST (primary override honored), the legacy push path
     second (pre-_T7B boxes), profile-local last — translated through xbmcvfs
-    into the real profile dir."""
+    into the real profile dir. (A primary in an EMPTY dir so no stray master
+    files perturb the order — the master-in-the-middle case is pinned
+    separately.)"""
     from tony7bones.setup import env as env_mod
 
-    paths = env_mod.box_env_paths(primary="/tmp/pushed.env")
-    assert paths[0] == "/tmp/pushed.env"
+    primary = str(tmp_path / "pushed.env")
+    paths = env_mod.box_env_paths(primary=primary)
+    assert paths[0] == primary
     assert paths[1] == env_mod.LEGACY_BOX_ENV_PATH
     assert len(paths) == 3
     assert paths[2] == boot.mod.xbmcvfs.translatePath(env_mod.PROFILE_ENV_SPECIAL)
-    # Default primary is the canonical pushed-path constant (under _T7B).
+    # Default primary is the canonical pushed-path constant (under _T7B/kodi).
     assert env_mod.box_env_paths()[0] == env_mod.BOX_ENV_PATH
     assert env_mod.BOX_ENV_PATH == "/storage/emulated/0/_T7B/kodi/tony7bones.env"
+    assert env_mod.BRAND_ROOT == "/storage/emulated/0/_T7B"
     assert (
         env_mod.LEGACY_BOX_ENV_PATH
         == "/storage/emulated/0/kodi/tony.7.bones/tony7bones.env"
     )
 
 
-def test_box_env_paths_off_kodi_omits_profile(boot, monkeypatch):
+def test_box_env_paths_off_kodi_omits_profile(boot, monkeypatch, tmp_path):
     """Off-Kodi (no xbmcvfs importable) the profile candidate is omitted —
     the module stays import-clean and usable for pure-Python callers."""
     import sys as _sys
@@ -497,8 +501,9 @@ def test_box_env_paths_off_kodi_omits_profile(boot, monkeypatch):
     from tony7bones.setup import env as env_mod
 
     monkeypatch.setitem(_sys.modules, "xbmcvfs", None)  # import yields None -> raises
-    assert env_mod.box_env_paths(primary="/tmp/p.env") == [
-        "/tmp/p.env",
+    primary = str(tmp_path / "p.env")
+    assert env_mod.box_env_paths(primary=primary) == [
+        primary,
         env_mod.LEGACY_BOX_ENV_PATH,
     ]
 
@@ -547,7 +552,11 @@ def _write_master(boot, name, content):
 
 
 def _masters(boot):
-    return sorted(n for n in os.listdir(_staging(boot)) if n.startswith(".env."))
+    from tony7bones.setup import env as env_mod
+
+    return sorted(
+        n for n in os.listdir(_staging(boot)) if env_mod.is_master_env_filename(n)
+    )
 
 
 def _stub_guided(boot, monkeypatch, calls):
@@ -753,10 +762,11 @@ def test_wipe_and_redo_works_off_surviving_master(boot, monkeypatch):
 
 # ---- the scaffold duty ------------------------------------------------------ #
 def test_no_env_scaffolds_master_template(boot, monkeypatch):
-    """With NO env anywhere Setup CREATES .env.<device-name> (sanitized from
-    Kodi's device name), content = the bundled template comment-disabled (so
-    it parses to {} — the unedited scaffold cannot hijack routing), and the
-    wizard surfaces ONE unobtrusive line (a toast naming the path)."""
+    """With NO env anywhere Setup CREATES env.<device-name> (NO leading dot —
+    the owner's convention; sanitized from Kodi's device name), content = the
+    bundled template comment-disabled (so it parses to {} — the unedited
+    scaffold cannot hijack routing), and the wizard surfaces ONE unobtrusive
+    line (a toast naming the path)."""
     from tony7bones.setup import env as env_mod
 
     _no_env(boot)
@@ -766,8 +776,8 @@ def test_no_env_scaffolds_master_template(boot, monkeypatch):
 
     boot.mod.run()
 
-    path = os.path.join(_staging(boot), ".env.office-fire-tv")
-    assert os.path.exists(path), "the scaffold must create .env.<device-name>"
+    path = os.path.join(_staging(boot), "env.office-fire-tv")
+    assert os.path.exists(path), "the scaffold must create env.<device-name>"
     content = open(path, encoding="utf-8").read()
     with open(boot.mod._ENV_TEMPLATE_RESOURCE, encoding="utf-8") as fh:
         assert content == env_mod.scaffold_template_text(fh.read())
@@ -784,7 +794,7 @@ def test_scaffold_device_name_fallback_generic(boot, monkeypatch):
 
     boot.mod.run()
 
-    assert os.path.exists(os.path.join(_staging(boot), ".env.device"))
+    assert os.path.exists(os.path.join(_staging(boot), "env.device"))
 
 
 def test_scaffold_never_overwrites_existing_master(boot, monkeypatch):
@@ -812,7 +822,7 @@ def test_scaffold_creates_missing_staging_dirs(boot, monkeypatch):
 
     boot.mod.run()
 
-    assert os.path.exists(os.path.join(deep, ".env.device"))
+    assert os.path.exists(os.path.join(deep, "env.device"))
 
 
 def test_scaffold_nonfatal_when_staging_unavailable(boot, monkeypatch):
@@ -983,7 +993,7 @@ def test_scaffold_toast_failure_never_blocks_wizard(boot, monkeypatch):
     boot.mod.run()  # must not raise
 
     assert calls == [{}]
-    assert os.path.exists(os.path.join(_staging(boot), ".env.device"))
+    assert os.path.exists(os.path.join(_staging(boot), "env.device"))
 
 
 # --------------------------------------------------------------------------- #
@@ -1095,8 +1105,201 @@ def test_scaffold_skipped_by_legacy_master_and_never_writes_legacy(boot, monkeyp
     assert sorted(os.listdir(root)) == [".env.mine"]
     assert open(legacy_master, encoding="utf-8").read() == sentinel
 
-    # (b) no master anywhere -> scaffold at the canonical root ONLY.
+    # (b) no master anywhere -> scaffold at the brand root ONLY.
     os.remove(legacy_master)
     boot.mod.run()
-    assert _masters(boot) == [".env.device"]
+    assert _masters(boot) == ["env.device"]
     assert sorted(os.listdir(root)) == [], "the legacy root is never written to"
+
+
+# --------------------------------------------------------------------------- #
+# N1.1 FIX — the BRAND ROOT (_T7B/) is the PRIMARY master location, and the
+# master filename is DOT-OPTIONAL. The owner physically places
+# /storage/emulated/0/_T7B/env.<device> (NO leading dot, one level ABOVE the
+# _T7B/kodi/ staging tree). The prior N1.1 code searched _T7B/kodi/.env.* —
+# one dir too deep AND dot-required — so every box missed its master. These
+# pins encode the owner's confirmed layout.
+# --------------------------------------------------------------------------- #
+def _prod_layout(boot, monkeypatch):
+    """Point BOX_ENV_PATH at a production-shaped …/kodi/tony7bones.env so the
+    brand root resolves to its PARENT (the _T7B/ analogue) and the staging tree
+    is the kodi/ child. Returns (brand_root, staging_dir), both created."""
+    from tony7bones.setup import env as env_mod
+
+    brand = os.path.join(_staging(boot), "_T7B")
+    staging = os.path.join(brand, "kodi")
+    os.makedirs(staging, exist_ok=True)
+    pushed = os.path.join(staging, "tony7bones.env")
+    monkeypatch.setattr(boot.mod, "BOX_ENV_PATH", pushed)
+    # The env module reads the bootstrap's BOX_ENV_PATH late, but its own
+    # constants (BRAND_ROOT/DEVICE_ROOT) are unused once a primary is threaded.
+    assert env_mod.brand_root(pushed) == brand
+    assert env_mod.staging_dir(pushed) == staging
+    return brand, staging
+
+
+def test_owner_nodot_master_at_brand_root_routes_express(boot, monkeypatch):
+    """THE BUG FIX, end-to-end: a no-dot master at the BRAND ROOT
+    (_T7B/env.office) — exactly where the owner placed it — is FOUND and routes
+    Express with its parsed dict. (Pre-fix the scan looked one dir too deep in
+    _T7B/kodi/ and required a leading dot, so this file was missed and the box
+    wrongly fell through to the wizard.)"""
+    brand, _staging_tree = _prod_layout(boot, monkeypatch)
+    os.remove(boot.env_file)  # no derived push anywhere
+    master = os.path.join(brand, "env.office")  # NO leading dot, BRAND ROOT
+    with open(master, "w", encoding="utf-8") as fh:
+        fh.write('WEATHER_LOCATIONS="Sacramento"\n')
+    _forbid_guided(boot, monkeypatch)
+    calls = []
+    _stub_express_ok(boot, monkeypatch, calls)
+
+    boot.mod.run()
+
+    assert calls and calls[0]["WEATHER_LOCATIONS"] == "Sacramento", (
+        "the no-dot master at the brand root must route Express"
+    )
+    assert os.path.exists(master), "the brand-root master must never be deleted"
+
+
+def test_dot_master_in_staging_tree_still_found(boot, monkeypatch):
+    """The prior N1.1 location stays a fallback: a leading-dot master in the
+    _T7B/kodi/ STAGING tree is still found and routed."""
+    _brand, staging = _prod_layout(boot, monkeypatch)
+    os.remove(boot.env_file)
+    master = os.path.join(staging, ".env.office")  # dot form, staging tree
+    with open(master, "w", encoding="utf-8") as fh:
+        fh.write('MARKER="staging-dot"\n')
+    calls = []
+    _stub_express_ok(boot, monkeypatch, calls)
+
+    boot.mod.run()
+
+    assert calls and calls[0]["MARKER"] == "staging-dot"
+    assert os.path.exists(master)
+
+
+def test_brand_root_master_wins_over_staging_tree_master(boot, monkeypatch):
+    """Master scan order: BRAND ROOT outranks the staging tree (the owner's
+    placement is primary). MUTATION KILLER for a reversed root order."""
+    brand, staging = _prod_layout(boot, monkeypatch)
+    os.remove(boot.env_file)
+    with open(os.path.join(brand, "env.office"), "w", encoding="utf-8") as fh:
+        fh.write('MARKER="brand"\n')
+    with open(os.path.join(staging, ".env.office"), "w", encoding="utf-8") as fh:
+        fh.write('MARKER="staging"\n')
+    calls = []
+    _stub_express_ok(boot, monkeypatch, calls)
+
+    boot.mod.run()
+
+    assert calls and calls[0]["MARKER"] == "brand"
+
+
+def test_nodot_master_setup_mode_guided_routes_wizard(boot, monkeypatch):
+    """SETUP_MODE=guided from a no-dot brand-root master routes the wizard with
+    the master's own dict (the routing contract holds dot-optionally)."""
+    brand, _staging = _prod_layout(boot, monkeypatch)
+    os.remove(boot.env_file)
+    with open(os.path.join(brand, "env.office"), "w", encoding="utf-8") as fh:
+        fh.write('SETUP_MODE="guided"\nMARKER="m"\n')
+    _forbid_express(boot, monkeypatch)
+    calls = []
+    _stub_guided(boot, monkeypatch, calls)
+
+    boot.mod.run()
+
+    assert calls and calls[0]["SETUP_MODE"] == "guided" and calls[0]["MARKER"] == "m"
+
+
+def test_scaffold_writes_nodot_at_brand_root_not_staging(boot, monkeypatch):
+    """The scaffold target moved: with NO env anywhere it creates
+    env.<device> (NO leading dot) at the BRAND ROOT — never the staging tree,
+    never the legacy root."""
+    brand, staging = _prod_layout(boot, monkeypatch)
+    os.remove(boot.env_file)
+    boot.state["settings_values"] = {"services.devicename": "Office Fire TV"}
+    _stub_guided(boot, monkeypatch, [])
+
+    boot.mod.run()
+
+    scaffolded = os.path.join(brand, "env.office-fire-tv")
+    assert os.path.exists(scaffolded), "scaffold lands at the brand root, no dot"
+    # nothing dropped into the staging tree (only the dir itself exists)
+    assert os.listdir(staging) == [], "the staging tree is not the scaffold target"
+    toast = boot.state.get("notification", [])
+    assert any(scaffolded in msg for _t, msg in toast)
+
+
+def test_brand_root_master_never_deleted_on_express_completion(boot, monkeypatch):
+    """The never-delete contract holds for a brand-root master: a completed
+    Express consumes the derived push but spares the brand-root master, so a
+    wipe-and-redo works forever off it."""
+    brand, staging = _prod_layout(boot, monkeypatch)
+    pushed = boot.mod.BOX_ENV_PATH
+    with open(pushed, "w", encoding="utf-8") as fh:
+        fh.write('MARKER="derived"\n')
+    master = os.path.join(brand, "env.office")
+    with open(master, "w", encoding="utf-8") as fh:
+        fh.write('MARKER="master"\n')
+    _stub_express_ok(boot, monkeypatch, [])
+
+    boot.mod.run()
+
+    assert not os.path.exists(pushed), "the derived push is consumed"
+    assert os.path.exists(master), "the brand-root master must NEVER be deleted"
+
+
+def test_iptv_staging_injected_for_brand_root_master(boot, monkeypatch):
+    """A brand-root master finds the IPTV staging one level down under kodi/iptv/
+    (the staging tree is _T7B/kodi/, not the brand root) and injects
+    IPTV_STAGING_DIR — provisioner parity for the no-dot/brand-root placement."""
+    brand, staging = _prod_layout(boot, monkeypatch)
+    os.remove(boot.env_file)
+    iptv_dir = os.path.join(staging, "iptv")
+    os.makedirs(iptv_dir, exist_ok=True)
+    with open(os.path.join(brand, "env.office"), "w", encoding="utf-8") as fh:
+        fh.write('DEVICE_IP="1.2.3.4"\nMARKER="x"\n')
+    calls = []
+    _stub_express_ok(boot, monkeypatch, calls)
+
+    boot.mod.run()
+
+    assert calls and "DEVICE_IP" not in calls[0]
+    assert calls[0]["IPTV_STAGING_DIR"] == iptv_dir
+
+
+def test_non_master_artifacts_at_brand_root_are_ignored(boot, monkeypatch):
+    """Robustness: editor/build artifacts that happen to start 'env.'
+    (env.bak, env.py, env.swp, the committed env.device.example) are NOT
+    masters — they never route and never suppress the scaffold."""
+    from tony7bones.setup import env as env_mod
+
+    brand, _staging = _prod_layout(boot, monkeypatch)
+    os.remove(boot.env_file)
+    for junk in ("env.bak", "env.py", "env.swp", "env.device.example", "env", ".env"):
+        with open(os.path.join(brand, junk), "w", encoding="utf-8") as fh:
+            fh.write('MARKER="junk"\n')
+    _stub_guided(boot, monkeypatch, [])
+
+    boot.mod.run()
+
+    # No artifact counted as a master, so the scaffold fired (env.device created).
+    assert os.path.exists(os.path.join(brand, "env.device"))
+    assert env_mod.master_env_paths(primary=boot.mod.BOX_ENV_PATH) == [
+        os.path.join(brand, "env.device")
+    ], "only the scaffolded master is recognised among the artifacts"
+
+
+def test_is_master_env_filename_dot_optional_and_denylist():
+    """The dot-optional matcher unit: env.<x> and .env.<x> match; bare env/.env
+    and the artifact suffixes do not."""
+    from tony7bones.setup import env as env_mod
+
+    f = env_mod.is_master_env_filename
+    assert f("env.office") and f(".env.office")
+    assert f("env.travelstick-2") and f(".env.travel-stick")
+    assert not f("env") and not f(".env")
+    assert not f("env.device.example") and not f(".env.device.example")
+    for suffix in (".bak", ".py", ".pyc", ".swp", ".orig", ".tmp", ".old", "~"):
+        assert not f("env" + suffix), suffix
+    assert not f("tony7bones.env") and not f("notes.txt")
