@@ -44,14 +44,47 @@ from xml.etree import ElementTree as ET
 import xbmc
 import xbmcvfs
 
+from tony7bones import install_with_deps, is_installed
+
 from .env import split_list
 from .result import LayerResult
 
 MY_ID = "script.tony7bones.bootstrap"
 
+# --------------------------------------------------------------------------- #
+# The IPTV layer's own PVR backend (Phase 3a — moved out of the base ADDONS).
+# --------------------------------------------------------------------------- #
+# pvr.iptvsimple is the PVR backend the IPTV gate configures. As of Phase 3a its
+# INSTALL belongs to THIS layer (it was previously in the base ``ADDONS`` list),
+# so the IPTV gate owns its own backend: ``apply_iptv`` installs it (+ its binary
+# inputstream closure) BEFORE configuring instance-settings, and FAILS LOUD if the
+# install does not land — it never silently writes instance-settings for a missing
+# pvr.iptvsimple. It is a BINARY add-on, so its closure resolves per-platform from
+# the official repo (``install_with_deps`` loads the platform-tagged index); the
+# base config-only bodies (copy/enforce) below are unchanged.
+PVR_BACKEND_ID = "pvr.iptvsimple"
+OFFICIAL_BASE = "https://mirrors.kodi.tv/addons/omega"
+
 
 def _log(msg, level=xbmc.LOGINFO):
     xbmc.log(f"[{MY_ID}] {msg}", level)
+
+
+def _install_pvr_backend(dialog):
+    """Install pvr.iptvsimple (+ its binary inputstream closure), or fail loud.
+
+    The IPTV gate owns its own PVR backend (Phase 3a): resolve + direct-extract
+    pvr.iptvsimple's full closure from the official repo (platform-aware — it is a
+    BINARY add-on, so ``install_with_deps`` loads the platform-tagged official
+    index and picks the matching native build). Returns True once it reports
+    installed. A no-op short-circuit when it is already installed (re-entry).
+
+    Resolves its install primitives (``install_with_deps`` / ``is_installed``) from
+    THIS module's globals, so a test that stubs the install path patches them here
+    (``iptv.*``) — no injected deps seam (Tech-debt ledger)."""
+    if is_installed(PVR_BACKEND_ID):
+        return True
+    return bool(install_with_deps(PVR_BACKEND_ID, dialog, [], OFFICIAL_BASE, _log))
 
 
 # Device → userdata file copies. The user places these files on the device under
@@ -334,26 +367,28 @@ def _ensure_iptv_custom_tv_groups(box_env=None):
 # The IPTV layer entry point (composed device-copy + instance-settings enforce).
 # --------------------------------------------------------------------------- #
 def apply_iptv(env, *, dialog=None, log=None):
-    """Apply Layer 1 (IPTV) in-Kodi CONFIG: copy the user's device files into
+    """Apply Layer 1 (IPTV): install the PVR backend (pvr.iptvsimple + its binary
+    inputstream closure) OR FAIL LOUD, then copy the user's device files into
     userdata, then enforce pvr.iptvsimple's instance-settings (custom group mode +
-    custom-groups file + the env's m3u/epg playlist source + groups-only) — both
-    LIFTED VERBATIM from the monolith's ``_configure_box`` — returning a
-    LayerResult.
+    custom-groups file + the env's m3u/epg playlist source + groups-only) —
+    returning a LayerResult.
 
-    Behaviour-preserving COMPOSITION of the monolith's ``_copy_device_files`` ->
-    ``_ensure_iptv_custom_tv_groups`` (in that order — the copy BEFORE the enforce,
-    so the enforce patches the copied file rather than being overwritten by it).
-    This is the SHAPE the Phase-4 orchestrator wants; it is deliberately NOT called
-    from ``run()``/``_configure_box`` yet — those keep calling the individual
-    bodies (via the bootstrap shims) in their EXISTING interleaved slots (copy then
-    enforce, with weather BEFORE and RSS AFTER) so the characterization snapshot
-    stays byte-identical. The orchestrator will adopt ``apply_iptv`` with a
-    deliberate snapshot update.
+    Phase 3a — the FIRST deliberate behaviour change. The IPTV gate now OWNS its
+    own PVR backend: ``pvr.iptvsimple``'s INSTALL moved OUT of the base ``ADDONS``
+    list (``tony7bones.setup.addons``) and INTO this layer. So ``apply_iptv``:
 
-    NOTE (Phase 2d is config-only): this layer does NOT install ``pvr.iptvsimple``
-    — that move (out of the base ``ADDONS`` list into the IPTV gate) is the
-    deliberate behaviour change in Phase 3. Here the PVR backend is assumed already
-    installed by the Add-ons layer, exactly as the monolith assumes.
+      1. installs pvr.iptvsimple (+ its binary inputstream closure) via
+         ``_install_pvr_backend`` — install-or-fail-loud. If the backend does NOT
+         install, the layer returns ``ok=False`` with ``failed[pvr.iptvsimple]`` and
+         WRITES NO instance-settings (never silently configure a missing add-on).
+      2. copies the user's device files into userdata (guarded; skips missing).
+      3. enforces the instance-settings (gated on the groups file).
+
+    In a FULL Express run the NET installed set is UNCHANGED vs the old monolith:
+    pvr.iptvsimple (+ inputstream.*) is still installed — just via THIS layer
+    instead of the base loop. The copy-then-enforce body is the verbatim
+    ``_configure_box`` IPTV order (copy BEFORE enforce, so the enforce patches the
+    copied file rather than being overwritten by it).
 
     Parameters
     ----------
@@ -363,10 +398,11 @@ def apply_iptv(env, *, dialog=None, log=None):
         IPTV_GROUPS_ONLY from it; secret values (m3u/epg creds) are never logged.
         ``None`` is treated as the empty env — on a no-env box the device-copy is a
         guarded no-op and the enforce leaves the all-channels default (writes
-        nothing), so ``apply_iptv`` is a clean no-op.
+        nothing), so apart from the backend install ``apply_iptv`` is a clean no-op.
     dialog
-        Accepted for the uniform layer signature; the in-Kodi IPTV config does no
-        progress reporting, so it is unused (the copy/enforce are fast file ops).
+        The shared progress dialog (or ``None``); forwarded to the PVR backend
+        install so the user sees one continuous progress bar. The copy/enforce do no
+        progress reporting (fast file ops).
     log
         The logging callable; reserved for future per-layer logging — the lifted
         bodies keep using this module's ``_log`` so their log lines stay identical
@@ -375,25 +411,50 @@ def apply_iptv(env, *, dialog=None, log=None):
     Returns
     -------
     LayerResult
-        ``layer="iptv"``. ``ok`` is always True — both halves are fully defensive
-        (every failure is logged and swallowed), so the layer never reports a hard
-        failure; a missing source / missing groups file is the no-op contract, not
-        an error. ``installed`` records ``"pvr.iptvsimple": "configured"`` when the
-        enforce actually WROTE the instance-settings file (group mode and/or
-        m3u/epg), so the orchestrator can see config landed; it is empty on the
-        no-write path. This is driven by the enforce's OWN return signal (the OR of
-        every ``_set_instance_setting`` change), NOT by whether the file pre-existed
-        — so on a normally-provisioned box, where the device-copy stages
-        instance-settings-1.xml BEFORE the enforce, a real enforce write is reported
-        truthfully (the old ``existed_before`` probe lied here, reporting a no-op).
-        ``already_done`` means "no NEW config was written this run": either the gated
-        no-op (no m3u/epg and no groups file) OR an already-correct file the enforce
-        left byte-identical (the ``if changed:`` write-skip). It is honest for "did
+        ``layer="iptv"``. ``ok`` is True only when the PVR backend installed; a
+        backend-install failure is the ONE hard-failure path (``ok=False``,
+        ``failed[pvr.iptvsimple]="install failed"``, no instance-settings written) —
+        the orchestrator checks ``ok`` BEFORE restarting. The copy + enforce halves
+        stay fully defensive (every failure is logged and swallowed); a missing
+        source / missing groups file is the no-op contract, not an error.
+        ``installed`` records ``"pvr.iptvsimple": "installed"`` once the backend
+        landed, upgraded to ``"configured"`` when the enforce actually WROTE the
+        instance-settings file (group mode and/or m3u/epg). The "did config land?"
+        signal is the enforce's OWN return (the OR of every ``_set_instance_setting``
+        change), NOT whether the file pre-existed — so on a normally-provisioned box,
+        where the device-copy stages instance-settings-1.xml BEFORE the enforce, a
+        real enforce write is reported truthfully (the old ``existed_before`` probe
+        lied here). ``already_done`` means "no NEW work this run": the backend was
+        already installed AND no config was written (the gated no-op OR an
+        already-correct file the enforce left byte-identical). It is honest for "did
         this layer do new work?" but is NOT a deep re-provision probe; don't build
         idempotence on it. ``needs_restart=True`` is a REQUEST the orchestrator owns
         (pvr.iptvsimple re-reads instance settings on restart).
     """
     env = env or {}
+
+    # --- install the PVR backend FIRST — install-or-fail-loud (Phase 3a) ---
+    # The IPTV gate owns its own backend now; if pvr.iptvsimple does not install,
+    # the layer fails (ok=False) and writes NO instance-settings — never silently
+    # configure a missing add-on. A re-entry where it is already installed is a
+    # no-op short-circuit (already_installed below stays True for already_done math).
+    already_installed = is_installed(PVR_BACKEND_ID)
+    pvr_ok = _install_pvr_backend(dialog)
+    if not pvr_ok:
+        _log(
+            "apply_iptv: pvr.iptvsimple did NOT install — refusing to configure a "
+            "missing PVR backend (no instance-settings written)",
+            xbmc.LOGERROR,
+        )
+        return LayerResult(
+            layer="iptv",
+            ok=False,
+            already_done=False,
+            installed={},
+            failed={PVR_BACKEND_ID: "install failed"},
+            needs_restart=False,
+            detail="pvr.iptvsimple install failed — IPTV not configured",
+        )
 
     # --- copy the user's device files into userdata (guarded; skips missing) ---
     _copy_device_files()
@@ -408,23 +469,24 @@ def apply_iptv(env, *, dialog=None, log=None):
     # writes real config. The return value can't be fooled by that staging.
     wrote_instance = _ensure_iptv_custom_tv_groups(env)
 
-    installed = {}
-    if wrote_instance:
-        installed["pvr.iptvsimple"] = "configured"
+    # The backend installed (pvr_ok is True here); record it, then UPGRADE the state
+    # to "configured" if the enforce actually wrote instance-settings this run.
+    installed = {PVR_BACKEND_ID: "configured" if wrote_instance else "installed"}
 
-    # already_done = no config was WRITTEN this run — either the gated no-op (no
-    # m3u/epg and no groups file) or an already-correct instance-settings file that
-    # the enforce's `if changed:` write-skip left byte-identical. See the LayerResult
-    # docstring: this is "did this layer do new work?" semantics. A re-entry against
-    # an already-correct file now honestly reports already_done=True with no write —
-    # it is NOT the orchestrator's deeper re-entry probe, but it no longer LIES on a
-    # provisioned box (the pre-existing-file-but-fresh-config case).
-    already_done = not wrote_instance
-    detail = (
-        "instance-settings written"
-        if wrote_instance
-        else "no-op (no config written: no m3u/epg+no groups file, or already correct)"
-    )
+    # already_done = no NEW work this run: the backend was already installed AND no
+    # config was written (the gated no-op — no m3u/epg and no groups file — or an
+    # already-correct instance-settings file the enforce's `if changed:` write-skip
+    # left byte-identical). A fresh backend install is real work, so it is never
+    # already_done. This is "did this layer do new work?" semantics; it is NOT the
+    # orchestrator's deeper re-entry probe — don't build idempotence on it.
+    already_done = already_installed and not wrote_instance
+    if wrote_instance:
+        detail = "pvr.iptvsimple installed; instance-settings written"
+    else:
+        detail = (
+            "pvr.iptvsimple installed; no config written "
+            "(no m3u/epg+no groups file, or already correct)"
+        )
     return LayerResult(
         layer="iptv",
         ok=True,

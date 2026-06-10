@@ -215,27 +215,45 @@ def _stub_skin_and_video_success(boot, monkeypatch):
             boot.state["installed"].add(boot.mod.MODV2PLUS_ID)
         return True
 
-    # The skin closure path resolves its install primitives from the BOOTSTRAP
-    # module's globals (via foundation's _BootSkinDeps), so patch boot.mod.*. The
-    # base + video install bodies MOVED to tony7bones.setup.addons (Phase 2c) and
-    # resolve their primitives from THAT module's globals, so the SAME stubs are
-    # ALSO patched onto boot.mod._addons (the repointed boot.mod patches — no
-    # deps-injection seam, per the Tech-debt ledger). The stub OBJECTS are
-    # identical wherever they live, so the golden snapshot VALUES are unchanged;
-    # only WHERE the stub is patched moves.
+    # Phase 3a: run_express drives the COMPOSED layers via the BARE apply_*(env)
+    # form (the deps-injection seam is killed — Tech-debt ledger), so each layer
+    # resolves its install primitives from ITS OWN module globals, NOT boot.mod's.
+    # Patch the stubs onto every layer module that owns a primitive the full path
+    # drives:
+    #   * boot.mod        — still patched for any remaining bootstrap-resolved call.
+    #   * _addons         — base repos/apps + curated video (install_selection).
+    #   * _foundation     — the skin closure (install_selection/extract_zip/
+    #                       _latest_zip_url/install_with_deps via foundation._SkinDeps).
+    #   * _iptv           — the pvr.iptvsimple backend install (install_with_deps),
+    #                       moved here in Phase 3a; stub it so the full path does not
+    #                       fall through to the real engine and install pvr's full
+    #                       closure (requests/certifi/urllib3 + inputstream).
+    # The stub OBJECTS are identical wherever they live, so the golden snapshot
+    # VALUES are unchanged; only WHERE the stub is patched moves.
     addons = boot.mod._addons
-    monkeypatch.setattr(boot.mod, "install_selection", _sel)
-    monkeypatch.setattr(boot.mod, "extract_zip", _extract)
-    monkeypatch.setattr(boot.mod, "install_with_deps", lambda *a, **k: True)
-    monkeypatch.setattr(
-        boot.mod, "_latest_zip_url", lambda aid: f"http://local/{aid}-9.9.9.zip"
-    )
-    monkeypatch.setattr(addons, "install_selection", _sel)
-    monkeypatch.setattr(addons, "extract_zip", _extract)
-    monkeypatch.setattr(addons, "install_with_deps", lambda *a, **k: True)
-    monkeypatch.setattr(
-        addons, "_latest_zip_url", lambda aid: f"http://local/{aid}-9.9.9.zip"
-    )
+    foundation = boot.mod._foundation
+    iptv = boot.mod._iptv
+    for tgt in (boot.mod, addons, foundation):
+        monkeypatch.setattr(tgt, "install_selection", _sel, raising=False)
+        monkeypatch.setattr(tgt, "extract_zip", _extract, raising=False)
+        monkeypatch.setattr(
+            tgt, "install_with_deps", lambda *a, **k: True, raising=False
+        )
+        monkeypatch.setattr(
+            tgt,
+            "_latest_zip_url",
+            lambda aid: f"http://local/{aid}-9.9.9.zip",
+            raising=False,
+        )
+
+    # The IPTV layer installs pvr.iptvsimple via _install_pvr_backend ->
+    # install_with_deps. Stub it to report success WITHOUT mutating state, exactly
+    # like the global install_with_deps stub the other layers use — so the full
+    # snapshot stays a clean DELTA of the explicitly-stubbed (video + skin) pieces.
+    # The pvr.iptvsimple+inputstream real install is pinned by the BARE snapshot
+    # (real engine); here it is a stubbed success (mirrors the monolith, whose base
+    # ADDONS pvr install also went through the stubbed install_with_deps).
+    monkeypatch.setattr(iptv, "install_with_deps", lambda *a, **k: True, raising=False)
 
 
 def _assert_or_write(key, snapshot):
@@ -469,3 +487,92 @@ def test_cancel_path_does_nothing_terminal(boot, monkeypatch):
         "cancelled run must leave the bootstrap's own add-on directory intact"
     )
     assert boot.state["ok"] == [], "cancelled run must show no success summary"
+
+
+# --------------------------------------------------------------------------- #
+# Phase 3a — the NET-INSTALLED-SET equivalence invariant (PERMANENT).
+#
+# Phase 3a is the first DELIBERATE behaviour change: pvr.iptvsimple's INSTALL moved
+# out of the base ADDONS list into apply_iptv. The change is legitimate ONLY because
+# the NET SET of add-ons a full run installs is UNCHANGED vs the monolith — pvr is
+# still installed (+ its inputstream binary closure), just via the IPTV layer. The
+# golden snapshot above pins the full reduced state (incl. order/summary), but its
+# regen is an explicit local act; this test pins the NET INSTALLED SET against a
+# FROZEN constant copied from the pre-Phase-3a monolith (the bare snapshot's real
+# install engine on commit HEAD~). It does NOT read modular_setup_snapshot.json, so
+# a future regression that drops an add-on AND rebaselines the snapshot still fails
+# HERE — this is the hard equivalence floor.
+#
+# If a future phase legitimately adds/removes an add-on from the base box, update
+# this constant DELIBERATELY (and explain why in the commit) — it is meant to make
+# any net-set change loud, not impossible.
+# --------------------------------------------------------------------------- #
+MONOLITH_NET_INSTALLED = frozenset(
+    {
+        # base source repos (12)
+        "repository.709",
+        "repository.Magnetic",
+        "repository.bugatsinho",
+        "repository.cocoscrapers",
+        "repository.diggz.zip",
+        "repository.ivarbrandt",
+        "repository.kodifitzwell",
+        "repository.kodinerds",
+        "repository.loop",
+        "repository.peno64",
+        "repository.redwizard",
+        "repository.umbrella",
+        # base apps + their python closure
+        "script.ezmaintenanceplus",
+        "script.realdebrid",
+        "weather.multi",
+        "script.module.requests",
+        "script.module.urllib3",
+        "script.module.certifi",
+        # the skin closure direct-extracted before resolve (proxy-invisible)
+        "script.module.pvr.artwork",
+        "script.tony7bones.modv2plus",
+        # the IPTV backend — moved from base ADDONS to apply_iptv in Phase 3a; it
+        # MUST still be in the net set (+ its binary inputstream closure).
+        "pvr.iptvsimple",
+        "inputstream.ffmpegdirect",
+    }
+)
+
+
+def test_full_run_net_installed_set_equals_monolith(boot):
+    """EQUIVALENCE FLOOR: a full run()'s NET installed set is byte-for-byte the
+    pre-Phase-3a monolith's. Pinned against a FROZEN constant (NOT the regen-able
+    snapshot), so a regression that drops pvr.iptvsimple (or any add-on) when its
+    install moved to the IPTV gate — or that drops/adds anything else — fails here
+    even if someone also rebaselines the golden snapshot. The fixture's real engine
+    drives the full base + IPTV-backend install; the skin closure is unresolved in
+    the bare index (FAILED), but the skin add-ons it direct-extracts FIRST
+    (pvr.artwork + modv2plus) are real installs and ARE in the set, exactly as in
+    the monolith's bare path. pvr.iptvsimple + inputstream.ffmpegdirect being
+    present is the proof the Phase-3a move preserved the backend install."""
+    boot.mod.run()
+    assert set(boot.state["installed"]) == set(MONOLITH_NET_INSTALLED), (
+        "net installed set drifted from the monolith. MISSING="
+        f"{sorted(MONOLITH_NET_INSTALLED - boot.state['installed'])} EXTRA="
+        f"{sorted(boot.state['installed'] - MONOLITH_NET_INSTALLED)}. "
+        "Phase 3a moved pvr.iptvsimple's INSTALL to apply_iptv — it (and its "
+        "inputstream closure) MUST still install. A drop here is a real regression, "
+        "not a snapshot rebaseline."
+    )
+
+
+def test_iptv_backend_in_net_set_but_not_base_addons(boot):
+    """Pin the Phase-3a move precisely: pvr.iptvsimple is NO LONGER in the base
+    ADDONS list, yet it IS in the full run's net installed set (via apply_iptv). The
+    two halves of the move, asserted together so neither can silently regress."""
+    assert "pvr.iptvsimple" not in boot.mod.ADDONS, (
+        "pvr.iptvsimple must have moved OUT of the base ADDONS list (Phase 3a)"
+    )
+    boot.mod.run()
+    assert "pvr.iptvsimple" in boot.state["installed"], (
+        "pvr.iptvsimple must still be installed by a full run (via apply_iptv)"
+    )
+    assert "inputstream.ffmpegdirect" in boot.state["installed"], (
+        "pvr.iptvsimple's inputstream binary closure must still install"
+    )

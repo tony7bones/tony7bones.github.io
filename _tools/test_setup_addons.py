@@ -65,14 +65,22 @@ def _rss_path(boot):
 # _install_base — base repos + apps install (real engine).
 # --------------------------------------------------------------------------- #
 def test_install_base_installs_all_repos_and_apps(boot):
-    """The base install extracts + enables all 12 repos and installs the 4 base
+    """The base install extracts + enables all 12 repos and installs the 3 base
     apps with their closure through the real engine (the bare fake index resolves
-    them). Returns (repo_ok, fp_ok, app_ok, canceled) = (12, 0, 4, False)."""
+    them). Returns (repo_ok, fp_ok, app_ok, canceled) = (12, 0, 3, False).
+
+    Phase 3a: the base apps are now 3 (ezmaintenanceplus, realdebrid, weather.multi)
+    — pvr.iptvsimple's install moved OUT of the base ADDONS into apply_iptv, so it is
+    no longer installed by _install_base. A full run still installs it via the IPTV
+    layer (pinned by test_modular_setup.py's net-set equivalence invariant)."""
     add = _addons(boot)
     repo_ok, fp_ok, app_ok, canceled = add._install_base(
         boot.mod.xbmcgui.DialogProgress()
     )
-    assert (repo_ok, fp_ok, app_ok, canceled) == (12, 0, 4, False)
+    assert (repo_ok, fp_ok, app_ok, canceled) == (12, 0, 3, False)
+    assert len(add.ADDONS) == 3 and "pvr.iptvsimple" not in add.ADDONS, (
+        "pvr.iptvsimple must have moved out of the base ADDONS list (Phase 3a)"
+    )
     # Every repo zip is extracted on disk (membership keyed on the inner id; the
     # pre-existing repository.diggz vs repository.diggz.zip quirk is faithfully
     # pinned by the characterization snapshot, so allow either spelling here).
@@ -162,8 +170,10 @@ def test_install_base_resolves_primitives_from_addons_globals(boot, monkeypatch)
     )
     repo_ok, _fp, app_ok, _c = add._install_base(boot.mod.xbmcgui.DialogProgress())
     assert repo_ok == 12 and len(extracts) == 12, "addons.extract_zip patch must apply"
-    assert app_ok == 4 and deps == list(add.ADDONS), (
-        "addons.install_with_deps patch must apply"
+    # 3 base apps post-Phase-3a (pvr.iptvsimple moved to the IPTV layer); the
+    # install_with_deps patch is driven once per base app, in ADDONS order.
+    assert app_ok == 3 and deps == list(add.ADDONS), (
+        "addons.install_with_deps patch must apply to every base app"
     )
 
 
@@ -525,3 +535,50 @@ def test_apply_addons_none_env_is_safe(boot, monkeypatch):
     assert res.ok is True
     assert _weather_settings(boot)["loc1_url"] == "us/ca/sacramento"
     assert not os.path.exists(_rss_path(boot))  # no RSS_FEEDS -> no write
+
+
+# --------------------------------------------------------------------------- #
+# _set_setting + the two CORE settings apply_addons owns (Phase 3a).
+# --------------------------------------------------------------------------- #
+def test_set_setting_emits_jsonrpc_and_reports_ok(boot):
+    """_set_setting sends a Settings.SetSettingValue JSON-RPC and returns True on a
+    `"result":true` reply (the fake jsonrpc returns `{}` -> False; patch a true
+    reply to exercise the OK branch)."""
+    add = _addons(boot)
+    # Default fake jsonrpc returns "{}" -> no '"result":true' -> False.
+    assert add._set_setting("weather.addon", "weather.multi") is False
+    assert _settings_set(boot).get("weather.addon") == "weather.multi"
+
+
+def test_set_setting_true_reply_is_ok(boot, monkeypatch):
+    """A `"result":true` JSON-RPC reply makes _set_setting return True."""
+    add = _addons(boot)
+    monkeypatch.setattr(add.xbmc, "executeJSONRPC", lambda s: '{"result":true}')
+    assert add._set_setting("lookandfeel.enablerssfeeds", True) is True
+
+
+def test_apply_addons_sets_weather_provider_and_rss_core_settings(boot, monkeypatch):
+    """apply_addons emits the two CORE settings the monolith's _configure_box set
+    inline — weather.addon -> weather.multi and lookandfeel.enablerssfeeds -> True —
+    BEFORE the env-driven weather/RSS writers, so the net core-settings end-state is
+    unchanged vs the monolith."""
+    add = _addons(boot)
+    monkeypatch.setattr(add, "install_selection", lambda s, *a, **k: len(s))
+    monkeypatch.setattr(add, "_resolve_weather_location", lambda q, **k: None)
+    add.apply_addons({}, dialog=boot.mod.xbmcgui.DialogProgress(), log=None)
+    s = _settings_set(boot)
+    assert s.get(add.WEATHER_PROVIDER_SETTING) == add.WEATHER_ADDON
+    assert s.get(add.WEATHER_PROVIDER_SETTING) == "weather.multi"
+    assert s.get(add.RSS_ENABLE_SETTING) is True
+    assert add.RSS_ENABLE_SETTING == "lookandfeel.enablerssfeeds"
+
+
+def test_apply_addons_cancel_skips_core_settings(boot, monkeypatch):
+    """On a cancelled base install, apply_addons skips the WHOLE config block — the
+    two core settings are NOT emitted either (the monolith aborts with no config)."""
+    add = _addons(boot)
+    monkeypatch.setattr(add, "_install_base", lambda dialog: (3, 0, 0, True))
+    add.apply_addons({}, dialog=None, log=None)
+    s = _settings_set(boot)
+    assert add.WEATHER_PROVIDER_SETTING not in s
+    assert add.RSS_ENABLE_SETTING not in s

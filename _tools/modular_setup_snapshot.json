@@ -147,14 +147,6 @@
         "enabled": true
       },
       {
-        "id": "inputstream.ffmpegdirect",
-        "enabled": true
-      },
-      {
-        "id": "pvr.iptvsimple",
-        "enabled": true
-      },
-      {
         "id": "repository.709",
         "enabled": true
       },
@@ -261,6 +253,14 @@
       {
         "id": "skin.estuary.modv2",
         "enabled": true
+      },
+      {
+        "id": "inputstream.ffmpegdirect",
+        "enabled": true
+      },
+      {
+        "id": "pvr.iptvsimple",
+        "enabled": true
       }
     ],
     "settings": [
@@ -279,7 +279,6 @@
       "UpdateLocalAddons()",
       "UpdateLocalAddons()",
       "UpdateLocalAddons()",
-      "UpdateLocalAddons()",
       "Skin.SetBool(HomeMenuNoMovieButton)",
       "Skin.SetBool(HomeMenuNoTVShowButton)",
       "Skin.SetBool(HomeMenuNoMusicButton)",
@@ -288,11 +287,12 @@
       "Skin.SetBool(HomeMenuNoPicturesButton)",
       "Skin.SetBool(HomeMenuNoVideosButton)",
       "Skin.SetBool(HomeMenuNoGamesButton)",
+      "UpdateLocalAddons()",
       "Skin.SetBool(show_weatherinfo)"
     ],
     "summary": [
       "Tony.7.Bones Setup",
-      "Repos: 12/12\nApps: 4/4\nVideo add-ons: 0/4\nEstuary MOD V2: FAILED\nRestart will finish setup."
+      "Repos: 12/12\nApps: 3/3\nVideo add-ons: 0/4\nIPTV: installed\nEstuary MOD V2: FAILED\nRestart will finish setup."
     ],
     "self_uninstalled": true,
     "files": {
@@ -442,7 +442,7 @@
     ],
     "summary": [
       "Tony.7.Bones Setup",
-      "Repos: 12/12\nApps: 4/4\nVideo add-ons: 4/4\nEstuary MOD V2: installed\nRestart will finish setup."
+      "Repos: 12/12\nApps: 3/3\nVideo add-ons: 4/4\nIPTV: installed\nEstuary MOD V2: installed\nRestart will finish setup."
     ],
     "self_uninstalled": true,
     "files": {

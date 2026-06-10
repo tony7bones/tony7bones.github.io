@@ -34,6 +34,7 @@ legacy ``boot.mod.*`` patches were repointed here. (The Foundation layer's
 ``_BootSkinDeps`` seam stays transitional and is killed at the Phase-4 orchestrator.)
 """
 
+import json
 import os
 from xml.etree import ElementTree as ET
 
@@ -87,12 +88,18 @@ FIRST_PARTY = []
 # Apps installed (with dependency closure) by direct extract, in order.
 #   * script.ezmaintenanceplus / script.realdebrid — peno64 (python).
 #   * weather.multi — official repo (pure python; pulls python module deps).
-#   * pvr.iptvsimple — official repo (BINARY; pulls binary inputstream deps).
+#
+# NOTE (Phase 3a — the first deliberate behaviour change): ``pvr.iptvsimple`` is
+# NO LONGER in this base list. Its INSTALL moved into the IPTV layer
+# (``apply_iptv`` in ``tony7bones.setup.iptv``), so Layer 0/2 is genuinely
+# content-free of the PVR backend and the IPTV gate installs-or-fails-loud its own
+# backend (never silently configuring a missing add-on). In a FULL Express run the
+# NET installed set is UNCHANGED — pvr.iptvsimple (+ its inputstream binary
+# closure) is still installed, just via ``apply_iptv`` instead of this base loop.
 ADDONS = [
     "script.ezmaintenanceplus",
     "script.realdebrid",
     "weather.multi",
-    "pvr.iptvsimple",
 ]
 
 # Curated video add-ons — installed unattended (no picker) in the one-tap run.
@@ -108,9 +115,37 @@ VIDEO_APPS = [
 # re-patching.
 VIDEO_DISABLE_AFTER = {"plugin.video.dailymotion_com"}
 
+# The two CORE Kodi settings the Add-ons layer owns (weather provider + the RSS
+# news-ticker toggle). In the monolith these were set inline in ``_configure_box``
+# via JSON-RPC; the composed ``apply_addons`` sets them in its config block so the
+# net core-settings end-state is unchanged. They are conceptually weather/RSS
+# config, so they belong to this layer (not the orchestrator seam).
+WEATHER_PROVIDER_SETTING = "weather.addon"  # -> WEATHER_ADDON (weather.multi)
+RSS_ENABLE_SETTING = "lookandfeel.enablerssfeeds"  # -> True (ticker on)
+
 
 def _log(msg, level=xbmc.LOGINFO):
     xbmc.log(f"[{MY_ID}] {msg}", level)
+
+
+def _set_setting(setting_id, value):
+    """Set a CORE Kodi setting via JSON-RPC. Returns True on a clean OK.
+
+    Reaches only CORE settings (system/weather/lookandfeel/...), exactly like the
+    monolith's bootstrap ``_set_setting`` — add-on INSTANCE settings (e.g.
+    pvr.iptvsimple's) are NOT reachable this way (the IPTV layer writes those to
+    file directly)."""
+    resp = xbmc.executeJSONRPC(
+        json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "method": "Settings.SetSettingValue",
+                "params": {"setting": setting_id, "value": value},
+                "id": 1,
+            }
+        )
+    )
+    return '"result":true' in (resp or "")
 
 
 def _latest_zip_url(addon_id):
@@ -481,8 +516,15 @@ def apply_addons(env, *, dialog=None, log=None):
             for aid in VIDEO_DISABLE_AFTER:
                 installed[aid] = "disabled"
 
-    # --- config (env-driven weather + RSS) ---
+    # --- config (core weather/RSS toggles + env-driven weather + RSS) ---
+    # Order mirrors the monolith's _configure_box: set the two core settings
+    # (weather provider + RSS-enable) FIRST, then the env-driven weather writer,
+    # then the env-driven RSS writer. (In _configure_box the device-copy + IPTV
+    # enforce interleaved BETWEEN weather and RSS — those moved to apply_iptv; the
+    # core settings + weather/RSS-writer relative order is preserved here.)
     if not canceled:
+        _set_setting(WEATHER_PROVIDER_SETTING, WEATHER_ADDON)
+        _set_setting(RSS_ENABLE_SETTING, True)
         _apply_weather_from_env(env)
         _apply_rss_from_env(env)
 

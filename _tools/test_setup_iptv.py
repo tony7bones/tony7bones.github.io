@@ -429,21 +429,142 @@ def test_apply_iptv_writes_instance_and_reports_configured(boot):
     assert got["tvGroupMode"] == "2" and got["m3uPathType"] == "1"
 
 
-def test_apply_iptv_noop_on_empty_env(boot):
-    """No env (and no device files / groups on this host) -> guarded no-op:
-    nothing written, already_done True, installed empty, but still ok + a restart
-    request (the orchestrator decides whether to honour it)."""
+def test_apply_iptv_empty_env_installs_backend_but_writes_no_config(boot):
+    """Phase 3a — empty env is NO LONGER a pure no-op: apply_iptv now INSTALLS the
+    PVR backend FIRST (pvr.iptvsimple's install moved here from the base ADDONS), so
+    on a fresh box even with no env the backend is installed (real work) while the
+    CONFIG half is the no-op (no device files / no groups file -> nothing written).
+
+    New semantics:
+      * ok=True (the backend installed).
+      * installed records pvr.iptvsimple "installed" (NOT empty — the backend landed).
+      * already_done=False because a FRESH backend install is real work (already_done
+        is True only when the backend was ALREADY installed AND no config was written).
+      * no instance-settings file is written (config is the no-op part).
+      * a restart is still requested (pvr re-reads settings on restart)."""
     res = _iptv(boot).apply_iptv({})
     assert res.ok is True
-    assert res.already_done is True
-    assert res.installed == {}
+    assert res.installed == {"pvr.iptvsimple": "installed"}
+    assert res.already_done is False  # fresh backend install IS work
+    assert res.needs_restart is True
+    assert not os.path.exists(_instance_path(boot)), "config half writes nothing"
+
+
+def test_apply_iptv_empty_env_already_done_when_backend_preinstalled(boot, monkeypatch):
+    """The TRUE empty-env no-op: when pvr.iptvsimple is ALREADY installed (re-entry)
+    AND there is no config to write, apply_iptv reports already_done=True. This is
+    the no-NEW-work path now that the backend install is part of the layer — pin the
+    is_installed short-circuit (no re-install) plus the config no-op together."""
+    # Pretend the backend is already installed: the engine's is_installed checks the
+    # fake-Kodi 'installed' set via xbmcaddon.Addon, so seed it there.
+    boot.state["installed"].add("pvr.iptvsimple")
+    # If _install_pvr_backend tried to re-install, this would blow up the count.
+    installs = []
+    monkeypatch.setattr(
+        _iptv(boot), "install_with_deps", lambda *a, **k: installs.append(a) or True
+    )
+    res = _iptv(boot).apply_iptv({})
+    assert installs == [], "already-installed backend must NOT be re-installed"
+    assert res.ok is True
+    assert res.already_done is True  # backend already there + no config written
+    assert res.installed == {"pvr.iptvsimple": "installed"}
     assert not os.path.exists(_instance_path(boot))
 
 
 def test_apply_iptv_none_env_is_empty(boot):
-    """None is treated as the empty env (no crash, clean no-op)."""
+    """None is treated as the empty env: no crash, the backend installs, no config is
+    written (mirrors test_apply_iptv_empty_env_installs_backend_but_writes_no_config
+    — None and {} are the same no-config path)."""
     res = _iptv(boot).apply_iptv(None)
-    assert res.ok is True and res.already_done is True
+    assert res.ok is True
+    assert res.installed == {"pvr.iptvsimple": "installed"}
+    assert res.already_done is False  # fresh backend install on a no-config env
+
+
+# --------------------------------------------------------------------------- #
+# Phase 3a — _install_pvr_backend (install-or-fail-loud) + apply_iptv's fail path.
+#
+# The IPTV gate OWNS its own PVR backend now (pvr.iptvsimple's install moved out of
+# the base ADDONS). _install_pvr_backend installs it (+ binary inputstream closure)
+# from the official repo, no-ops on re-entry, and apply_iptv FAILS LOUD (ok=False,
+# failed[pvr.iptvsimple], no instance-settings written) if the backend does not land
+# — never silently configuring a missing add-on.
+# --------------------------------------------------------------------------- #
+def test_install_pvr_backend_installs_when_absent(boot, monkeypatch):
+    """When pvr.iptvsimple is NOT installed, _install_pvr_backend drives
+    install_with_deps for it against the official repo and reports True."""
+    calls = []
+
+    def _iwd(aid, dialog, optional, base, log):
+        calls.append((aid, base))
+        return True
+
+    monkeypatch.setattr(_iptv(boot), "install_with_deps", _iwd)
+    ok = _iptv(boot)._install_pvr_backend(boot.mod.xbmcgui.DialogProgress())
+    assert ok is True
+    assert calls == [("pvr.iptvsimple", _iptv(boot).OFFICIAL_BASE)], (
+        "must install pvr.iptvsimple from the official repo (binary closure)"
+    )
+
+
+def test_install_pvr_backend_noop_when_already_installed(boot, monkeypatch):
+    """Re-entry: when the backend is ALREADY installed, _install_pvr_backend
+    short-circuits to True WITHOUT calling install_with_deps (no re-install)."""
+    boot.state["installed"].add("pvr.iptvsimple")
+    calls = []
+    monkeypatch.setattr(
+        _iptv(boot), "install_with_deps", lambda *a, **k: calls.append(a) or True
+    )
+    ok = _iptv(boot)._install_pvr_backend(None)
+    assert ok is True
+    assert calls == [], "an already-installed backend must not be re-installed"
+
+
+def test_install_pvr_backend_returns_false_on_install_failure(boot, monkeypatch):
+    """When install_with_deps reports the backend did NOT land,
+    _install_pvr_backend returns False (the loud-fail signal apply_iptv consumes)."""
+    monkeypatch.setattr(_iptv(boot), "install_with_deps", lambda *a, **k: False)
+    assert _iptv(boot)._install_pvr_backend(None) is False
+
+
+def test_apply_iptv_fails_loud_when_backend_install_fails(boot, monkeypatch):
+    """MANDATORY fail-loud contract: if the PVR backend install FAILS, apply_iptv
+    returns ok=False with failed[pvr.iptvsimple] and writes NO instance-settings —
+    it must NEVER silently configure a missing backend. The orchestrator checks ok
+    BEFORE restarting, so a failed backend never restarts into a half-configured box.
+
+    Drive a real failure: install_with_deps reports False AND the env carries config
+    (m3u/epg + groups) that WOULD be written if the fail-guard were broken — so this
+    proves the guard, not an already-empty config path."""
+    # Backend install fails.
+    monkeypatch.setattr(_iptv(boot), "install_with_deps", lambda *a, **k: False)
+    # Spy the enforce so we can prove it is NEVER reached on the fail path.
+    enforce_calls = []
+    monkeypatch.setattr(
+        _iptv(boot),
+        "_ensure_iptv_custom_tv_groups",
+        lambda env=None: enforce_calls.append(env) or True,
+    )
+    res = _iptv(boot).apply_iptv(
+        {
+            "IPTV_GROUPS": "A; B",
+            "IPTV_M3U": "http://iptv.example/get?password=p",
+            "IPTV_EPG": "http://iptv.example/epg",
+            "IPTV_GROUPS_ONLY": "true",
+        }
+    )
+    assert res.ok is False, "a failed backend install must make the layer ok=False"
+    assert res.failed.get("pvr.iptvsimple") == "install failed"
+    assert res.installed == {}, "no add-on may be reported installed on the fail path"
+    assert res.already_done is False
+    assert res.needs_restart is False, "a failed layer must not request a restart"
+    assert enforce_calls == [], (
+        "instance-settings enforce must NOT run when the backend install failed "
+        "(never configure a missing PVR backend)"
+    )
+    assert not os.path.exists(_instance_path(boot)), (
+        "no instance-settings file may be written on the fail-loud path"
+    )
 
 
 def test_apply_iptv_copies_then_enforces(boot, monkeypatch, tmp_path):
@@ -529,20 +650,31 @@ def test_apply_iptv_reports_configured_when_instance_file_preexists(boot):
 def test_apply_iptv_reports_no_new_work_when_instance_file_already_correct(boot):
     """The instance file pre-exists AND is ALREADY fully correct (the env supplies
     the same values) -> the enforce's `if changed:` write-skip fires; apply_iptv
-    reports no new work honestly: already_done True, installed empty, and a detail
-    that says nothing was written. (Fixed semantics: already_done == "no NEW config
-    written this run", covering the already-correct re-entry, not just the gate.)"""
-    # First run lands the correct config (also exercises the configured path).
+    reports no new work honestly.
+
+    Phase 3a semantics: already_done == "no NEW work this run" = the backend was
+    ALREADY installed AND no config was written. The FIRST run installs the backend
+    (fresh) + writes config, so already_done=False. The SECOND run finds the backend
+    already installed (is_installed short-circuit) AND the config byte-identical
+    (write-skip), so already_done=True. ``installed`` still RECORDS the backend
+    ("pvr.iptvsimple": "installed") — it is present, just not freshly installed; the
+    no-new-work signal lives in already_done, not in an empty installed map."""
+    # First run lands the correct config AND installs the backend (also exercises the
+    # configured path). already_done False = fresh backend + fresh config.
     first = _iptv(boot).apply_iptv(_std_env(boot))
     assert first.already_done is False
+    assert first.installed.get("pvr.iptvsimple") == "configured"
     before = open(_instance_path(boot)).read()
 
-    # Second run against the now-correct file: the enforce changes nothing.
+    # Second run: backend already installed (short-circuit), file already correct
+    # (write-skip) -> no NEW work.
     res = _iptv(boot).apply_iptv(_std_env(boot))
 
     assert res.already_done is True
-    assert res.installed == {}
-    assert "no-op" in res.detail or "already correct" in res.detail
+    # The backend is still reported present (it IS installed), but as "installed"
+    # not "configured" (no enforce write this run).
+    assert res.installed == {"pvr.iptvsimple": "installed"}
+    assert "no config written" in res.detail or "already correct" in res.detail
     # Byte-identical: the write-skip guard left the file untouched.
     assert open(_instance_path(boot)).read() == before
 

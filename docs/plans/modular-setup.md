@@ -433,3 +433,30 @@ documented**.
 called by `run()`). `default.py` is now thin shims; behavior is **byte-identical** (the
 characterization snapshot never moved across 2a–2d). 495 tests green. **Next: Phase 3** — the first
 deliberate behavior change (move `pvr.iptvsimple` install Foundation→IPTV gate).
+
+### Phase 3 — DONE (local commit; Express orchestrator + first deliberate behavior change)
+
+- **Landed:** `run()` → **`run_express(box_env)`** composing `apply_addons → apply_foundation →
+  apply_iptv` as units (the Express orchestrator). `pvr.iptvsimple` INSTALL moved from base
+  `ADDONS` into `apply_iptv` (`_install_pvr_backend`, **install-or-fail-loud** — never configure a
+  missing backend). `apply_addons` now owns the weather/RSS core settings.
+- **First DELIBERATE snapshot change — justified by a net-installed-SET equivalence proof:** the
+  full run installs the byte-identical SET of add-ons as the old monolith (pvr.iptvsimple +
+  inputstream still installed, via `apply_iptv` now); ONLY the operation ORDER (interleaved→layered)
+  and the summary text (`Apps 4/4→3/3` + `IPTV: installed`) changed. `lookandfeel.skin` still LAST,
+  all home-trim bools present. Pinned by a permanent FROZEN-constant invariant
+  `MONOLITH_NET_INSTALLED` (mutation-proven, derived from the OLD committed snapshot — NOT circular),
+  independent of the regen-able snapshot.
+- **L1 resolved (reviewer flag):** IPTV is **deliberately non-blocking** — a pvr-backend install
+  failure does NOT abort the end-of-setup restart (matches the monolith: install failures were
+  always non-fatal). The fail-loud contract is at the LAYER (no half-config written); the box still
+  completes setup.
+- **Tested:** 515 passed; new fail-loud, net-set-equivalence, and `run_express` orchestration tests
+  (skin-last, self-uninstall-after-summary, env read-once-delete-after) — all mutation-verified; the
+  source-grep flow tests converted to RUNTIME spies. **Coverage:** iptv 100%, addons 99%, foundation
+  93%, default.py 95%. **QA review:** ACCEPT (equivalence real, snapshot hid nothing — both
+  mutation-proven).
+- **Tech-debt:** the `_BootSkinDeps` seam is now OFF the `run_express` path → kill when `run()` is
+  fully decomposed; `_configure_box` is now unused by the orchestrator (removal candidate in cleanup).
+- **NEXT: Phase 3b — local-Kodi wipe-and-run** = the first VIEWABLE deliverable (run Express on the
+  box → MOD V2 skin appears).
