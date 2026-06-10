@@ -178,6 +178,66 @@ def test_install_base_resolves_primitives_from_addons_globals(boot, monkeypatch)
 
 
 # --------------------------------------------------------------------------- #
+# install_repos — the reusable repo-install loop extracted out of _install_base
+# (Phase 5a) so the Foundation layer can establish all our repos independently.
+# --------------------------------------------------------------------------- #
+def test_install_repos_extracts_and_enables_all_repos(boot):
+    """install_repos extracts + registers + enables all 12 REPO_ZIPS (no first-party
+    in production). Returns (repo_ok, fp_ok, step, canceled) = (12, 0, step, False)."""
+    add = _addons(boot)
+    repo_ok, fp_ok, step, canceled = add.install_repos(
+        boot.mod.xbmcgui.DialogProgress()
+    )
+    assert (repo_ok, fp_ok, canceled) == (12, 0, False)
+    # 12 repos + 0 first-party + the register-and-enable step.
+    assert step == 12 + 0 + 1
+    for _zip, rid in add.REPO_ZIPS:
+        assert rid in boot.state["extracted"] or rid + ".zip" in boot.state["extracted"]
+
+
+def test_install_base_equals_install_repos_plus_apps(boot, monkeypatch):
+    """BEHAVIOUR-PRESERVING extraction: _install_base is install_repos() + the
+    base-apps install. Spy install_repos to prove _install_base delegates to it for
+    the repo stage (and still installs the 3 base apps after it). MUTATION: if the
+    repo loop were inlined again instead of delegating, install_repos would not be
+    called and this fails."""
+    add = _addons(boot)
+    calls = []
+    real = add.install_repos
+
+    def _spy(dialog, **kwargs):
+        calls.append(kwargs)
+        return real(dialog, **kwargs)
+
+    monkeypatch.setattr(add, "install_repos", _spy)
+    repo_ok, fp_ok, app_ok, canceled = add._install_base(
+        boot.mod.xbmcgui.DialogProgress()
+    )
+    assert len(calls) == 1, (
+        "_install_base must delegate the repo stage to install_repos"
+    )
+    # The same net (repo_ok, fp_ok, app_ok, canceled) the monolith produced.
+    assert (repo_ok, fp_ok, app_ok, canceled) == (12, 0, 3, False)
+
+
+def test_install_base_aborts_when_install_repos_cancels(boot, monkeypatch):
+    """If install_repos reports a mid-loop cancel, _install_base returns canceled=True
+    and never reaches the apps loop (the monolith's per-repo cancel semantics,
+    preserved through the extraction)."""
+    add = _addons(boot)
+    apps = []
+    monkeypatch.setattr(add, "install_repos", lambda dialog, **k: (3, 0, 4, True))
+    monkeypatch.setattr(
+        add, "install_with_deps", lambda aid, *a, **k: apps.append(aid) or True
+    )
+    repo_ok, fp_ok, app_ok, canceled = add._install_base(
+        boot.mod.xbmcgui.DialogProgress()
+    )
+    assert canceled is True and repo_ok == 3 and app_ok == 0
+    assert apps == [], "a cancelled repo stage must skip the apps loop entirely"
+
+
+# --------------------------------------------------------------------------- #
 # _install_video — curated video + install-then-disable.
 # --------------------------------------------------------------------------- #
 def test_install_video_installs_four_apps_and_disables_dailymotion(boot, monkeypatch):

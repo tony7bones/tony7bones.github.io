@@ -166,22 +166,61 @@ def _latest_zip_url(addon_id):
 
 
 # --------------------------------------------------------------------------- #
-# Base install (repos + first-party + apps).
+# Repos install (extract + register + enable all REPO_ZIPS + first-party).
 # --------------------------------------------------------------------------- #
-def _install_base(dialog):
-    """Run the base install: repos + first-party + apps. Returns (repo_ok, fp_ok,
-    app_ok, canceled). Shares the progress dialog with the (optional) video stage
-    so the user sees one continuous progress bar. `canceled` is True if the user
-    cancelled the progress dialog mid-install (run() then aborts with no summary,
-    exactly today's behaviour).
+def install_repos(dialog, *, total=None, step=0):
+    """Extract + register + enable the source repos (REPO_ZIPS) and FIRST_PARTY.
+
+    The repos are the SOURCES/plumbing the rest of setup resolves its add-on
+    closures from — NOT content. This is the reusable repo-install loop EXTRACTED
+    VERBATIM out of ``_install_base`` (Phase 5a) so the **Foundation layer** can
+    establish all our repos independently (the Estuary MOD V2 skin closure resolves
+    the skin + skinshortcuts + image.resource.select from the installed source
+    repos, so they must exist before the skin install).
+
+    Establishes ALL our repositories: the 12 ``REPO_ZIPS`` by direct extract +
+    register + enable. ``repository.tony7bones`` (the virtual proxy) is the HOST
+    add-on that ships this Setup, so it is ALREADY installed and running — Foundation
+    additionally registers it as a File-Manager SOURCE via
+    ``apply_foundation``'s ``_add_file_sources`` (the ``.tony.7.bones`` entry), so the
+    proxy repo is fully established without re-installing the host.
+
+    Returns ``(repo_ok, fp_ok, step, canceled)`` — how many repos / first-party
+    add-ons extracted, the running progress ``step`` so the caller
+    (``_install_base``) can continue the shared progress bar into the apps stage, and
+    whether the user cancelled the progress dialog DURING the repo/first-party loop
+    (the exact per-iteration cancel checks the monolith had, preserved verbatim).
+    Behaviour-preserving: ``_install_base`` calls this then installs the base apps,
+    with the SAME total, step accounting, dialog updates, AND cancel semantics the
+    monolith had. Idempotent — ``extract_zip`` / ``enable`` short-circuit an
+    already-present add-on.
 
     Resolves its install primitives (extract_zip / _latest_zip_url /
-    update_local_addons / enable / install_with_deps) from THIS module's globals,
-    so a test that stubs the base path patches them here (addons.*) — no injected
-    deps seam (Tech-debt ledger)."""
-    total = len(REPO_ZIPS) + len(FIRST_PARTY) + len(ADDONS) + 1
-    step = 0
-    repo_ok = fp_ok = app_ok = 0
+    update_local_addons / enable) from THIS module's globals, so a test that stubs
+    the repo path patches them here (addons.*) — no injected deps seam.
+
+    Parameters
+    ----------
+    dialog
+        The shared progress dialog (forwarded to ``extract_zip`` + ``dialog.update``).
+    total
+        The denominator for the progress percentage. Defaults to the full base total
+        (``REPO_ZIPS`` + ``FIRST_PARTY`` + ``ADDONS`` + 1) so a ``_install_base`` call
+        produces byte-identical progress percentages to the monolith. A
+        Foundation-only caller passes the repo-only total.
+    step
+        The starting progress step (0 for a fresh bar).
+
+    Returns
+    -------
+    (repo_ok, fp_ok, step, canceled)
+        ``repo_ok`` / ``fp_ok`` extracted counts; ``step`` the running step AFTER the
+        register-and-enable step (only meaningful when not cancelled); ``canceled``
+        True if the user cancelled mid-loop (the caller aborts).
+    """
+    if total is None:
+        total = len(REPO_ZIPS) + len(FIRST_PARTY) + len(ADDONS) + 1
+    repo_ok = fp_ok = 0
 
     # 1. repos by direct extract
     for zip_name, _rid in REPO_ZIPS:
@@ -189,7 +228,7 @@ def _install_base(dialog):
         if extract_zip(REPO_BASE + zip_name, dialog, int(step / total * 100), _log):
             repo_ok += 1
         if dialog.iscanceled():
-            return repo_ok, fp_ok, app_ok, True
+            return repo_ok, fp_ok, step, True
 
     # 2. first-party add-ons by direct extract
     for addon_id in FIRST_PARTY:
@@ -198,7 +237,7 @@ def _install_base(dialog):
         if url and extract_zip(url, dialog, int(step / total * 100), _log):
             fp_ok += 1
         if dialog.iscanceled():
-            return repo_ok, fp_ok, app_ok, True
+            return repo_ok, fp_ok, step, True
 
     # 3. register + enable the repos and first-party add-ons.
     step += 1
@@ -210,6 +249,38 @@ def _install_base(dialog):
             _enable(rid)
     for addon_id in FIRST_PARTY:
         _enable(addon_id)
+
+    return repo_ok, fp_ok, step, False
+
+
+# --------------------------------------------------------------------------- #
+# Base install (repos + first-party + apps).
+# --------------------------------------------------------------------------- #
+def _install_base(dialog):
+    """Run the base install: repos + first-party + apps. Returns (repo_ok, fp_ok,
+    app_ok, canceled). Shares the progress dialog with the (optional) video stage
+    so the user sees one continuous progress bar. `canceled` is True if the user
+    cancelled the progress dialog mid-install (run() then aborts with no summary,
+    exactly today's behaviour).
+
+    The repo-install loop (extract + register + enable REPO_ZIPS + FIRST_PARTY, with
+    its per-iteration cancel checks) is EXTRACTED VERBATIM into the reusable
+    ``install_repos`` (Phase 5a) so the Foundation layer can establish all our repos
+    independently; ``_install_base`` is now ``install_repos()`` + the base-apps
+    install with the SAME total/step accounting AND cancel semantics, so the net
+    effect (and the characterization snapshot) is unchanged.
+
+    Resolves its install primitives (extract_zip / _latest_zip_url /
+    update_local_addons / enable / install_with_deps) from THIS module's globals,
+    so a test that stubs the base path patches them here (addons.*) — no injected
+    deps seam (Tech-debt ledger)."""
+    total = len(REPO_ZIPS) + len(FIRST_PARTY) + len(ADDONS) + 1
+    app_ok = 0
+
+    # 1-3. repos + first-party: extract (with cancel checks), register, enable.
+    repo_ok, fp_ok, step, canceled = install_repos(dialog, total=total, step=0)
+    if canceled:
+        return repo_ok, fp_ok, app_ok, True
 
     # 4. install each app with its dependency closure by direct extract.
     for addon_id in ADDONS:

@@ -460,3 +460,24 @@ deliberate behavior change (move `pvr.iptvsimple` install Foundation→IPTV gate
   fully decomposed; `_configure_box` is now unused by the orchestrator (removal candidate in cleanup).
 - **NEXT: Phase 3b — local-Kodi wipe-and-run** = the first VIEWABLE deliverable (run Express on the
   box → MOD V2 skin appears).
+
+### Phase 5a — DONE (local commit; standalone Foundation = the skin-only deliverable)
+
+- **Landed:** `install_repos(dialog)` extracted from `_install_base` (behavior-preserving incl.
+  the exact per-iteration cancel semantics), and `run_foundation(box_env)` in `default.py`:
+  `install_repos()` → `apply_foundation()` (skin closure + modv2plus + pvr.artwork direct-extract
+  + Outline-HD + file-sources + home-trim) → set `lookandfeel.skin` LAST → restart →
+  `self_uninstall`. Calls **neither** `apply_addons` content **nor** `apply_iptv`.
+- **The deliverable:** Foundation installs **ALL our repositories** (the 12 `REPO_ZIPS` as
+  sources/plumbing) + establishes `repository.tony7bones` (host proxy present + `.tony.7.bones`
+  file source) + the skin + patch + skin-infra closure — and **ZERO content add-ons** (no base
+  apps, no video, no pvr.iptvsimple, no IPTV). A clean branded Kodi; Setup self-removes.
+- **Express unchanged:** `run_express` still installs the identical net set (repo install is
+  idempotent); the characterization snapshot and `MONOLITH_NET_INSTALLED` invariant pass UNCHANGED.
+- **Tested:** `_tools/test_run_foundation.py` (13 tests) + 3 extraction tests — mutation-verified
+  (all 12 repos land; ZERO content at BOTH the stubbed AND the **real-engine resolve** level — a
+  content leak fails; `install_repos` extraction byte-identical incl. cancel; skin-last;
+  self-uninstall-after-summary). **Coverage:** addons.py 99%, `run_foundation` ~98% (uncovered =
+  defensive guards). **QA review:** ACCEPT (closed the real-engine zero-content assertion).
+- **NEXT: 5a device verification — a CLEAN Kodi install running `run_foundation`** → skin-only box
+  (MOD V2 active, all repos present, ZERO content add-ons).

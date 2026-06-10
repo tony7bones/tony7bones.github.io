@@ -416,6 +416,12 @@ def _install_skin(dialog):
 # slot (before video, before apply_foundation) so the interleaving is unchanged.
 _install_base = _addons._install_base
 
+# The reusable repo-install loop (extract + register + enable all REPO_ZIPS +
+# FIRST_PARTY) EXTRACTED out of _install_base (Phase 5a) so the Foundation layer can
+# establish ALL our repos independently — the skin closure resolves from them.
+# Re-exported here so run_foundation (and any test) can reach it via boot.mod.
+install_repos = _addons.install_repos
+
 
 def _count_installed(result, ids):
     """How many of `ids` the layer reports installed (state != failed)."""
@@ -536,6 +542,97 @@ def run_express(box_env=None):
     # ONE restart finalises every freshly extracted add-on AND the self-removal.
     restart_kodi("Tony.7.Bones Setup", _log)
     return addons_res, foundation_res, iptv_res
+
+
+def run_foundation(box_env=None):
+    """The Foundation orchestrator — install Layer 0 ONLY (a skin-only deliverable).
+
+    Stop here = a pristine, BRANDED Kodi with ZERO content: the Estuary MOD V2 skin
+    (+ the MOD V2+ patch, applied post-restart by modv2plus's boot service), the
+    skin's required dependency closure, ALL our source repositories (plumbing, not
+    content), the File-Manager sources, and a trimmed home menu — and NOTHING else.
+
+    Foundation is content-free BY CONSTRUCTION: it does NOT call ``apply_addons``
+    (no base apps ezmaintenanceplus / realdebrid / weather.multi, no curated video
+    POV / Loop / Sports HD / YouTube, no weather/RSS) and does NOT call ``apply_iptv``
+    (no pvr.iptvsimple, no IPTV). The ONLY add-ons it installs are the skin closure
+    (skin.estuary.modv2 + skinshortcuts + image.resource.select + the proxy-invisible
+    script.module.pvr.artwork + our script.tony7bones.modv2plus + the Outline-HD
+    weather icons) on top of the source repos.
+
+    Order rationale (dependency-correct):
+      1. ``install_repos`` — extract + register + enable ALL our source repos (the 12
+         REPO_ZIPS). The Estuary MOD V2 skin closure resolves the skin + skinshortcuts
+         + image.resource.select from these installed repos (Kodinerds etc.), so they
+         MUST exist before the skin install. ``repository.tony7bones`` (the virtual
+         proxy) is the HOST add-on shipping this Setup — already installed/running —
+         and is additionally registered as the ``.tony.7.bones`` File-Manager SOURCE
+         by ``apply_foundation``'s ``_add_file_sources`` below, so the proxy repo is
+         fully established without re-installing the host.
+      2. ``apply_foundation`` — the skin closure (it direct-extracts the proxy-invisible
+         pvr.artwork + modv2plus FIRST, then resolves the rest from the repos installed
+         in step 1) + the two content-free base-config steps (File-Manager sources +
+         the Estuary home-trim). It does NOT set ``lookandfeel.skin`` — that is the
+         terminal seam below (set LAST).
+      3. set ``lookandfeel.skin`` LAST (only if Foundation reached ``ok``), then ONE
+         restart, then self-uninstall (skin-only = done).
+
+    The skin is activated LAST, immediately before the single restart, so Kodi's
+    "Keep this skin?" timeout cannot silently revert it. After the restart MOD V2 is
+    active and modv2plus's boot service auto-applies the patch (the Setup is gone by
+    then). Returns the Foundation ``LayerResult``.
+    """
+    box_env = box_env or {}
+    dialog = xbmcgui.DialogProgress()
+    dialog.create("Tony.7.Bones Setup", "Installing Foundation...")
+
+    # 1. ALL our source repos (plumbing) — the skin closure resolves from them.
+    install_repos(dialog)
+
+    # 2. the Foundation layer: skin closure + modv2plus/pvr.artwork direct-extract +
+    #    Outline-HD + File-Manager sources (incl. the .tony.7.bones proxy source) +
+    #    home-trim. ZERO content. Does NOT set lookandfeel.skin (seam owns that).
+    foundation_res = apply_foundation(box_env, dialog=dialog, log=_log)
+
+    # The top-bar weather toggle is an Estuary skin bool (persists on the restart);
+    # only meaningful on the stock Estuary skin — keep it as an orchestrator step.
+    skin = ""
+    try:
+        skin = xbmc.getSkinDir() or ""
+    except Exception:  # noqa: BLE001
+        skin = ""
+    if not skin or skin == ESTUARY_SKIN_ID:
+        xbmc.executebuiltin(f"Skin.SetBool({SHOW_WEATHERINFO})")
+
+    dialog.close()
+
+    skin_ok = foundation_res.ok
+    # Repos are plumbing (install_repos installs them; they are not recorded in
+    # foundation_res.installed, which holds the skin id). The summary reports the
+    # branded-box result — skin install + "repositories + sources installed".
+    xbmcgui.Dialog().ok(
+        "Tony.7.Bones Setup",
+        "\n".join(
+            [
+                "Foundation (skin-only):",
+                "Estuary MOD V2: {}".format("installed" if skin_ok else "FAILED"),
+                "Repositories + sources installed.",
+                "Restart will finish setup.",
+            ]
+        ),
+    )
+
+    # Run once, then disappear (after the summary; never raises). The shared
+    # library is a hidden module add-on and is deliberately LEFT installed.
+    self_uninstall(MY_ID, _log)
+
+    # Activate MOD V2 LAST — immediately before the restart (the activate-skin
+    # invariant). Only when Foundation reached ok.
+    if skin_ok:
+        activate_skin(SKIN_ID, _log)
+    # ONE restart finalises every freshly extracted add-on AND the self-removal.
+    restart_kodi("Tony.7.Bones Setup", _log)
+    return foundation_res
 
 
 def run():
