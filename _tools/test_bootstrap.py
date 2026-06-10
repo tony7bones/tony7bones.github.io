@@ -1358,9 +1358,11 @@ def test_default_device_file_copies_are_the_three_expected(boot):
     assert _IPTV_INSTANCE_DST in dsts
     assert _IPTV_GROUPS_DST in dsts
     assert len(boot.mod.DEVICE_FILE_COPIES) == 3
-    # Every source is a device path; every dest lives under userdata.
-    for src, dst in boot.mod.DEVICE_FILE_COPIES:
-        assert src.startswith("/storage/")
+    # N1.1: every source is a (canonical _T7B, legacy) candidate pair of device
+    # paths; every dest lives under userdata.
+    for srcs, dst in boot.mod.DEVICE_FILE_COPIES:
+        assert all(s.startswith("/storage/") for s in srcs)
+        assert srcs[0].startswith("/storage/emulated/0/_T7B/kodi/")
         assert dst.startswith("special://home/userdata/")
 
 
@@ -1375,10 +1377,11 @@ def _point_copies(boot, monkeypatch, tmp_path, mapping):
     is the same list object)."""
     new = []
     for src, dst in boot.mod.DEVICE_FILE_COPIES:
+        first = src if isinstance(src, str) else src[0]
         if dst in mapping:
             new.append((str(mapping[dst]), dst))
         else:
-            new.append((str(tmp_path / "missing" / os.path.basename(src)), dst))
+            new.append((str(tmp_path / "missing" / os.path.basename(first)), dst))
     monkeypatch.setattr(boot.mod._iptv, "DEVICE_FILE_COPIES", new)
 
 

@@ -1,7 +1,10 @@
 # Plan — No-Computer Setup (repository-direct, remote-only provisioning)
 
 > Status: **N1 RELEASED to `main` (2026-06-10 — bootstrap 1.6.0 + library 1.3.0,
-> release `fbf4b24`, merge `38b9237`) — N1.1 / N2 are next.** Completed boxes
+> release `fbf4b24`, merge `38b9237`); N1.1 (the `_T7B` canonical device root +
+> the persistent device-resident master env + the no-env scaffold) is COMMITTED on
+> `no-computer-setup` (unreleased — ships with the next milestone release) — N2 is
+> next.** Completed boxes
 > auto-update to library 1.3.0 (import-only, benign); the bootstrap is not installed
 > on completed boxes. The design
 > below is the panel-style plan; the build log at the bottom records what landed.
@@ -49,11 +52,11 @@ we were doing, AND the self-contained path directly from our repo with the .env 
 located on the specific device."_ All three modes are first-class and none degrades
 another:
 
-| #   | Mode                                | How the env arrives                                                                                                                      | Routing                                                     |
-| --- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
-| 1   | **adb provisioner**                 | `_tools/provision-kodi.sh` derives + pushes `tony7bones.env` to `BOX_ENV_PATH` (and stages IPTV artifacts)                               | env-routed: Express, or `SETUP_MODE` opt-in                 |
-| 2   | **Self-contained, user-placed env** | the file simply EXISTS at an env-source path — however the user got it there (downloader app, Send-Files-to-TV, USB, share — **no adb**) | **identical to mode 1** — the reader is provenance-agnostic |
-| 3   | **No env anywhere**                 | nothing — the remote-only user                                                                                                           | the Guided wizard (this track's reason to exist)            |
+| #   | Mode                                       | How the env arrives                                                                                                                                                                                                                                 | Routing                                                     |
+| --- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| 1   | **adb provisioner**                        | `_tools/provision-kodi.sh` derives + pushes `tony7bones.env` to `BOX_ENV_PATH` under the canonical `_T7B` root (and stages IPTV artifacts there)                                                                                                    | env-routed: Express, or `SETUP_MODE` opt-in                 |
+| 2   | **Self-contained, device-resident MASTER** | the user's own `.env.<device>` simply EXISTS at the canonical root `/storage/emulated/0/_T7B/kodi/` — however it got there (downloader app, USB, share — **no adb**); **persistent** — read, applied (provisioner-parity derivation), NEVER deleted | **identical to mode 1** — the reader is provenance-agnostic |
+| 3   | **No env anywhere**                        | nothing — the remote-only user; Setup **scaffolds** the master template `.env.<device-name>` at the canonical root for them to fill in and re-run                                                                                                   | the Guided wizard (this track's reason to exist)            |
 
 One routing rule binds them: **env found → behave exactly as provisioned (Express, or
 `SETUP_MODE` routing); no env → wizard.** Mode 2 is not new code — the env reader
@@ -64,6 +67,23 @@ repo-direct install (file-manager source → repo zip → Setup from the reposit
 plus a hand-delivered env file is a complete no-computer provisioning path TODAY for
 everything the env drives (weather keys, RSS, direct-env IPTV); only the host-built
 curated IPTV artifacts still need mode 1 until N4.
+
+**The canonical device root (N1.1, owner directive 2026-06-10):**
+`/storage/emulated/0/_T7B/kodi/` — layout `backups/ iptv/ media/ repositories/
+rss/ scripts/` (+ `backups/EM+`). The individual `.env.<device>` masters live
+THERE on all machines; the derived `tony7bones.env` push and the IPTV artifact
+staging land there too. The old `/storage/emulated/0/kodi/tony.7.bones/` root is
+a **read-only LEGACY fallback** — devices set up before the move still carry
+files there, so every reader scans it AFTER the canonical root; nothing ever
+writes there again. **The lifecycle split (mode 2's heart):** the MASTER
+`.env.<device>` is the box's persistent identity — read, applied through the
+provisioner-parity derivation (`derive_master_env`: `DEVICE_IP` dropped,
+`IPTV_STAGING_DIR` injected iff the sibling `iptv/` staging exists; documented
+divergence: `DEVICE_NAME` is the master's own — there is no prompt to override
+it), and **NEVER deleted**, so a Kodi wipe-and-redo works forever off the same
+file. Only the machine-derived candidates (the pushed `tony7bones.env` at both
+roots + the profile-local collector env) are in the terminal-delete set
+(`deletable_env_paths`).
 
 ## Core principles
 
@@ -568,3 +588,93 @@ Same gated treatment as every modular phase, plus the no-env dimension:
   the whole gate (coverage, the five mutations, the full live verify with fresh
   artifacts), added the delivery-mode-2 contract + its pin test per the owner
   directive, and committed. Nothing inherited was reshaped.
+
+### Phase N1.1 — COMMITTED on `no-computer-setup` 2026-06-10 (the `_T7B` canonical device root + the persistent device-resident master env + the no-env scaffold; unreleased — no version bumps, ships with the next milestone release)
+
+- **Owner directives encoded (all 2026-06-10, all binding):** (1) the canonical
+  device root is `/storage/emulated/0/_T7B/kodi/` (layout: `backups/ iptv/ media/
+  repositories/ rss/ scripts/`, + `backups/EM+`); the `.env.<device>` masters live
+  THERE on all machines; the old `kodi/tony.7.bones/` root becomes a read-only
+  LEGACY fallback (read after the new root, never written again). (2) the
+  device-resident master is PERSISTENT: read, apply, NEVER delete — wipe-and-redo
+  forever; the derived `tony7bones.env` + the profile-local collector env stay
+  disposable. (3) scaffold duty: no env anywhere → Setup CREATES the master
+  template at the canonical root.
+- **Env-source order (`env.box_env_paths`, the argued pick):**
+  1. derived push at the canonical `BOX_ENV_PATH`
+     (`/storage/emulated/0/_T7B/kodi/tony7bones.env` — **moved** under the new
+     root; the provisioner's push target moved in the same commit, one root for
+     everything new),
+  2. derived push at the LEGACY path (`kodi/tony.7.bones/tony7bones.env` —
+     boxes provisioned before the move keep working; still in the DELETE set:
+     machine-derived),
+  3. the device-resident MASTER `.env.*` candidates — canonical root then legacy
+     root, each sorted; multiple masters in total = misconfiguration → logged
+     WARNING naming the FILES (paths only, never values), deterministic
+     first-non-empty pick,
+  4. the profile-local collector env (omitted off-Kodi).
+     **Derived-before-master rationale:** a derived push is the freshest
+     DELIBERATE provisioning act (the provisioner just ran against the owner's
+     current config, with its prompt-overridden `DEVICE_NAME` and appended
+     `IPTV_STAGING_DIR`); the master is the standing identity that act refreshes.
+     The reverse order would make a re-provision silently lose to a stale master.
+- **The delete split (`env.deletable_env_paths`):** terminal ops (Express
+  completion, Guided Finish / Remove Setup) delete ONLY the machine-derived
+  candidates — both derived push paths + the profile-local env. The master (either
+  root) is NEVER in the set. Mutation-proven: a master-deleting mutant
+  (`deletable_env_paths` extended with the masters) kills 5 tests.
+- **Provisioner-parity derivation (`env.derive_master_env`):** a master read
+  through `read_first_env` gets the same shaping the provisioner applies when
+  deriving `tony7bones.env` (step 4c): `DEVICE_IP` dropped (laptop-only
+  connection metadata — the provisioner greps it out), `IPTV_STAGING_DIR`
+  injected iff absent AND the sibling `iptv/` staging dir exists (== the
+  provisioner appending the key iff the artifact push landed; `apply_iptv`
+  validates per-provider and falls back to direct-env, so a stale dir is safe).
+  **Documented divergence:** the provisioner overrides `DEVICE_NAME` with its
+  interactive prompt; no prompt exists on the no-computer path, so the master's
+  own value is authoritative. A master the derivation empties (only `DEVICE_IP`)
+  is the no-env class. `SETUP_MODE` from the master routes exactly as from a
+  push (test-pinned both ways). Full-shape FAKE fixture
+  (`test_full_shape_master_fixture_parity`) walks every `.env.device.example`
+  key through `run()`.
+- **The scaffold (`env.scaffold_master_env` + the bootstrap's
+  `_scaffold_master_env`):** with NO env anywhere, `run()` creates
+  `.env.<device-name>` (Kodi's `services.devicename`, sanitized
+  lowercase-dash, generic `device` fallback) at the CANONICAL root — never the
+  legacy one — then opens the wizard as before, surfacing ONE unobtrusive toast
+  naming the created path. Content = the bundled
+  `resources/env.device.example` (an add-on RESOURCE, byte-identical to the
+  repo's committed template — drift-pinned by test) with EVERY active line
+  comment-DISABLED plus a self-explaining banner: an unedited scaffold parses
+  to `{}` (the no-env class), so it can never hijack routing with placeholder
+  garbage. Never overwrites (skipped when ANY master exists at EITHER root;
+  the create is `open(.., "x")` race-safe); creates the staging dirs; guarded
+  non-fatal where the root cannot exist (macOS/desktop: logged skip — the
+  desktop user has a computer path by definition). Secret-leak shape pinned:
+  every scaffolded line is blank or a comment.
+- **Robustness:** `read_box_env` now treats NON-TEXT content (`UnicodeError`) as
+  unreadable → `{}` — a user-placed master can be any bytes a file app produced.
+- **Dual-root device reads:** `DEVICE_FILE_COPIES` sources became (canonical,
+  legacy) candidate PAIRS — first existing wins, canonical first;
+  `_copy_one_device_file` accepts a string or tuple (pre-move boxes keep
+  working). `_tools/provision-kodi.sh`: `DEVICE_ROOT` introduced, `BOX_ENV_PATH`
+  + the IPTV staging push moved under it, and the full canonical tree
+  (`backups/EM+ iptv media repositories rss scripts`) is established idempotently
+  before staging (it survives the Kodi wipe — it lives outside the Kodi data
+  dirs). `SETUP_API` 2→3 / `REQUIRED_SETUP_API` 3 (the runtime pairing guard;
+  version bumps stay deferred to the milestone release per the track rule).
+- **Gate evidence:** suite **830 passed / 1 xfailed** (+33 vs N1), ruff clean
+  (`_tools/` + both changed add-ons), secret-leak green (the bundled template is
+  placeholder-only), `env.py` 100% / `iptv.py` 100% / `default.py` 98% (every
+  miss a pre-existing defensive branch or the `__main__` guard — new N1.1 code
+  fully covered), deterministic regen (two `generate_repo.py` runs, identical
+  status). **Three keystone mutations applied live and killed:** master-deleting
+  delete-set (5 failures), master-before-derived order reversal (2), the
+  never-overwrite scaffold guard removed (3); the tree restored byte-identical
+  after each. New pins include: master-alone routes Express / `SETUP_MODE` from
+  the master / derived-beats-master / master-beats-profile / multiple-masters
+  warn-without-values / wipe-and-redo off the surviving master / Express + Guided
+  terminal ops spare the master (both roots) / scaffold create-name-fallback,
+  never-overwrite, dir-create, non-fatal-skip, template drift pin,
+  comments-only shape / legacy-root: derived + master fallback reads, canonical
+  beats legacy at both ranks, scaffold never writes legacy.

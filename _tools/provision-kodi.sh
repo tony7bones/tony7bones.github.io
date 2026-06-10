@@ -60,9 +60,12 @@ command -v adb >/dev/null 2>&1 || die "adb not found. Install it: brew install a
 # the source we derive the per-device tony7bones.env from (pushed to the box;
 # absent .env -> built-in defaults, exactly like the bootstrap's own fallback).
 # Per-device env path on the box (matches the bootstrap's BOX_ENV_PATH; read then
-# REMOVED by the bootstrap so its secrets don't linger).
+# REMOVED by the bootstrap so its secrets don't linger). N1.1: lives under the
+# CANONICAL device root /storage/emulated/0/_T7B/kodi/ (the old
+# kodi/tony.7.bones/ root is a read-only legacy fallback — never push there).
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BOX_ENV_PATH="/storage/emulated/0/kodi/tony.7.bones/tony7bones.env"
+DEVICE_ROOT="/storage/emulated/0/_T7B/kodi"
+BOX_ENV_PATH="$DEVICE_ROOT/tony7bones.env"
 # USE_LOCAL=1 pushes the WORKING-TREE add-ons instead of fetching from the live
 # site (main) — required to verify a feature branch on the box BEFORE merging.
 USE_LOCAL="${USE_LOCAL:-}"
@@ -218,6 +221,10 @@ ok "Setup $BV + library $MV installed."
 # They are pushed to the device-convention iptv/ dir and the derived env gets
 # IPTV_STAGING_DIR so apply_iptv consumes them; on ANY failure the box falls
 # back to the 5b·1 direct-env config (m3u providers still work; xtream skips).
+# Establish the canonical device tree (N1.1 — _T7B/kodi/ layout; survives the
+# Kodi wipe above because it lives outside the Kodi data dir). Idempotent.
+_adb shell "mkdir -p '$DEVICE_ROOT/backups/EM+' $DEVICE_ROOT/iptv $DEVICE_ROOT/media $DEVICE_ROOT/repositories $DEVICE_ROOT/rss $DEVICE_ROOT/scripts" >/dev/null 2>&1
+
 IPTV_STAGED=""
 if grep -qE '^IPTV_[0-9]+_' "$ENV_FILE"; then
   say "  building curated IPTV artifacts (host-side: fetch + curate per provider)…"

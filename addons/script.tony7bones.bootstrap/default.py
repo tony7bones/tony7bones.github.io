@@ -65,7 +65,9 @@ MY_ID = "script.tony7bones.bootstrap"
 # ---------------------------------------------------------------------------- #
 # Level 2 (Phase N1): run() depends on the library's ordered env-source helpers
 # (tony7bones.setup.env.box_env_paths / read_first_env / delete_box_envs).
-REQUIRED_SETUP_API = 2
+# Level 3 (Phase N1.1): the device-resident master env + scaffold helpers
+# (env.deletable_env_paths / scaffold_master_env / master_env_paths).
+REQUIRED_SETUP_API = 3
 
 
 def _require_setup_library():
@@ -388,17 +390,33 @@ PVR_BACKEND_ID = _iptv.PVR_BACKEND_ID
 # Phase N1: the constant MOVED to tony7bones.setup.env (single source of truth
 # for the ordered env-source list); re-exported here, same value, so every
 # existing reference and test (boot.mod.BOX_ENV_PATH — incl. the monkeypatched
-# staging the env tests use) keeps working unchanged.
+# staging the env tests use) keeps working unchanged. N1.1: it now points under
+# the CANONICAL device root /storage/emulated/0/_T7B/kodi/ (the legacy
+# kodi/tony.7.bones/ push path is still read second — see env.box_env_paths).
 BOX_ENV_PATH = _env_mod.BOX_ENV_PATH
 
 
 def _box_env_paths():
-    """The ORDERED env-source candidates (Phase N1): the provisioner's pushed
-    file (``BOX_ENV_PATH`` — wins when present, so the provisioned path is
-    byte-compatible) first, then the profile-local persisted env the on-box
-    collector writes (``env.PROFILE_ENV_SPECIAL``). Resolves THIS module's
-    ``BOX_ENV_PATH`` global late so a test's monkeypatched staging is honored."""
-    return _env_mod.box_env_paths(primary=BOX_ENV_PATH)
+    """The ORDERED env-source candidates (Phase N1, N1.1): the provisioner's
+    pushed file (``BOX_ENV_PATH`` under the ``_T7B`` root — wins when present,
+    so the provisioned path is byte-compatible), then the LEGACY push path
+    (pre-``_T7B`` boxes), then the device-resident MASTER ``.env.*``
+    candidates (canonical root, then legacy root — the persistent identity,
+    never deleted), then the profile-local persisted env the on-box collector
+    writes (``env.PROFILE_ENV_SPECIAL``). Resolves THIS module's
+    ``BOX_ENV_PATH`` global late so a test's monkeypatched staging is honored.
+    The multiple-masters warning logs FILE PATHS only, never values."""
+    return _env_mod.box_env_paths(
+        primary=BOX_ENV_PATH, log=lambda m: _log(m, xbmc.LOGWARNING)
+    )
+
+
+def _deletable_box_env_paths():
+    """The env candidates the TERMINAL ops may delete (N1.1 delete split):
+    the derived pushes (both roots) + the profile-local collector env. The
+    device-resident MASTER is NEVER deleted — wipe-and-redo must work forever
+    off it."""
+    return _env_mod.deletable_env_paths(primary=BOX_ENV_PATH)
 
 
 def _configure_box(box_env=None):
@@ -1130,10 +1148,12 @@ def _delete_box_env():
     rule) and is consumed only by the TERMINAL ops (Finish / Remove Setup),
     BEFORE their restart, so no secret lingers once the wizard is done. The
     Express path keeps its own delete in run() (after the last layer),
-    unchanged. Phase N1: the delete covers EVERY env-source candidate
-    (pushed ``BOX_ENV_PATH`` + the profile-local collector env) so a terminal
-    op leaves no secret in either location (Model A semantics)."""
-    _env_mod.delete_box_envs(_box_env_paths())
+    unchanged. Phase N1: the delete covers the pushed ``BOX_ENV_PATH`` + the
+    profile-local collector env so a terminal op leaves no machine-derived
+    secret behind (Model A semantics). Phase N1.1: the delete set is the
+    DELETABLE subset only — the device-resident master ``.env.*`` SURVIVES
+    every terminal op (the persistent-identity contract)."""
+    _env_mod.delete_box_envs(_deletable_box_env_paths())
 
 
 def _next_gate(box_env):
@@ -1409,6 +1429,55 @@ def run_guided(box_env=None):
         return "exit"
 
 
+# The bundled master-env template (a byte-identical copy of the repo's
+# committed `.env.device.example` — drift-pinned by test). Shipped as an add-on
+# resource so the scaffold works with nothing but the installed Setup.
+_ENV_TEMPLATE_RESOURCE = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "resources", "env.device.example"
+)
+
+
+def _device_name():
+    """Kodi's device name (``services.devicename`` — the same core setting the
+    provisioner seeds), or ``""`` when unreadable (the scaffold's sanitizer
+    falls back to the generic ``device``). Never raises."""
+    try:
+        resp = xbmc.executeJSONRPC(
+            json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "Settings.GetSettingValue",
+                    "params": {"setting": "services.devicename"},
+                }
+            )
+        )
+        return str(json.loads(resp).get("result", {}).get("value") or "")
+    except Exception:  # noqa: BLE001 - any failure = fall back to generic
+        return ""
+
+
+def _scaffold_master_env():
+    """The N1.1 scaffold duty: with NO env anywhere, CREATE the device-resident
+    master template ``.env.<device-name>`` in the staging dir for the user to
+    fill in and re-run. Placeholders only (every line comment-disabled — an
+    unedited scaffold stays the no-env class); never overwrites; guarded and
+    non-fatal where the staging root cannot exist (macOS/desktop: logged
+    skip). Returns the created path or ``None``."""
+    try:
+        with open(_ENV_TEMPLATE_RESOURCE, encoding="utf-8") as fh:
+            template = fh.read()
+    except OSError as e:
+        _log("scaffold: bundled template unreadable: {}".format(e), xbmc.LOGWARNING)
+        return None
+    return _env_mod.scaffold_master_env(
+        _device_name(),
+        template,
+        primary=BOX_ENV_PATH,
+        log=lambda m: _log("scaffold: {}".format(m)),
+    )
+
+
 def run():
     """Entry point — read the per-device env, route Express/Guided, own the env.
 
@@ -1441,8 +1510,21 @@ def run():
     box_env = _env_mod.read_first_env(paths, reader=read_box_env)
     if not box_env:
         # NO env anywhere: the remote-only user (no provisioner, no computer).
-        # The Guided wizard is the interview they need; its "Install everything
-        # with defaults" entry keeps the old one-tap one pick away (D1).
+        # N1.1 scaffold duty: create the master template for them to fill in
+        # and re-run, surface ONE unobtrusive line (a toast — the wizard's menu
+        # itself stays untouched), then open the Guided wizard as before.
+        created = _scaffold_master_env()
+        if created:
+            _log("no env found: master template scaffolded at {}".format(created))
+            try:
+                xbmcgui.Dialog().notification(
+                    "Tony.7.Bones Setup",
+                    "Config template created: {} — fill it in and re-run.".format(
+                        created
+                    ),
+                )
+            except Exception:  # noqa: BLE001 - a toast must never block the wizard
+                pass
         run_guided({})
         return
     if (box_env.get(SETUP_MODE_KEY) or "").strip().lower() == "guided":
@@ -1451,9 +1533,10 @@ def run():
     addons_res, _foundation_res, _iptv_res = run_express(box_env)
     # Delete only after a non-cancelled run consumed the env (addons_res.ok is False
     # ONLY on a mid-install cancel — the abort path leaves the env for a re-run).
-    # Covers EVERY candidate so no secret lingers in either location (N1).
+    # Covers the DELETABLE candidates (derived + profile-local) — the master
+    # .env.* survives (N1.1: the persistent identity is never deleted).
     if addons_res.ok:
-        _env_mod.delete_box_envs(paths)
+        _env_mod.delete_box_envs(_deletable_box_env_paths())
 
 
 if __name__ == "__main__":

@@ -137,6 +137,13 @@ def boot(tmp_path, monkeypatch):
             # immediately (Phase 6, additive — see getSkinDir above).
             if d["params"].get("setting") == "lookandfeel.skin":
                 state["skin_dir"] = d["params"].get("value")
+        elif d.get("method") == "Settings.GetSettingValue":
+            # N1.1 (additive): answer core-setting reads from
+            # state["settings_values"] (e.g. services.devicename for the
+            # master-env scaffold's device-name lookup). Unset = "{}" as before.
+            val = state.get("settings_values", {}).get(d["params"].get("setting"))
+            if val is not None:
+                return _json.dumps({"result": {"value": val}})
         return "{}"
 
     xbmc.executeJSONRPC = _jsonrpc
@@ -186,6 +193,11 @@ def boot(tmp_path, monkeypatch):
             if msg.startswith("Include video"):
                 return bool(state.get("also_video", False))
             return False
+
+        def notification(self, title, msg, *a, **k):
+            # N1.1 (additive): the scaffold's one unobtrusive line is a toast;
+            # recorded so tests can assert it surfaced (never blocks).
+            state.setdefault("notification", []).append((title, msg))
 
         def multiselect(self, title, options, preselect=None):
             state.setdefault("multiselect", []).append((title, options, preselect))

@@ -79,14 +79,17 @@ def _make_groups_file(boot):
 
 def _point_copies(boot, monkeypatch, tmp_path, mapping):
     """Repoint the iptv module's DEVICE_FILE_COPIES so the given special:// dests
-    read from temp files (others get a guaranteed-missing source)."""
+    read from temp files (others get a guaranteed-missing source). N1.1: each
+    shipped source is a (canonical, legacy) candidate tuple; the repointed
+    entries use plain strings (the copy helper accepts both)."""
     iptv = _iptv(boot)
     new = []
     for src, dst in iptv.DEVICE_FILE_COPIES:
+        first = src if isinstance(src, str) else src[0]
         if dst in mapping:
             new.append((str(mapping[dst]), dst))
         else:
-            new.append((str(tmp_path / "missing" / os.path.basename(src)), dst))
+            new.append((str(tmp_path / "missing" / os.path.basename(first)), dst))
     monkeypatch.setattr(iptv, "DEVICE_FILE_COPIES", new)
 
 
@@ -109,16 +112,44 @@ def test_iptv_constants_match_schema(boot):
 
 def test_iptv_default_device_copies_are_the_three_expected(boot):
     """The data-driven list holds the RSS feed + the two pvr.iptvsimple files, each
-    to userdata/addon_data (private config never goes near the repo)."""
+    to userdata/addon_data (private config never goes near the repo). N1.1: each
+    source is a (canonical _T7B root, legacy tony.7.bones root) candidate pair —
+    canonical FIRST (it wins when both exist)."""
     iptv = _iptv(boot)
     dsts = [d for _s, d in iptv.DEVICE_FILE_COPIES]
     assert _RSS_DST in dsts
     assert _IPTV_INSTANCE_DST in dsts
     assert _IPTV_GROUPS_DST in dsts
     assert len(iptv.DEVICE_FILE_COPIES) == 3
-    for src, dst in iptv.DEVICE_FILE_COPIES:
-        assert src.startswith("/storage/")
+    for srcs, dst in iptv.DEVICE_FILE_COPIES:
+        assert len(srcs) == 2, "each source is a (canonical, legacy) pair"
+        canonical, legacy = srcs
+        assert canonical.startswith("/storage/emulated/0/_T7B/kodi/")
+        assert legacy.startswith("/storage/emulated/0/kodi/tony.7.bones/")
+        assert os.path.basename(canonical) == os.path.basename(legacy)
         assert dst.startswith("special://home/userdata/")
+
+
+def test_copy_one_device_file_canonical_root_wins_over_legacy(
+    boot, monkeypatch, tmp_path
+):
+    """N1.1 dual-root read: with the SAME file present at both roots, the
+    canonical (_T7B) candidate is copied; with only the legacy one present,
+    the legacy fallback is copied (pre-move devices keep working)."""
+    canonical = tmp_path / "new" / "RssFeeds.xml"
+    legacy = tmp_path / "old" / "RssFeeds.xml"
+    canonical.parent.mkdir()
+    legacy.parent.mkdir()
+    canonical.write_text("<rssfeeds>CANONICAL</rssfeeds>")
+    legacy.write_text("<rssfeeds>LEGACY</rssfeeds>")
+    dst = boot.mod.xbmcvfs.translatePath(_RSS_DST)
+
+    _iptv(boot)._copy_one_device_file((str(canonical), str(legacy)), _RSS_DST)
+    assert open(dst, encoding="utf-8").read() == "<rssfeeds>CANONICAL</rssfeeds>"
+
+    canonical.unlink()
+    _iptv(boot)._copy_one_device_file((str(canonical), str(legacy)), _RSS_DST)
+    assert open(dst, encoding="utf-8").read() == "<rssfeeds>LEGACY</rssfeeds>"
 
 
 # --------------------------------------------------------------------------- #
@@ -799,9 +830,7 @@ def test_apply_iptv_writes_config_inside_pvr_disabled_window(boot, monkeypatch):
     res = iptv.apply_iptv({"IPTV_M3U": "http://iptv.example/get?password=p"})
     assert res.ok is True
     assert seen["disabled_during_copy"] is True, "copy must run with pvr DISABLED"
-    assert seen["disabled_during_enforce"] is True, (
-        "enforce must run with pvr DISABLED"
-    )
+    assert seen["disabled_during_enforce"] is True, "enforce must run with pvr DISABLED"
     assert "pvr.iptvsimple" not in boot.state["disabled"], "pvr must end RE-ENABLED"
     assert _pvr_enable_calls(boot) == [True, False, True], (
         "expected install-enable, pause-disable, resume-enable"

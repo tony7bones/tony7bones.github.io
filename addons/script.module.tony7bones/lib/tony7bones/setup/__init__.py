@@ -32,7 +32,10 @@ from .result import LayerResult
 # on a new library capability.
 # Level 2 (Phase N1): the ordered env-source helpers (env.box_env_paths /
 # read_first_env / delete_box_envs) the bootstrap's run() routing now calls.
-SETUP_API = 2
+# Level 3 (Phase N1.1): the device-resident master env + scaffold helpers
+# (env.deletable_env_paths / scaffold_master_env / master_env_paths) — the
+# bootstrap's terminal deletes and no-env scaffold call them.
+SETUP_API = 3
 
 __all__ = [
     "KodiHost",

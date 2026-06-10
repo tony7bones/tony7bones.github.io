@@ -47,7 +47,7 @@ import xbmcvfs
 
 from tony7bones import disable, enable, install_with_deps, is_installed
 
-from .env import split_list
+from .env import DEVICE_ROOT, LEGACY_DEVICE_ROOT, split_list
 from .result import LayerResult
 
 MY_ID = "script.tony7bones.bootstrap"
@@ -89,29 +89,38 @@ def _install_pvr_backend(dialog):
 
 
 # Device → userdata file copies. The user places these files on the device under
-# the Android/Fire-Stick /storage/emulated/0/kodi/ tree (note the exact
-# "tony.7.bones" spelling); Setup copies each one into Kodi's userdata over any
-# default. Every file is USER-PROVIDED — Setup never downloads or creates them; it
-# only copies each when present, overwriting the destination. They carry the
-# user's private config and land in userdata/addon_data ONLY, never the repo.
+# the canonical /storage/emulated/0/_T7B/kodi/ tree (N1.1 — the legacy
+# kodi/tony.7.bones/ tree is still READ as a fallback; devices set up before the
+# root move have their files there); Setup copies each one into Kodi's userdata
+# over any default. Every file is USER-PROVIDED — Setup never downloads or
+# creates them; it only copies each when present, overwriting the destination.
+# They carry the user's private config and land in userdata/addon_data ONLY,
+# never the repo.
 #
-# Each entry is (source-on-device, destination special:// path):
+# Each entry is (source CANDIDATES on-device — canonical root first, legacy
+# root second; the FIRST existing candidate is copied — , destination
+# special:// path):
 #   * the home-screen RSS news ticker feeds (over Kodi's default RssFeeds.xml)
 #   * pvr.iptvsimple's instance settings (the IPTV add-on is already installed by
 #     the base step, so addon_data/pvr.iptvsimple/ may need creating)
 #   * pvr.iptvsimple's custom TV channel groups (the channelGroups/ subdir won't
 #     exist on a fresh box — the copy creates it)
+def _both_roots(rel):
+    """The (canonical, legacy) source-candidate pair for one device file."""
+    return (DEVICE_ROOT + "/" + rel, LEGACY_DEVICE_ROOT + "/" + rel)
+
+
 DEVICE_FILE_COPIES = [
     (
-        "/storage/emulated/0/kodi/tony.7.bones/rss/RssFeeds.xml",
+        _both_roots("rss/RssFeeds.xml"),
         "special://home/userdata/RssFeeds.xml",
     ),
     (
-        "/storage/emulated/0/kodi/tony.7.bones/iptv/instance-settings-1.xml",
+        _both_roots("iptv/instance-settings-1.xml"),
         "special://home/userdata/addon_data/pvr.iptvsimple/instance-settings-1.xml",
     ),
     (
-        "/storage/emulated/0/kodi/tony.7.bones/iptv/customTVGroups-Network24.xml",
+        _both_roots("iptv/customTVGroups-Network24.xml"),
         "special://home/userdata/addon_data/pvr.iptvsimple/channelGroups/"
         "customTVGroups-Network24.xml",
     ),
@@ -121,14 +130,21 @@ DEVICE_FILE_COPIES = [
 def _copy_one_device_file(src, dst_special):
     """Copy a single USER-PROVIDED device file into userdata, guarded.
 
-    FROM the device path `src`, TO the translated `dst_special` — creating the
-    destination directory if missing (fresh boxes lack addon_data/pvr.iptvsimple/
-    and its channelGroups/ subdir) and OVERWRITING the destination if it exists.
-    GUARDED: if the source is absent (e.g. on desktop, or the user hasn't placed
-    it) this logs and skips — it never errors. Idempotent."""
-    if not xbmcvfs.exists(src):
+    FROM the device path `src` — a single path OR a tuple/list of candidate
+    paths tried in order (N1.1: canonical `_T7B` root first, legacy root
+    second; the FIRST existing candidate wins, so a file present at both roots
+    is taken from the canonical one) — TO the translated `dst_special`,
+    creating the destination directory if missing (fresh boxes lack
+    addon_data/pvr.iptvsimple/ and its channelGroups/ subdir) and OVERWRITING
+    the destination if it exists. GUARDED: if no source candidate is present
+    (e.g. on desktop, or the user hasn't placed it) this logs and skips — it
+    never errors. Idempotent."""
+    candidates = (src,) if isinstance(src, str) else tuple(src)
+    src = next((s for s in candidates if xbmcvfs.exists(s)), None)
+    if src is None:
         _log(
-            f"_configure_box: device file not found, skipping: {src}",
+            "_configure_box: device file not found, skipping: "
+            + " | ".join(candidates),
             xbmc.LOGINFO,
         )
         return

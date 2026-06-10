@@ -470,16 +470,23 @@ def test_no_env_wizard_remove_setup_at_shifted_index(boot, monkeypatch):
 # The env helpers themselves (pure-Python unit pins).
 # --------------------------------------------------------------------------- #
 def test_box_env_paths_order_and_profile_translation(boot):
-    """Pushed path FIRST (primary override honored), profile-local second —
-    translated through xbmcvfs into the real profile dir."""
+    """Pushed path FIRST (primary override honored), the legacy push path
+    second (pre-_T7B boxes), profile-local last — translated through xbmcvfs
+    into the real profile dir."""
     from tony7bones.setup import env as env_mod
 
     paths = env_mod.box_env_paths(primary="/tmp/pushed.env")
     assert paths[0] == "/tmp/pushed.env"
-    assert len(paths) == 2
-    assert paths[1] == boot.mod.xbmcvfs.translatePath(env_mod.PROFILE_ENV_SPECIAL)
-    # Default primary is the canonical pushed-path constant.
+    assert paths[1] == env_mod.LEGACY_BOX_ENV_PATH
+    assert len(paths) == 3
+    assert paths[2] == boot.mod.xbmcvfs.translatePath(env_mod.PROFILE_ENV_SPECIAL)
+    # Default primary is the canonical pushed-path constant (under _T7B).
     assert env_mod.box_env_paths()[0] == env_mod.BOX_ENV_PATH
+    assert env_mod.BOX_ENV_PATH == "/storage/emulated/0/_T7B/kodi/tony7bones.env"
+    assert (
+        env_mod.LEGACY_BOX_ENV_PATH
+        == "/storage/emulated/0/kodi/tony.7.bones/tony7bones.env"
+    )
 
 
 def test_box_env_paths_off_kodi_omits_profile(boot, monkeypatch):
@@ -490,7 +497,10 @@ def test_box_env_paths_off_kodi_omits_profile(boot, monkeypatch):
     from tony7bones.setup import env as env_mod
 
     monkeypatch.setitem(_sys.modules, "xbmcvfs", None)  # import yields None -> raises
-    assert env_mod.box_env_paths(primary="/tmp/p.env") == ["/tmp/p.env"]
+    assert env_mod.box_env_paths(primary="/tmp/p.env") == [
+        "/tmp/p.env",
+        env_mod.LEGACY_BOX_ENV_PATH,
+    ]
 
 
 def test_read_first_env_skips_empty_and_missing(tmp_path):
@@ -517,3 +527,576 @@ def test_delete_box_envs_is_guarded(tmp_path):
     a.write_text("K=v\n")
     env_mod.delete_box_envs([str(a), str(tmp_path / "missing.env")])  # must not raise
     assert not a.exists()
+
+
+# --------------------------------------------------------------------------- #
+# Phase N1.1 — the device-resident MASTER env (.env.<device>): persistent
+# identity (NEVER deleted), provisioner-parity derivation, and the no-env
+# SCAFFOLD duty. docs/plans/no-computer-setup.md (N1.1 build-log entry).
+# --------------------------------------------------------------------------- #
+def _staging(boot):
+    """The staging dir the master scan uses (dirname of the primary)."""
+    return os.path.dirname(str(boot.env_file))
+
+
+def _write_master(boot, name, content):
+    path = os.path.join(_staging(boot), ".env." + name)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(content)
+    return path
+
+
+def _masters(boot):
+    return sorted(n for n in os.listdir(_staging(boot)) if n.startswith(".env."))
+
+
+def _stub_guided(boot, monkeypatch, calls):
+    monkeypatch.setattr(
+        boot.mod, "run_guided", lambda env=None: calls.append(env) or "exit"
+    )
+
+
+def test_master_env_routes_express_when_derived_absent(boot, monkeypatch):
+    """The owner's model: the device-resident .env.<device> alone (no derived
+    push) drives the box exactly like a provisioned env — no SETUP_MODE ->
+    Express with the parsed dict."""
+    _no_env(boot)
+    _write_master(boot, "office", 'WEATHER_LOCATIONS="Testville"\n')
+    _forbid_guided(boot, monkeypatch)
+    calls = []
+    _stub_express_ok(boot, monkeypatch, calls)
+
+    boot.mod.run()
+
+    assert calls and calls[0]["WEATHER_LOCATIONS"] == "Testville"
+
+
+def test_master_env_setup_mode_guided_routes_wizard(boot, monkeypatch):
+    """SETUP_MODE=guided FROM THE MASTER routes the wizard with the master's
+    own dict (SETUP_MODE works from the master — the N1.1 routing contract)."""
+    _no_env(boot)
+    _write_master(boot, "office", 'SETUP_MODE="guided"\nMARKER="m"\n')
+    _forbid_express(boot, monkeypatch)
+    calls = []
+    _stub_guided(boot, monkeypatch, calls)
+
+    boot.mod.run()
+
+    assert calls and calls[0]["MARKER"] == "m"
+    assert calls[0]["SETUP_MODE"] == "guided"
+
+
+def test_derived_env_wins_over_master(boot, monkeypatch):
+    """Source order: the derived tony7bones.env (the freshest provisioner
+    derivation — incl. its prompt-overridden DEVICE_NAME and appended
+    IPTV_STAGING_DIR) outranks the master. MUTATION KILLER for a reversed
+    order."""
+    boot.env_file.write_text('MARKER="derived"\n')
+    _write_master(boot, "office", 'MARKER="master"\n')
+    calls = []
+    _stub_express_ok(boot, monkeypatch, calls)
+
+    boot.mod.run()
+
+    assert calls and calls[0]["MARKER"] == "derived"
+
+
+def test_master_wins_over_profile_local(boot, monkeypatch):
+    """Source order: the master outranks the profile-local collector env."""
+    _no_env(boot)
+    _write_master(boot, "office", 'MARKER="master"\n')
+    _write_profile_env(boot, 'MARKER="profile"\n')
+    calls = []
+    _stub_express_ok(boot, monkeypatch, calls)
+
+    boot.mod.run()
+
+    assert calls and calls[0]["MARKER"] == "master"
+
+
+def test_multiple_masters_sorted_first_nonempty_wins_and_warns(boot, monkeypatch):
+    """More than one .env.* is a misconfiguration: deterministic pick (sorted
+    order, first NON-EMPTY wins — a degenerate file falls through like every
+    other candidate) + a logged warning naming the files (names ONLY, never
+    values)."""
+    _no_env(boot)
+    _write_master(boot, "aaa", "# all comments — degenerate\n")
+    _write_master(boot, "bbb", 'MARKER="bbb" # SECRETVALUE must not be logged\n')
+    _write_master(boot, "ccc", 'MARKER="ccc"\n')
+    logged = []
+    monkeypatch.setattr(boot.mod, "_log", lambda msg, *a, **k: logged.append(msg))
+    calls = []
+    _stub_express_ok(boot, monkeypatch, calls)
+
+    boot.mod.run()
+
+    assert calls and calls[0]["MARKER"] == "bbb"
+    warnings = [m for m in logged if "multiple master envs" in m]
+    assert warnings, "multiple masters must surface a logged warning"
+    assert ".env.aaa" in warnings[0] and ".env.ccc" in warnings[0]
+    assert "SECRETVALUE" not in " ".join(logged), "values must never be logged"
+
+
+def test_master_derivation_drops_device_ip_and_injects_staging(boot, monkeypatch):
+    """Provisioner parity: DEVICE_IP dropped (the derivation greps it out);
+    IPTV_STAGING_DIR injected iff the sibling iptv/ staging dir exists —
+    equivalent to the provisioner appending the key iff the push landed."""
+    _no_env(boot)
+    iptv_dir = os.path.join(_staging(boot), "iptv")
+    os.makedirs(iptv_dir, exist_ok=True)
+    _write_master(boot, "office", 'DEVICE_IP="1.2.3.4"\nMARKER="x"\n')
+    calls = []
+    _stub_express_ok(boot, monkeypatch, calls)
+
+    boot.mod.run()
+
+    assert calls and "DEVICE_IP" not in calls[0]
+    assert calls[0]["IPTV_STAGING_DIR"] == iptv_dir
+
+
+def test_master_derivation_respects_explicit_staging_and_absent_dir(boot, monkeypatch):
+    """An explicit IPTV_STAGING_DIR in the master is preserved; with no iptv/
+    dir on disk nothing is injected."""
+    from tony7bones.setup import env as env_mod
+
+    env = env_mod.derive_master_env(
+        {"IPTV_STAGING_DIR": "/explicit", "DEVICE_IP": "1.2.3.4"},
+        os.path.join(_staging(boot), ".env.office"),
+    )
+    assert env["IPTV_STAGING_DIR"] == "/explicit" and "DEVICE_IP" not in env
+
+    env2 = env_mod.derive_master_env(
+        {"MARKER": "x"}, os.path.join(_staging(boot), ".env.office")
+    )
+    assert "IPTV_STAGING_DIR" not in env2
+
+
+def test_master_with_only_device_ip_is_no_env(boot, monkeypatch):
+    """A master whose derivation empties it (only DEVICE_IP) carries no
+    configuration -> the no-env class -> the wizard. And the scaffold must NOT
+    fire (a master exists — never overwrite, never proliferate)."""
+    _no_env(boot)
+    path = _write_master(boot, "office", 'DEVICE_IP="1.2.3.4"\n')
+    _forbid_express(boot, monkeypatch)
+    calls = []
+    _stub_guided(boot, monkeypatch, calls)
+
+    boot.mod.run()
+
+    assert calls == [{}]
+    assert _masters(boot) == [".env.office"], "scaffold must not add a second master"
+    assert open(path, encoding="utf-8").read() == 'DEVICE_IP="1.2.3.4"\n'
+
+
+def test_non_utf8_master_is_no_env(boot, monkeypatch):
+    """A user-placed master can be ANY bytes a file app produced: binary/non-
+    UTF8 content is 'unreadable' -> {} -> the wizard, never a crash."""
+    _no_env(boot)
+    with open(os.path.join(_staging(boot), ".env.office"), "wb") as fh:
+        fh.write(b"\xff\xfe\x00\x01 not text \x80")
+    _forbid_express(boot, monkeypatch)
+    calls = []
+    _stub_guided(boot, monkeypatch, calls)
+
+    boot.mod.run()
+
+    assert calls == [{}]
+
+
+# ---- terminal-delete split: the master is NEVER deleted -------------------- #
+def test_express_completion_spares_master(boot, monkeypatch):
+    """MUTATION KILLER (delete split): Express completion consumes the derived
+    + profile-local envs but the device-resident master SURVIVES — it is the
+    box's persistent identity (wipe-and-redo works forever)."""
+    boot.env_file.write_text('MARKER="derived"\n')
+    profile_env = _write_profile_env(boot, 'MARKER="profile"\n')
+    master = _write_master(boot, "office", 'MARKER="master"\n')
+    _stub_express_ok(boot, monkeypatch, [])
+
+    boot.mod.run()
+
+    assert not boot.env_file.exists()
+    assert not os.path.exists(profile_env)
+    assert os.path.exists(master), "the master env must NEVER be deleted"
+
+
+def test_guided_finish_spares_master(boot, monkeypatch):
+    """The Guided terminal op deletes the deletable set only — master spared."""
+    boot.env_file.write_text("SETUP_MODE=guided\n")
+    profile_env = _write_profile_env(boot, "SETUP_MODE=guided\n")
+    master = _write_master(boot, "office", 'SETUP_MODE="guided"\n')
+    _script_probes(boot, monkeypatch, foundation=True, iptv=True, addons=True)
+    monkeypatch.setattr(boot.mod, "restart_kodi", lambda *a, **k: None)
+    boot.state["select_queue"] = [0]  # Finish
+
+    outcome = boot.mod.run_guided({"SETUP_MODE": "guided"})
+
+    assert outcome == "finished"
+    assert not boot.env_file.exists() and not os.path.exists(profile_env)
+    assert os.path.exists(master), "the master env must NEVER be deleted"
+
+
+def test_wipe_and_redo_works_off_surviving_master(boot, monkeypatch):
+    """The owner contract end-to-end: a completed Express spares the master,
+    so a 'wiped' box (no derived, no profile env) re-runs Express off the SAME
+    master, forever."""
+    _no_env(boot)
+    _write_master(boot, "office", 'MARKER="master"\n')
+    calls = []
+    _stub_express_ok(boot, monkeypatch, calls)
+
+    boot.mod.run()  # first run consumes nothing it shouldn't
+    boot.mod.run()  # the redo: still routed by the surviving master
+
+    assert [c["MARKER"] for c in calls] == ["master", "master"]
+
+
+# ---- the scaffold duty ------------------------------------------------------ #
+def test_no_env_scaffolds_master_template(boot, monkeypatch):
+    """With NO env anywhere Setup CREATES .env.<device-name> (sanitized from
+    Kodi's device name), content = the bundled template comment-disabled (so
+    it parses to {} — the unedited scaffold cannot hijack routing), and the
+    wizard surfaces ONE unobtrusive line (a toast naming the path)."""
+    from tony7bones.setup import env as env_mod
+
+    _no_env(boot)
+    boot.state["settings_values"] = {"services.devicename": "Office Fire TV"}
+    calls = []
+    _stub_guided(boot, monkeypatch, calls)
+
+    boot.mod.run()
+
+    path = os.path.join(_staging(boot), ".env.office-fire-tv")
+    assert os.path.exists(path), "the scaffold must create .env.<device-name>"
+    content = open(path, encoding="utf-8").read()
+    with open(boot.mod._ENV_TEMPLATE_RESOURCE, encoding="utf-8") as fh:
+        assert content == env_mod.scaffold_template_text(fh.read())
+    assert env_mod.parse_env(content) == {}, "unedited scaffold must parse empty"
+    assert calls == [{}], "the wizard still runs after scaffolding"
+    notes = boot.state.get("notification", [])
+    assert any(path in msg for _t, msg in notes), "the one unobtrusive line"
+
+
+def test_scaffold_device_name_fallback_generic(boot, monkeypatch):
+    """No readable device name -> the generic fallback '.env.device'."""
+    _no_env(boot)
+    _stub_guided(boot, monkeypatch, [])
+
+    boot.mod.run()
+
+    assert os.path.exists(os.path.join(_staging(boot), ".env.device"))
+
+
+def test_scaffold_never_overwrites_existing_master(boot, monkeypatch):
+    """NEVER overwrite: any pre-existing master (even a degenerate one) means
+    no scaffold write, no toast, byte-identical content after the run.
+    MUTATION KILLER for an unconditional create."""
+    _no_env(boot)
+    sentinel = "# user file — hands off\n"
+    path = _write_master(boot, "mine", sentinel)
+    _stub_guided(boot, monkeypatch, [])
+
+    boot.mod.run()
+
+    assert _masters(boot) == [".env.mine"]
+    assert open(path, encoding="utf-8").read() == sentinel
+    assert not boot.state.get("notification"), "no creation -> no toast"
+
+
+def test_scaffold_creates_missing_staging_dirs(boot, monkeypatch):
+    """The staging dir is created when absent (mkdir -p semantics)."""
+    deep = os.path.join(_staging(boot), "sub", "deep")
+    monkeypatch.setattr(boot.mod, "BOX_ENV_PATH", os.path.join(deep, "t.env"))
+    _no_env(boot)
+    _stub_guided(boot, monkeypatch, [])
+
+    boot.mod.run()
+
+    assert os.path.exists(os.path.join(deep, ".env.device"))
+
+
+def test_scaffold_nonfatal_when_staging_unavailable(boot, monkeypatch):
+    """Where the staging root cannot exist (macOS: /storage/... is not
+    creatable) the scaffold is a guarded LOG-SKIP — the wizard still runs."""
+    blocker = os.path.join(_staging(boot), "blocker")
+    open(blocker, "w").close()  # a FILE where the dir must go -> OSError
+    monkeypatch.setattr(boot.mod, "BOX_ENV_PATH", os.path.join(blocker, "x", "t.env"))
+    _no_env(boot)
+    calls = []
+    _stub_guided(boot, monkeypatch, calls)
+
+    boot.mod.run()  # must not raise
+
+    assert calls == [{}]
+    assert not boot.state.get("notification")
+
+
+def test_bundled_template_matches_repo_example(boot):
+    """DRIFT PIN: the bundled scaffold resource is a byte-identical copy of
+    the repo's committed .env.device.example."""
+    repo_example = Path(__file__).resolve().parent.parent / ".env.device.example"
+    assert (
+        Path(boot.mod._ENV_TEMPLATE_RESOURCE).read_bytes() == repo_example.read_bytes()
+    )
+
+
+def test_scaffolded_content_is_placeholder_comments_only(boot):
+    """Secret-leak shape: every non-blank scaffolded line is a comment."""
+    from tony7bones.setup import env as env_mod
+
+    with open(boot.mod._ENV_TEMPLATE_RESOURCE, encoding="utf-8") as fh:
+        text = env_mod.scaffold_template_text(fh.read())
+    for line in text.splitlines():
+        assert not line.strip() or line.lstrip().startswith("#"), line
+
+
+# ---- pure env-helper units (N1.1) ------------------------------------------ #
+def test_box_env_paths_order_includes_masters_in_middle(boot):
+    """Order contract: [derived (canonical, legacy), masters (sorted),
+    profile-local]."""
+    from tony7bones.setup import env as env_mod
+
+    _write_master(boot, "bbb", "X=1\n")
+    _write_master(boot, "aaa", "X=1\n")
+    primary = str(boot.env_file)
+    paths = env_mod.box_env_paths(primary=primary)
+    assert paths[0] == primary
+    assert paths[1] == env_mod.LEGACY_BOX_ENV_PATH
+    assert paths[2].endswith(".env.aaa") and paths[3].endswith(".env.bbb")
+    assert paths[4] == env_mod.profile_env_path()
+
+
+def test_deletable_env_paths_excludes_masters(boot):
+    from tony7bones.setup import env as env_mod
+
+    _write_master(boot, "office", "X=1\n")
+    primary = str(boot.env_file)
+    deletable = env_mod.deletable_env_paths(primary=primary)
+    assert deletable == [
+        primary,
+        env_mod.LEGACY_BOX_ENV_PATH,
+        env_mod.profile_env_path(),
+    ]
+    assert not any(env_mod.is_master_env_path(p) for p in deletable)
+
+
+def test_master_env_paths_off_device_is_empty(boot):
+    """No staging dir (the real /storage/... on macOS / off-device) -> []."""
+    from tony7bones.setup import env as env_mod
+
+    missing = os.path.join(_staging(boot), "nope", "tony7bones.env")
+    assert env_mod.master_env_paths(primary=missing) == []
+
+
+def test_sanitize_device_name_cases(boot):
+    from tony7bones.setup import env as env_mod
+
+    s = env_mod.sanitize_device_name
+    assert s("Office Fire TV") == "office-fire-tv"
+    assert s("  Tony's #1 Box!! ") == "tony-s-1-box"
+    assert s("") == "device"
+    assert s(None) == "device"
+    assert s("___") == "device"
+
+
+def test_full_shape_master_fixture_parity(boot, monkeypatch):
+    """A FULL-SHAPE master (every .env.device.example key, FAKE values) read
+    through run(): the consumed keys arrive parsed, DEVICE_IP is dropped
+    (parity with the provisioner's grep), DEVICE_NAME passes through AS THE
+    MASTER'S OWN VALUE (documented divergence: no prompt to override it on
+    the no-computer path), and IPTV_STAGING_DIR is injected iff staged."""
+    _no_env(boot)
+    os.makedirs(os.path.join(_staging(boot), "iptv"), exist_ok=True)
+    _write_master(
+        boot,
+        "office",
+        "\n".join(
+            [
+                'DEVICE_NAME="Fake Box"',
+                'DEVICE_IP="203.0.113.7"',
+                'KODI_DATA_PATH="/sdcard/kodi_data/.kodi"',
+                'KODI_WEB_USER="fakeuser"',
+                'KODI_WEB_PASS="fakepass"',
+                'KODI_WEB_PORT="8080"',
+                'KODI_REMOTE_CONTROL="true"',
+                'SETTINGS_LEVEL="expert"',
+                'WEATHER_LOCATIONS="Faketown; Mocksville"',
+                'WEATHERBIT_API_KEY="fake_wb_key"',
+                'OWM_API_KEY="fake_owm_key"',
+                'IPTV_NAME="Fake Provider"',
+                'IPTV_M3U="http://fake.example:8080/get.php?username=U&password=P"',
+                'IPTV_EPG="http://fake.example:8080/xmltv.php?username=U&password=P"',
+                'IPTV_GROUPS="FAKE GROUP A; FAKE GROUP B"',
+                'IPTV_GROUPS_ONLY="true"',
+                'RSS_INTERVAL="30"',
+                'RSS_FEEDS="https://feeds.example.com/a.xml"',
+            ]
+        )
+        + "\n",
+    )
+    calls = []
+    _stub_express_ok(boot, monkeypatch, calls)
+
+    boot.mod.run()
+
+    env = calls[0]
+    assert "DEVICE_IP" not in env
+    assert env["DEVICE_NAME"] == "Fake Box"
+    assert env["WEATHER_LOCATIONS"] == "Faketown; Mocksville"
+    assert env["IPTV_M3U"].startswith("http://fake.example")
+    assert env["IPTV_GROUPS"] == "FAKE GROUP A; FAKE GROUP B"
+    assert env["RSS_FEEDS"].startswith("https://feeds.example.com")
+    assert env["IPTV_STAGING_DIR"] == os.path.join(_staging(boot), "iptv")
+
+
+def test_device_name_unreadable_falls_back_generic(boot, monkeypatch):
+    """A failing JSON-RPC device-name read -> '' -> the generic scaffold name."""
+    monkeypatch.setattr(
+        boot.mod.xbmc,
+        "executeJSONRPC",
+        lambda s: (_ for _ in ()).throw(RuntimeError("rpc down")),
+    )
+    assert boot.mod._device_name() == ""
+
+
+def test_scaffold_skips_when_bundled_template_unreadable(boot, monkeypatch):
+    """A missing/unreadable bundled resource is a guarded log-skip, never a
+    crash (the wizard still runs)."""
+    monkeypatch.setattr(
+        boot.mod, "_ENV_TEMPLATE_RESOURCE", os.path.join(_staging(boot), "missing")
+    )
+    assert boot.mod._scaffold_master_env() is None
+
+
+def test_scaffold_toast_failure_never_blocks_wizard(boot, monkeypatch):
+    """A raising notification (odd skins/platforms) must not break run()."""
+
+    class _BoomDialog(boot.mod.xbmcgui.Dialog):
+        def notification(self, *a, **k):
+            raise RuntimeError("toast broken")
+
+    monkeypatch.setattr(boot.mod.xbmcgui, "Dialog", _BoomDialog)
+    _no_env(boot)
+    calls = []
+    _stub_guided(boot, monkeypatch, calls)
+
+    boot.mod.run()  # must not raise
+
+    assert calls == [{}]
+    assert os.path.exists(os.path.join(_staging(boot), ".env.device"))
+
+
+# --------------------------------------------------------------------------- #
+# N1.1 — the LEGACY device root (/storage/emulated/0/kodi/tony.7.bones/) is a
+# read-only FALLBACK: still read (pre-_T7B boxes have files there), outranked
+# by everything at the canonical _T7B root, and NEVER written to (no scaffold).
+# --------------------------------------------------------------------------- #
+def _legacy_root(boot, monkeypatch):
+    """Point the module's legacy push path at a real tmp legacy root (the
+    functions resolve the module global late, so this carries the legacy
+    master scan along too)."""
+    from tony7bones.setup import env as env_mod
+
+    root = os.path.join(_staging(boot), "legacy-root")
+    os.makedirs(root, exist_ok=True)
+    monkeypatch.setattr(
+        env_mod, "LEGACY_BOX_ENV_PATH", os.path.join(root, "tony7bones.env")
+    )
+    return root
+
+
+def test_legacy_derived_env_routes_when_canonical_absent(boot, monkeypatch):
+    """An already-provisioned box (derived env still at the LEGACY push path,
+    nothing at the new root) keeps working: the legacy push drives Express —
+    and, being machine-derived, is consumed by the terminal delete."""
+    _no_env(boot)
+    root = _legacy_root(boot, monkeypatch)
+    legacy_env = os.path.join(root, "tony7bones.env")
+    with open(legacy_env, "w", encoding="utf-8") as fh:
+        fh.write('MARKER="legacy-derived"\n')
+    calls = []
+    _stub_express_ok(boot, monkeypatch, calls)
+    _forbid_guided(boot, monkeypatch)
+
+    boot.mod.run()
+
+    assert calls and calls[0]["MARKER"] == "legacy-derived"
+    assert not os.path.exists(legacy_env), (
+        "the legacy derived push is machine-derived — the terminal delete owns it"
+    )
+
+
+def test_canonical_derived_wins_over_legacy_derived(boot, monkeypatch):
+    """Source order: the canonical (_T7B) push outranks the legacy push.
+    MUTATION KILLER for a reversed root order."""
+    boot.env_file.write_text('MARKER="canonical"\n')
+    root = _legacy_root(boot, monkeypatch)
+    with open(os.path.join(root, "tony7bones.env"), "w", encoding="utf-8") as fh:
+        fh.write('MARKER="legacy"\n')
+    calls = []
+    _stub_express_ok(boot, monkeypatch, calls)
+
+    boot.mod.run()
+
+    assert calls and calls[0]["MARKER"] == "canonical"
+
+
+def test_legacy_master_read_as_fallback_and_never_deleted(boot, monkeypatch):
+    """A master left at the LEGACY root still drives the box (fallback read)
+    AND survives the terminal delete (the never-delete contract covers both
+    roots)."""
+    _no_env(boot)
+    root = _legacy_root(boot, monkeypatch)
+    legacy_master = os.path.join(root, ".env.office")
+    with open(legacy_master, "w", encoding="utf-8") as fh:
+        fh.write('MARKER="legacy-master"\n')
+    calls = []
+    _stub_express_ok(boot, monkeypatch, calls)
+
+    boot.mod.run()
+
+    assert calls and calls[0]["MARKER"] == "legacy-master"
+    assert os.path.exists(legacy_master), "a legacy master must NEVER be deleted"
+
+
+def test_canonical_master_wins_over_legacy_master(boot, monkeypatch):
+    """Master scan order: the canonical root's masters outrank the legacy
+    root's — the new root wins."""
+    _no_env(boot)
+    _write_master(boot, "office", 'MARKER="canonical-master"\n')
+    root = _legacy_root(boot, monkeypatch)
+    with open(os.path.join(root, ".env.office"), "w", encoding="utf-8") as fh:
+        fh.write('MARKER="legacy-master"\n')
+    calls = []
+    _stub_express_ok(boot, monkeypatch, calls)
+
+    boot.mod.run()
+
+    assert calls and calls[0]["MARKER"] == "canonical-master"
+
+
+def test_scaffold_skipped_by_legacy_master_and_never_writes_legacy(boot, monkeypatch):
+    """The scaffold NEVER writes to the legacy root: (a) a master existing
+    ONLY at the legacy root suppresses the scaffold entirely (never overwrite
+    or proliferate — the legacy master IS the box's identity); (b) with no
+    master anywhere the scaffold lands at the CANONICAL root and the legacy
+    root stays untouched."""
+    _no_env(boot)
+    root = _legacy_root(boot, monkeypatch)
+    legacy_master = os.path.join(root, ".env.mine")
+    sentinel = "# legacy identity — hands off\n"
+    with open(legacy_master, "w", encoding="utf-8") as fh:
+        fh.write(sentinel)
+    _stub_guided(boot, monkeypatch, [])
+
+    boot.mod.run()
+
+    assert _masters(boot) == [], "no scaffold at the canonical root"
+    assert sorted(os.listdir(root)) == [".env.mine"]
+    assert open(legacy_master, encoding="utf-8").read() == sentinel
+
+    # (b) no master anywhere -> scaffold at the canonical root ONLY.
+    os.remove(legacy_master)
+    boot.mod.run()
+    assert _masters(boot) == [".env.device"]
+    assert sorted(os.listdir(root)) == [], "the legacy root is never written to"
