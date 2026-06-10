@@ -2,8 +2,9 @@
 
 Tracking for the Tony.7.Bones repo.
 
-> **CURRENT FOCUS: the modular "0-1-2" Setup rewrite** — branch **`modular-setup`**.
-> Full design + phase log + forward plan: **`docs/plans/modular-setup.md`** (read it first).
+> **The modular "0-1-2" Setup is MERGED to `main` (2026-06-10) — it is the shipped production
+> Setup.** Restore point for the pre-merge 3.0 one-shot state: tag `main-pre-modular-2026-06-10`.
+> Full design + phase log: **`docs/plans/modular-setup.md`** (historical record).
 
 ---
 
@@ -24,21 +25,26 @@ tech-debt seam, the apply_iptv reporting bug, the zero-content guarantee). Keep 
 
 ## ▶ VERY NEXT STEP — the no-computer-setup track
 
-> **The MILESTONE PUSH is DONE** — `modular-setup` is on origin with the milestone version
-> bumps: `script.module.tony7bones` **1.2.0** (the setup layers + probes +
-> `assert_box_complete` + the PVR-disabled config window + staged-IPTV consumption +
-> keep-skin hardening + the `SETUP_API` guard), `script.tony7bones.bootstrap` **1.5.0**
-> (modular Setup: Express unchanged, `run_foundation`/`run_iptv`/`run_addons` standalone,
-> Guided wizard via `SETUP_MODE=guided`, Model A lifecycle; `<requires>` now pins the
-> library at 1.2.0 — lockstep), modv2plus already 1.4.8. The proxy
-> (`repository.tony7bones`) is UNTOUCHED. The superseded `iptv` branch was deleted at the
-> push. **`main` is still the SHIPPED 3.0 one-shot state** — merging `modular-setup` →
-> `main` + the proxy release is a FUTURE owner decision, not this milestone.
+> **The MERGE to `main` is DONE (2026-06-10, owner-decided)** — merge commit `cedab3d`
+> made the modular Setup the shipped production code: `script.module.tony7bones`
+> **1.2.0** (the setup layers + probes + `assert_box_complete` + the PVR-disabled config
+> window + staged-IPTV consumption + keep-skin hardening + the `SETUP_API` guard),
+> `script.tony7bones.bootstrap` **1.5.0** (modular Setup: Express unchanged,
+> `run_foundation`/`run_iptv`/`run_addons` standalone, Guided wizard via
+> `SETUP_MODE=guided`, Model A lifecycle; `<requires>` pins the library at 1.2.0 —
+> lockstep), modv2plus **1.4.8**. The proxy (`repository.tony7bones`) is UNTOUCHED at
+> 2.2.1 — no proxy release was needed; completed boxes auto-update the library + modv2plus
+> via the proxy (verified benign: the library is import-only with no new deps, the
+> modv2plus 1.4.8 menu-redeploy is idempotent). Pre-merge `main` is tagged
+> **`main-pre-modular-2026-06-10`** (restore point). Live-verified post-push: raw `main`
+> serves the 1.5.0/1.2.0/1.4.8 zips (old 1.4.0/1.1.3/1.4.7 → 404), Pages built the merge
+> commit, all install URLs 200.
 >
-> **Next:** the no-computer-setup track (Setup with no provisioner/env — separate plan
-> doc): the six owner answers → then N1. Also still queued: optionally document
-> `SETUP_MODE` in `.env.device.example` (a protect-hook kept the agent from adding the
-> commented block).
+> **Next:** a production-path device test (fresh provision + Setup installed from the live
+> repo on `main`), then the no-computer-setup track (Setup with no provisioner/env —
+> separate plan doc): the six owner answers → then N1. Also still queued: optionally
+> document `SETUP_MODE` in `.env.device.example` (a protect-hook kept the agent from
+> adding the commented block).
 
 Context: all of Phase 5 + Phase 6 are DONE — 5a (Foundation), 5b·1/2/3 (IPTV), 5c
 (`run_addons`), 5d (Guided + Model A), 6 (harden + the Fire TV matrix on the Bedroom box:
@@ -79,8 +85,10 @@ dialogs over JSON-RPC with `Input.ButtonEvent` (key-level), not `Input.Select`.
   proof, and the unattended Express one-tap; found + fixed the SLOW-BOX keep-skin race in
   `activate_skin` and the provisioner's too-short self-close wait, both re-verified on the
   box; verbatim Android UX copy recorded; box left complete and working).
-- **PUSHED to origin** — the milestone push landed with `script.module.tony7bones` 1.2.0 +
-  `script.tony7bones.bootstrap` 1.5.0 (modv2plus already 1.4.8; proxy untouched).
+- **MERGED to `main` and PUSHED (2026-06-10, merge commit `cedab3d`)** — the modular Setup
+  is the shipped production code: `script.module.tony7bones` 1.2.0 +
+  `script.tony7bones.bootstrap` 1.5.0 + modv2plus 1.4.8 (proxy untouched at 2.2.1).
+  Pre-merge restore point: tag `main-pre-modular-2026-06-10`.
 - The deploy gate (`_tools/test_installer_present.py`) is on **`main`**. The superseded
   `iptv` branch (deliverables integrated in Phase 5b·2) was **deleted** — origin and local —
   at the milestone push.

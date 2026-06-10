@@ -1,15 +1,15 @@
 # Plan — Modular "0-1-2" Setup (Foundation / IPTV / Add-ons)
 
-> Status: **COMPUTER-SETUP TRACK COMPLETE + MILESTONE PUSHED — Phases 0–6 DONE incl. the
-> Fire TV matrix (suite 768 passed / 1 xfailed); all three layers are INDEPENDENTLY
-> RUNNABLE (`run_foundation` / `run_iptv` / `run_addons`), the **Guided wizard + Model A
-> lifecycle** (`run_guided`, env-keyed `SETUP_MODE=guided` routing in the shipped `run()`,
-> Express untouched) are live-proven, and the `modular-setup` branch is PUSHED to origin
-> with the milestone version bumps (`script.module.tony7bones` 1.2.0,
-> `script.tony7bones.bootstrap` 1.5.0, modv2plus 1.4.8; proxy untouched — `main` still
-> serves the shipped 3.0 one-shot state until the owner decides the main merge).
-> NEXT = the no-computer-setup track (separate plan doc; awaiting the six owner answers
-> → N1).** Design was panel-reviewed in parallel by three specialist agents
+> Status: **MERGED TO `main` — SHIPPED PRODUCTION (2026-06-10, merge commit `cedab3d`,
+> owner-decided). Phases 0–6 DONE incl. the Fire TV matrix; all three layers are
+> INDEPENDENTLY RUNNABLE (`run_foundation` / `run_iptv` / `run_addons`), the **Guided
+> wizard + Model A lifecycle** (`run_guided`, env-keyed `SETUP_MODE=guided` routing in
+> the shipped `run()`, Express unchanged) are live-proven. Shipped versions:
+> `script.module.tony7bones` 1.2.0, `script.tony7bones.bootstrap` 1.5.0, modv2plus
+> 1.4.8; proxy untouched at 2.2.1. The pre-merge 3.0 one-shot `main` is tagged
+> `main-pre-modular-2026-06-10` (restore point).
+> NEXT = a production-path device test, then the no-computer-setup track (separate plan
+> doc; awaiting the six owner answers → N1).** Design was panel-reviewed in parallel by three specialist agents
 > (Architecture, QA/testability, Kodi-runtime); this doc is the orchestrated synthesis
 > PLUS the running phase log. The design sections below are kept as written (the
 > contract); current truth lives in the **Phase log** and the **Phase 5b** section at
