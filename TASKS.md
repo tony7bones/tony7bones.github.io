@@ -40,7 +40,12 @@ repositories/ rss/ scripts/`); the old `kodi/tony.7.bones/` root is a read-only
 > staging) moved under `_T7B`; `DEVICE_FILE_COPIES` reads both roots (canonical
 > first). Env-source order: derived (canonical → legacy) → masters (canonical →
 > legacy, sorted) → profile-local. Gate: 830 passed / 1 xfailed, env.py + iptv.py
-> 100% / default.py 98%, 3 keystone mutations killed, deterministic regen. Full
+> 100% / default.py 98%, 3 keystone mutations killed, deterministic regen.
+> **DEVICE-PROVEN (2026-06-10): the Office Fire TV ran the working-tree N1.1
+> Express end-to-end off the device-resident master alone (no derived env, no
+> adb-pushed `tony7bones.env`) — full box verified (MOD V2 + patch, both IPTV
+> providers 1:1 with the host build, 555 channels, restart-survival) and the
+> master `.env.office` SURVIVED the run untouched.** Full
 > record: the N1.1 build-log entry in `docs/plans/no-computer-setup.md`.
 >
 > **Phase N1 is RELEASED to `main` (2026-06-10)** — `script.tony7bones.bootstrap`

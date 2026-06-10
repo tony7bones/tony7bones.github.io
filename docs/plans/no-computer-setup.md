@@ -593,7 +593,7 @@ Same gated treatment as every modular phase, plus the no-env dimension:
 
 - **Owner directives encoded (all 2026-06-10, all binding):** (1) the canonical
   device root is `/storage/emulated/0/_T7B/kodi/` (layout: `backups/ iptv/ media/
-  repositories/ rss/ scripts/`, + `backups/EM+`); the `.env.<device>` masters live
+repositories/ rss/ scripts/`, + `backups/EM+`); the `.env.<device>` masters live
   THERE on all machines; the old `kodi/tony.7.bones/` root becomes a read-only
   LEGACY fallback (read after the new root, never written again). (2) the
   device-resident master is PERSISTENT: read, apply, NEVER delete — wipe-and-redo
@@ -658,11 +658,11 @@ Same gated treatment as every modular phase, plus the no-env dimension:
   legacy) candidate PAIRS — first existing wins, canonical first;
   `_copy_one_device_file` accepts a string or tuple (pre-move boxes keep
   working). `_tools/provision-kodi.sh`: `DEVICE_ROOT` introduced, `BOX_ENV_PATH`
-  + the IPTV staging push moved under it, and the full canonical tree
-  (`backups/EM+ iptv media repositories rss scripts`) is established idempotently
-  before staging (it survives the Kodi wipe — it lives outside the Kodi data
-  dirs). `SETUP_API` 2→3 / `REQUIRED_SETUP_API` 3 (the runtime pairing guard;
-  version bumps stay deferred to the milestone release per the track rule).
+  - the IPTV staging push moved under it, and the full canonical tree
+    (`backups/EM+ iptv media repositories rss scripts`) is established idempotently
+    before staging (it survives the Kodi wipe — it lives outside the Kodi data
+    dirs). `SETUP_API` 2→3 / `REQUIRED_SETUP_API` 3 (the runtime pairing guard;
+    version bumps stay deferred to the milestone release per the track rule).
 - **Gate evidence:** suite **830 passed / 1 xfailed** (+33 vs N1), ruff clean
   (`_tools/` + both changed add-ons), secret-leak green (the bundled template is
   placeholder-only), `env.py` 100% / `iptv.py` 100% / `default.py` 98% (every
@@ -678,3 +678,53 @@ Same gated treatment as every modular phase, plus the no-env dimension:
   never-overwrite, dir-create, non-fatal-skip, template drift pin,
   comments-only shape / legacy-root: derived + master fallback reads, canonical
   beats legacy at both ranks, scaffold never writes legacy.
+- **Office Fire TV live evidence (2026-06-10, the working-tree N1.1 Express
+  end-to-end on real hardware — delivery mode 2, device-resident master only):**
+  the run was driven PURELY by the master at
+  `/storage/emulated/0/_T7B/kodi/.env.office` — verified before AND after that no
+  derived `tony7bones.env` existed at either root. Express ran ~09:57–10:03
+  (install + config), showed the summary, self-closed on the Android path
+  ("close Kodi and reopen"); reopened, Kodi booted straight into **MOD V2** (the
+  keep-skin seam held — the on-disk `lookandfeel.skin` was MOD V2 despite the
+  in-memory revert readback just before exit) and the modv2plus boot service
+  auto-applied the full patch at 10:08:48 (5 XMLs + hires wordmark + skin
+  settings + trimmed `mainmenu.DATA.xml` + 16 skinshortcuts files, menu built
+  331084 bytes). Verified, all green:
+  - **The never-delete headline:** `.env.office` SURVIVED the successful run —
+    4736 bytes, mtime 05:22 untouched; the box keeps its identity for
+    wipe-and-redo forever. No machine-derived env anywhere.
+  - **Setup self-uninstalled:** `script.tony7bones.bootstrap` unknown to
+    JSON-RPC, addon dir gone, no `installed` row in Addons33.db.
+  - **Add-ons:** POV 6.06.06 / The Loop 7.9 / Sports HD 0.1.85.1 / YouTube
+    7.4.3 installed+enabled; `plugin.video.dailymotion_com` 2.4.4
+    installed+DISABLED; library 1.3.0, modv2plus 1.4.8, pvr.iptvsimple 21.11.0,
+    weather.multi 1.1.0 all enabled. Origins stamped: POV←kodifitzwell,
+    Loop←repository.loop, SportsHD←bugatsinho, YouTube+dailymotion←xbmc.org,
+    skin+pvr.artwork←kodinerds; direct-extracted first-party pieces carry the
+    empty direct-extract origin.
+  - **Config from the master env:** weather.multi active provider with all 5
+    locations (Sacramento / South Lake Tahoe / Reno / LA / Las Vegas) + both
+    API keys set; home trim bools written (8 hide-bools); 3 file sources
+    merged; RssFeeds.xml (848 B) + ticker enabled and visibly scrolling;
+    top-bar weather rendering live (73°F).
+  - **IPTV, both providers, 1:1 with the host build:** instances "Network 24" +
+    "Streamvision" (tvGroupMode=2, `m3uPath` rewritten device-absolute,
+    side-files byte-size-identical to `iptv-build/office/`). Channel counts:
+    m3u 224 + 331 = PVR total **555**; per-group PVR == host m3u group tags
+    exactly — Network24: US Entertainment 158 / US News/Weather 47 / PPV
+    Events 19; Streamvision: US Entertainment 214 / US News 100 / UFC PPV 12 /
+    **24/7 Favorites 5** — and **every channel in every group has an icon**
+    (5/5 favorites — the dead-icon healing held). EPG caches downloaded for
+    both instances (15.7 MB + 80.2 MB).
+  - **Restart-survival:** `am force-stop` → relaunch → boots to Home on MOD V2,
+    555 channels / 7 groups intact, weather + skin settings persist, and the
+    boot service logs `nothing to do (applied=True, menu=True, settings=True)`
+    — patch idempotence proven on hardware.
+  - **Operational notes:** the Fire TV daydream (`Sys2023:dream`) stole focus
+    twice mid-run — re-foreground (`KEYCODE_WAKEUP` + `am start .Splash`) and
+    the run was unaffected (the install needs no foreground); the redwizard
+    repo index 404s (defensive skip, logged); one transient
+    `cannot resolve dependency: script.module.pil` during the weather.multi
+    closure — pil 5.1.0 was already installed and weather.multi landed enabled,
+    so the resolver miss was harmless. End state: complete working box, Kodi
+    foregrounded at Home.
