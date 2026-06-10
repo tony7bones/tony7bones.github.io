@@ -180,6 +180,19 @@ adb -s 192.168.7.162:5555 shell am force-stop org.xbmc.kodi
 adb -s 192.168.7.162:5555 shell am start -n org.xbmc.kodi/.Splash
 ```
 
+**ALWAYS surface Kodi to the foreground when launching or driving it.** On Fire
+Sticks Kodi is frequently already running but BACKGROUNDED (Fire OS parks it
+behind the launcher; screensaver/HOME presses do this constantly). A backgrounded
+Kodi still answers JSON-RPC, which makes "it's up" checks misleading — but key
+events go to whatever app is foregrounded, and screencaps show the launcher, not
+Kodi. The `am start` above is the habit: it is idempotent (launches Kodi if dead,
+surfaces it if backgrounded), so run it before ANY interaction sequence — every
+launch, every reopen, every time you come back to drive the UI:
+
+```bash
+adb -s $FIRETV shell am start -n org.xbmc.kodi/.Splash   # launch OR foreground — always safe
+```
+
 ### Step 4 — screencap
 
 ```bash
