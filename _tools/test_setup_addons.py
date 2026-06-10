@@ -2,13 +2,18 @@
 
 ``tony7bones.setup.addons`` holds the LIFTED bodies of the monolith's
 ``_install_base`` (base repos + apps), ``_install_video`` (curated video add-ons,
-incl. the install-then-disable of ``plugin.video.dailymotion_com``), and the
-weather + RSS env-writers (``_apply_weather_from_env`` / ``_apply_rss_from_env``)
-out of ``script.tony7bones.bootstrap/default.py`` — behaviour-identical. It also
-adds the composed ``apply_addons`` layer entry point (install + config together),
-which the Phase-4 orchestrator will adopt; ``run()`` does NOT call it yet (it keeps
-calling the individual bodies in their existing interleaved slots so the
-characterization snapshot stays byte-identical).
+incl. the install-then-disable of ``plugin.video.dailymotion_com``), and the RSS
+env-writer (``_apply_rss_from_env``) out of
+``script.tony7bones.bootstrap/default.py`` — behaviour-identical. It also adds the
+composed ``apply_addons`` layer entry point (install + config together), which the
+Express orchestrator drives.
+
+NOTE (weather-into-Foundation): the WEATHER provider + env-driven location config
+(weather.multi install + ``_apply_weather_from_env`` + the core weather.addon
+setting) MOVED OUT of the Add-ons layer INTO the Foundation layer — weather is part
+of the branded look (the MOD V2 skin renders a weather readout + a Weather menu
+item), not content. The weather unit tests moved with it to test_setup_foundation.py
+/ test_run_foundation.py; the Add-ons layer now owns only RSS config.
 
 These tests drive the addons module DIRECTLY against the shared fake-Kodi ``boot``
 fixture (conftest.py) — the same real engine the bootstrap suite uses, reached via
@@ -47,16 +52,6 @@ def _settings_set(boot):
     return out
 
 
-def _weather_settings(boot):
-    """Multi Weather settings.xml as {id: text} (or {} if unwritten)."""
-    add = _addons(boot)
-    path = add._weather_multi_settings_path()
-    if not os.path.exists(path):
-        return {}
-    root = ET.parse(path).getroot()
-    return {s.get("id"): (s.text or "") for s in root.findall("setting")}
-
-
 def _rss_path(boot):
     return boot.mod.xbmcvfs.translatePath("special://home/userdata/RssFeeds.xml")
 
@@ -65,28 +60,37 @@ def _rss_path(boot):
 # _install_base — base repos + apps install (real engine).
 # --------------------------------------------------------------------------- #
 def test_install_base_installs_all_repos_and_apps(boot):
-    """The base install extracts + enables all 12 repos and installs the 3 base
-    apps with their closure through the real engine (the bare fake index resolves
-    them). Returns (repo_ok, fp_ok, app_ok, canceled) = (12, 0, 3, False).
+    """The base install extracts + enables all 12 repos PLUS our own proxy repo
+    (repository.tony7bones), and installs the 2 base apps with their closure through
+    the real engine. Returns (repo_ok, fp_ok, app_ok, canceled) = (12, 1, 2, False)
+    — fp_ok == 1 is the proxy repo (first-party plumbing).
 
-    Phase 3a: the base apps are now 3 (ezmaintenanceplus, realdebrid, weather.multi)
-    — pvr.iptvsimple's install moved OUT of the base ADDONS into apply_iptv, so it is
-    no longer installed by _install_base. A full run still installs it via the IPTV
-    layer (pinned by test_modular_setup.py's net-set equivalence invariant)."""
+    The base apps are now 2 (ezmaintenanceplus, realdebrid) — pvr.iptvsimple's
+    install moved OUT of the base ADDONS into apply_iptv (Phase 3a) AND weather.multi
+    moved OUT into apply_foundation (weather-into-Foundation). Both are still installed
+    by a full run (pvr via the IPTV layer, weather via Foundation), pinned by
+    test_modular_setup.py's net-set equivalence invariant."""
     add = _addons(boot)
     repo_ok, fp_ok, app_ok, canceled = add._install_base(
         boot.mod.xbmcgui.DialogProgress()
     )
-    assert (repo_ok, fp_ok, app_ok, canceled) == (12, 0, 3, False)
-    assert len(add.ADDONS) == 3 and "pvr.iptvsimple" not in add.ADDONS, (
+    assert (repo_ok, fp_ok, app_ok, canceled) == (12, 1, 2, False)
+    assert len(add.ADDONS) == 2 and "pvr.iptvsimple" not in add.ADDONS, (
         "pvr.iptvsimple must have moved out of the base ADDONS list (Phase 3a)"
+    )
+    assert "weather.multi" not in add.ADDONS, (
+        "weather.multi must have moved out of the base ADDONS into Foundation"
     )
     # Every repo zip is extracted on disk (membership keyed on the inner id; the
     # pre-existing repository.diggz vs repository.diggz.zip quirk is faithfully
     # pinned by the characterization snapshot, so allow either spelling here).
     for _zip, rid in add.REPO_ZIPS:
         assert rid in boot.state["extracted"] or rid + ".zip" in boot.state["extracted"]
-    # The four base apps install (with their closure) and end up enabled/installed.
+    # Our own proxy repo is established as an installed, enabled add-on (the lifeline).
+    assert add.PROXY_REPO_ID in boot.state["installed"], (
+        "the base install must establish our proxy repo repository.tony7bones"
+    )
+    # The two base apps install (with their closure) and end up enabled/installed.
     for aid in add.ADDONS:
         assert aid in boot.state["installed"], f"{aid} must install"
 
@@ -140,7 +144,10 @@ def test_install_base_cancel_during_apps(boot, monkeypatch):
 
 def test_install_base_installs_first_party_when_present(boot, monkeypatch):
     """When FIRST_PARTY is non-empty each id is direct-extracted via its live zip
-    URL (the first-party loop — empty in production, exercised here)."""
+    URL (the first-party loop — empty in production, exercised here). fp_ok == 2
+    here: the modv2plus first-party AND our own proxy repo (repository.tony7bones)
+    are both direct-extracted via _latest_zip_url + extract_zip (the proxy resolved
+    through the same stubbed _latest_zip_url)."""
     add = _addons(boot)
     extracts = []
     monkeypatch.setattr(add, "FIRST_PARTY", ["script.tony7bones.modv2plus"])
@@ -151,8 +158,12 @@ def test_install_base_installs_first_party_when_present(boot, monkeypatch):
         add, "extract_zip", lambda url, *a, **k: extracts.append(url) or True
     )
     _repo, fp_ok, _app, canceled = add._install_base(boot.mod.xbmcgui.DialogProgress())
-    assert fp_ok == 1 and canceled is False
+    assert fp_ok == 2 and canceled is False
     assert any("script.tony7bones.modv2plus-1.2.3.zip" in u for u in extracts)
+    # Our proxy repo is direct-extracted too (same _latest_zip_url mechanism).
+    assert any(f"{add.PROXY_REPO_ID}-1.2.3.zip" in u for u in extracts), (
+        "the proxy repo must be direct-extracted alongside the first-party add-ons"
+    )
 
 
 def test_install_base_resolves_primitives_from_addons_globals(boot, monkeypatch):
@@ -169,10 +180,16 @@ def test_install_base_resolves_primitives_from_addons_globals(boot, monkeypatch)
         add, "install_with_deps", lambda aid, *a, **k: deps.append(aid) or True
     )
     repo_ok, _fp, app_ok, _c = add._install_base(boot.mod.xbmcgui.DialogProgress())
-    assert repo_ok == 12 and len(extracts) == 12, "addons.extract_zip patch must apply"
-    # 3 base apps post-Phase-3a (pvr.iptvsimple moved to the IPTV layer); the
+    # 12 repo zips + 1 proxy-repo zip (repository.tony7bones) = 13 extract_zip calls;
+    # the proxy URL resolves through the (unstubbed) _latest_zip_url (the fake
+    # urlopen returns a version), so the addons.extract_zip patch is driven for it too.
+    assert repo_ok == 12 and len(extracts) == 13, "addons.extract_zip patch must apply"
+    assert any(add.PROXY_REPO_ID in u for u in extracts), (
+        "the proxy repo extract must route through the patched addons.extract_zip"
+    )
+    # 2 base apps (pvr.iptvsimple -> IPTV layer; weather.multi -> Foundation); the
     # install_with_deps patch is driven once per base app, in ADDONS order.
-    assert app_ok == 3 and deps == list(add.ADDONS), (
+    assert app_ok == 2 and deps == list(add.ADDONS), (
         "addons.install_with_deps patch must apply to every base app"
     )
 
@@ -183,22 +200,58 @@ def test_install_base_resolves_primitives_from_addons_globals(boot, monkeypatch)
 # --------------------------------------------------------------------------- #
 def test_install_repos_extracts_and_enables_all_repos(boot):
     """install_repos extracts + registers + enables all 12 REPO_ZIPS (no first-party
-    in production). Returns (repo_ok, fp_ok, step, canceled) = (12, 0, step, False)."""
+    in production) PLUS our own proxy repo. Returns
+    (repo_ok, fp_ok, step, canceled) = (12, 1, step, False) — fp_ok == 1 is the
+    proxy repo (repository.tony7bones), direct-extracted as first-party plumbing."""
     add = _addons(boot)
     repo_ok, fp_ok, step, canceled = add.install_repos(
         boot.mod.xbmcgui.DialogProgress()
     )
-    assert (repo_ok, fp_ok, canceled) == (12, 0, False)
-    # 12 repos + 0 first-party + the register-and-enable step.
+    assert (repo_ok, fp_ok, canceled) == (12, 1, False)
+    # 12 repos + 0 first-party + the register-and-enable step (the proxy repo is
+    # extracted INSIDE the register step's range, so it does not advance `step`).
     assert step == 12 + 0 + 1
     for _zip, rid in add.REPO_ZIPS:
         assert rid in boot.state["extracted"] or rid + ".zip" in boot.state["extracted"]
 
 
+def test_install_repos_installs_our_proxy_repo(boot):
+    """install_repos establishes our OWN proxy repo (repository.tony7bones) as an
+    installed, enabled add-on — first-party plumbing / the lifeline (updates / the
+    proxy / future opt-ins). MUTATION: if the proxy-repo extract+enable is dropped
+    from install_repos, repository.tony7bones is absent from `installed` and this
+    fails. The proxy zip is resolved live via _latest_zip_url (the same mechanism
+    modv2plus uses) and the fake urlopen builds a real zip whose inner id is
+    repository.tony7bones."""
+    add = _addons(boot)
+    add.install_repos(boot.mod.xbmcgui.DialogProgress())
+    assert add.PROXY_REPO_ID == "repository.tony7bones"
+    assert add.PROXY_REPO_ID in boot.state["extracted"], (
+        "the proxy repo installer zip must be direct-extracted"
+    )
+    assert add.PROXY_REPO_ID in boot.state["installed"], (
+        "the proxy repo must be enabled (installed) — the lifeline plumbing"
+    )
+
+
+def test_install_repos_proxy_idempotent_when_already_installed(boot, monkeypatch):
+    """install_repos no-ops the proxy extract when it is ALREADY installed (re-entry):
+    is_installed short-circuits so a second run re-extracts nothing for the proxy."""
+    add = _addons(boot)
+    boot.state["installed"].add(add.PROXY_REPO_ID)
+    boot.state["extracted"].discard(add.PROXY_REPO_ID)
+    repo_ok, fp_ok, _step, _c = add.install_repos(boot.mod.xbmcgui.DialogProgress())
+    # The proxy was already installed -> not re-extracted, so it is NOT counted in fp_ok.
+    assert fp_ok == 0 and repo_ok == 12
+    assert add.PROXY_REPO_ID not in boot.state["extracted"], (
+        "an already-installed proxy repo must not be re-extracted (idempotent)"
+    )
+
+
 def test_install_base_equals_install_repos_plus_apps(boot, monkeypatch):
     """BEHAVIOUR-PRESERVING extraction: _install_base is install_repos() + the
     base-apps install. Spy install_repos to prove _install_base delegates to it for
-    the repo stage (and still installs the 3 base apps after it). MUTATION: if the
+    the repo stage (and still installs the 2 base apps after it). MUTATION: if the
     repo loop were inlined again instead of delegating, install_repos would not be
     called and this fails."""
     add = _addons(boot)
@@ -216,8 +269,9 @@ def test_install_base_equals_install_repos_plus_apps(boot, monkeypatch):
     assert len(calls) == 1, (
         "_install_base must delegate the repo stage to install_repos"
     )
-    # The same net (repo_ok, fp_ok, app_ok, canceled) the monolith produced.
-    assert (repo_ok, fp_ok, app_ok, canceled) == (12, 0, 3, False)
+    # The same net (repo_ok, fp_ok, app_ok, canceled) — 12 repos, 1 proxy repo
+    # (fp_ok), 2 base apps now.
+    assert (repo_ok, fp_ok, app_ok, canceled) == (12, 1, 2, False)
 
 
 def test_install_base_aborts_when_install_repos_cancels(boot, monkeypatch):
@@ -281,84 +335,10 @@ def test_video_disable_after_is_dailymotion_only(boot):
 
 
 # --------------------------------------------------------------------------- #
-# _apply_weather_from_env — env-driven Multi Weather settings.
+# Weather config MOVED to Foundation (test_run_foundation.py / test_setup_foundation
+# .py). The Add-ons layer no longer has _apply_weather_from_env / _resolve_weather_
+# location / _set_weather_settings — see those files for the weather coverage.
 # --------------------------------------------------------------------------- #
-def test_apply_weather_resolves_locations_and_keys(boot, monkeypatch):
-    """Up to N resolved locations land as loc1..N (+ unused slots cleared), and the
-    Weatherbit / OWM keys enable the optional upgrade layers."""
-    add = _addons(boot)
-    locs = {
-        "Sacramento": {
-            "name": "Sacramento, CA, US",
-            "url": "us/ca/sacramento",
-            "lat": "38.5",
-            "lon": "-121.4",
-        },
-        "Reno": {
-            "name": "Reno, NV, US",
-            "url": "us/nv/reno",
-            "lat": "39.5",
-            "lon": "-119.8",
-        },
-    }
-    monkeypatch.setattr(
-        add,
-        "_resolve_weather_location",
-        lambda q, **k: next((v for n, v in locs.items() if n in q), None),
-    )
-    add._apply_weather_from_env(
-        {
-            "WEATHER_LOCATIONS": "Sacramento, CA; Reno, NV",
-            "WEATHERBIT_API_KEY": "WBITKEY",
-            "OWM_API_KEY": "OWMKEY",
-        }
-    )
-    got = _weather_settings(boot)
-    assert got["loc1_url"] == "us/ca/sacramento"
-    assert got["loc2_url"] == "us/nv/reno"
-    assert got["loc3_url"] == ""  # unused slot cleared, never stale
-    assert got["WAdd"] == "true" and got["API"] == "WBITKEY"
-    assert got["WMaps"] == "true" and got["MAPAPI"] == "OWMKEY"
-
-
-def test_apply_weather_falls_back_to_sacramento_never_empty(boot, monkeypatch):
-    """No resolvable env locations -> the keyless Sacramento default, NEVER an
-    empty loc1_url (the load-bearing fetch field)."""
-    add = _addons(boot)
-    monkeypatch.setattr(add, "_resolve_weather_location", lambda q, **k: None)
-    add._apply_weather_from_env({"WEATHER_LOCATIONS": "Nowhere, ZZ"})
-    got = _weather_settings(boot)
-    assert got["loc1_url"] == "us/ca/sacramento" and got["loc1_url"]
-    assert "WAdd" not in got  # no keys -> no upgrade layer
-
-
-def test_apply_weather_skips_unresolvable_keeps_resolved_no_gap(boot, monkeypatch):
-    """An unresolvable location is skipped; the resolved one becomes loc1 (no gap)."""
-    add = _addons(boot)
-    monkeypatch.setattr(
-        add,
-        "_resolve_weather_location",
-        lambda q, **k: (
-            {"name": "Reno, NV, US", "url": "us/nv/reno", "lat": "39", "lon": "-119"}
-            if "Reno" in q
-            else None
-        ),
-    )
-    add._apply_weather_from_env({"WEATHER_LOCATIONS": "Badtown; Reno, NV"})
-    got = _weather_settings(boot)
-    assert got["loc1_url"] == "us/nv/reno"
-    assert got.get("loc2_url", "") == ""
-
-
-def test_apply_weather_never_raises(boot, monkeypatch):
-    """Defensive: any failure inside the writer is swallowed (never aborts setup)."""
-    add = _addons(boot)
-
-    def _boom(*a, **k):
-        raise RuntimeError("boom")
-
-    monkeypatch.setattr(add, "_set_weather_settings", _boom)
-    add._apply_weather_from_env({"WEATHER_LOCATIONS": ""})  # must not raise
 
 
 # --------------------------------------------------------------------------- #
@@ -427,88 +407,20 @@ def test_latest_zip_url_returns_none_on_error(boot, monkeypatch):
     assert add._latest_zip_url("script.whatever") is None
 
 
-def test_resolve_weather_location_returns_none_on_bad_response(boot):
-    """The conftest urlopen fake returns empty bytes for the Yahoo search-assist
-    endpoint, so the JSON parse fails on every retry -> None (the caller then falls
-    back to the Sacramento default). Exercises the real network/parse body."""
-    add = _addons(boot)
-    assert add._resolve_weather_location("Sacramento, CA") is None
-
-
-def test_resolve_weather_location_parses_suggestions(boot, monkeypatch):
-    """A well-formed search-assist response is parsed into {name,url,lat,lon} in the
-    add-on's own field shape (name 'Town, Region, Country'; url 'country/region/town')."""
-    import json as _json
-
-    add = _addons(boot)
-    payload = {
-        "suggestions": [
-            {
-                "location": {
-                    "town": {"name": "Reno", "latitude": 39.5, "longitude": -119.8},
-                    "region": {"code": "NV"},
-                    "country": {"code": "US"},
-                }
-            }
-        ]
-    }
-
-    class _Resp:
-        def read(self):
-            return _json.dumps(payload).encode("utf-8")
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            return False
-
-    monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout=None: _Resp())
-    loc = add._resolve_weather_location("Reno, NV")
-    assert loc == {
-        "name": "Reno, NV, US",
-        "url": "us/nv/reno",
-        "lat": "39.5",
-        "lon": "-119.8",
-    }
-
-
-def test_set_weather_settings_recreates_malformed_file(boot):
-    """A malformed Multi Weather settings.xml is replaced with a valid tree (the
-    ET.ParseError recovery branch) while still writing the requested settings."""
-    add = _addons(boot)
-    path = add._weather_multi_settings_path()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write("<<not xml>>")
-    add._set_weather_settings({"loc1_url": "us/ca/sacramento"})
-    got = _weather_settings(boot)
-    assert got["loc1_url"] == "us/ca/sacramento"
-
-
-def test_set_weather_location_default_is_sacramento(boot):
-    """The keyless fallback writes the Sacramento default location."""
-    add = _addons(boot)
-    add._set_weather_location()
-    got = _weather_settings(boot)
-    assert got["loc1_url"] == "us/ca/sacramento"
-    assert "Sacramento" in got["loc1_name"]
-
-
 # --------------------------------------------------------------------------- #
 # apply_addons — the composed Layer 2 entry point (install + config).
 # --------------------------------------------------------------------------- #
 def test_apply_addons_returns_addons_layerresult_on_success(boot, monkeypatch):
-    """The composed layer installs base + video, writes weather/RSS, and returns a
+    """The composed layer installs base + video, writes RSS, and returns a
     LayerResult(layer='addons', ok=True) recording the installed ids + the
-    install-then-disable set, requesting a restart."""
+    install-then-disable set, requesting a restart. (Weather is NOT this layer's job
+    — it moved to Foundation.)"""
     add = _addons(boot)
 
     def _sel(selected, official_base, disable_ids, dialog, log):
         return len(selected)
 
     monkeypatch.setattr(add, "install_selection", _sel)
-    monkeypatch.setattr(add, "_resolve_weather_location", lambda q, **k: None)
 
     res = add.apply_addons(
         {"RSS_FEEDS": "http://a/feed"},
@@ -526,26 +438,25 @@ def test_apply_addons_returns_addons_layerresult_on_success(boot, monkeypatch):
         assert res.installed.get(aid) == "installed"
     # the install-then-disable set is recorded as disabled
     assert res.installed.get("plugin.video.dailymotion_com") == "disabled"
-    # config ran: weather (Sacramento fallback) + RSS feed written
-    assert _weather_settings(boot)["loc1_url"] == "us/ca/sacramento"
+    # config ran: RSS feed written (weather is Foundation's job, not here)
     assert os.path.exists(_rss_path(boot))
+    # the Add-ons layer must NOT install weather.multi (Foundation does)
+    assert "weather.multi" not in res.installed
 
 
 def test_apply_addons_cancel_is_not_ok_and_skips_config(boot, monkeypatch):
-    """A cancelled base install -> ok=False, no restart requested, and the
-    weather/RSS config is SKIPPED (the monolith aborts with no summary on cancel)."""
+    """A cancelled base install -> ok=False, no restart requested, and the RSS config
+    is SKIPPED (the monolith aborts with no summary on cancel)."""
     add = _addons(boot)
-    weather_calls = []
+    rss_calls = []
     monkeypatch.setattr(
         add, "_install_base", lambda dialog: (3, 0, 0, True)
     )  # canceled
-    monkeypatch.setattr(
-        add, "_apply_weather_from_env", lambda env: weather_calls.append(env)
-    )
+    monkeypatch.setattr(add, "_apply_rss_from_env", lambda env: rss_calls.append(env))
     res = add.apply_addons({"RSS_FEEDS": "http://a/feed"}, dialog=None, log=None)
     assert res.ok is False
     assert res.needs_restart is False
-    assert weather_calls == [], "config must not run on a cancelled install"
+    assert rss_calls == [], "config must not run on a cancelled install"
     assert not os.path.exists(_rss_path(boot))
 
 
@@ -553,15 +464,14 @@ def test_apply_addons_records_failed_apps(boot, monkeypatch):
     """When fewer apps install than requested, the shortfall is recorded in
     failed{} so the orchestrator can decide before restarting (not always-empty)."""
     add = _addons(boot)
-    # base: all repos ok, only 2 of 4 apps ok; video: 0.
-    monkeypatch.setattr(add, "_install_base", lambda dialog: (12, 0, 2, False))
+    # base: all repos ok, only 1 of the 2 apps ok; video: 0.
+    monkeypatch.setattr(add, "_install_base", lambda dialog: (12, 0, 1, False))
     monkeypatch.setattr(add, "_install_video", lambda dialog: 0)
-    monkeypatch.setattr(add, "_apply_weather_from_env", lambda env: None)
     monkeypatch.setattr(add, "_apply_rss_from_env", lambda env: None)
     res = add.apply_addons({}, dialog=None, log=None)
     assert res.ok is True  # not cancelled -> ok (degraded)
     assert res.installed.get(add.ADDONS[0]) == "installed"
-    assert res.failed.get(add.ADDONS[2]) == "install failed"
+    assert res.failed.get(add.ADDONS[1]) == "install failed"
     # all four video apps failed (0 installed)
     for aid in add.VIDEO_APPS:
         assert res.failed.get(aid) == "video install failed"
@@ -578,7 +488,6 @@ def test_apply_addons_already_done_when_no_work_configured(boot, monkeypatch):
     monkeypatch.setattr(add, "VIDEO_APPS", [])
     monkeypatch.setattr(add, "_install_base", lambda dialog: (0, 0, 0, False))
     monkeypatch.setattr(add, "_install_video", lambda dialog: 0)
-    monkeypatch.setattr(add, "_apply_weather_from_env", lambda env: None)
     monkeypatch.setattr(add, "_apply_rss_from_env", lambda env: None)
     res = add.apply_addons({}, dialog=None, log=None)
     assert res.installed == {} and res.failed == {}
@@ -586,19 +495,18 @@ def test_apply_addons_already_done_when_no_work_configured(boot, monkeypatch):
 
 
 def test_apply_addons_none_env_is_safe(boot, monkeypatch):
-    """env=None is treated as the empty env: the keyless Sacramento weather
-    fallback, no RSS write — never a crash."""
+    """env=None is treated as the empty env: no RSS write — never a crash. (Weather
+    config moved to Foundation, so this layer touches no weather settings.)"""
     add = _addons(boot)
     monkeypatch.setattr(add, "install_selection", lambda s, *a, **k: len(s))
-    monkeypatch.setattr(add, "_resolve_weather_location", lambda q, **k: None)
     res = add.apply_addons(None, dialog=boot.mod.xbmcgui.DialogProgress(), log=None)
     assert res.ok is True
-    assert _weather_settings(boot)["loc1_url"] == "us/ca/sacramento"
     assert not os.path.exists(_rss_path(boot))  # no RSS_FEEDS -> no write
 
 
 # --------------------------------------------------------------------------- #
-# _set_setting + the two CORE settings apply_addons owns (Phase 3a).
+# _set_setting + the CORE setting apply_addons owns (the RSS toggle). The weather
+# provider core setting moved to Foundation (weather-into-Foundation).
 # --------------------------------------------------------------------------- #
 def test_set_setting_emits_jsonrpc_and_reports_ok(boot):
     """_set_setting sends a Settings.SetSettingValue JSON-RPC and returns True on a
@@ -606,8 +514,8 @@ def test_set_setting_emits_jsonrpc_and_reports_ok(boot):
     reply to exercise the OK branch)."""
     add = _addons(boot)
     # Default fake jsonrpc returns "{}" -> no '"result":true' -> False.
-    assert add._set_setting("weather.addon", "weather.multi") is False
-    assert _settings_set(boot).get("weather.addon") == "weather.multi"
+    assert add._set_setting("lookandfeel.enablerssfeeds", True) is False
+    assert _settings_set(boot).get("lookandfeel.enablerssfeeds") is True
 
 
 def test_set_setting_true_reply_is_ok(boot, monkeypatch):
@@ -617,28 +525,27 @@ def test_set_setting_true_reply_is_ok(boot, monkeypatch):
     assert add._set_setting("lookandfeel.enablerssfeeds", True) is True
 
 
-def test_apply_addons_sets_weather_provider_and_rss_core_settings(boot, monkeypatch):
-    """apply_addons emits the two CORE settings the monolith's _configure_box set
-    inline — weather.addon -> weather.multi and lookandfeel.enablerssfeeds -> True —
-    BEFORE the env-driven weather/RSS writers, so the net core-settings end-state is
-    unchanged vs the monolith."""
+def test_apply_addons_sets_rss_core_setting_not_weather(boot, monkeypatch):
+    """apply_addons emits the RSS-enable core setting (lookandfeel.enablerssfeeds ->
+    True) and does NOT set the weather provider (weather.addon) — the weather provider
+    core setting moved to Foundation (weather-into-Foundation)."""
     add = _addons(boot)
     monkeypatch.setattr(add, "install_selection", lambda s, *a, **k: len(s))
-    monkeypatch.setattr(add, "_resolve_weather_location", lambda q, **k: None)
     add.apply_addons({}, dialog=boot.mod.xbmcgui.DialogProgress(), log=None)
     s = _settings_set(boot)
-    assert s.get(add.WEATHER_PROVIDER_SETTING) == add.WEATHER_ADDON
-    assert s.get(add.WEATHER_PROVIDER_SETTING) == "weather.multi"
     assert s.get(add.RSS_ENABLE_SETTING) is True
     assert add.RSS_ENABLE_SETTING == "lookandfeel.enablerssfeeds"
+    assert "weather.addon" not in s, (
+        "the Add-ons layer must NOT set the weather provider (moved to Foundation)"
+    )
 
 
 def test_apply_addons_cancel_skips_core_settings(boot, monkeypatch):
     """On a cancelled base install, apply_addons skips the WHOLE config block — the
-    two core settings are NOT emitted either (the monolith aborts with no config)."""
+    RSS core setting is NOT emitted either (the monolith aborts with no config)."""
     add = _addons(boot)
     monkeypatch.setattr(add, "_install_base", lambda dialog: (3, 0, 0, True))
     add.apply_addons({}, dialog=None, log=None)
     s = _settings_set(boot)
-    assert add.WEATHER_PROVIDER_SETTING not in s
     assert add.RSS_ENABLE_SETTING not in s
+    assert "weather.addon" not in s

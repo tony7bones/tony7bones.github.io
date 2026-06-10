@@ -40,6 +40,7 @@ No secrets are embedded in this script.
 
 import json
 import os
+import re as _re
 
 import xbmc
 import xbmcgui
@@ -112,6 +113,8 @@ __all__ = [
     "apply_iptv",
     "parse_env",
     "read_box_env",
+    "run_foundation",
+    "run_foundation_setup",
     "split_list",
 ]
 
@@ -187,21 +190,21 @@ ESTUARY_SKIN_ID = "skin.estuary"
 # Base box configuration — weather + interface preferences applied after the
 # install, before the restart. Each step is defensive (logged, never aborts).
 # --------------------------------------------------------------------------- #
-# The WEATHER provider constants + the weather/RSS env-writers MOVED to the
-# Add-ons layer (tony7bones.setup.addons, Phase 2c). Re-exported here so every
+# The WEATHER provider constants + the weather env-writers MOVED to the Foundation
+# layer (tony7bones.setup.foundation) — weather is part of the branded look, not
+# content. The RSS env-writer stays in the Add-ons layer. Re-exported here so every
 # existing reference and test (boot.mod.WEATHER_ADDON / WEATHER_LOCATION /
 # _apply_weather_from_env / _apply_rss_from_env / _resolve_weather_location /
 # _set_weather_settings / _set_weather_location / _weather_multi_settings_path)
-# keeps working unchanged, and _configure_box calls them in the SAME slot they
-# occupied. The IPTV + device-copy halves of _configure_box stay here (they go to
-# apply_iptv in Phase 2d).
-WEATHER_ADDON = _addons.WEATHER_ADDON  # Multi Weather (installed in ADDONS)
-WEATHER_LOCATION = _addons.WEATHER_LOCATION
-_weather_multi_settings_path = _addons._weather_multi_settings_path
-_set_weather_settings = _addons._set_weather_settings
-_set_weather_location = _addons._set_weather_location
-_resolve_weather_location = _addons._resolve_weather_location
-_apply_weather_from_env = _addons._apply_weather_from_env
+# keeps working unchanged. The IPTV + device-copy halves of _configure_box stay
+# here (they go to apply_iptv in Phase 2d).
+WEATHER_ADDON = _foundation.WEATHER_ADDON  # Multi Weather (installed by Foundation)
+WEATHER_LOCATION = _foundation.WEATHER_LOCATION
+_weather_multi_settings_path = _foundation._weather_multi_settings_path
+_set_weather_settings = _foundation._set_weather_settings
+_set_weather_location = _foundation._set_weather_location
+_resolve_weather_location = _foundation._resolve_weather_location
+_apply_weather_from_env = _foundation._apply_weather_from_env
 _apply_rss_from_env = _addons._apply_rss_from_env
 SHOW_WEATHERINFO = "show_weatherinfo"  # Estuary skin bool: weather in the top bar
 
@@ -544,6 +547,74 @@ def run_express(box_env=None):
     return addons_res, foundation_res, iptv_res
 
 
+# IPTV env detection: an IPTV provider is configured when the per-device env carries
+# a PLAYLIST SOURCE — a multi-provider ``IPTV_<N>_M3U`` / ``IPTV_<N>_PORTAL`` key
+# (N a 1-based provider index) OR the single-instance ``IPTV_M3U`` / ``IPTV_PORTAL``.
+# NOTE: ``IPTV_EPG`` alone does NOT trip the gate — an EPG with no playlist is a
+# channel-less PVR (guide metadata, zero channels), not a usable source; ``apply_iptv``
+# still consumes ``IPTV_EPG`` when a real playlist provider IS present. ``IPTV_GROUPS``
+# alone (group names, useless without a playlist) likewise does not count.
+_IPTV_PROVIDER_KEY = _re.compile(r"^IPTV_(?:\d+_)?(?:M3U|PORTAL)$")
+
+
+def _env_has_iptv(box_env):
+    """True when the per-device env carries an IPTV provider PLAYLIST source.
+
+    Scans the env keys for any ``IPTV_<N>_M3U`` / ``IPTV_<N>_PORTAL`` (multi-provider)
+    or the single-instance ``IPTV_M3U`` / ``IPTV_PORTAL`` — and only counts a key whose
+    VALUE is non-empty (an empty ``IPTV_M3U=`` is not a provider). This is the gate
+    ``run_foundation_setup`` uses to decide whether to chain the IPTV layer: with no
+    provider it stops at the skin-only box; with one it installs pvr.iptvsimple + writes
+    instance-settings. ``IPTV_EPG`` alone and ``IPTV_GROUPS`` alone do NOT count (no
+    playlist = no channels). Pure-Python; never raises.
+    """
+    box_env = box_env or {}
+    for key, val in box_env.items():
+        if _IPTV_PROVIDER_KEY.match(key) and (val or "").strip():
+            return True
+    return False
+
+
+def _foundation_core(box_env, dialog):
+    """The shared Foundation install body both Foundation runners call.
+
+    Installs ALL our source repos (incl. our own ``repository.tony7bones`` proxy repo)
+    via ``install_repos``, then runs ``apply_foundation`` (the Estuary MOD V2 skin
+    closure + the proxy-invisible pvr.artwork/modv2plus direct-extracts + Outline-HD +
+    weather.multi + the keyboard autocomplete utility + File-Manager sources + the
+    home-menu trim), then sets the top-bar weather skin bool. It does NOT set
+    ``lookandfeel.skin`` and does NOT restart — the terminal seam belongs to the
+    caller (``run_foundation`` / ``run_foundation_setup``), which sets the skin LAST
+    and restarts ONCE so the env can be shared across an IPTV chain without a premature
+    restart. Returns the Foundation ``LayerResult``.
+
+    Factored out so ``run_foundation`` (pure skin-only) and ``run_foundation_setup``
+    (skin + optional IPTV chain) share ONE install seam and can never drift apart.
+    """
+    box_env = box_env or {}
+    # 1. ALL our source repos + our own proxy repo (plumbing) — the skin closure
+    #    resolves from them, and the proxy repo is the lifeline (updates/opt-ins).
+    install_repos(dialog)
+
+    # 2. the Foundation layer: skin closure + modv2plus/pvr.artwork direct-extract +
+    #    Outline-HD + weather.multi + autocomplete + File-Manager sources (incl. the
+    #    .tony.7.bones proxy source) + home-trim. ZERO content. Does NOT set
+    #    lookandfeel.skin (the caller's seam owns that).
+    foundation_res = apply_foundation(box_env, dialog=dialog, log=_log)
+
+    # The top-bar weather toggle is an Estuary skin bool (persists on the restart);
+    # only meaningful on the stock Estuary skin — keep it as an orchestrator step.
+    skin = ""
+    try:
+        skin = xbmc.getSkinDir() or ""
+    except Exception:  # noqa: BLE001
+        skin = ""
+    if not skin or skin == ESTUARY_SKIN_ID:
+        xbmc.executebuiltin(f"Skin.SetBool({SHOW_WEATHERINFO})")
+
+    return foundation_res
+
+
 def run_foundation(box_env=None):
     """The Foundation orchestrator — install Layer 0 ONLY (a skin-only deliverable).
 
@@ -586,23 +657,10 @@ def run_foundation(box_env=None):
     dialog = xbmcgui.DialogProgress()
     dialog.create("Tony.7.Bones Setup", "Installing Foundation...")
 
-    # 1. ALL our source repos (plumbing) — the skin closure resolves from them.
-    install_repos(dialog)
-
-    # 2. the Foundation layer: skin closure + modv2plus/pvr.artwork direct-extract +
-    #    Outline-HD + File-Manager sources (incl. the .tony.7.bones proxy source) +
-    #    home-trim. ZERO content. Does NOT set lookandfeel.skin (seam owns that).
-    foundation_res = apply_foundation(box_env, dialog=dialog, log=_log)
-
-    # The top-bar weather toggle is an Estuary skin bool (persists on the restart);
-    # only meaningful on the stock Estuary skin — keep it as an orchestrator step.
-    skin = ""
-    try:
-        skin = xbmc.getSkinDir() or ""
-    except Exception:  # noqa: BLE001
-        skin = ""
-    if not skin or skin == ESTUARY_SKIN_ID:
-        xbmc.executebuiltin(f"Skin.SetBool({SHOW_WEATHERINFO})")
+    # Repos (incl. our proxy repo) + the Foundation layer (skin/weather/menu/
+    # autocomplete) — the shared install seam. PURE skin-only: this runner NEVER
+    # touches IPTV (apply_iptv is reserved for run_foundation_setup).
+    foundation_res = _foundation_core(box_env, dialog)
 
     dialog.close()
 
@@ -633,6 +691,69 @@ def run_foundation(box_env=None):
     # ONE restart finalises every freshly extracted add-on AND the self-removal.
     restart_kodi("Tony.7.Bones Setup", _log)
     return foundation_res
+
+
+def run_foundation_setup(box_env=None):
+    """Foundation + an env-gated IPTV chain — the skin-with-optional-live-TV runner.
+
+    Composes the SAME Foundation install seam as ``run_foundation`` (``_foundation_core``
+    → repos incl. our proxy repo + the skin/weather/menu/autocomplete layer) and THEN,
+    **iff the per-device env carries IPTV provider values** (``_env_has_iptv`` — any
+    ``IPTV_<N>_M3U`` / ``IPTV_<N>_PORTAL`` or the single-instance ``IPTV_M3U`` /
+    ``IPTV_PORTAL`` / ``IPTV_EPG``), chains the IPTV layer: ``apply_iptv`` installs
+    pvr.iptvsimple (+ its binary inputstream closure) and writes the instance-settings
+    (custom group mode + the env's m3u/epg). With NO IPTV env it stops at the skin-only
+    box — byte-identical to ``run_foundation`` (no pvr.iptvsimple, no IPTV).
+
+    Terminal seam (shared, owned HERE — never in a layer): set ``lookandfeel.skin``
+    LAST (only when Foundation reached ``ok``), restart ONCE, then self-uninstall. The
+    skin is activated immediately before the restart so Kodi's "Keep this skin?"
+    timeout cannot silently revert it; the single restart finalises every freshly
+    extracted add-on (skin + optionally pvr.iptvsimple) AND the self-removal. The env
+    is read ONCE upstream (``run()``) and shared across both the Foundation and IPTV
+    layers here before any restart, so the IPTV chain is never starved.
+
+    NOT wired into the shipped ``run()`` yet (still ``run_express``); this is a new
+    entry point for the modular flow. Returns ``(foundation_res, iptv_res)`` —
+    ``iptv_res`` is ``None`` when the env has no IPTV provider (the skin-only path).
+    """
+    box_env = box_env or {}
+    dialog = xbmcgui.DialogProgress()
+    dialog.create("Tony.7.Bones Setup", "Installing Foundation...")
+
+    # Foundation install seam (repos incl. proxy + skin/weather/menu/autocomplete).
+    foundation_res = _foundation_core(box_env, dialog)
+
+    # IPTV auto-chain — ONLY when the env actually carries a provider playlist source.
+    # With none, this stays a pure skin-only box (identical to run_foundation).
+    iptv_res = None
+    if _env_has_iptv(box_env):
+        iptv_res = apply_iptv(box_env, dialog=dialog, log=_log)
+
+    dialog.close()
+
+    skin_ok = foundation_res.ok
+    iptv_ok = bool(iptv_res and iptv_res.ok and iptv_res.installed)
+    lines = [
+        "Foundation:",
+        "Estuary MOD V2: {}".format("installed" if skin_ok else "FAILED"),
+        "Repositories + sources installed.",
+    ]
+    if iptv_res is not None:
+        lines.append("IPTV: {}".format("installed" if iptv_ok else "skipped"))
+    lines.append("Restart will finish setup.")
+    xbmcgui.Dialog().ok("Tony.7.Bones Setup", "\n".join(lines))
+
+    # Run once, then disappear (after the summary; never raises).
+    self_uninstall(MY_ID, _log)
+
+    # Activate MOD V2 LAST — immediately before the restart (the activate-skin
+    # invariant). Only when Foundation reached ok.
+    if skin_ok:
+        activate_skin(SKIN_ID, _log)
+    # ONE restart finalises every freshly extracted add-on AND the self-removal.
+    restart_kodi("Tony.7.Bones Setup", _log)
+    return foundation_res, iptv_res
 
 
 def run():

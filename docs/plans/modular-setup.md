@@ -437,7 +437,7 @@ deliberate behavior change (move `pvr.iptvsimple` install Foundation→IPTV gate
 ### Phase 3 — DONE (local commit; Express orchestrator + first deliberate behavior change)
 
 - **Landed:** `run()` → **`run_express(box_env)`** composing `apply_addons → apply_foundation →
-  apply_iptv` as units (the Express orchestrator). `pvr.iptvsimple` INSTALL moved from base
+apply_iptv` as units (the Express orchestrator). `pvr.iptvsimple` INSTALL moved from base
   `ADDONS` into `apply_iptv` (`_install_pvr_backend`, **install-or-fail-loud** — never configure a
   missing backend). `apply_addons` now owns the weather/RSS core settings.
 - **First DELIBERATE snapshot change — justified by a net-installed-SET equivalence proof:** the
@@ -466,8 +466,8 @@ deliberate behavior change (move `pvr.iptvsimple` install Foundation→IPTV gate
 - **Landed:** `install_repos(dialog)` extracted from `_install_base` (behavior-preserving incl.
   the exact per-iteration cancel semantics), and `run_foundation(box_env)` in `default.py`:
   `install_repos()` → `apply_foundation()` (skin closure + modv2plus + pvr.artwork direct-extract
-  + Outline-HD + file-sources + home-trim) → set `lookandfeel.skin` LAST → restart →
-  `self_uninstall`. Calls **neither** `apply_addons` content **nor** `apply_iptv`.
+  - Outline-HD + file-sources + home-trim) → set `lookandfeel.skin` LAST → restart →
+    `self_uninstall`. Calls **neither** `apply_addons` content **nor** `apply_iptv`.
 - **The deliverable:** Foundation installs **ALL our repositories** (the 12 `REPO_ZIPS` as
   sources/plumbing) + establishes `repository.tony7bones` (host proxy present + `.tony.7.bones`
   file source) + the skin + patch + skin-infra closure — and **ZERO content add-ons** (no base
@@ -481,3 +481,134 @@ deliberate behavior change (move `pvr.iptvsimple` install Foundation→IPTV gate
   defensive guards). **QA review:** ACCEPT (closed the real-engine zero-content assertion).
 - **NEXT: 5a device verification — a CLEAN Kodi install running `run_foundation`** → skin-only box
   (MOD V2 active, all repos present, ZERO content add-ons).
+
+### Phase 5b — DONE (local; Foundation realignment: menu-reliability fix + weather-into-Foundation)
+
+Two coordinated changes, both **live-verified on a clean local Kodi 21.3 Omega** running
+`run_foundation`.
+
+- **Part A — menu reliability (`script.tony7bones.modv2plus` 1.4.7 → 1.4.8).** The skinshortcuts
+  caching race (`service.py:_menu_is_ours`): Setup's live skin-switch can race
+  script.skinshortcuts into building the STOCK Estuary menu and writing its `<skin>.hash` BEFORE
+  our menu deploys; the matching hash then makes skinshortcuts SKIP rebuilding from ours on the
+  next boot. **Fix:** the (re)deploy path (`_deploy_skinshortcuts_menu`, called from
+  `apply_home_menu`) now DEFEATS the race in one atomic step — it (1) CLEARS the built
+  skinshortcuts cache for `skin.estuary.modv2` (via `_clear_skinshortcuts_cache`), (2) deploys our
+  exact menu DATA + widget `.properties`, then (3) DROPS the built `<skin>.hash` (new
+  `_drop_skinshortcuts_hash`) so skinshortcuts regenerates from OUR menu on the next build/boot.
+  `_menu_is_ours()`'s POV-based marker and the menu CONTENT (Live TV, Movies→POV, TV shows→POV,
+  Add-ons, Favorites, Weather) are UNCHANGED. Bumped version + news, regenerated
+  addons.xml/checksums/zip (old 1.4.7.zip pruned).
+- **Part B — weather into Foundation.** `weather.multi` is part of the BRANDED LOOK (the MOD V2
+  skin renders a weather readout + a Weather home-menu item), not content — so its INSTALL +
+  CONFIG moved OUT of the Add-ons base `ADDONS` INTO Foundation (same pattern as the pvr→IPTV move
+  in Phase 3). `apply_foundation` now installs `weather.multi` (via `install_with_deps`), sets the
+  core `weather.addon` provider, and writes the env-driven (or keyless Sacramento default)
+  locations (`_apply_weather_from_env` + helpers lifted from `addons.py` → `foundation.py`). The
+  Outline-HD weather icons are already in the skin closure Foundation installs, and modv2plus's
+  apply points `WeatherIcons` at them. The Add-ons layer now owns only RSS config. `ADDONS` is now
+  `[script.ezmaintenanceplus, script.realdebrid]`.
+- **Express equivalence:** the `MONOLITH_NET_INSTALLED` net-set invariant PASSES UNCHANGED —
+  `weather.multi` (+ its python closure) is still installed by a full run, now via `apply_foundation`
+  instead of the base loop. The characterization snapshot was regenerated (justified): `Apps 3/3→2/2`,
+  the `weather.addon` setting + the weather.multi enable-order shift later (Foundation runs after
+  add-ons in `run_express`). Net installed SET byte-identical — proven BEFORE the regen.
+- **Tested:** `test_modv2plus.py` (+5 Part-A cache-clear/hash-drop tests, mutation-verified — hash-drop
+  and cache-clear each independently killed); `test_run_foundation.py` / `test_setup_foundation.py`
+  (Foundation installs+configures weather; weather unit tests moved here; mutation: weather-not-configured
+  → net-set invariant + Foundation tests fail); `test_setup_addons.py` (weather out of ADDONS, RSS-only
+  config; mutation: weather back in ADDONS → fail); `test_bootstrap.py` repointed. **541 passed / 1 xfailed**,
+  `ruff` clean, secrets clean. **Coverage:** foundation.py 95%, addons.py 99%.
+- **LIVE (clean Kodi, `run_foundation`):** MOD V2 active; the home menu is modv2plus's TRIMMED menu
+  (Movies/TV shows/Add-ons/Favorites/Weather/Live TV — NO Music/Pictures/Games clutter), boot service
+  logged `nothing to do (menu=True)` proving `_menu_is_ours`; clicking Movies (no POV) → Kodi's
+  "Add-on required: POV" prompt; WEATHER WORKS — `weather.addon=weather.multi`, location Sacramento,
+  Outline-HD icons, the skin's Weather panel populated ("Sacramento, California — 82°F · Sunny" + full
+  forecast). ZERO content add-ons; all 12 repos installed. Screenshots captured.
+
+### Phase 5c — DONE (local; Foundation additions + env-gated IPTV auto-chain)
+
+Three additive Foundation changes, all unit-/mutation-verified (no live-Kodi pass yet —
+the owner runs the clean-Kodi verify).
+
+- **Foundation now installs our OWN proxy repo (`repository.tony7bones`).** Previously
+  Foundation installed the 12 third-party `REPO_ZIPS` but NOT our own repo. `install_repos`
+  (addons.py) now also direct-extracts the proxy installer zip — resolved LIVE from the
+  served `addon.xml` via `_latest_zip_url` (the SAME mechanism modv2plus uses) — then
+  registers + enables it (new `PROXY_REPO_ID`). Idempotent (`is_installed` short-circuit) and
+  non-fatal (a resolve/extract failure leaves the box working; `apply_foundation`'s
+  `.tony.7.bones` File-Manager source still lets the user reinstall). The box ends up with our
+  repo as an INSTALLED, ENABLED add-on — the lifeline (updates / the proxy / future opt-ins) —
+  not merely the source entry. Counted into `fp_ok` (first-party plumbing). Both Express
+  (`run_express` via `_install_base`) and Foundation get it.
+- **Foundation installs `script.module.autocompletion`** (official Kodi repo, current 2.1.1) —
+  the on-screen-keyboard autocomplete QoL UTILITY (helps search / IPTV portal+login typing),
+  NOT content. New `AUTOCOMPLETE_ID` + `_install_autocomplete` in foundation.py; installed via
+  `install_with_deps(..., OFFICIAL_BASE, ...)`. Non-fatal; recorded in the Foundation
+  `LayerResult` (`installed`/`failed`).
+- **Env-gated IPTV auto-chain.** New `run_foundation_setup(box_env)` composes the shared
+  Foundation install seam (`_foundation_core` — repos incl. our proxy + the skin/weather/menu/
+  autocomplete layer) and THEN, **iff the env carries an IPTV provider** (`_env_has_iptv` —
+  true when any `IPTV_<N>_M3U` / `IPTV_<N>_PORTAL` or the single-instance
+  `IPTV_M3U`/`IPTV_PORTAL`/`IPTV_EPG` is present with a non-empty value; `IPTV_GROUPS` alone does
+  NOT count), chains `apply_iptv` (installs pvr.iptvsimple + writes instance-settings). With no
+  IPTV env it stops at the skin-only box — identical to `run_foundation` (no pvr, no IPTV).
+  `run_foundation` stayed PURE skin-only (never touches IPTV); both runners share
+  `_foundation_core` so they can't drift. Terminal seam (set `lookandfeel.skin` LAST → restart
+  ONCE → self-uninstall) stays orchestrator-owned. NOT wired into the shipped `run()` (still
+  `run_express`) — a new entry point for later.
+- **Net-set invariant updated.** `MONOLITH_NET_INSTALLED` renamed → `EXPECTED_NET_INSTALLED`
+  (old name kept as an alias) and now includes the two new ids with a justification comment
+  (intentional feature growth, NOT a regression). The PROVEN delta before regenerating the
+  golden snapshot was EXACTLY `{repository.tony7bones, script.module.autocompletion}` added,
+  nothing else (asserted by `test_full_run_net_installed_set_equals_expected` +
+  `test_foundation_additions_are_exactly_two`, mutation-proven). The characterization snapshot
+  was regenerated — the diff is ONLY the two additions + their enable/rescan entries (no
+  removals, no value changes; `Apps`/`Video` summary counts unchanged). `conftest.py`'s fake
+  index gained `script.module.autocompletion` so the bare full run genuinely installs it (the
+  growth is real, not asserted-only).
+- **Tested / mutation-proven:** +13 net new tests across `test_setup_addons.py` (proxy install
+  - idempotence), `test_setup_foundation.py` (autocomplete install / official-base / non-fatal),
+    `test_run_foundation.py` (proxy + autocomplete land; `_env_has_iptv` true/false; the
+    `run_foundation_setup` with-iptv → pvr+instance-settings, without-iptv → skin-only/no pvr/no
+    apply_iptv call; skin-last; self-uninstall ordering; shared-seam), `test_modular_setup.py`
+    (net-set + additions-are-exactly-two). Mutations killed: drop proxy install (3 tests), drop
+    autocomplete (3 tests), force IPTV chain skip (1 test). **557 passed / 1 xfailed**, `ruff`
+    clean (`_tools/` + first-party add-ons), secret-leak test green (IPTV env uses fakes).
+- **Coverage:** addons.py 99%, foundation.py 95%, iptv.py 100%, bootstrap default.py 96% — all
+  new code covered (uncovered lines are pre-existing defensive guards / `__main__`).
+- **Generated files** regenerated (deterministic — second regen byte-identical); installer zip
+  present in served `repositories/`; consistency gate green. modv2plus stays 1.4.8; no other
+  version bumps (deferred to the milestone push).
+- **QA review gaps closed:** (GAP-1) added `test_run_foundation_ignores_iptv_env` — proves the
+  PURE `run_foundation` never chains IPTV even when handed an IPTV-bearing env (purity was
+  structural; now mutation-guarded). (GAP-2 decision) **`IPTV_EPG` alone no longer trips the
+  gate** — an EPG with no playlist is a channel-less PVR, not a usable source; the gate is now
+  M3U/PORTAL only (`apply_iptv` still consumes `IPTV_EPG` when a real provider is present).
+  **558 passed.**
+- **LIVE-VERIFIED (clean Kodi, `run_foundation_setup` with an IPTV-bearing env from `.env.local`):**
+  `repository.tony7bones` v2.2.1 **installed + enabled** (proxy service running) — the previously-
+  missing lifeline; `script.module.autocompletion` 2.1.1 **installed + enabled**; the **env-gated
+  chain FIRED** (`has_iptv=True` → pvr.iptvsimple installed); MOD V2 active, trimmed menu, weather
+  populated, Setup self-uninstalled.
+
+#### ⚠️ Two IPTV-LAYER bugs the live run surfaced → first action items for Phase 5b
+
+These are in `apply_iptv` (the IPTV layer), NOT Foundation — the chain WIRING is correct (gate
+fires, backend installs). They are exactly the IPTV-layer hardening Phase 5b owns.
+
+1. **Instance-settings clobber (the live box ends up with an UNCONFIGURED pvr).** `apply_iptv`
+   ENABLES pvr.iptvsimple (which instantiates the live PVR client with stock in-memory defaults)
+   BEFORE `_ensure_iptv_custom_tv_groups` WRITES the file — so the running client flushes its stale
+   defaults back over the enforce's write (the same "Kodi clobbers a direct file write" class the
+   project documents for `Skin.SetBool`). FIX (5b): write/enforce instance-settings BEFORE enabling
+   the backend (or disable around the write, or force a reload after). The Express `_configure_box`
+   path likely has the same latent race.
+2. **Multi-provider → single-instance env gap.** `_ensure_iptv_custom_tv_groups` reads single-instance
+   `IPTV_M3U`/`IPTV_EPG`/`IPTV_GROUPS`, but the per-device `.env` uses the multi-provider `IPTV_<N>_*`
+   shape — there is no `IPTV_<N>_*` → instance derivation yet, so a real provisioner env writes
+   nothing. FIX (5b): generalize `apply_iptv` to N providers (the deferred P2 work — host-side
+   `build_iptv.py` from the `iptv` branch + N `instance-settings-<N>.xml`).
+
+- **NEXT: Phase 5b** — make the IPTV + Add-ons layers independently runnable, STARTING with the two
+  `apply_iptv` fixes above; then the Guided wizard (5c).

@@ -75,6 +75,11 @@ def boot(tmp_path, monkeypatch):
             "script.module.urllib3": ("2.2.3", [], None),
             "script.module.certifi": ("2023.5.7", [], None),
             "weather.multi": ("1.1.0", ["script.module.requests"], None),
+            # On-screen-keyboard autocomplete — a pure-python QoL UTILITY add-on in
+            # the official repo, installed by the Foundation layer. Listed so a bare
+            # full run genuinely resolves + installs it (the net-set growth is real,
+            # not asserted-only).
+            "script.module.autocompletion": ("2.1.1", [], None),
             "pvr.iptvsimple": (
                 "21.11.0",
                 ["inputstream.ffmpegdirect", "kodi.binary.instance.pvr"],

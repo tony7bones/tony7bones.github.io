@@ -81,10 +81,17 @@ def _stub_skin_success(boot, monkeypatch):
             boot.state["installed"].add(boot.mod.MODV2PLUS_ID)
         return True
 
+    def _install_with_deps(addon_id, dialog, extra_bases, official_base, log):
+        # Foundation installs weather.multi (the branded-look weather provider) via
+        # install_with_deps; record it so the weather-install assertion can see it,
+        # and treat pvr.artwork deps / outline-hd as installed too.
+        boot.state["installed"].add(addon_id)
+        return True
+
     fnd = boot.mod._foundation
     monkeypatch.setattr(fnd, "install_selection", _sel)
     monkeypatch.setattr(fnd, "extract_zip", _extract_skin)
-    monkeypatch.setattr(fnd, "install_with_deps", lambda *a, **k: True)
+    monkeypatch.setattr(fnd, "install_with_deps", _install_with_deps)
     monkeypatch.setattr(
         fnd, "_latest_zip_url", lambda aid: f"http://local/{aid}-9.9.9.zip"
     )
@@ -93,7 +100,11 @@ def _stub_skin_success(boot, monkeypatch):
 
 
 # Content add-on ids that must NEVER be installed by Foundation.
-_BASE_APPS = ["script.ezmaintenanceplus", "script.realdebrid", "weather.multi"]
+# NOTE (weather-into-Foundation): weather.multi is NO LONGER content — it moved INTO
+# Foundation (branded look: the MOD V2 skin renders a weather readout + Weather menu
+# item). So it is intentionally absent from this list; Foundation installing it is
+# expected and asserted separately (test_run_foundation_installs_weather).
+_BASE_APPS = ["script.ezmaintenanceplus", "script.realdebrid"]
 _VIDEO_APPS = [
     "plugin.video.pov",
     "plugin.video.the-loop",
@@ -200,17 +211,15 @@ def test_run_foundation_does_not_call_content_layers(boot, monkeypatch):
     )
 
 
-def test_run_foundation_writes_no_iptv_or_weather(boot, monkeypatch):
-    """No IPTV instance-settings and no weather/RSS core settings are written —
-    Foundation does not touch pvr.iptvsimple's instance file and does not set the
-    weather provider / RSS-enable core settings (those are Add-ons/IPTV layer work)."""
+def test_run_foundation_writes_no_iptv_and_no_rss(boot, monkeypatch):
+    """No IPTV instance-settings and no RSS core setting are written — Foundation
+    does not touch pvr.iptvsimple's instance file and does not enable the RSS ticker
+    (those are IPTV/Add-ons layer work). Weather IS now Foundation's job and is
+    asserted positively elsewhere."""
     _stub_skin_success(boot, monkeypatch)
     boot.mod.run_foundation({})
 
     settings = _settings_set(boot)
-    assert "weather.addon" not in settings, (
-        "Foundation must not set the weather provider"
-    )
     assert "lookandfeel.enablerssfeeds" not in settings, (
         "Foundation must not enable the RSS ticker (Add-ons layer work)"
     )
@@ -219,6 +228,88 @@ def test_run_foundation_writes_no_iptv_or_weather(boot, monkeypatch):
 
     assert not os.path.exists(iptv_path), (
         "Foundation must not write pvr.iptvsimple instance-settings"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Weather into Foundation: a skin-only box must have WORKING weather (the MOD V2
+# skin renders a weather readout + a Weather menu item). Foundation installs
+# weather.multi AND configures it (provider + keyless-default location).
+# --------------------------------------------------------------------------- #
+def _weather_settings(boot):
+    """Multi Weather settings.xml as {id: text} (or {} if unwritten)."""
+    import os
+    from xml.etree import ElementTree as ET
+
+    path = boot.mod._foundation._weather_multi_settings_path()
+    if not os.path.exists(path):
+        return {}
+    root = ET.parse(path).getroot()
+    return {s.get("id"): (s.text or "") for s in root.findall("setting")}
+
+
+def test_run_foundation_installs_weather(boot, monkeypatch):
+    """Foundation installs weather.multi — the branded-look weather provider (moved
+    out of the Add-ons base ADDONS). MUTATION: if Foundation stops installing weather
+    (the _apply_weather call dropped), weather.multi is absent and this fails."""
+    _stub_skin_success(boot, monkeypatch)
+    res = boot.mod.run_foundation({})
+    assert "weather.multi" in boot.state["installed"], (
+        "Foundation must install weather.multi (the branded-look weather provider)"
+    )
+    assert res.installed.get("weather.multi") == "installed", (
+        "the Foundation LayerResult must record weather.multi installed"
+    )
+
+
+def test_run_foundation_sets_weather_provider(boot, monkeypatch):
+    """Foundation sets the CORE weather.addon provider to weather.multi (so the MOD
+    V2 skin's weather readout has a provider). MUTATION: drop the provider set and
+    this fails."""
+    _stub_skin_success(boot, monkeypatch)
+    boot.mod.run_foundation({})
+    settings = _settings_set(boot)
+    assert settings.get("weather.addon") == "weather.multi", (
+        "Foundation must set the core weather provider to weather.multi"
+    )
+
+
+def test_run_foundation_writes_keyless_default_location(boot, monkeypatch):
+    """With no env locations, Foundation writes the keyless Sacramento default —
+    loc1_url is the LOAD-BEARING field weather.multi fetches by; it must be non-empty
+    so the branded box has working weather out of the box."""
+    _stub_skin_success(boot, monkeypatch)
+    # no resolvable env locations -> the keyless Sacramento fallback
+    monkeypatch.setattr(
+        boot.mod._foundation, "_resolve_weather_location", lambda q, **k: None
+    )
+    boot.mod.run_foundation({})
+    wx = _weather_settings(boot)
+    assert wx.get("loc1_url") == "us/ca/sacramento", (
+        "Foundation must write the keyless Sacramento default location"
+    )
+    assert wx.get("loc1_url"), "loc1_url must never be empty (the load-bearing field)"
+
+
+def test_run_foundation_writes_env_weather_locations(boot, monkeypatch):
+    """When the env supplies WEATHER_LOCATIONS, Foundation resolves + writes them
+    (env-driven, not the hardcoded Sacramento). Proves the env weather config landed
+    in Foundation."""
+    _stub_skin_success(boot, monkeypatch)
+    monkeypatch.setattr(
+        boot.mod._foundation,
+        "_resolve_weather_location",
+        lambda q, **k: {
+            "name": "Reno, NV, US",
+            "url": "us/nv/reno",
+            "lat": "39.5",
+            "lon": "-119.8",
+        },
+    )
+    boot.mod.run_foundation({"WEATHER_LOCATIONS": "Reno, NV"})
+    wx = _weather_settings(boot)
+    assert wx.get("loc1_url") == "us/nv/reno", (
+        "Foundation must write the env-resolved weather location"
     )
 
 
@@ -335,3 +426,215 @@ def test_run_foundation_skin_not_activated_when_install_failed(boot, monkeypatch
     # the real engine resolving the skin closure, NO content add-on may leak in.
     leaked = [aid for aid in _CONTENT_IDS if aid in boot.state["installed"]]
     assert leaked == [], f"real-engine Foundation leaked content: {leaked}"
+
+
+# --------------------------------------------------------------------------- #
+# The two intentional Foundation additions — our own proxy repo + autocomplete.
+# --------------------------------------------------------------------------- #
+def test_run_foundation_installs_our_proxy_repo(boot, monkeypatch):
+    """Foundation installs our OWN proxy repo (repository.tony7bones) — first-party
+    plumbing / the lifeline (updates / the proxy / future opt-ins). It is established
+    via install_repos (direct-extract of the installer zip + enable). MUTATION: drop
+    the proxy install from install_repos and repository.tony7bones is absent here."""
+    _stub_skin_success(boot, monkeypatch)
+    boot.mod.run_foundation({})
+    assert boot.mod._addons.PROXY_REPO_ID == "repository.tony7bones"
+    assert "repository.tony7bones" in boot.state["installed"], (
+        "Foundation must establish our proxy repo (the lifeline)"
+    )
+
+
+def test_run_foundation_installs_autocomplete(boot, monkeypatch):
+    """Foundation installs script.module.autocompletion — the keyboard autocomplete
+    QoL utility. MUTATION: drop the _install_autocomplete call and it is absent here.
+    The _install_with_deps stub in _stub_skin_success records each installed addon."""
+    _stub_skin_success(boot, monkeypatch)
+    boot.mod.run_foundation({})
+    assert "script.module.autocompletion" in boot.state["installed"], (
+        "Foundation must install the keyboard autocomplete utility"
+    )
+
+
+# --------------------------------------------------------------------------- #
+# _env_has_iptv — the IPTV auto-chain gate.
+# --------------------------------------------------------------------------- #
+def test_env_has_iptv_true_for_single_instance_m3u(boot):
+    """The single-instance IPTV_M3U (non-empty) trips the gate."""
+    assert boot.mod._env_has_iptv({"IPTV_M3U": "http://provider/playlist.m3u"}) is True
+
+
+def test_env_has_iptv_true_for_indexed_m3u_and_portal(boot):
+    """Multi-provider IPTV_<N>_M3U / IPTV_<N>_PORTAL keys trip the gate."""
+    assert boot.mod._env_has_iptv({"IPTV_1_M3U": "http://p/1.m3u"}) is True
+    assert boot.mod._env_has_iptv({"IPTV_2_PORTAL": "http://portal/"}) is True
+    assert boot.mod._env_has_iptv({"IPTV_M3U": "", "IPTV_3_M3U": "http://p/3"}) is True
+
+
+def test_env_has_iptv_false_for_empty_or_groups_only(boot):
+    """No IPTV PLAYLIST source -> False: an empty env, an EMPTY IPTV_M3U value,
+    IPTV_GROUPS alone (group names without a playlist), and IPTV_EPG alone (guide
+    metadata = a channel-less PVR, not a usable source) all do NOT count."""
+    assert boot.mod._env_has_iptv({}) is False
+    assert boot.mod._env_has_iptv(None) is False
+    assert boot.mod._env_has_iptv({"IPTV_M3U": ""}) is False
+    assert boot.mod._env_has_iptv({"IPTV_M3U": "   "}) is False
+    assert boot.mod._env_has_iptv({"IPTV_GROUPS": "Sports,News"}) is False
+    assert boot.mod._env_has_iptv({"WEATHER_LOCATIONS": "Reno"}) is False
+    # EPG alone is NOT a playlist source -> must not chain IPTV (GAP-2 decision).
+    assert boot.mod._env_has_iptv({"IPTV_EPG": "http://epg/guide.xml"}) is False
+    assert boot.mod._env_has_iptv({"IPTV_1_EPG": "http://epg/1.xml"}) is False
+
+
+# --------------------------------------------------------------------------- #
+# run_foundation_setup — Foundation + the env-gated IPTV chain.
+# --------------------------------------------------------------------------- #
+def _iptv_instance_path(boot):
+    return boot.mod.xbmcvfs.translatePath(boot.mod.IPTV_INSTANCE_SETTINGS_SPECIAL)
+
+
+def test_run_foundation_setup_without_iptv_is_skin_only(boot, monkeypatch):
+    """With NO IPTV env, run_foundation_setup is IDENTICAL to skin-only Foundation:
+    NO pvr.iptvsimple, NO IPTV instance-settings, and apply_iptv is never called.
+    The installed set matches the skin-only deliverable (zero content)."""
+    import os
+
+    _stub_skin_success(boot, monkeypatch)
+    called = []
+    real_iptv = boot.mod.apply_iptv
+    monkeypatch.setattr(
+        boot.mod,
+        "apply_iptv",
+        lambda *a, **k: called.append("apply_iptv") or real_iptv(*a, **k),
+    )
+    fnd_res, iptv_res = boot.mod.run_foundation_setup({})
+    assert fnd_res.layer == "foundation" and fnd_res.ok is True
+    assert iptv_res is None, "no IPTV env -> the IPTV layer must be skipped"
+    assert called == [], "apply_iptv must NOT be called without an IPTV provider env"
+    assert "pvr.iptvsimple" not in boot.state["installed"], "no PVR backend"
+    assert not os.path.exists(_iptv_instance_path(boot)), "no instance-settings written"
+    # Same zero-content invariant as run_foundation.
+    leaked = [aid for aid in _CONTENT_IDS if aid in boot.state["installed"]]
+    assert leaked == [], f"skin-only path leaked content: {leaked}"
+
+
+def test_run_foundation_ignores_iptv_env(boot, monkeypatch):
+    """run_foundation is PURE skin-only: even handed an IPTV-bearing env it must NEVER
+    chain IPTV (that lives ONLY in run_foundation_setup). No pvr.iptvsimple, no
+    instance-settings, apply_iptv never called. MUTATION GUARD: a future refactor that
+    wired run_foundation to _env_has_iptv would slip past the {}-env zero-content tests
+    but fails here."""
+    import os
+
+    _stub_skin_success(boot, monkeypatch)
+    called = []
+    monkeypatch.setattr(
+        boot.mod, "apply_iptv", lambda *a, **k: called.append("apply_iptv")
+    )
+    res = boot.mod.run_foundation(
+        {"IPTV_M3U": "http://provider/playlist.m3u", "IPTV_1_PORTAL": "http://portal/"}
+    )
+    assert res.layer == "foundation" and res.ok is True
+    assert called == [], "run_foundation must NEVER call apply_iptv (pure skin-only)"
+    assert "pvr.iptvsimple" not in boot.state["installed"], (
+        "no PVR backend in pure Foundation"
+    )
+    assert not os.path.exists(_iptv_instance_path(boot)), (
+        "no instance-settings in pure Foundation"
+    )
+    leaked = [aid for aid in _CONTENT_IDS if aid in boot.state["installed"]]
+    assert leaked == [], f"run_foundation leaked content with an iptv env: {leaked}"
+
+
+def test_run_foundation_setup_with_iptv_installs_pvr_and_writes_settings(
+    boot, monkeypatch
+):
+    """WITH an IPTV provider env, run_foundation_setup chains apply_iptv: it installs
+    pvr.iptvsimple (+ inputstream closure) and WRITES the instance-settings (m3u source
+    from the env). MUTATION: if the IPTV chain were dropped (or always skipped), no
+    PVR backend installs and no instance-settings file appears — this fails."""
+    import os
+    from xml.etree import ElementTree as ET
+
+    _stub_skin_success(boot, monkeypatch)
+    env = {"IPTV_M3U": "http://provider.example/playlist.m3u"}
+    fnd_res, iptv_res = boot.mod.run_foundation_setup(env)
+
+    assert fnd_res.ok is True
+    assert iptv_res is not None and iptv_res.layer == "iptv" and iptv_res.ok is True
+    assert "pvr.iptvsimple" in boot.state["installed"], (
+        "the IPTV chain must install the PVR backend"
+    )
+    path = _iptv_instance_path(boot)
+    assert os.path.exists(path), "the IPTV chain must write instance-settings"
+    root = ET.parse(path).getroot()
+    vals = {s.get("id"): (s.text or "") for s in root.findall("setting")}
+    assert vals.get("m3uUrl") == "http://provider.example/playlist.m3u", (
+        "the env's IPTV_M3U must land in the instance-settings"
+    )
+
+
+def test_run_foundation_setup_shares_install_seam_with_run_foundation(
+    boot, monkeypatch
+):
+    """run_foundation_setup uses the SAME Foundation install seam (_foundation_core),
+    so it installs the proxy repo + autocomplete + all repos too (no skin-only path
+    regresses the additions). Belt-and-suspenders that the new runner did not fork."""
+    _stub_skin_success(boot, monkeypatch)
+    boot.mod.run_foundation_setup({})
+    assert "repository.tony7bones" in boot.state["installed"]
+    assert "script.module.autocompletion" in boot.state["installed"]
+    for _z, rid in boot.mod.REPO_ZIPS:
+        assert _repo_installed(boot, rid), (
+            f"repo {rid} must install via the shared seam"
+        )
+
+
+def test_run_foundation_setup_activates_skin_last_then_restarts(boot, monkeypatch):
+    """run_foundation_setup sets lookandfeel.skin LAST and restarts ONCE, AFTER the
+    IPTV chain — the terminal seam stays orchestrator-owned even with IPTV. The skin
+    is the LAST core setting written before the single restart."""
+    _stub_skin_success(boot, monkeypatch)
+    seq = []
+    real_activate = boot.mod.activate_skin
+    monkeypatch.setattr(
+        boot.mod,
+        "activate_skin",
+        lambda *a, **k: seq.append("activate") or real_activate(*a, **k),
+    )
+
+    def _restart(*a, **k):
+        seq.append("restart")
+        seq.append(("skin_last", _settings_set(boot).get("lookandfeel.skin")))
+
+    monkeypatch.setattr(boot.mod, "restart_kodi", _restart)
+    boot.mod.run_foundation_setup({"IPTV_M3U": "http://p/x.m3u"})
+    assert seq[0] == "activate" and seq[1] == "restart", (
+        f"skin must activate immediately before the single restart, got {seq}"
+    )
+    assert ("skin_last", boot.mod.SKIN_ID) in seq
+
+
+def test_run_foundation_setup_self_uninstalls_after_summary_before_restart(
+    boot, monkeypatch
+):
+    """run_foundation_setup self-uninstalls AFTER the summary and BEFORE the restart
+    (the terminal-seam ordering, preserved for the new runner)."""
+    events = []
+    _stub_skin_success(boot, monkeypatch)
+    real_ok = boot.mod.xbmcgui.Dialog.ok
+
+    def _ok(self, title, msg):
+        events.append("summary")
+        return real_ok(self, title, msg)
+
+    monkeypatch.setattr(boot.mod.xbmcgui.Dialog, "ok", _ok)
+    monkeypatch.setattr(
+        boot.mod, "self_uninstall", lambda *a, **k: events.append("self_uninstall")
+    )
+    monkeypatch.setattr(
+        boot.mod, "restart_kodi", lambda *a, **k: events.append("restart")
+    )
+    boot.mod.run_foundation_setup({})
+    assert events == ["summary", "self_uninstall", "restart"], (
+        f"order must be summary -> self_uninstall -> restart, got {events}"
+    )

@@ -320,3 +320,288 @@ def test_apply_foundation_uses_injected_step_functions(boot):
     assert marker == {"skin": True, "sources": True, "trim": True}
     assert res.ok is False  # injected install_skin returned False
     assert fnd.SKIN_ID in res.failed
+
+
+# --------------------------------------------------------------------------- #
+# Weather into Foundation (weather-into-Foundation change). The weather provider
+# install + env-driven location config MOVED out of the Add-ons layer into
+# Foundation — weather is part of the branded look (the MOD V2 skin renders a
+# weather readout + a Weather home-menu item). The unit tests for the lifted
+# weather helpers moved here with them.
+# --------------------------------------------------------------------------- #
+def _weather_settings(boot):
+    """Multi Weather settings.xml as {id: text} (or {} if unwritten)."""
+    import os
+    from xml.etree import ElementTree as ET
+
+    path = _foundation(boot)._weather_multi_settings_path()
+    if not os.path.exists(path):
+        return {}
+    root = ET.parse(path).getroot()
+    return {s.get("id"): (s.text or "") for s in root.findall("setting")}
+
+
+def _stub_skin_only(boot, monkeypatch):
+    """Like _stub_success, but install_with_deps RECORDS weather.multi (so the
+    Foundation weather-install assertion can see it lands) instead of a blanket True."""
+    _stub_success(boot, monkeypatch)
+
+    def _iwd(addon_id, dialog, extra_bases, official_base, log):
+        boot.state["installed"].add(addon_id)
+        return True
+
+    monkeypatch.setattr(boot.mod._foundation, "install_with_deps", _iwd)
+
+
+def test_apply_weather_resolves_locations_and_keys(boot, monkeypatch):
+    """Up to N resolved locations land as loc1..N (+ unused slots cleared), and the
+    Weatherbit / OWM keys enable the optional upgrade layers."""
+    fnd = _foundation(boot)
+    locs = {
+        "Sacramento": {
+            "name": "Sacramento, CA, US",
+            "url": "us/ca/sacramento",
+            "lat": "38.5",
+            "lon": "-121.4",
+        },
+        "Reno": {
+            "name": "Reno, NV, US",
+            "url": "us/nv/reno",
+            "lat": "39.5",
+            "lon": "-119.8",
+        },
+    }
+    monkeypatch.setattr(
+        fnd,
+        "_resolve_weather_location",
+        lambda q, **k: next((v for n, v in locs.items() if n in q), None),
+    )
+    fnd._apply_weather_from_env(
+        {
+            "WEATHER_LOCATIONS": "Sacramento, CA; Reno, NV",
+            "WEATHERBIT_API_KEY": "WBITKEY",
+            "OWM_API_KEY": "OWMKEY",
+        }
+    )
+    got = _weather_settings(boot)
+    assert got["loc1_url"] == "us/ca/sacramento"
+    assert got["loc2_url"] == "us/nv/reno"
+    assert got["loc3_url"] == ""  # unused slot cleared, never stale
+    assert got["WAdd"] == "true" and got["API"] == "WBITKEY"
+    assert got["WMaps"] == "true" and got["MAPAPI"] == "OWMKEY"
+
+
+def test_apply_weather_falls_back_to_sacramento_never_empty(boot, monkeypatch):
+    """No resolvable env locations -> the keyless Sacramento default, NEVER an empty
+    loc1_url (the load-bearing fetch field)."""
+    fnd = _foundation(boot)
+    monkeypatch.setattr(fnd, "_resolve_weather_location", lambda q, **k: None)
+    fnd._apply_weather_from_env({"WEATHER_LOCATIONS": "Nowhere, ZZ"})
+    got = _weather_settings(boot)
+    assert got["loc1_url"] == "us/ca/sacramento" and got["loc1_url"]
+    assert "WAdd" not in got  # no keys -> no upgrade layer
+
+
+def test_apply_weather_skips_unresolvable_keeps_resolved_no_gap(boot, monkeypatch):
+    """An unresolvable location is skipped; the resolved one becomes loc1 (no gap)."""
+    fnd = _foundation(boot)
+    monkeypatch.setattr(
+        fnd,
+        "_resolve_weather_location",
+        lambda q, **k: (
+            {"name": "Reno, NV, US", "url": "us/nv/reno", "lat": "39", "lon": "-119"}
+            if "Reno" in q
+            else None
+        ),
+    )
+    fnd._apply_weather_from_env({"WEATHER_LOCATIONS": "Badtown; Reno, NV"})
+    got = _weather_settings(boot)
+    assert got["loc1_url"] == "us/nv/reno"
+    assert got.get("loc2_url", "") == ""
+
+
+def test_apply_weather_never_raises(boot, monkeypatch):
+    """Defensive: any failure inside the writer is swallowed (never aborts setup)."""
+    fnd = _foundation(boot)
+
+    def _boom(*a, **k):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(fnd, "_set_weather_settings", _boom)
+    fnd._apply_weather_from_env({"WEATHER_LOCATIONS": ""})  # must not raise
+
+
+def test_resolve_weather_location_returns_none_on_bad_response(boot):
+    """The conftest urlopen fake returns empty bytes for the Yahoo search-assist
+    endpoint, so the JSON parse fails on every retry -> None (the caller then falls
+    back to the Sacramento default). Exercises the real network/parse body."""
+    fnd = _foundation(boot)
+    assert fnd._resolve_weather_location("Sacramento, CA") is None
+
+
+def test_resolve_weather_location_parses_suggestions(boot, monkeypatch):
+    """A well-formed search-assist response is parsed into {name,url,lat,lon} in the
+    add-on's own field shape (name 'Town, Region, Country'; url 'country/region/town')."""
+    import json as _json
+
+    fnd = _foundation(boot)
+    payload = {
+        "suggestions": [
+            {
+                "location": {
+                    "town": {"name": "Reno", "latitude": 39.5, "longitude": -119.8},
+                    "region": {"code": "NV"},
+                    "country": {"code": "US"},
+                }
+            }
+        ]
+    }
+
+    class _Resp:
+        def read(self):
+            return _json.dumps(payload).encode("utf-8")
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda req, timeout=None: _Resp())
+    loc = fnd._resolve_weather_location("Reno, NV")
+    assert loc == {
+        "name": "Reno, NV, US",
+        "url": "us/nv/reno",
+        "lat": "39.5",
+        "lon": "-119.8",
+    }
+
+
+def test_set_weather_settings_recreates_malformed_file(boot):
+    """A malformed Multi Weather settings.xml is replaced with a valid tree (the
+    ET.ParseError recovery branch) while still writing the requested settings."""
+    import os
+
+    fnd = _foundation(boot)
+    path = fnd._weather_multi_settings_path()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("<<not xml>>")
+    fnd._set_weather_settings({"loc1_url": "us/ca/sacramento"})
+    got = _weather_settings(boot)
+    assert got["loc1_url"] == "us/ca/sacramento"
+
+
+def test_set_weather_location_default_is_sacramento(boot):
+    """The keyless fallback writes the Sacramento default location."""
+    fnd = _foundation(boot)
+    fnd._set_weather_location()
+    got = _weather_settings(boot)
+    assert got["loc1_url"] == "us/ca/sacramento"
+    assert "Sacramento" in got["loc1_name"]
+
+
+def test_apply_foundation_installs_and_configures_weather(boot, monkeypatch):
+    """apply_foundation installs weather.multi + sets the core provider + writes the
+    keyless default location — weather is now part of Foundation's branded box. The
+    skin closure is stubbed (success); weather install records weather.multi via the
+    install_with_deps stub, so weather.multi lands in the installed set."""
+    _stub_skin_only(boot, monkeypatch)
+    monkeypatch.setattr(
+        boot.mod._foundation, "_resolve_weather_location", lambda q, **k: None
+    )
+    res = boot.mod._foundation.apply_foundation({}, dialog=None, log=boot.mod._log)
+    assert "weather.multi" in boot.state["installed"], (
+        "Foundation must install weather.multi"
+    )
+    assert res.installed.get("weather.multi") == "installed"
+    assert _settings_set(boot).get("weather.addon") == "weather.multi"
+    assert _weather_settings(boot)["loc1_url"] == "us/ca/sacramento"
+
+
+def test_apply_foundation_weather_install_failure_is_non_fatal(boot, monkeypatch):
+    """A weather install failure does NOT abort Foundation (skin still ok) — it is
+    recorded in failed{} but the layer remains ok based on the SKIN install."""
+    _stub_success(boot, monkeypatch)
+    monkeypatch.setattr(
+        boot.mod._foundation, "_resolve_weather_location", lambda q, **k: None
+    )
+
+    def _boom(addon_id, *a, **k):
+        if addon_id == "weather.multi":
+            raise RuntimeError("weather boom")
+        return True
+
+    monkeypatch.setattr(boot.mod._foundation, "install_with_deps", _boom)
+    res = boot.mod._foundation.apply_foundation({}, dialog=None, log=boot.mod._log)
+    assert res.ok is True, "a weather failure must not flip the layer (skin drives ok)"
+    assert res.failed.get("weather.multi") == "weather install failed"
+
+
+# --------------------------------------------------------------------------- #
+# script.module.autocompletion — the on-screen-keyboard autocomplete QoL utility,
+# installed by Foundation from the official repo (NOT content).
+# --------------------------------------------------------------------------- #
+def test_apply_foundation_installs_autocomplete(boot, monkeypatch):
+    """Foundation installs script.module.autocompletion — the keyboard autocomplete
+    QoL utility (helps search / IPTV portal+login typing). MUTATION: if Foundation
+    stops installing it (the _install_autocomplete call dropped), it is absent from
+    installed and this fails. install_with_deps records each addon (via _stub_skin_only)
+    so the autocomplete install lands in the installed set."""
+    _stub_skin_only(boot, monkeypatch)
+    monkeypatch.setattr(
+        boot.mod._foundation, "_resolve_weather_location", lambda q, **k: None
+    )
+    res = boot.mod._foundation.apply_foundation({}, dialog=None, log=boot.mod._log)
+    assert boot.mod._foundation.AUTOCOMPLETE_ID == "script.module.autocompletion"
+    assert "script.module.autocompletion" in boot.state["installed"], (
+        "Foundation must install the keyboard autocomplete utility"
+    )
+    assert res.installed.get("script.module.autocompletion") == "installed", (
+        "the Foundation LayerResult must record autocomplete installed"
+    )
+
+
+def test_apply_foundation_autocomplete_from_official_repo(boot, monkeypatch):
+    """The autocomplete install resolves from the OFFICIAL Kodi repo (official base),
+    via install_with_deps — proving it is fetched from repository.xbmc.org, not our
+    proxy/third-party repos."""
+    _stub_success(boot, monkeypatch)
+    calls = []
+
+    def _iwd(addon_id, dialog, extra_bases, official_base, log):
+        calls.append((addon_id, official_base))
+        boot.state["installed"].add(addon_id)
+        return True
+
+    monkeypatch.setattr(boot.mod._foundation, "install_with_deps", _iwd)
+    monkeypatch.setattr(
+        boot.mod._foundation, "_resolve_weather_location", lambda q, **k: None
+    )
+    boot.mod._foundation.apply_foundation({}, dialog=None, log=boot.mod._log)
+    ac = [c for c in calls if c[0] == "script.module.autocompletion"]
+    assert ac, "autocomplete must be installed via install_with_deps"
+    assert ac[0][1] == boot.mod._foundation.OFFICIAL_BASE, (
+        "autocomplete must resolve from the official Kodi repo"
+    )
+
+
+def test_apply_foundation_autocomplete_failure_is_non_fatal(boot, monkeypatch):
+    """An autocomplete install failure does NOT abort Foundation (skin still drives
+    ok) — it is recorded in failed{} but the layer remains ok."""
+    _stub_success(boot, monkeypatch)
+    monkeypatch.setattr(
+        boot.mod._foundation, "_resolve_weather_location", lambda q, **k: None
+    )
+
+    def _boom(addon_id, *a, **k):
+        if addon_id == "script.module.autocompletion":
+            raise RuntimeError("autocomplete boom")
+        return True
+
+    monkeypatch.setattr(boot.mod._foundation, "install_with_deps", _boom)
+    res = boot.mod._foundation.apply_foundation({}, dialog=None, log=boot.mod._log)
+    assert res.ok is True, "an autocomplete failure must not flip the layer"
+    assert res.failed.get("script.module.autocompletion") == (
+        "autocomplete install failed"
+    )

@@ -14,8 +14,10 @@
       "repository.loop",
       "repository.peno64",
       "repository.redwizard",
+      "repository.tony7bones",
       "repository.umbrella",
       "script.ezmaintenanceplus",
+      "script.module.autocompletion",
       "script.module.certifi",
       "script.module.pvr.artwork",
       "script.module.requests",
@@ -38,8 +40,10 @@
       "repository.loop",
       "repository.peno64",
       "repository.redwizard",
+      "repository.tony7bones",
       "repository.umbrella",
       "script.ezmaintenanceplus",
+      "script.module.autocompletion",
       "script.module.certifi",
       "script.module.pvr.artwork",
       "script.module.requests",
@@ -99,6 +103,10 @@
         "enabled": true
       },
       {
+        "id": "repository.tony7bones",
+        "enabled": true
+      },
+      {
         "id": "script.module.urllib3",
         "enabled": true
       },
@@ -131,22 +139,6 @@
         "enabled": true
       },
       {
-        "id": "script.module.urllib3",
-        "enabled": true
-      },
-      {
-        "id": "script.module.certifi",
-        "enabled": true
-      },
-      {
-        "id": "script.module.requests",
-        "enabled": true
-      },
-      {
-        "id": "weather.multi",
-        "enabled": true
-      },
-      {
         "id": "repository.709",
         "enabled": true
       },
@@ -188,6 +180,10 @@
       },
       {
         "id": "repository.redwizard",
+        "enabled": true
+      },
+      {
+        "id": "repository.tony7bones",
         "enabled": true
       },
       {
@@ -236,6 +232,10 @@
       },
       {
         "id": "repository.redwizard",
+        "enabled": true
+      },
+      {
+        "id": "repository.tony7bones",
         "enabled": true
       },
       {
@@ -255,6 +255,26 @@
         "enabled": true
       },
       {
+        "id": "script.module.urllib3",
+        "enabled": true
+      },
+      {
+        "id": "script.module.certifi",
+        "enabled": true
+      },
+      {
+        "id": "script.module.requests",
+        "enabled": true
+      },
+      {
+        "id": "weather.multi",
+        "enabled": true
+      },
+      {
+        "id": "script.module.autocompletion",
+        "enabled": true
+      },
+      {
         "id": "inputstream.ffmpegdirect",
         "enabled": true
       },
@@ -265,16 +285,15 @@
     ],
     "settings": [
       {
-        "setting": "weather.addon",
-        "value": "weather.multi"
-      },
-      {
         "setting": "lookandfeel.enablerssfeeds",
         "value": true
+      },
+      {
+        "setting": "weather.addon",
+        "value": "weather.multi"
       }
     ],
     "builtins": [
-      "UpdateLocalAddons()",
       "UpdateLocalAddons()",
       "UpdateLocalAddons()",
       "UpdateLocalAddons()",
@@ -288,11 +307,13 @@
       "Skin.SetBool(HomeMenuNoVideosButton)",
       "Skin.SetBool(HomeMenuNoGamesButton)",
       "UpdateLocalAddons()",
+      "UpdateLocalAddons()",
+      "UpdateLocalAddons()",
       "Skin.SetBool(show_weatherinfo)"
     ],
     "summary": [
       "Tony.7.Bones Setup",
-      "Repos: 12/12\nApps: 3/3\nVideo add-ons: 0/4\nIPTV: installed\nEstuary MOD V2: FAILED\nRestart will finish setup."
+      "Repos: 12/12\nApps: 2/2\nVideo add-ons: 0/4\nIPTV: installed\nEstuary MOD V2: FAILED\nRestart will finish setup."
     ],
     "self_uninstalled": true,
     "files": {
@@ -401,6 +422,10 @@
         "enabled": true
       },
       {
+        "id": "repository.tony7bones",
+        "enabled": true
+      },
+      {
         "id": "script.module.pvr.artwork",
         "enabled": true
       },
@@ -415,12 +440,12 @@
     ],
     "settings": [
       {
-        "setting": "weather.addon",
-        "value": "weather.multi"
-      },
-      {
         "setting": "lookandfeel.enablerssfeeds",
         "value": true
+      },
+      {
+        "setting": "weather.addon",
+        "value": "weather.multi"
       },
       {
         "setting": "lookandfeel.skin",
@@ -442,7 +467,7 @@
     ],
     "summary": [
       "Tony.7.Bones Setup",
-      "Repos: 12/12\nApps: 3/3\nVideo add-ons: 4/4\nIPTV: installed\nEstuary MOD V2: installed\nRestart will finish setup."
+      "Repos: 12/12\nApps: 2/2\nVideo add-ons: 4/4\nIPTV: installed\nEstuary MOD V2: installed\nRestart will finish setup."
     ],
     "self_uninstalled": true,
     "files": {

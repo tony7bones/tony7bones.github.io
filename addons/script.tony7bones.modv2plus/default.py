@@ -211,31 +211,71 @@ def _clear_skinshortcuts_cache():
     return removed
 
 
+def _drop_skinshortcuts_hash(dst_dir):
+    """Delete the built script.skinshortcuts <skin>.hash for skin.estuary.modv2.
+
+    The hash is how script.skinshortcuts decides whether to REBUILD the home menu:
+    on a build it hashes its inputs (the deployed DATA + the skin's template) and,
+    if a stored <skin>.hash still matches on the next boot, it SKIPS the rebuild and
+    reuses the previously-built includes. That is the caching race this whole path
+    defeats: Setup's live skin-switch can race skinshortcuts into building the STOCK
+    menu (and writing its hash) BEFORE our menu is deployed; the matching hash then
+    makes skinshortcuts skip rebuilding from OUR menu on the next boot, leaving the
+    wrong (stock) menu even though ours is on disk. Dropping the hash forces a
+    regenerate from our freshly-deployed menu. Unconditional + defensive (a missing
+    hash is the desired end-state). Returns True if a hash file was removed.
+    """
+    hsh = os.path.join(dst_dir, SKIN_ID + ".hash")
+    try:
+        if os.path.exists(hsh):
+            os.remove(hsh)
+            xbmc.log("[mod v2+] dropped skinshortcuts hash for rebuild", xbmc.LOGINFO)
+            return True
+    except Exception as e:
+        xbmc.log(
+            "[mod v2+] failed dropping skinshortcuts hash: {}".format(e),
+            xbmc.LOGERROR,
+        )
+    return False
+
+
 def _deploy_skinshortcuts_menu():
     """Deploy our shipped, GUI-built skinshortcuts menu into the user's addon_data
     so script.skinshortcuts builds OUR exact home menu — the six-item trim, the
     Movies/TV shows -> POV actions, TV -> TVGuide, the Favorites relabel, and the
     Movies List / TV Shows List custom-list widgets — verbatim, instead of seeding
-    the stock default and approximating it. Copies every file under
-    resources/skinshortcuts/ (the mainmenu + per-item DATA + the widget
-    .properties) over addon_data, then drops the built <skin>.hash so the next
-    build regenerates from our menu. Defensive: logged, never aborts the run.
-    Returns the number of files deployed.
+    the stock default and approximating it.
+
+    Atomic (re)deploy that DEFEATS the skinshortcuts caching race in one step:
+      1. CLEAR the built skinshortcuts cache for skin.estuary.modv2 (the stale
+         built menu/properties/hash a racing stock-menu build may have left), then
+      2. copy every file under resources/skinshortcuts/ (the mainmenu + per-item
+         DATA + the widget .properties) over addon_data, then
+      3. DROP the built <skin>.hash so script.skinshortcuts regenerates from OUR
+         freshly-deployed menu on the next build/boot instead of skipping the
+         rebuild on a matching (stale, stock) hash.
+
+    Clearing BEFORE the copy (then dropping the hash AFTER) is what guarantees the
+    deployed menu is the only menu data present and is rebuilt-from on the next
+    boot — even when the Setup skin-switch already raced a stock-menu build + hash
+    in. Defensive: logged, never aborts the run. Returns the number of files
+    deployed.
     """
     deployed = 0
     try:
         src_dir = os.path.join(ADDON_PATH, "resources", "skinshortcuts")
         if not os.path.isdir(src_dir):
             return 0
+        # 1. clear any stale built cache (stock-menu race) BEFORE deploying ours.
+        _clear_skinshortcuts_cache()
         dst_dir = translatePath("special://profile/addon_data/script.skinshortcuts/")
         os.makedirs(dst_dir, exist_ok=True)
+        # 2. deploy our exact menu DATA + widget .properties.
         for name in os.listdir(src_dir):
             shutil.copyfile(os.path.join(src_dir, name), os.path.join(dst_dir, name))
             deployed += 1
-        # force a rebuild from the freshly-deployed menu
-        hsh = os.path.join(dst_dir, SKIN_ID + ".hash")
-        if os.path.exists(hsh):
-            os.remove(hsh)
+        # 3. drop the built hash so the next build regenerates from our menu.
+        _drop_skinshortcuts_hash(dst_dir)
         xbmc.log(
             "[mod v2+] deployed skinshortcuts menu ({} files: POV actions + widgets)".format(
                 deployed
@@ -300,10 +340,12 @@ def apply_home_menu(skin_root):
 
     Copies resources/shortcuts/mainmenu.DATA.xml -> <skin_root>/shortcuts/
     mainmenu.DATA.xml, taking a one-time mainmenu.DATA.xml.bak of the original
-    first (creating the shortcuts dir if needed), clears skinshortcuts' built data,
-    then rebuilds the menu includes and BLOCKS until they are written so the home
-    renders with the menu on the next reload. Defensive: logged, never aborts the
-    run. Returns True if the default was copied.
+    first (creating the shortcuts dir if needed), then (re)deploys our skinshortcuts
+    menu — which itself CLEARS skinshortcuts' built cache for skin.estuary.modv2 and
+    DROPS the built <skin>.hash so skinshortcuts regenerates from OUR menu (defeating
+    the stock-menu caching race) — then rebuilds the menu includes and BLOCKS until
+    they are written so the home renders with the menu on the next reload.
+    Defensive: logged, never aborts the run. Returns True if the default was copied.
     """
     src = os.path.join(ADDON_PATH, "resources", "shortcuts", "mainmenu.DATA.xml")
     dst_dir = os.path.join(skin_root, "shortcuts")
@@ -318,7 +360,8 @@ def apply_home_menu(skin_root):
         xbmc.log(
             "[mod v2+] applied home menu (trimmed mainmenu.DATA.xml)", xbmc.LOGINFO
         )
-        _clear_skinshortcuts_cache()
+        # _deploy_skinshortcuts_menu clears the built cache + drops the hash itself
+        # (atomic with the deploy), so the menu is rebuilt from OURS on the next boot.
         _deploy_skinshortcuts_menu()
         _build_skinshortcuts_menu(skin_root)
         return True

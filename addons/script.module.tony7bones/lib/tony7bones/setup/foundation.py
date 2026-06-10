@@ -37,6 +37,7 @@ them via ``_install_base`` before calling ``apply_foundation``). Layer independe
 here.
 """
 
+import json
 import os
 from xml.etree import ElementTree as ET
 
@@ -52,6 +53,7 @@ from tony7bones import (
 )
 from tony7bones import enable as _enable
 
+from .env import split_list
 from .result import LayerResult
 
 # --------------------------------------------------------------------------- #
@@ -74,6 +76,15 @@ HOSTED_BASE = "https://tony7bones.github.io/addons/hosted"
 PVR_ARTWORK_ID = "script.module.pvr.artwork"
 PVR_ARTWORK_ZIP = "script.module.pvr.artwork-2.2.10.zip"
 PVR_ARTWORK_DEPS = ["script.module.requests", "script.module.simplecache"]
+
+# On-screen-keyboard autocomplete — a QoL UTILITY (NOT content). On a branded box it
+# helps the user type into the keyboard (search boxes, IPTV portal/login fields). It
+# is a pure-python module add-on in the OFFICIAL Kodi repo (repository.xbmc.org); we
+# resolve + install it through the closure resolver (install_with_deps, official base)
+# so Foundation lands it alongside the branded look. It runs nothing on its own — Kodi
+# wires it in as the keyboard's autocomplete provider — so installing it is safe on a
+# content-free box (it is plumbing, like the skin's own dependency modules).
+AUTOCOMPLETE_ID = "script.module.autocompletion"
 
 MY_ID = "script.tony7bones.bootstrap"
 
@@ -462,6 +473,240 @@ def _trim_home_menu():
 
 
 # --------------------------------------------------------------------------- #
+# Weather (Multi Weather) — env-driven, with a keyless Sacramento fallback.
+# --------------------------------------------------------------------------- #
+# weather.multi is part of the BRANDED LOOK, not content: a Foundation skin-only
+# box renders the MOD V2 weather readout + the Weather home-menu item, so the
+# weather provider belongs in Foundation (moved here from the Add-ons base ADDONS
+# in the weather-into-Foundation change). Foundation installs the add-on (with its
+# python module closure) AND configures it: sets the core weather.addon provider
+# and writes the env-driven (or keyless Sacramento default) locations.
+WEATHER_ADDON = "weather.multi"  # Multi Weather (installed by the Foundation layer)
+WEATHER_PROVIDER_SETTING = "weather.addon"  # core setting -> WEATHER_ADDON
+# Multi Weather fetches the forecast from https://weather.yahoo.com/<loc1_url>, so
+# loc1_url is the LOAD-BEARING field: with it empty the add-on logs "empty location
+# url" and clears its props (no fetch), regardless of name/lat/lon. The url format
+# the add-on itself writes is "<country>/<region>/<town>" lowercased with spaces
+# turned to dashes — for Sacramento that is "us/ca/sacramento". lat/lon are only
+# used by the optional Weatherbit/OpenWeatherMap providers (off by default) and the
+# name is just the display label. Pre-writing all four skips the interactive geocode
+# search (RunScript(weather.multi,loc1)).
+WEATHER_LOCATION = {
+    "loc1_name": "Sacramento, CA, US",
+    "loc1_url": "us/ca/sacramento",
+    "loc1_lat": "38.5816",
+    "loc1_lon": "-121.4944",
+}
+
+
+def _set_setting(setting_id, value):
+    """Set a CORE Kodi setting via JSON-RPC. Returns True on a clean OK.
+
+    Reaches only CORE settings (system/weather/lookandfeel/...) — add-on INSTANCE
+    settings are not reachable this way. Used here to set the core weather.addon
+    provider to Multi Weather."""
+    resp = xbmc.executeJSONRPC(
+        json.dumps(
+            {
+                "jsonrpc": "2.0",
+                "method": "Settings.SetSettingValue",
+                "params": {"setting": setting_id, "value": value},
+                "id": 1,
+            }
+        )
+    )
+    return '"result":true' in (resp or "")
+
+
+def _weather_multi_settings_path():
+    """Absolute path to Multi Weather's per-profile settings.xml."""
+    return xbmcvfs.translatePath(
+        "special://profile/addon_data/weather.multi/settings.xml"
+    )
+
+
+def _set_weather_settings(settings):
+    """Write each id->value in `settings` into Multi Weather's settings.xml,
+    creating the file/dir if missing and PRESERVING every other existing setting.
+    Idempotent; written version="2" (the add-on reads settings by id)."""
+    xml_path = _weather_multi_settings_path()
+    os.makedirs(os.path.dirname(xml_path), exist_ok=True)
+    root = None
+    if os.path.exists(xml_path):
+        try:
+            root = ET.parse(xml_path).getroot()
+        except ET.ParseError:
+            root = None
+    if root is None or root.tag != "settings":
+        root = ET.Element("settings")
+        root.set("version", "2")
+    by_id = {s.get("id"): s for s in root.findall("setting") if s.get("id")}
+    for sid, val in settings.items():
+        el = by_id.get(sid)
+        if el is None:
+            el = ET.SubElement(root, "setting")
+            el.set("id", sid)
+            by_id[sid] = el
+        el.text = val
+    with open(xml_path, "w", encoding="utf-8") as f:
+        f.write(ET.tostring(root, encoding="unicode"))
+
+
+def _set_weather_location():
+    """Fallback: Multi Weather location 1 = Sacramento (the keyless default used
+    when the env provides no resolvable locations). loc1_url is the field the
+    add-on fetches by. Idempotent; preserves other settings."""
+    _set_weather_settings(WEATHER_LOCATION)
+    _log("foundation weather: wrote Multi Weather default location (Sacramento)")
+
+
+def _resolve_weather_location(query, timeout=10, tries=2):
+    """Resolve a city name / zipcode to a Multi Weather location via Yahoo's
+    search-assist API (the trailing-slash endpoint — no redirect needed). Returns
+    {name,url,lat,lon} or None on any failure (the caller falls back). Retries the
+    network call; never raises. Mirrors how the add-on's own search builds the
+    fields: name "Town, Region, Country"; url "country/region/town"."""
+    import json as _jsonl
+    import urllib.parse as _uparse
+    import urllib.request as _ureq
+
+    api = (
+        "https://weather.yahoo.com/_atmos/api/search-assist/locations/?query="
+        + _uparse.quote(query)
+    )
+    req = _ureq.Request(
+        api, headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
+    )
+    for _ in range(tries):
+        try:
+            with _ureq.urlopen(req, timeout=timeout) as resp:
+                data = _jsonl.loads(resp.read().decode("utf-8"))
+            for sug in data.get("suggestions", []):
+                loc = sug.get("location") or {}
+                town = loc.get("town") or {}
+                region = loc.get("region") or {}
+                code = region.get("code") or region.get("name") or ""
+                country = (loc.get("country") or {}).get("code") or ""
+                name = town.get("name")
+                if not (name and country and town.get("latitude") is not None):
+                    continue
+                return {
+                    "name": "%s, %s, %s" % (name, code, country),
+                    "url": "%s/%s/%s"
+                    % (
+                        country.lower(),
+                        str(code).lower().replace(" ", "-"),
+                        name.lower().replace(" ", "-"),
+                    ),
+                    "lat": str(town["latitude"]),
+                    "lon": str(town["longitude"]),
+                }
+            return None
+        except Exception:  # noqa: BLE001 - best-effort; caller falls back
+            continue
+    return None
+
+
+def _apply_weather_from_env(box_env):
+    """Drive Multi Weather from the per-device env: resolve up to 5
+    WEATHER_LOCATIONS (city names or zipcodes) via Yahoo, write loc1..N (+ clear
+    the unused slots), and enable the optional Weatherbit / OpenWeatherMap upgrade
+    layers when their keys are present. Falls back to the hardcoded Sacramento
+    default when no env locations are given OR none resolve — NEVER writes an empty
+    loc_url. Defensive: logs counts/flags only (never secret values); never raises.
+    """
+    try:
+        wanted = split_list(box_env.get("WEATHER_LOCATIONS", ""))[:5]
+        settings = {}
+        resolved = 0
+        for query in wanted:
+            loc = _resolve_weather_location(query)
+            if not loc or not loc.get("url"):
+                _log(
+                    "_apply_weather: a location did not resolve — skipped",
+                    xbmc.LOGWARNING,
+                )
+                continue
+            resolved += 1
+            settings["loc%d_name" % resolved] = loc["name"]
+            settings["loc%d_url" % resolved] = loc["url"]
+            settings["loc%d_lat" % resolved] = loc["lat"]
+            settings["loc%d_lon" % resolved] = loc["lon"]
+        if resolved == 0:
+            settings.update(WEATHER_LOCATION)  # Sacramento default — never empty
+            resolved = 1
+        else:
+            for j in range(resolved + 1, 6):  # clear stale higher-numbered slots
+                for fld in ("name", "url", "lat", "lon"):
+                    settings["loc%d_%s" % (j, fld)] = ""
+        wbit = (box_env.get("WEATHERBIT_API_KEY") or "").strip()
+        owm = (box_env.get("OWM_API_KEY") or "").strip()
+        if wbit:
+            settings["WAdd"] = "true"
+            settings["API"] = wbit
+        if owm:
+            settings["WMaps"] = "true"
+            settings["MAPAPI"] = owm
+        _set_weather_settings(settings)
+        _log(
+            "_apply_weather: %d location(s) written; weatherbit=%s owm=%s"
+            % (resolved, bool(wbit), bool(owm))
+        )
+    except Exception as e:  # noqa: BLE001 - never abort the rest of setup
+        _log(f"_apply_weather failed (non-fatal): {e}", xbmc.LOGERROR)
+
+
+def _install_weather(dialog, *, install=None):
+    """Install Multi Weather (weather.multi) + its python module closure, by direct
+    extract from the official repo. weather.multi is the BRANDED LOOK's weather
+    provider (the MOD V2 skin renders a weather readout + a Weather menu item), so
+    Foundation owns its install (moved here from the Add-ons base ADDONS). Returns
+    True if it installed. Never raises (a weather failure must not abort the box).
+
+    ``install`` lets a test inject the install primitive; defaults to this module's
+    ``install_with_deps``."""
+    install = install or install_with_deps
+    try:
+        if dialog is not None:
+            dialog.update(0, "Installing weather...")
+        return bool(install(WEATHER_ADDON, dialog, [], OFFICIAL_BASE, _log))
+    except Exception as e:  # noqa: BLE001 - weather failure must not abort the box
+        _log(f"weather install failed (non-fatal): {e}", xbmc.LOGERROR)
+        return False
+
+
+def _apply_weather(box_env, dialog=None):
+    """Install + configure Multi Weather for the branded box: install the add-on,
+    set the core weather.addon provider, and write the env-driven (or keyless
+    Sacramento default) locations. Returns True if weather.multi installed.
+    Defensive: each step logged; never raises."""
+    installed = _install_weather(dialog)
+    _set_setting(WEATHER_PROVIDER_SETTING, WEATHER_ADDON)
+    _apply_weather_from_env(box_env or {})
+    return installed
+
+
+def _install_autocomplete(dialog, *, install=None):
+    """Install the on-screen-keyboard autocomplete module (QoL utility, NOT content),
+    by closure resolve + direct extract from the OFFICIAL Kodi repo. It helps the user
+    type into Kodi's keyboard (search / IPTV portal+login fields) and runs nothing on
+    its own, so it is safe on a content-free Foundation box (plumbing, like the skin's
+    own dependency modules). Returns True if it installed. Never raises (a QoL utility
+    failing must not abort the box).
+
+    ``install`` lets a test inject the install primitive; defaults to this module's
+    ``install_with_deps``."""
+    install = install or install_with_deps
+    try:
+        if dialog is not None:
+            dialog.update(0, "Installing keyboard autocomplete...")
+        return bool(install(AUTOCOMPLETE_ID, dialog, [], OFFICIAL_BASE, _log))
+    except Exception as e:  # noqa: BLE001 - a QoL utility must not abort the box
+        _log(f"autocomplete install failed (non-fatal): {e}", xbmc.LOGERROR)
+        return False
+
+
+# --------------------------------------------------------------------------- #
 # The Foundation layer entry point.
 # --------------------------------------------------------------------------- #
 def apply_foundation(
@@ -475,7 +720,8 @@ def apply_foundation(
 ):
     """Apply Layer 0 (Foundation): the Estuary MOD V2 skin + MOD V2+ patch closure,
     then the two content-free base-config steps (File-Manager sources + the Estuary
-    home-menu trim).
+    home-menu trim), the branded-look weather provider (weather.multi), and the
+    on-screen-keyboard autocomplete QoL utility (script.module.autocompletion).
 
     Behaviour-preserving extraction of the monolith's ``_install_skin`` /
     ``_add_file_sources`` / ``_trim_home_menu`` sequence. The skin install drives
@@ -523,8 +769,31 @@ def apply_foundation(
     add_file_sources()
     trim_home_menu()
 
+    # Weather is part of the BRANDED LOOK (the MOD V2 skin renders a weather readout
+    # + a Weather home-menu item), so Foundation installs + configures Multi Weather
+    # (moved here from the Add-ons base ADDONS). Install the add-on, set the core
+    # provider, and write the env-driven (or keyless Sacramento default) locations.
+    # The Outline-HD weather ICONS are already part of the skin closure above
+    # (install_with_deps(OUTLINE_HD_ID)) and modv2plus's apply points WeatherIcons
+    # at them — so the branded box has working weather end-to-end.
+    weather_ok = _apply_weather(env or {}, dialog)
+
+    # On-screen-keyboard autocomplete — a QoL utility (NOT content) that helps the
+    # user type into Kodi's keyboard (search / IPTV portal+login). Install it from
+    # the official repo so the branded box has it out of the box. It runs nothing on
+    # its own, so it is content-free-safe.
+    autocomplete_ok = _install_autocomplete(dialog)
+
     installed = {SKIN_ID: "installed"} if skin_ok else {}
     failed = {} if skin_ok else {SKIN_ID: "skin install failed"}
+    if weather_ok:
+        installed[WEATHER_ADDON] = "installed"
+    else:
+        failed[WEATHER_ADDON] = "weather install failed"
+    if autocomplete_ok:
+        installed[AUTOCOMPLETE_ID] = "installed"
+    else:
+        failed[AUTOCOMPLETE_ID] = "autocomplete install failed"
     return LayerResult(
         layer="foundation",
         ok=bool(skin_ok),

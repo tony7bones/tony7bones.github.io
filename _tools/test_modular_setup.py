@@ -490,24 +490,31 @@ def test_cancel_path_does_nothing_terminal(boot, monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
-# Phase 3a — the NET-INSTALLED-SET equivalence invariant (PERMANENT).
+# The EXPECTED NET-INSTALLED-SET invariant (PERMANENT).
 #
-# Phase 3a is the first DELIBERATE behaviour change: pvr.iptvsimple's INSTALL moved
-# out of the base ADDONS list into apply_iptv. The change is legitimate ONLY because
-# the NET SET of add-ons a full run installs is UNCHANGED vs the monolith — pvr is
-# still installed (+ its inputstream binary closure), just via the IPTV layer. The
-# golden snapshot above pins the full reduced state (incl. order/summary), but its
-# regen is an explicit local act; this test pins the NET INSTALLED SET against a
-# FROZEN constant copied from the pre-Phase-3a monolith (the bare snapshot's real
-# install engine on commit HEAD~). It does NOT read modular_setup_snapshot.json, so
-# a future regression that drops an add-on AND rebaselines the snapshot still fails
-# HERE — this is the hard equivalence floor.
+# This pins the EXACT set of add-ons a full run installs against a FROZEN constant
+# (NOT the regen-able snapshot), so a regression that drops an add-on AND rebaselines
+# the golden snapshot still fails HERE — the hard equivalence floor. It does NOT read
+# modular_setup_snapshot.json.
 #
-# If a future phase legitimately adds/removes an add-on from the base box, update
-# this constant DELIBERATELY (and explain why in the commit) — it is meant to make
-# any net-set change loud, not impossible.
+# HISTORY of deliberate net-set changes (every change to this constant is intentional
+# feature growth — NOT a silent regression — and MUST be justified in the commit):
+#   * Phase 3a: pvr.iptvsimple's INSTALL moved from the base ADDONS list into
+#     apply_iptv. NET set UNCHANGED — pvr (+ its inputstream binary closure) is still
+#     installed, just via the IPTV layer. (Started as "MONOLITH_NET_INSTALLED".)
+#   * Foundation additions: Foundation now also installs our OWN proxy repo
+#     (repository.tony7bones — first-party plumbing / the lifeline: updates, the
+#     proxy, future opt-ins) AND the on-screen-keyboard autocomplete QoL utility
+#     (script.module.autocompletion, from the official repo). These are NEW,
+#     INTENTIONAL installs that GROW the net set by exactly two ids. This is feature
+#     growth, NOT a regression — the proven delta before regenerating was EXACTLY
+#     {repository.tony7bones, script.module.autocompletion} added, nothing else.
+#
+# If a future phase legitimately adds/removes an add-on, update this constant
+# DELIBERATELY (and explain why in the commit) — it is meant to make any net-set
+# change loud, not impossible.
 # --------------------------------------------------------------------------- #
-MONOLITH_NET_INSTALLED = frozenset(
+EXPECTED_NET_INSTALLED = frozenset(
     {
         # base source repos (12)
         "repository.709",
@@ -522,6 +529,9 @@ MONOLITH_NET_INSTALLED = frozenset(
         "repository.peno64",
         "repository.redwizard",
         "repository.umbrella",
+        # our OWN virtual proxy repo — first-party plumbing / the lifeline (updates,
+        # the proxy, future opt-ins). INTENTIONAL Foundation addition (feature growth).
+        "repository.tony7bones",
         # base apps + their python closure
         "script.ezmaintenanceplus",
         "script.realdebrid",
@@ -529,6 +539,9 @@ MONOLITH_NET_INSTALLED = frozenset(
         "script.module.requests",
         "script.module.urllib3",
         "script.module.certifi",
+        # on-screen-keyboard autocomplete — a QoL utility from the official repo.
+        # INTENTIONAL Foundation addition (feature growth), NOT content.
+        "script.module.autocompletion",
         # the skin closure direct-extracted before resolve (proxy-invisible)
         "script.module.pvr.artwork",
         "script.tony7bones.modv2plus",
@@ -539,26 +552,52 @@ MONOLITH_NET_INSTALLED = frozenset(
     }
 )
 
+# Back-compat alias: the constant was named MONOLITH_NET_INSTALLED when it pinned the
+# pre-Phase-3a monolith's set verbatim. It now pins the EXPECTED net set (the monolith
+# + the two intentional Foundation additions), so the canonical name is
+# EXPECTED_NET_INSTALLED; keep the old name pointing at it for any external reference.
+MONOLITH_NET_INSTALLED = EXPECTED_NET_INSTALLED
 
-def test_full_run_net_installed_set_equals_monolith(boot):
-    """EQUIVALENCE FLOOR: a full run()'s NET installed set is byte-for-byte the
-    pre-Phase-3a monolith's. Pinned against a FROZEN constant (NOT the regen-able
-    snapshot), so a regression that drops pvr.iptvsimple (or any add-on) when its
-    install moved to the IPTV gate — or that drops/adds anything else — fails here
-    even if someone also rebaselines the golden snapshot. The fixture's real engine
-    drives the full base + IPTV-backend install; the skin closure is unresolved in
-    the bare index (FAILED), but the skin add-ons it direct-extracts FIRST
-    (pvr.artwork + modv2plus) are real installs and ARE in the set, exactly as in
-    the monolith's bare path. pvr.iptvsimple + inputstream.ffmpegdirect being
-    present is the proof the Phase-3a move preserved the backend install."""
+
+def test_full_run_net_installed_set_equals_expected(boot):
+    """EQUIVALENCE FLOOR: a full run()'s NET installed set equals the EXPECTED set
+    (the monolith + the two intentional Foundation additions). Pinned against a
+    FROZEN constant (NOT the regen-able snapshot), so a regression that drops an
+    add-on — or adds an UNEXPECTED one — fails here even if someone also rebaselines
+    the golden snapshot. The fixture's real engine drives the full base + IPTV-backend
+    install + the proxy repo + autocomplete; the skin closure is unresolved in the
+    bare index (FAILED), but the skin add-ons it direct-extracts FIRST (pvr.artwork +
+    modv2plus) are real installs and ARE in the set. The TWO Foundation additions
+    (repository.tony7bones + script.module.autocompletion) being present — and being
+    the ONLY growth over the monolith — is the proof the additions are exactly the two
+    intended ones."""
     boot.mod.run()
-    assert set(boot.state["installed"]) == set(MONOLITH_NET_INSTALLED), (
-        "net installed set drifted from the monolith. MISSING="
-        f"{sorted(MONOLITH_NET_INSTALLED - boot.state['installed'])} EXTRA="
-        f"{sorted(boot.state['installed'] - MONOLITH_NET_INSTALLED)}. "
-        "Phase 3a moved pvr.iptvsimple's INSTALL to apply_iptv — it (and its "
-        "inputstream closure) MUST still install. A drop here is a real regression, "
-        "not a snapshot rebaseline."
+    assert set(boot.state["installed"]) == set(EXPECTED_NET_INSTALLED), (
+        "net installed set drifted from the EXPECTED set. MISSING="
+        f"{sorted(EXPECTED_NET_INSTALLED - boot.state['installed'])} EXTRA="
+        f"{sorted(boot.state['installed'] - EXPECTED_NET_INSTALLED)}. "
+        "The only intended growth over the monolith is repository.tony7bones + "
+        "script.module.autocompletion (Foundation additions). Anything else "
+        "changing is a real regression, not a snapshot rebaseline."
+    )
+
+
+def test_foundation_additions_are_exactly_two(boot):
+    """The net-set GREW by EXACTLY the two intended Foundation additions over the
+    pre-additions monolith — proves the growth is the deliberate feature additions,
+    nothing leaked in. Reconstructs the pre-additions set by removing the two ids and
+    asserts that equals the historical 22-id monolith set."""
+    additions = {"repository.tony7bones", "script.module.autocompletion"}
+    assert additions <= EXPECTED_NET_INSTALLED, "both additions must be in the net set"
+    pre_additions = EXPECTED_NET_INSTALLED - additions
+    assert len(pre_additions) == 22, (
+        "removing the two Foundation additions must leave the 22-id monolith set "
+        f"(got {len(pre_additions)}): the growth must be EXACTLY two ids"
+    )
+    boot.mod.run()
+    # The live full run installs the full expected set; the two additions are present.
+    assert additions <= set(boot.state["installed"]), (
+        "a full run must install both Foundation additions"
     )
 
 

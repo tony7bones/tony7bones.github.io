@@ -45,6 +45,7 @@ from tony7bones import (
     extract_zip,
     install_selection,
     install_with_deps,
+    is_installed,
     update_local_addons,
 )
 from tony7bones import enable as _enable
@@ -85,9 +86,18 @@ REPO_ZIPS = [
 # (which handles their proxy-invisible deps + activation), not this loop.
 FIRST_PARTY = []
 
+# Our OWN virtual proxy repository — first-party plumbing, NOT third-party content.
+# repository.tony7bones is the lifeline: it runs the local 127.0.0.1:61234 proxy that
+# streams add-on metadata + zips from GitHub, drives self-update of the proxy, and
+# is how the box receives any future opt-in. It is NOT one of the 12 third-party
+# REPO_ZIPS (those are stand-alone source repos). install_repos direct-extracts the
+# installer zip (resolved live from the served addon.xml, same mechanism modv2plus
+# uses) + registers + enables it, so a Foundation box has our repo established as an
+# installed, enabled add-on (not merely the .tony.7.bones File-Manager source).
+PROXY_REPO_ID = "repository.tony7bones"
+
 # Apps installed (with dependency closure) by direct extract, in order.
 #   * script.ezmaintenanceplus / script.realdebrid — peno64 (python).
-#   * weather.multi — official repo (pure python; pulls python module deps).
 #
 # NOTE (Phase 3a — the first deliberate behaviour change): ``pvr.iptvsimple`` is
 # NO LONGER in this base list. Its INSTALL moved into the IPTV layer
@@ -96,10 +106,16 @@ FIRST_PARTY = []
 # backend (never silently configuring a missing add-on). In a FULL Express run the
 # NET installed set is UNCHANGED — pvr.iptvsimple (+ its inputstream binary
 # closure) is still installed, just via ``apply_iptv`` instead of this base loop.
+#
+# NOTE (weather-into-Foundation): ``weather.multi`` is ALSO no longer in this base
+# list. Multi Weather is part of the BRANDED LOOK (the MOD V2 skin renders a weather
+# readout + a Weather home-menu item), so its INSTALL + CONFIG moved into the
+# Foundation layer (``apply_foundation`` in ``tony7bones.setup.foundation``). In a
+# FULL Express run the NET installed set is UNCHANGED — weather.multi (+ its python
+# module closure) is still installed, just via ``apply_foundation`` now.
 ADDONS = [
     "script.ezmaintenanceplus",
     "script.realdebrid",
-    "weather.multi",
 ]
 
 # Curated video add-ons — installed unattended (no picker) in the one-tap run.
@@ -115,12 +131,15 @@ VIDEO_APPS = [
 # re-patching.
 VIDEO_DISABLE_AFTER = {"plugin.video.dailymotion_com"}
 
-# The two CORE Kodi settings the Add-ons layer owns (weather provider + the RSS
-# news-ticker toggle). In the monolith these were set inline in ``_configure_box``
-# via JSON-RPC; the composed ``apply_addons`` sets them in its config block so the
-# net core-settings end-state is unchanged. They are conceptually weather/RSS
-# config, so they belong to this layer (not the orchestrator seam).
-WEATHER_PROVIDER_SETTING = "weather.addon"  # -> WEATHER_ADDON (weather.multi)
+# The CORE Kodi setting the Add-ons layer owns (the RSS news-ticker toggle). In the
+# monolith this was set inline in ``_configure_box`` via JSON-RPC; the composed
+# ``apply_addons`` sets it in its config block so the net core-settings end-state is
+# unchanged. It is conceptually RSS config, so it belongs to this layer (not the
+# orchestrator seam).
+#
+# NOTE (weather-into-Foundation): the weather provider core setting (weather.addon)
+# moved to the Foundation layer alongside the weather.multi install + the env-driven
+# location config — weather is part of the branded look, not content.
 RSS_ENABLE_SETTING = "lookandfeel.enablerssfeeds"  # -> True (ticker on)
 
 
@@ -179,11 +198,15 @@ def install_repos(dialog, *, total=None, step=0):
     repos, so they must exist before the skin install).
 
     Establishes ALL our repositories: the 12 ``REPO_ZIPS`` by direct extract +
-    register + enable. ``repository.tony7bones`` (the virtual proxy) is the HOST
-    add-on that ships this Setup, so it is ALREADY installed and running — Foundation
-    additionally registers it as a File-Manager SOURCE via
-    ``apply_foundation``'s ``_add_file_sources`` (the ``.tony.7.bones`` entry), so the
-    proxy repo is fully established without re-installing the host.
+    register + enable, PLUS our OWN virtual proxy repo ``repository.tony7bones``
+    (``PROXY_REPO_ID``) — first-party plumbing, the lifeline (updates / the proxy /
+    future opt-ins). The proxy installer zip is direct-extracted (resolved live from
+    the served addon.xml, the same ``_latest_zip_url`` mechanism the modv2plus patch
+    uses) so the box ends up with our repo as an INSTALLED, ENABLED add-on — not
+    merely the ``.tony.7.bones`` File-Manager SOURCE ``apply_foundation``'s
+    ``_add_file_sources`` also registers. The proxy install is idempotent
+    (``is_installed`` short-circuits) and non-fatal (a resolve/extract failure leaves
+    the box working — the source entry still lets the user reinstall).
 
     Returns ``(repo_ok, fp_ok, step, canceled)`` — how many repos / first-party
     add-ons extracted, the running progress ``step`` so the caller
@@ -239,7 +262,23 @@ def install_repos(dialog, *, total=None, step=0):
         if dialog.iscanceled():
             return repo_ok, fp_ok, step, True
 
-    # 3. register + enable the repos and first-party add-ons.
+    # 2b. our OWN virtual proxy repo (repository.tony7bones) — first-party plumbing,
+    # the lifeline (updates / the proxy / future opt-ins). Direct-extract the
+    # installer zip resolved LIVE from the served addon.xml (the same _latest_zip_url
+    # mechanism the modv2plus patch uses), so the box ends up with our repo as an
+    # installed, enabled add-on. Counted into fp_ok so the progress accounting and the
+    # caller's first-party tally stay coherent; enabled in step 3 below. Defensive: a
+    # resolve/extract failure is non-fatal (the .tony.7.bones File-Manager source
+    # apply_foundation adds still lets the user reinstall).
+    if not is_installed(PROXY_REPO_ID):
+        proxy_url = _latest_zip_url(PROXY_REPO_ID)
+        if proxy_url and extract_zip(proxy_url, dialog, int(step / total * 100), _log):
+            fp_ok += 1
+            _log(f"install_repos: extracted our proxy repo {PROXY_REPO_ID}")
+    if dialog.iscanceled():
+        return repo_ok, fp_ok, step, True
+
+    # 3. register + enable the repos and first-party add-ons (incl. the proxy repo).
     step += 1
     dialog.update(int(step / total * 100), "Registering add-ons...")
     update_local_addons()
@@ -249,6 +288,7 @@ def install_repos(dialog, *, total=None, step=0):
             _enable(rid)
     for addon_id in FIRST_PARTY:
         _enable(addon_id)
+    _enable(PROXY_REPO_ID)
 
     return repo_ok, fp_ok, step, False
 
@@ -321,161 +361,15 @@ def _install_video(dialog):
 
 
 # --------------------------------------------------------------------------- #
-# Weather (Multi Weather) — env-driven, with a keyless Sacramento fallback.
+# Weather — MOVED to the Foundation layer (tony7bones.setup.foundation).
 # --------------------------------------------------------------------------- #
-WEATHER_ADDON = "weather.multi"  # Multi Weather (installed in ADDONS)
-# Multi Weather fetches the forecast from https://weather.yahoo.com/<loc1_url>, so
-# loc1_url is the LOAD-BEARING field: with it empty the add-on logs "empty location
-# url" and clears its props (no fetch), regardless of name/lat/lon. The url format
-# the add-on itself writes is "<country>/<region>/<town>" lowercased with spaces
-# turned to dashes — for Sacramento that is "us/ca/sacramento". lat/lon are only
-# used by the optional Weatherbit/OpenWeatherMap providers (off by default) and the
-# name is just the display label. Pre-writing all four skips the interactive geocode
-# search (RunScript(weather.multi,loc1)).
-WEATHER_LOCATION = {
-    "loc1_name": "Sacramento, CA, US",
-    "loc1_url": "us/ca/sacramento",
-    "loc1_lat": "38.5816",
-    "loc1_lon": "-121.4944",
-}
-
-
-def _weather_multi_settings_path():
-    """Absolute path to Multi Weather's per-profile settings.xml."""
-    return xbmcvfs.translatePath(
-        "special://profile/addon_data/weather.multi/settings.xml"
-    )
-
-
-def _set_weather_settings(settings):
-    """Write each id->value in `settings` into Multi Weather's settings.xml,
-    creating the file/dir if missing and PRESERVING every other existing setting.
-    Idempotent; written version="2" (the add-on reads settings by id)."""
-    xml_path = _weather_multi_settings_path()
-    os.makedirs(os.path.dirname(xml_path), exist_ok=True)
-    root = None
-    if os.path.exists(xml_path):
-        try:
-            root = ET.parse(xml_path).getroot()
-        except ET.ParseError:
-            root = None
-    if root is None or root.tag != "settings":
-        root = ET.Element("settings")
-        root.set("version", "2")
-    by_id = {s.get("id"): s for s in root.findall("setting") if s.get("id")}
-    for sid, val in settings.items():
-        el = by_id.get(sid)
-        if el is None:
-            el = ET.SubElement(root, "setting")
-            el.set("id", sid)
-            by_id[sid] = el
-        el.text = val
-    with open(xml_path, "w", encoding="utf-8") as f:
-        f.write(ET.tostring(root, encoding="unicode"))
-
-
-def _set_weather_location():
-    """Fallback: Multi Weather location 1 = Sacramento (the keyless default used
-    when the env provides no resolvable locations). loc1_url is the field the
-    add-on fetches by. Idempotent; preserves other settings."""
-    _set_weather_settings(WEATHER_LOCATION)
-    _log("_configure_box: wrote Multi Weather default location (Sacramento)")
-
-
-def _resolve_weather_location(query, timeout=10, tries=2):
-    """Resolve a city name / zipcode to a Multi Weather location via Yahoo's
-    search-assist API (the trailing-slash endpoint — no redirect needed). Returns
-    {name,url,lat,lon} or None on any failure (the caller falls back). Retries the
-    network call; never raises. Mirrors how the add-on's own search builds the
-    fields: name "Town, Region, Country"; url "country/region/town"."""
-    import json as _json
-    import urllib.parse as _uparse
-    import urllib.request as _ureq
-
-    api = (
-        "https://weather.yahoo.com/_atmos/api/search-assist/locations/?query="
-        + _uparse.quote(query)
-    )
-    req = _ureq.Request(
-        api, headers={"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
-    )
-    for _ in range(tries):
-        try:
-            with _ureq.urlopen(req, timeout=timeout) as resp:
-                data = _json.loads(resp.read().decode("utf-8"))
-            for sug in data.get("suggestions", []):
-                loc = sug.get("location") or {}
-                town = loc.get("town") or {}
-                region = loc.get("region") or {}
-                code = region.get("code") or region.get("name") or ""
-                country = (loc.get("country") or {}).get("code") or ""
-                name = town.get("name")
-                if not (name and country and town.get("latitude") is not None):
-                    continue
-                return {
-                    "name": "%s, %s, %s" % (name, code, country),
-                    "url": "%s/%s/%s"
-                    % (
-                        country.lower(),
-                        str(code).lower().replace(" ", "-"),
-                        name.lower().replace(" ", "-"),
-                    ),
-                    "lat": str(town["latitude"]),
-                    "lon": str(town["longitude"]),
-                }
-            return None
-        except Exception:  # noqa: BLE001 - best-effort; caller falls back
-            continue
-    return None
-
-
-def _apply_weather_from_env(box_env):
-    """Drive Multi Weather from the per-device env: resolve up to 5
-    WEATHER_LOCATIONS (city names or zipcodes) via Yahoo, write loc1..N (+ clear
-    the unused slots), and enable the optional Weatherbit / OpenWeatherMap upgrade
-    layers when their keys are present. Falls back to the hardcoded Sacramento
-    default when no env locations are given OR none resolve — NEVER writes an empty
-    loc_url. Defensive: logs counts/flags only (never secret values); never raises.
-    """
-    try:
-        wanted = split_list(box_env.get("WEATHER_LOCATIONS", ""))[:5]
-        settings = {}
-        resolved = 0
-        for query in wanted:
-            loc = _resolve_weather_location(query)
-            if not loc or not loc.get("url"):
-                _log(
-                    "_apply_weather: a location did not resolve — skipped",
-                    xbmc.LOGWARNING,
-                )
-                continue
-            resolved += 1
-            settings["loc%d_name" % resolved] = loc["name"]
-            settings["loc%d_url" % resolved] = loc["url"]
-            settings["loc%d_lat" % resolved] = loc["lat"]
-            settings["loc%d_lon" % resolved] = loc["lon"]
-        if resolved == 0:
-            settings.update(WEATHER_LOCATION)  # Sacramento default — never empty
-            resolved = 1
-        else:
-            for j in range(resolved + 1, 6):  # clear stale higher-numbered slots
-                for fld in ("name", "url", "lat", "lon"):
-                    settings["loc%d_%s" % (j, fld)] = ""
-        wbit = (box_env.get("WEATHERBIT_API_KEY") or "").strip()
-        owm = (box_env.get("OWM_API_KEY") or "").strip()
-        if wbit:
-            settings["WAdd"] = "true"
-            settings["API"] = wbit
-        if owm:
-            settings["WMaps"] = "true"
-            settings["MAPAPI"] = owm
-        _set_weather_settings(settings)
-        _log(
-            "_apply_weather: %d location(s) written; weatherbit=%s owm=%s"
-            % (resolved, bool(wbit), bool(owm))
-        )
-    except Exception as e:  # noqa: BLE001 - never abort the rest of setup
-        _log(f"_apply_weather failed (non-fatal): {e}", xbmc.LOGERROR)
+# Multi Weather (weather.multi) is part of the BRANDED LOOK, not content (the MOD V2
+# skin renders a weather readout + a Weather home-menu item), so its INSTALL +
+# CONFIG (WEATHER_ADDON / WEATHER_LOCATION / _weather_multi_settings_path /
+# _set_weather_settings / _set_weather_location / _resolve_weather_location /
+# _apply_weather_from_env + the core weather.addon provider setting) moved to
+# ``tony7bones.setup.foundation``. The Add-ons layer no longer installs or configures
+# weather — only RSS (below) remains as the Add-ons layer's env-driven config.
 
 
 # --------------------------------------------------------------------------- #
@@ -587,16 +481,13 @@ def apply_addons(env, *, dialog=None, log=None):
             for aid in VIDEO_DISABLE_AFTER:
                 installed[aid] = "disabled"
 
-    # --- config (core weather/RSS toggles + env-driven weather + RSS) ---
-    # Order mirrors the monolith's _configure_box: set the two core settings
-    # (weather provider + RSS-enable) FIRST, then the env-driven weather writer,
-    # then the env-driven RSS writer. (In _configure_box the device-copy + IPTV
-    # enforce interleaved BETWEEN weather and RSS — those moved to apply_iptv; the
-    # core settings + weather/RSS-writer relative order is preserved here.)
+    # --- config (the RSS core toggle + env-driven RSS) ---
+    # Set the RSS-enable core setting, then write the env-driven RSS feeds.
+    # (Weather — the provider core setting + the env-driven location writer — moved
+    # to the Foundation layer; weather is branded look, not content. The IPTV +
+    # device-copy halves moved to apply_iptv.)
     if not canceled:
-        _set_setting(WEATHER_PROVIDER_SETTING, WEATHER_ADDON)
         _set_setting(RSS_ENABLE_SETTING, True)
-        _apply_weather_from_env(env)
         _apply_rss_from_env(env)
 
     # A cancelled base install is the only not-ok path (it aborts with no summary

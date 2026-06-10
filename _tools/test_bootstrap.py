@@ -48,6 +48,10 @@ ADDONS_PY = (
 # The IPTV layer source — the literal home of PVR_BACKEND_ID since Phase 3a (the
 # pvr.iptvsimple INSTALL moved here from the base ADDONS list).
 IPTV_PY = ADDONS_PY.parent / "iptv.py"
+# The Foundation layer source — the home of WEATHER_ADDON since the
+# weather-into-Foundation change (weather.multi install + config moved here from the
+# base ADDONS list — weather is branded look, not content).
+FOUNDATION_PY = ADDONS_PY.parent / "foundation.py"
 
 
 def _iptv_assign(name):
@@ -135,24 +139,27 @@ def test_addons_are_plain_id_strings_no_labels():
         assert isinstance(item, str), f"FIRST_PARTY entry is not a bare id: {item!r}"
 
 
-def test_addons_includes_peno64_apps_weather_and_pvr():
-    """Base ADDONS install set (Phase 3a): the two peno64 apps plus Multi Weather.
+def test_addons_includes_peno64_apps_only():
+    """Base ADDONS install set: ONLY the two peno64 apps.
 
-    pvr.iptvsimple is DELIBERATELY no longer in the base list — its install moved
-    into the IPTV layer (apply_iptv / _install_pvr_backend) so Layer 0/2 is
-    content-free of the PVR backend and the IPTV gate installs-or-fails-loud its own
-    backend. A FULL run STILL installs pvr.iptvsimple (proven by
-    test_run_installs_apps_without_modal here and the net-set equivalence invariant
-    in test_modular_setup.py) — just via apply_iptv, not this base loop."""
+    pvr.iptvsimple moved into the IPTV layer (apply_iptv / _install_pvr_backend) and
+    weather.multi moved into the Foundation layer (apply_foundation) — so the base
+    list is content-only and carries neither the PVR backend nor the branded-look
+    weather provider. A FULL run STILL installs BOTH (pvr via apply_iptv, weather via
+    apply_foundation), proven by the net-set equivalence invariant in
+    test_modular_setup.py."""
     assert _assign("ADDONS", ADDONS_PY) == [
         "script.ezmaintenanceplus",
         "script.realdebrid",
-        "weather.multi",
     ]
-    # The move precisely: pvr is OUT of the base list but installed by the IPTV layer.
+    # The moves precisely: pvr -> IPTV layer, weather -> Foundation layer.
     assert "pvr.iptvsimple" not in _assign("ADDONS", ADDONS_PY)
+    assert "weather.multi" not in _assign("ADDONS", ADDONS_PY)
     assert _iptv_assign("PVR_BACKEND_ID") == "pvr.iptvsimple", (
         "apply_iptv must own the pvr.iptvsimple backend after Phase 3a"
+    )
+    assert _assign("WEATHER_ADDON", FOUNDATION_PY) == "weather.multi", (
+        "apply_foundation must own the weather.multi provider"
     )
 
 
@@ -206,14 +213,23 @@ def test_installs_weather_and_pvr_binary():
     """A full run must install the weather add-on AND the binary PVR client, with
     runtime platform detection picking the right build.
 
-    Phase 3a split their HOMES: weather.multi stays in the base ADDONS list, but
-    pvr.iptvsimple's install moved into the IPTV layer (apply_iptv /
-    _install_pvr_backend). Both still install on a full run — the binary platform
-    detection lives in the shared library's install_with_deps (it loads the official
-    index with the platform tag), which BOTH the base loop and apply_iptv drive."""
+    The HOMES are now split three ways: weather.multi moved to the Foundation layer
+    (branded look), pvr.iptvsimple moved to the IPTV layer (apply_iptv /
+    _install_pvr_backend), and neither is in the base ADDONS list anymore. Both still
+    install on a full run — the binary platform detection lives in the shared
+    library's install_with_deps (it loads the official index with the platform tag),
+    which the Foundation weather install, the base loop, and apply_iptv all drive."""
     addons = _assign("ADDONS", ADDONS_PY)
-    assert "weather.multi" in addons
     assert "pvr.iptvsimple" not in addons, "pvr moved to the IPTV layer (Phase 3a)"
+    assert "weather.multi" not in addons, (
+        "weather.multi moved to the Foundation layer (weather-into-Foundation)"
+    )
+    # Foundation owns weather.multi now and resolves it from the official repo.
+    assert _assign("WEATHER_ADDON", FOUNDATION_PY) == "weather.multi"
+    fnd_src = FOUNDATION_PY.read_text()
+    assert "install_with_deps" in fnd_src, (
+        "apply_foundation must install weather.multi via install_with_deps"
+    )
     # The IPTV layer owns the PVR backend now and resolves it from the official repo.
     assert _iptv_assign("PVR_BACKEND_ID") == "pvr.iptvsimple"
     iptv_src = IPTV_PY.read_text()
@@ -1723,7 +1739,7 @@ def test_apply_weather_from_env_resolves_and_writes_keys(boot, monkeypatch):
         },
     }
     monkeypatch.setattr(
-        boot.mod._addons,
+        boot.mod._foundation,
         "_resolve_weather_location",
         lambda q, **k: next((v for n, v in locs.items() if n in q), None),
     )
@@ -1744,7 +1760,7 @@ def test_apply_weather_from_env_resolves_and_writes_keys(boot, monkeypatch):
 
 def test_apply_weather_from_env_fallback_no_env(boot, monkeypatch):
     monkeypatch.setattr(
-        boot.mod._addons, "_resolve_weather_location", lambda q, **k: None
+        boot.mod._foundation, "_resolve_weather_location", lambda q, **k: None
     )
     boot.mod._apply_weather_from_env({})  # no WEATHER_LOCATIONS at all
     got = _read_weather_settings(boot)
@@ -1754,7 +1770,7 @@ def test_apply_weather_from_env_fallback_no_env(boot, monkeypatch):
 
 def test_apply_weather_never_empty_url_when_all_fail(boot, monkeypatch):
     monkeypatch.setattr(
-        boot.mod._addons, "_resolve_weather_location", lambda q, **k: None
+        boot.mod._foundation, "_resolve_weather_location", lambda q, **k: None
     )
     boot.mod._apply_weather_from_env({"WEATHER_LOCATIONS": "Nowhere, ZZ; Atlantis"})
     got = _read_weather_settings(boot)
@@ -1763,7 +1779,7 @@ def test_apply_weather_never_empty_url_when_all_fail(boot, monkeypatch):
 
 def test_apply_weather_skips_unresolvable_keeps_resolved(boot, monkeypatch):
     monkeypatch.setattr(
-        boot.mod._addons,
+        boot.mod._foundation,
         "_resolve_weather_location",
         lambda q, **k: (
             {"name": "Reno, NV, US", "url": "us/nv/reno", "lat": "39", "lon": "-119"}
