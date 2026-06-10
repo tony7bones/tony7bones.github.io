@@ -116,6 +116,7 @@ __all__ = [
     "run_addons",
     "run_foundation",
     "run_foundation_setup",
+    "run_iptv",
     "split_list",
 ]
 
@@ -290,6 +291,9 @@ IPTV_CUSTOM_TV_GROUPS_FILE_VALUE = _iptv.IPTV_CUSTOM_TV_GROUPS_FILE_VALUE
 IPTV_TV_CHANNEL_GROUPS_ONLY_KEY = _iptv.IPTV_TV_CHANNEL_GROUPS_ONLY_KEY
 _set_instance_setting = _iptv._set_instance_setting
 _ensure_iptv_custom_tv_groups = _iptv._ensure_iptv_custom_tv_groups
+# The IPTV layer's own PVR backend id (Phase 3a moved its install into apply_iptv);
+# run_iptv's summary reads the per-backend state from the LayerResult by this id.
+PVR_BACKEND_ID = _iptv.PVR_BACKEND_ID
 
 
 # The per-device config the provisioner derives from the owner's master .env and
@@ -875,6 +879,133 @@ def run_addons(box_env=None):
     # lookandfeel.skin would re-arm the "Keep this skin?" revert timeout).
     restart_kodi("Tony.7.Bones Setup", _log)
     return addons_res
+
+
+def run_iptv(box_env=None):
+    """The IPTV orchestrator — apply Layer 1 ONLY (live TV on an existing box).
+
+    The 0-1-2 model's "stopped at skin-only, later adds live TV" story
+    (Phase 5b·3): a thin standalone runner that drives the SAME ``apply_iptv``
+    the Express one-shot drives (the no-fork invariant) on top of an EXISTING
+    Foundation box, then owns the terminal seam: honest summary →
+    self-uninstall → ONE platform-aware restart. Stop here = branded Kodi +
+    your live TV.
+
+    Body (mirrors ``run_foundation``/``run_addons``'s proven shape):
+      1. progress dialog → ``apply_iptv(box_env)`` — install pvr.iptvsimple
+         (+ its binary inputstream closure, platform-resolved from the OFFICIAL
+         repo) or FAIL LOUD, then — inside the PVR-DISABLED config window (the
+         5b·1 clobber fix) — the guarded device-file copy and ONE
+         ``instance-settings-<N>.xml`` per env provider: the HOST-BUILT staged
+         artifacts first when the env carries ``IPTV_STAGING_DIR`` (curated
+         playlist + display-label groups + ready instance file — the only path
+         a portal-API provider can land through), per-provider fallback to the
+         direct-env enforce.
+      2. summary dialog — honest, straight from the LayerResult: the backend
+         state plus whether instance settings were actually WRITTEN this run
+         ("unchanged" when the env carries no provider or the files were
+         already correct — never a false "configured").
+      3. ``self_uninstall`` then ONE ``restart_kodi`` (platform-aware) — the
+         restart finalises the freshly extracted backend AND the self-removal,
+         honoring the layer's ``needs_restart`` request (pvr.iptvsimple reads
+         instance settings at startup).
+
+    What it must NOT do (the layer invariants):
+      * NO skin touch — no ``activate_skin``, no ``lookandfeel.skin``, no
+        ``Skin.SetBool``. Foundation owns the active skin; re-setting it would
+        re-arm Kodi's "Keep this skin?" revert timeout for no reason.
+      * NO ``install_repos`` — Foundation owns plumbing. ``apply_iptv``
+        resolves its backend's platform closure straight from the OFFICIAL
+        repo (``iptv.OFFICIAL_BASE``), so it needs none of our source repos;
+        on a Foundation-less box the backend still installs and the config
+        still lands (the box simply is not branded — same tolerant
+        Foundation-missing semantics as ``run_addons``, no probe-and-abort).
+      * NO ``apply_foundation`` / ``apply_addons`` — one layer per runner.
+
+    Env lifecycle: same coordinator pattern as ``run()`` — the DRIVER reads the
+    per-device env ONCE (``read_box_env(BOX_ENV_PATH)``), passes the dict in,
+    and deletes the env file only after a successful (``ok``) run. PRECONDITION
+    for the later-opt-in story: the provisioner (or a lighter re-stage) must
+    have re-pushed ``tony7bones.env`` AND the staged ``iptv/`` artifacts to the
+    box — Foundation's earlier run consumed and deleted the original env, and
+    the staged curated artifacts only exist where the host build put them
+    (provisioner step 4b: build → push → ``IPTV_STAGING_DIR``). No new
+    transport is invented here.
+
+    Failure semantics (``ok=False`` — the backend did not install, the ONE
+    hard-failure path in ``apply_iptv``; there is NO user-cancel path through
+    this layer by construction — ``install_with_deps`` never polls the
+    dialog's cancel button, unlike the Add-ons layer's per-repo loop): the
+    summary says FAILED and that nothing was configured (``apply_iptv`` wrote
+    no instance-settings — fail-loud means no half-config), then the runner
+    still self-uninstalls and restarts ONCE — the box is unchanged except
+    possibly extracted-but-disabled bits, so the restart lands on the same
+    working Foundation box, never a broken one. The driver leaves the env
+    intact (delete-only-on-ok) and Foundation guarantees our proxy repo is
+    installed, so the retry is a one-tap Setup reinstall + re-run.
+    Per-provider config failures stay defensive inside the layer (logged,
+    skipped; the other providers still apply).
+
+    Re-entry is safe by construction: the backend ``is_installed``
+    short-circuits, staged consumption is always-apply (identical bytes,
+    inside the PVR-disabled window), and the direct-env enforce is
+    write-only-if-changed — a second identical run reports
+    ``already_done=True`` (backend present, nothing newly written) and leaves
+    the box state byte-identical.
+
+    NOT wired into the shipped ``run()`` (still ``run_express``); a new entry
+    point for the modular flow (wired by Phase 5d). Returns the IPTV
+    ``LayerResult``.
+    """
+    box_env = box_env or {}
+    dialog = xbmcgui.DialogProgress()
+    dialog.create("Tony.7.Bones Setup", "Installing IPTV...")
+
+    # Layer 1 ONLY — the same apply_iptv Express drives (no forked install
+    # logic). It owns the backend install-or-fail-loud, the PVR-disabled
+    # config window, staged-first consumption, and the N-provider enforce.
+    iptv_res = apply_iptv(box_env, dialog=dialog, log=_log)
+
+    dialog.close()
+
+    # Honest summary — straight from the LayerResult. "configured" means the
+    # enforce actually WROTE instance-settings this run; "installed" means the
+    # backend landed but nothing was written (no env provider, or the files
+    # were already correct) — say "unchanged", never claim fresh config.
+    if iptv_res.ok:
+        configured = iptv_res.installed.get(PVR_BACKEND_ID) == "configured"
+        lines = [
+            "IPTV (live TV):",
+            "pvr.iptvsimple: installed",
+            "Instance settings: {}".format(
+                "written" if configured else "unchanged (none in env, or already set)"
+            ),
+            "Restart will finish setup.",
+        ]
+    else:
+        # Fail-loud contract: the backend did not install and apply_iptv wrote
+        # NO instance-settings. Say so; the restart below lands on the box as
+        # it was (re-run = reinstall Setup from our repo; the env is kept by
+        # the driver's delete-only-on-ok).
+        lines = [
+            "IPTV (live TV):",
+            "pvr.iptvsimple: FAILED",
+            "No instance settings were written.",
+            "Re-run Setup to retry after the restart.",
+        ]
+    xbmcgui.Dialog().ok("Tony.7.Bones Setup", "\n".join(lines))
+
+    # Run once, then disappear (after the summary; never raises). The shared
+    # library is a hidden module add-on and is deliberately LEFT installed.
+    self_uninstall(MY_ID, _log)
+
+    # ONE restart finalises the freshly extracted backend AND the self-removal
+    # (pvr.iptvsimple reads instance settings at startup — the layer's
+    # needs_restart request). NO skin activation here — Foundation owns the
+    # active skin (re-setting lookandfeel.skin would re-arm the "Keep this
+    # skin?" revert timeout).
+    restart_kodi("Tony.7.Bones Setup", _log)
+    return iptv_res
 
 
 def run():

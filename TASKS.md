@@ -22,50 +22,48 @@ tech-debt seam, the apply_iptv reporting bug, the zero-content guarantee). Keep 
 
 ---
 
-## ▶ VERY NEXT STEP — the remaining queue: Phase 5b·3 (`run_iptv`), then 5d
+## ▶ VERY NEXT STEP — Phase 5d (Guided wizard + Model A lifecycle), then 6
 
-> **Phase 5c (`run_addons`) is DONE** — taken deliberately BEFORE 5b·3 (no dependency on it);
-> see the Phase 5c entry in `docs/plans/modular-setup.md`. The queue is now:
+> **Phase 5b is COMPLETE** — 5b·3 (`run_iptv`) landed; see its phase entry in
+> `docs/plans/modular-setup.md`. **All three layers are now INDEPENDENTLY RUNNABLE**
+> (`run_foundation` / `run_iptv` / `run_addons` — the 5d precondition is met). The queue:
 >
-> 1. **Phase 5b·3 — `run_iptv(box_env)`** (next, below)
-> 2. **Phase 5d — Guided wizard + Model A lifecycle** (then wire a default into the shipped `run()`)
-> 3. **Phase 6 — harden + Fire TV**
+> 1. **Phase 5d — Guided wizard + Model A lifecycle** (the panel's keystone: the orchestrator
+>    persists across gates, self-uninstall only on terminal Finish; the wizard offers the next
+>    undone gate via installed-state probes; the no-fork invariant — Guided and Express drive
+>    the same `apply_*`; then wire a chosen default into the shipped `run()`, today still
+>    `run_express`)
+> 2. **Phase 6 — harden + Fire TV** (version-guard shared modules, `assert_box_complete`, CI
+>    gates, the wipe-and-run matrix on a real Stick; plus the 5b·3-recorded keep-skin race —
+>    skinshortcuts' first buildxml reload can destroy the confirm and revert the skin)
 
-**Start from the prep section: `docs/plans/modular-setup.md` → "Phase 5b·3 — PREP".** It has the
-full design (mirror `run_foundation`'s shape; apply_iptv → summary → self-uninstall → ONE
-restart; NO skin touch, NO install_repos; env read-once/delete-after; re-entry safe by
-construction) — everything `run_iptv` needs already exists (`apply_iptv` owns its backend
-install-or-fail-loud, staged-first config inside the PVR-disabled window). `run_addons` (Phase
-5c) is the freshest template for the runner shape + its test file (`_tools/test_run_addons.py`).
-
-**Acceptance bar (the standing four-part bar):** (1) unit tests incl. the no-skin-touch +
-no-install_repos invariants, backend-failure summary honesty, re-entry; ≥90% new-code coverage —
-(2) gate green (`pytest _tools/ -q` + `ruff` + secrets + deterministic regen) — (3) adversarial
-QA review — (4) clean-**Foundation**-box live verify: fresh Kodi → `run_foundation` (skin-only,
-no pvr) → stage (build_iptv + env re-push) → `run_iptv` with the real `.env.local` → backend
-installed BY THIS LAYER, both providers' JSON-RPC counts match the builder's, MOD V2 still
-active, survives a clean-shutdown restart (recipe: `local-kodi-verification.md` → "Verifying
-PVR / IPTV state"). NOTE from the 5c live run: Kodi's `RestartApp` is a NO-OP on macOS — the
-clean-quit+relaunch IS the real restart on the local box.
+Design context for 5d: `docs/plans/modular-setup.md` → "Panel-resolved decisions" #1 (Model A),
+the Phase 5 row in the phase table, and the three standalone runners as the wizard's gates.
+`run_addons`/`run_iptv` (Phases 5c/5b·3) are the freshest runner + test templates
+(`_tools/test_run_addons.py`, `_tools/test_run_iptv.py`).
 
 Context: Phase 5b·1 (clobber window + N-provider env), 5b·2 (host-side `build_iptv.py` build →
 staging → staged apply; both real providers load, xtream included), the favorites-icon healing
-addendum, and **Phase 5c (`run_addons` — the standalone Add-ons layer, clean-Kodi proven on a
-Foundation-only box)** are all **DONE** — see the phase log. After 5b·3: 5d (Guided wizard +
-Model A), 6 (harden + Fire TV).
+addendum, **5c (`run_addons`)** and **5b·3 (`run_iptv` — clean-Foundation-box live-proven:
+backend installed by the layer, both providers' JSON-RPC counts match the builder's, MOD V2
+untouched, restart-survival)** are all **DONE** — see the phase log. NOTE: Kodi's `RestartApp`
+is a NO-OP on macOS — the clean-quit+relaunch IS the real restart on the local box.
 
 ---
 
 ## Build status (modular-setup branch)
 
-- **DONE, gated, committed LOCALLY** (suite **677 passed / 1 xfailed**):
+- **DONE, gated, committed LOCALLY** (suite **693 passed / 1 xfailed**):
   Phases 0–3 + 5a (Foundation, incl. 5a·2/5a·3) + **5b·1** (the two `apply_iptv` bugs — clobber
   window + N-provider env) + **5b·2** (the host-side IPTV build integrated — BOTH real
   providers, xtream included, clean-Kodi channel-load proven with the full curation grammar) +
   the **favorites-icon healing** addendum (dead xtream placeholder icons borrowed from live
   duplicates at build time, live-proven) + **5c** (`run_addons` — the standalone Add-ons layer,
   clean-Kodi proven on a Foundation-only box; MOD V2 untouched, RSS/origins/disable-after all
-  live-verified, restart-survival proven).
+  live-verified, restart-survival proven) + **5b·3** (`run_iptv` — the standalone IPTV layer,
+  clean-FOUNDATION-box proven: pvr backend installed BY the layer, both providers staged-applied,
+  counts == builder's 158/47/24 + 214/100/12 + 5 favorites + 560 all, MOD V2 untouched,
+  restart-survival; **Phase 5b COMPLETE — all three layers independently runnable**).
 - **NOT PUSHED** — milestone-push pending: needs `script.module.tony7bones` + `script.tony7bones.bootstrap`
   version bumps + `--news` (modv2plus is already 1.4.8). Push the branch once 5b lands or at the next
   coherent milestone.
