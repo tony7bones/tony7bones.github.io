@@ -39,12 +39,13 @@ unit tests that reach them via ``boot.mod.*`` keep working with no repointing.
 """
 
 import os
+import re
 from xml.etree import ElementTree as ET
 
 import xbmc
 import xbmcvfs
 
-from tony7bones import install_with_deps, is_installed
+from tony7bones import disable, enable, install_with_deps, is_installed
 
 from .env import split_list
 from .result import LayerResult
@@ -199,6 +200,129 @@ IPTV_CUSTOM_TV_GROUPS_FILE_VALUE = (
 # belong to a (custom) group, hiding the ungrouped firehose. Enforced true.
 IPTV_TV_CHANNEL_GROUPS_ONLY_KEY = "tvChannelGroupsOnly"
 
+# --------------------------------------------------------------------------- #
+# Multi-provider env (Phase 5b·1) — IPTV_<N>_* -> instance-settings-<N>.xml.
+# --------------------------------------------------------------------------- #
+# The real per-device .env uses a multi-provider shape — one numbered block per
+# provider (IPTV_1_NAME/MODE/M3U/EPG/GROUPS/GROUPS_ONLY, IPTV_2_...). Each m3u-mode
+# provider becomes ONE pvr.iptvsimple INSTANCE: Kodi's multi-instance add-on
+# support enumerates addon_data/pvr.iptvsimple/instance-settings-<N>.xml files, so
+# provider N is written to instance-settings-<N>.xml plus its own
+# channelGroups/customTVGroups-<Name>.xml. Two instance-identity keys make a
+# CREATED instance file real to Kodi (and label it in the PVR client list):
+IPTV_INSTANCE_NAME_KEY = "kodi_addon_instance_name"
+IPTV_INSTANCE_ENABLED_KEY = "kodi_addon_instance_enabled"
+IPTV_CHANNEL_GROUPS_DIR_SPECIAL = (
+    "special://userdata/addon_data/pvr.iptvsimple/channelGroups/"
+)
+# A numbered provider key: IPTV_<N>_<FIELD> (N is the 1-based provider index that
+# doubles as the pvr.iptvsimple instance id).
+_IPTV_NUMBERED_KEY = re.compile(r"^IPTV_(\d+)_([A-Z0-9_]+)$")
+
+
+def _instance_settings_special(n):
+    """special:// path of pvr.iptvsimple's instance-settings file for instance n.
+
+    For n=1 this is exactly IPTV_INSTANCE_SETTINGS_SPECIAL (the legacy
+    single-instance path), so provider 1 / the legacy shape land in the same file
+    the monolith always wrote."""
+    return (
+        "special://home/userdata/addon_data/pvr.iptvsimple/instance-settings-%d.xml" % n
+    )
+
+
+def _groups_file_special(provider):
+    """special:// path of the provider's custom-TV-groups file.
+
+    LEGACY single-instance providers keep the historical constant
+    (customTVGroups-Network24.xml) so existing envs, the DEVICE_FILE_COPIES
+    device-copy convention, and every shipped box stay byte-compatible. Numbered
+    providers derive customTVGroups-<Name>.xml from the provider NAME (non-alnum
+    stripped: "Network 24" -> Network24 — deliberately identical to the legacy
+    constant for provider 1 of the real env), falling back to Provider<N>."""
+    if provider["legacy"]:
+        return IPTV_CUSTOM_TV_GROUPS_FILE_VALUE
+    token = re.sub(r"[^A-Za-z0-9]+", "", provider["name"]) or (
+        "Provider%d" % provider["n"]
+    )
+    return IPTV_CHANNEL_GROUPS_DIR_SPECIAL + "customTVGroups-%s.xml" % token
+
+
+def _group_source(item):
+    """Extract the SOURCE group name from one IPTV_*_GROUPS grammar item.
+
+    The groups grammar is ``SOURCE > Display Label | sort`` (display relabel and
+    sort directive are HOST-side curation — build_iptv.py, Phase 5b step 2). The
+    in-Kodi half needs the SOURCE side: pvr.iptvsimple matches a custom group's
+    <channelGroupName> against the playlist's group-title values, which are the
+    provider's ORIGINAL group names — pointing it at the display label would match
+    nothing and load zero channels. A plain legacy item ("USA ENTERTAINMENT") has
+    no '>'/'|' and passes through unchanged."""
+    if ">" in item:
+        item = item.split(">", 1)[0]
+    else:
+        item = item.split("|", 1)[0]
+    return item.strip()
+
+
+def _iptv_providers(box_env):
+    """Parse the env into an ordered list of IPTV provider dicts.
+
+    Numbered ``IPTV_<N>_*`` blocks win: one provider per N (sorted), with
+    ``legacy=False`` and the env's N as the pvr.iptvsimple instance id. ``mode``
+    is the explicit ``IPTV_<N>_MODE`` (lowercased), defaulting to ``xtream`` when
+    the block has a PORTAL but no M3U, else ``m3u``.
+
+    With NO numbered keys the legacy single-instance shape (``IPTV_M3U`` /
+    ``IPTV_EPG`` / ``IPTV_GROUPS`` / ``IPTV_GROUPS_ONLY``) maps to ONE
+    ``legacy=True`` provider 1 — ALWAYS returned, even on an empty env, because
+    the legacy enforce must still run its gated no-op probe (a device-copied
+    groups file with no env at all still gets custom group mode, exactly as the
+    monolith behaved)."""
+    numbered = {}
+    for key, val in box_env.items():
+        m = _IPTV_NUMBERED_KEY.match(key)
+        if m:
+            numbered.setdefault(int(m.group(1)), {})[m.group(2)] = val
+    if numbered:
+        providers = []
+        for n in sorted(numbered):
+            f = numbered[n]
+            m3u = (f.get("M3U") or "").strip()
+            portal = (f.get("PORTAL") or "").strip()
+            mode = (f.get("MODE") or "").strip().lower()
+            if not mode:
+                mode = "xtream" if (portal and not m3u) else "m3u"
+            providers.append(
+                {
+                    "n": n,
+                    "legacy": False,
+                    "name": (f.get("NAME") or "").strip(),
+                    "mode": mode,
+                    "m3u": m3u,
+                    "epg": (f.get("EPG") or "").strip(),
+                    "groups": f.get("GROUPS") or "",
+                    "groups_only": f.get("GROUPS_ONLY", "true") or "true",
+                }
+            )
+        return providers
+    # Legacy single-instance shape (or an empty env): one provider-1, m3u mode,
+    # writing the SAME paths the monolith always wrote (back-compat by
+    # construction — the legacy provider never derives a NAME-based groups path
+    # and never writes the instance-identity keys).
+    return [
+        {
+            "n": 1,
+            "legacy": True,
+            "name": (box_env.get("IPTV_NAME") or "").strip(),
+            "mode": "m3u",
+            "m3u": (box_env.get("IPTV_M3U") or "").strip(),
+            "epg": (box_env.get("IPTV_EPG") or "").strip(),
+            "groups": box_env.get("IPTV_GROUPS") or "",
+            "groups_only": box_env.get("IPTV_GROUPS_ONLY", "true") or "true",
+        }
+    ]
+
 
 def _set_instance_setting(root, setting_id, value):
     """Ensure <setting id="setting_id"> in `root` has exactly `value`.
@@ -227,140 +351,242 @@ def _set_instance_setting(root, setting_id, value):
     return changed
 
 
+def _ensure_iptv_instance(provider):
+    """Enforce ONE provider's pvr.iptvsimple instance settings (instance N).
+
+    The per-provider body of the enforce (the old single-instance logic,
+    generalized): generate the provider's custom-TV-groups file from its GROUPS
+    grammar (SOURCE names only — see ``_group_source``), then write/patch
+    ``instance-settings-<N>.xml`` — the m3u/epg playlist source, and (gated on the
+    groups file existing) custom group mode + the groups-file path + groups-only.
+    For a NUMBERED provider it additionally enforces the instance-identity keys
+    (``kodi_addon_instance_name``/``kodi_addon_instance_enabled``) so a CREATED
+    instance file is real to Kodi's multi-instance scanner and labelled with the
+    provider name; the LEGACY provider never writes them (byte-compat with the
+    monolith's instance-settings-1.xml).
+
+    XTREAM-mode providers are SKIPPED here with an honest log: pvr.iptvsimple on
+    Omega (21.x) has NO native Xtream-Codes connection mode — the only XTREAM
+    reference in its instance-settings schema is the ``allChannelsCatchupMode``
+    CATCHUP enum, not a portal/user/pass source — and this provider's m3u export
+    is server-blocked, so deriving a get.php URL would not work either. The
+    host-side build (build_iptv.py, Phase 5b step 2) owns Xtream -> m3u
+    derivation. No credentials are logged.
+
+    Returns True if it actually wrote/changed this instance's settings file."""
+    n = provider["n"]
+    if provider["mode"] == "xtream":
+        _log(
+            "_ensure_iptv_custom_tv_groups: provider %d is xtream-mode — skipped "
+            "in-Kodi (pvr.iptvsimple Omega has no native Xtream connection mode; "
+            "host-side m3u derivation lands in Phase 5b step 2)" % n
+        )
+        return False
+    groups_special = _groups_file_special(provider)
+    groups_file = xbmcvfs.translatePath(groups_special)
+    groups = [g for g in map(_group_source, split_list(provider["groups"])) if g]
+    if groups:
+        os.makedirs(os.path.dirname(groups_file), exist_ok=True)
+        groot = ET.Element("customChannelGroups")
+        for name in groups:
+            ET.SubElement(groot, "channelGroupName").text = name
+        with open(groups_file, "w", encoding="utf-8") as f:
+            f.write(ET.tostring(groot, encoding="unicode"))
+        _log(
+            "_ensure_iptv_custom_tv_groups: instance %d: generated %d custom "
+            "group(s) from env" % (n, len(groups))
+        )
+    # The playlist SOURCE (m3u/epg) and the group MODE are independent: inject
+    # the source whenever the env supplies it, but only force CUSTOM group mode
+    # when the groups file exists (crit A — never tvGroupMode=2 at a missing
+    # file). With neither, there's nothing to do — leave the all-channels default.
+    m3u = provider["m3u"]
+    epg = provider["epg"]
+    have_groups = os.path.exists(groups_file)
+    if not (m3u or epg or have_groups):
+        _log(
+            "_ensure_iptv_custom_tv_groups: instance %d: nothing to set (no "
+            "m3u/epg, no groups file %s) — leaving the all-channels default"
+            % (n, groups_file)
+        )
+        return False
+    xml_path = xbmcvfs.translatePath(_instance_settings_special(n))
+    os.makedirs(os.path.dirname(xml_path), exist_ok=True)
+
+    root = None
+    if os.path.exists(xml_path):
+        try:
+            root = ET.parse(xml_path).getroot()
+        except ET.ParseError as e:
+            _log(
+                "_ensure_iptv_custom_tv_groups: instance-settings-%d.xml "
+                "malformed, recreating: %s" % (n, e),
+                xbmc.LOGERROR,
+            )
+            root = None
+    if root is None or root.tag != "settings":
+        root = ET.Element("settings")
+        root.set("version", "2")
+
+    changed = False
+    # Instance identity — NUMBERED providers only (the legacy single-instance file
+    # stays byte-compatible). The name labels the client in Kodi's PVR list; the
+    # enabled flag makes a CREATED instance file count to the instance scanner.
+    if not provider["legacy"]:
+        if provider["name"]:
+            changed = (
+                _set_instance_setting(root, IPTV_INSTANCE_NAME_KEY, provider["name"])
+                or changed
+            )
+        changed = (
+            _set_instance_setting(root, IPTV_INSTANCE_ENABLED_KEY, "true") or changed
+        )
+    # Playlist source (provider creds — SECRET; never logged as values).
+    if m3u:
+        changed = _set_instance_setting(root, "m3uPathType", "1") or changed
+        changed = _set_instance_setting(root, "m3uUrl", m3u) or changed
+    if epg:
+        changed = _set_instance_setting(root, "epgPathType", "1") or changed
+        changed = _set_instance_setting(root, "epgUrl", epg) or changed
+    # Custom group mode — ONLY when the groups file exists.
+    only_val = "n/a"
+    if have_groups:
+        changed = (
+            _set_instance_setting(
+                root, IPTV_TV_GROUP_MODE_KEY, IPTV_TV_GROUP_MODE_CUSTOM
+            )
+            or changed
+        )
+        changed = (
+            _set_instance_setting(root, IPTV_CUSTOM_TV_GROUPS_FILE_KEY, groups_special)
+            or changed
+        )
+        only = (provider["groups_only"] or "true").strip().lower()
+        only_val = "true" if only in ("true", "1", "yes", "on") else "false"
+        changed = (
+            _set_instance_setting(root, IPTV_TV_CHANNEL_GROUPS_ONLY_KEY, only_val)
+            or changed
+        )
+    else:
+        _log(
+            "_ensure_iptv_custom_tv_groups: instance %d: no groups file — m3u/epg "
+            "set, group mode left at the all-channels default" % n
+        )
+
+    if changed:
+        with open(xml_path, "w", encoding="utf-8") as f:
+            f.write(ET.tostring(root, encoding="unicode"))
+        _log(
+            "_ensure_iptv_custom_tv_groups: instance %d: groups=%s only=%s m3u=%s "
+            "epg=%s in %s" % (n, have_groups, only_val, bool(m3u), bool(epg), xml_path)
+        )
+    else:
+        _log(
+            "_ensure_iptv_custom_tv_groups: instance %d: keys already correct "
+            "(no change)" % n
+        )
+    return changed
+
+
 def _ensure_iptv_custom_tv_groups(box_env=None):
-    """Enforce TV-group-mode=Custom + the custom-TV-groups file path in
-    pvr.iptvsimple's instance-settings-1.xml (1a/1b).
+    """Enforce pvr.iptvsimple's per-instance settings for EVERY env provider.
 
-    Runs AFTER _copy_device_files() (which may have copied the user's own
-    instance-settings-1.xml). Reads the file if present, else starts a fresh
-    <settings version="2"> tree, then ensures the two keys are correct and writes
-    back only if something changed. The destination dir is created if absent (a
-    fresh box without the copied file). Idempotent and fully defensive: any
-    failure is logged and swallowed — never aborts the rest of setup. These keys
-    cannot be set via JSON-RPC (it does not reach add-on instance settings), so a
-    direct file write is the only mechanism.
+    Phase 5b·1 generalization of the old single-instance enforce: the env's
+    ``IPTV_<N>_*`` provider blocks (or the legacy single-instance
+    ``IPTV_M3U``/``IPTV_EPG``/``IPTV_GROUPS``/``IPTV_GROUPS_ONLY`` shape, treated
+    as provider 1 with the monolith's exact file paths) each drive ONE
+    ``instance-settings-<N>.xml`` + one ``customTVGroups-*.xml`` via
+    ``_ensure_iptv_instance``. Runs AFTER _copy_device_files() (which may have
+    staged a user-provided instance-settings file the enforce then patches).
+    These keys cannot be set via JSON-RPC (it does not reach add-on instance
+    settings), so a direct file write is the only mechanism — which is exactly
+    why ``apply_iptv`` runs this inside the PVR-DISABLED window (the running
+    client otherwise flushes its stale in-memory defaults back over the write).
 
-    GATED: only enforces custom-group mode when the custom-groups file actually
-    exists (copied from the device, or generated from the env's IPTV_GROUPS). On a
-    no-env / no-file box, forcing tvGroupMode=2 at a MISSING file gives
-    pvr.iptvsimple an empty channel list — so we leave the all-channels default.
-
-    When `box_env` provides IPTV_GROUPS the groups file is GENERATED from it first
-    (channel-group names only — not secret); IPTV_M3U/IPTV_EPG are injected as
-    m3uUrl/epgUrl (+ remote path type); tvChannelGroupsOnly comes from
-    IPTV_GROUPS_ONLY (default true). Secret values are never logged.
+    Idempotent and fully defensive: a failing provider is logged and skipped
+    (the others still apply), and any outer failure is swallowed — never aborts
+    the rest of setup. Secret values (m3u/epg URLs with creds) are never logged.
 
     Returns
     -------
     bool
-        ``True`` if it actually WROTE/changed the instance-settings file this call
-        (group mode and/or m3u/epg keys), ``False`` otherwise — i.e. on the gated
-        no-op (no m3u/epg and no groups file), on an already-correct file (the
-        ``if changed:`` write-skip), or on a swallowed failure. The aggregate is the
-        OR of every ``_set_instance_setting`` change, so it is the truthful
-        "did config land?" signal ``apply_iptv`` reports from. ``_configure_box``
-        ignores it (the return is purely additive — file side effects are
-        byte-identical to before).
+        ``True`` if it actually WROTE/changed ANY instance-settings file this
+        call (the OR across providers of each instance's ``_set_instance_setting``
+        aggregate), ``False`` otherwise — i.e. on the gated no-op (no m3u/epg and
+        no groups file), on already-correct files (the ``if changed:``
+        write-skip), on an xtream-mode skip, or on a swallowed failure. This is
+        the truthful "did config land?" signal ``apply_iptv`` reports from.
+        ``_configure_box`` ignores it (purely additive).
     """
     box_env = box_env or {}
     try:
-        groups_file = xbmcvfs.translatePath(IPTV_CUSTOM_TV_GROUPS_FILE_VALUE)
-        groups = split_list(box_env.get("IPTV_GROUPS", ""))
-        if groups:
-            os.makedirs(os.path.dirname(groups_file), exist_ok=True)
-            groot = ET.Element("customChannelGroups")
-            for name in groups:
-                ET.SubElement(groot, "channelGroupName").text = name
-            with open(groups_file, "w", encoding="utf-8") as f:
-                f.write(ET.tostring(groot, encoding="unicode"))
-            _log(
-                "_ensure_iptv_custom_tv_groups: generated %d custom group(s) from env"
-                % len(groups)
-            )
-        # The playlist SOURCE (m3u/epg) and the group MODE are independent: inject
-        # the source whenever the env supplies it, but only force CUSTOM group mode
-        # when the groups file exists (crit A — never tvGroupMode=2 at a missing
-        # file). With neither, there's nothing to do — leave the all-channels default.
-        m3u = (box_env.get("IPTV_M3U") or "").strip()
-        epg = (box_env.get("IPTV_EPG") or "").strip()
-        have_groups = os.path.exists(groups_file)
-        if not (m3u or epg or have_groups):
-            _log(
-                "_ensure_iptv_custom_tv_groups: nothing to set (no m3u/epg, no "
-                f"groups file {groups_file}) — leaving the all-channels default"
-            )
-            return False
-        xml_path = xbmcvfs.translatePath(IPTV_INSTANCE_SETTINGS_SPECIAL)
-        os.makedirs(os.path.dirname(xml_path), exist_ok=True)
-
-        root = None
-        if os.path.exists(xml_path):
+        wrote = False
+        for provider in _iptv_providers(box_env):
             try:
-                root = ET.parse(xml_path).getroot()
-            except ET.ParseError as e:
+                wrote = _ensure_iptv_instance(provider) or wrote
+            except Exception as e:  # noqa: BLE001 - one bad provider must not abort the rest
                 _log(
-                    f"_ensure_iptv_custom_tv_groups: instance-settings-1.xml "
-                    f"malformed, recreating: {e}",
+                    "_ensure_iptv_custom_tv_groups: instance %d failed "
+                    "(non-fatal): %s" % (provider["n"], e),
                     xbmc.LOGERROR,
                 )
-                root = None
-        if root is None or root.tag != "settings":
-            root = ET.Element("settings")
-            root.set("version", "2")
-
-        # Playlist source (provider creds — SECRET; never logged as values).
-        changed = False
-        if m3u:
-            changed = _set_instance_setting(root, "m3uPathType", "1") or changed
-            changed = _set_instance_setting(root, "m3uUrl", m3u) or changed
-        if epg:
-            changed = _set_instance_setting(root, "epgPathType", "1") or changed
-            changed = _set_instance_setting(root, "epgUrl", epg) or changed
-        # Custom group mode — ONLY when the groups file exists.
-        only_val = "n/a"
-        if have_groups:
-            changed = (
-                _set_instance_setting(
-                    root, IPTV_TV_GROUP_MODE_KEY, IPTV_TV_GROUP_MODE_CUSTOM
-                )
-                or changed
-            )
-            changed = (
-                _set_instance_setting(
-                    root,
-                    IPTV_CUSTOM_TV_GROUPS_FILE_KEY,
-                    IPTV_CUSTOM_TV_GROUPS_FILE_VALUE,
-                )
-                or changed
-            )
-            only = (box_env.get("IPTV_GROUPS_ONLY", "true") or "true").strip().lower()
-            only_val = "true" if only in ("true", "1", "yes", "on") else "false"
-            changed = (
-                _set_instance_setting(root, IPTV_TV_CHANNEL_GROUPS_ONLY_KEY, only_val)
-                or changed
-            )
-        else:
-            _log(
-                "_ensure_iptv_custom_tv_groups: no groups file — m3u/epg set, group "
-                "mode left at the all-channels default"
-            )
-
-        if changed:
-            with open(xml_path, "w", encoding="utf-8") as f:
-                f.write(ET.tostring(root, encoding="unicode"))
-            _log(
-                "_ensure_iptv_custom_tv_groups: groups=%s only=%s m3u=%s epg=%s in %s"
-                % (have_groups, only_val, bool(m3u), bool(epg), xml_path)
-            )
-        else:
-            _log("_ensure_iptv_custom_tv_groups: keys already correct (no change)")
-        return changed
+        return wrote
     except Exception as e:  # noqa: BLE001 - never abort the rest of setup
         _log(
             f"_ensure_iptv_custom_tv_groups failed (non-fatal): {e}",
             xbmc.LOGERROR,
         )
         return False
+
+
+# --------------------------------------------------------------------------- #
+# The PVR-disabled config window (Phase 5b·1 — the instance-settings clobber fix).
+# --------------------------------------------------------------------------- #
+def _pause_pvr_for_config():
+    """Disable pvr.iptvsimple BEFORE writing its config files; True if disabled.
+
+    The clobber fix (the 5a·3 live run's bug #1): enabling pvr.iptvsimple
+    instantiates the live PVR client with stock in-memory defaults, and the
+    client flushes those in-memory settings back to ``instance-settings-*.xml``
+    (latest at the end-of-setup shutdown) — silently OVERWRITING any direct file
+    write made while it runs. Same failure class as the documented
+    ``Skin.SetBool`` clobber. Disabling the add-on tears the client down — its
+    stale-defaults flush lands BEFORE our writes — and the re-enable
+    (``_resume_pvr_after_config``) instantiates fresh clients FROM our files, so
+    in-memory state matches disk and every later flush preserves it. This uses
+    the library's own ``disable``/``enable`` primitives rather than forking the
+    shared ``install_with_deps`` (whose final enable is correct for every other
+    add-on), and uniformly covers BOTH the fresh-install path (just enabled by
+    ``install_with_deps``) and re-entry on an already-enabled box.
+
+    No-op (returns False) when the backend is not installed; any failure is
+    logged and swallowed (the write still proceeds — a clobber risk beats
+    aborting setup)."""
+    try:
+        if not is_installed(PVR_BACKEND_ID):
+            return False
+        disable(PVR_BACKEND_ID)
+        # Settle: let the client teardown finish (and flush ITS settings) before
+        # our file writes, so the teardown flush can never land after them.
+        xbmc.sleep(1000)
+        return True
+    except Exception as e:  # noqa: BLE001 - never abort setup over the pause
+        _log(f"_pause_pvr_for_config failed (non-fatal): {e}", xbmc.LOGERROR)
+        return False
+
+
+def _resume_pvr_after_config():
+    """Re-enable pvr.iptvsimple AFTER the config writes (the window's other half).
+
+    The enable makes Kodi's multi-instance scanner re-read every
+    ``instance-settings-<N>.xml`` we just wrote — including a freshly CREATED
+    instance file for an additional provider — so the client(s) start with OUR
+    settings in memory. Defensive: a failure is logged, never raised (callers
+    run this in a ``finally``)."""
+    try:
+        enable(PVR_BACKEND_ID)
+    except Exception as e:  # noqa: BLE001 - never abort setup over the resume
+        _log(f"_resume_pvr_after_config failed (non-fatal): {e}", xbmc.LOGERROR)
 
 
 # --------------------------------------------------------------------------- #
@@ -381,8 +607,17 @@ def apply_iptv(env, *, dialog=None, log=None):
          ``_install_pvr_backend`` — install-or-fail-loud. If the backend does NOT
          install, the layer returns ``ok=False`` with ``failed[pvr.iptvsimple]`` and
          WRITES NO instance-settings (never silently configure a missing add-on).
-      2. copies the user's device files into userdata (guarded; skips missing).
-      3. enforces the instance-settings (gated on the groups file).
+      2. DISABLES the backend (``_pause_pvr_for_config`` — the Phase 5b·1 clobber
+         fix: the live client otherwise flushes stock in-memory defaults back over
+         the file writes below; the 5a·3 live run shipped an unconfigured pvr that
+         way), then
+      3. copies the user's device files into userdata (guarded; skips missing), and
+      4. enforces the instance-settings (gated per provider on its groups file) —
+         ONE ``instance-settings-<N>.xml`` per env provider (``IPTV_<N>_*``; the
+         legacy single-instance keys are provider 1), xtream-mode providers skipped
+         with an honest log (host-side m3u derivation is Phase 5b step 2) — then
+      5. RE-ENABLES the backend (in a ``finally``) so the fresh client instances
+         start from the files just written.
 
     In a FULL Express run the NET installed set is UNCHANGED vs the old monolith:
     pvr.iptvsimple (+ inputstream.*) is still installed — just via THIS layer
@@ -394,8 +629,11 @@ def apply_iptv(env, *, dialog=None, log=None):
     ----------
     env
         The already-parsed per-device env dict (passed in by the orchestrator). The
-        instance-settings enforce reads IPTV_GROUPS / IPTV_M3U / IPTV_EPG /
-        IPTV_GROUPS_ONLY from it; secret values (m3u/epg creds) are never logged.
+        instance-settings enforce reads the multi-provider ``IPTV_<N>_NAME / MODE /
+        M3U / EPG / GROUPS / GROUPS_ONLY`` blocks (one pvr.iptvsimple instance per
+        provider), or the legacy single-instance IPTV_GROUPS / IPTV_M3U / IPTV_EPG /
+        IPTV_GROUPS_ONLY as provider 1; secret values (m3u/epg creds) are never
+        logged.
         ``None`` is treated as the empty env — on a no-env box the device-copy is a
         guarded no-op and the enforce leaves the all-channels default (writes
         nothing), so apart from the backend install ``apply_iptv`` is a clean no-op.
@@ -456,18 +694,30 @@ def apply_iptv(env, *, dialog=None, log=None):
             detail="pvr.iptvsimple install failed — IPTV not configured",
         )
 
-    # --- copy the user's device files into userdata (guarded; skips missing) ---
-    _copy_device_files()
+    # --- the PVR-DISABLED config window (Phase 5b·1 — the clobber fix) ---
+    # The copy AND the enforce both write pvr.iptvsimple's instance-settings files
+    # directly; with the just-enabled live client running, it flushes its stale
+    # in-memory defaults back over those writes (the 5a·3 live run shipped an
+    # UNCONFIGURED pvr exactly this way). Disable the backend first (its teardown
+    # flush lands BEFORE our writes), write, then re-enable in a finally (never
+    # leave the backend disabled) so fresh clients start FROM our files.
+    paused = _pause_pvr_for_config()
+    try:
+        # --- copy the user's device files into userdata (guarded; skips missing) ---
+        _copy_device_files()
 
-    # --- enforce pvr.iptvsimple instance-settings (gated on the groups file) ---
-    # Take the enforce's OWN return signal for "did config land?". The enforce
-    # aggregates every _set_instance_setting change and returns True only when it
-    # actually WROTE the instance-settings file this call (group mode and/or m3u/epg
-    # keys). This is the truthful signal: the old `existed_before` probe lied on a
-    # normally-provisioned box, where the device-copy stages instance-settings-1.xml
-    # BEFORE this enforce — so the file ALWAYS pre-exists, yet the enforce still
-    # writes real config. The return value can't be fooled by that staging.
-    wrote_instance = _ensure_iptv_custom_tv_groups(env)
+        # --- enforce pvr.iptvsimple instance-settings (gated on the groups file) ---
+        # Take the enforce's OWN return signal for "did config land?". The enforce
+        # aggregates every _set_instance_setting change and returns True only when it
+        # actually WROTE an instance-settings file this call (group mode and/or
+        # m3u/epg keys, across every env provider). This is the truthful signal: the
+        # old `existed_before` probe lied on a normally-provisioned box, where the
+        # device-copy stages instance-settings-1.xml BEFORE this enforce — so the
+        # file ALWAYS pre-exists, yet the enforce still writes real config.
+        wrote_instance = _ensure_iptv_custom_tv_groups(env)
+    finally:
+        if paused:
+            _resume_pvr_after_config()
 
     # The backend installed (pvr_ok is True here); record it, then UPGRADE the state
     # to "configured" if the enforce actually wrote instance-settings this run.

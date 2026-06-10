@@ -636,26 +636,95 @@ fires, backend installs). They are exactly the IPTV-layer hardening Phase 5b own
 
 ---
 
-## Phase 5b — NEXT (the IPTV layer; not started)
+### Phase 5b·1 — DONE (local; both `apply_iptv` live-box bugs fixed: the PVR-disabled config window + N-provider env)
 
-> **Status of the build:** Phases 0–3 + **5a (Foundation, incl. 5a·2/5a·3)** are DONE, gated, and
-> committed LOCALLY on `modular-setup` (HEAD `b38aa09`) — **not pushed** (milestone-push pending: it
-> needs the `script.module.tony7bones` + `script.tony7bones.bootstrap` version bumps + a `--news`).
-> The Foundation deliverable is complete and clean-Kodi verified. `run_express` (Express) and
-> `run_foundation`/`run_foundation_setup` (skin-only + env-gated IPTV chain) exist; the shipped
-> `run()` still calls `run_express`.
+The two bugs above, fixed and clean-Kodi proven (channels actually load — the acceptance the
+5a·3 verify could not reach).
 
-**5b makes the IPTV layer independently runnable AND correct.** Start here, in order:
+- **Bug #1 — instance-settings clobber → the PVR-DISABLED config window.** `apply_iptv` now wraps
+  BOTH file-writing halves (the device-copy AND the instance-settings enforce) in
+  `_pause_pvr_for_config()` / `_resume_pvr_after_config()` (iptv.py): disable pvr.iptvsimple →
+  1s settle (the client teardown flushes ITS settings BEFORE our writes) → copy + enforce →
+  re-enable in a `finally` (never leave the backend disabled). The re-enable makes Kodi's
+  multi-instance scanner re-read every `instance-settings-<N>.xml` just written, so the fresh
+  client(s) start with OUR values in memory — every later flush (incl. the end-of-setup clean
+  shutdown that corrupted the 5a·3 box) now PRESERVES the config instead of clobbering it.
+  **Mechanism choice:** the shared `install_with_deps` (whose final enable is correct for every
+  other add-on) stays untouched — the bounce uses the library's own `enable`/`disable` primitives
+  and uniformly covers both the fresh-install path (just enabled by the installer) and re-entry on
+  an already-enabled box. **Express verdict:** the shipped Express path goes through `apply_iptv`
+  (fixed); the legacy `_configure_box` helper (no shipped runner calls it, but its body carried the
+  same race — pvr enabled EARLY by the monolith's base step, config written LATE) got the SAME
+  guarded window (no-op on a pvr-less box, so its existing tests/behaviour are unchanged).
+- **Bug #2 — multi-provider env.** New `_iptv_providers(box_env)` parses the real per-device shape:
+  each `IPTV_<N>_NAME/MODE/M3U/EPG/GROUPS/GROUPS_ONLY` block becomes ONE pvr.iptvsimple instance —
+  `instance-settings-<N>.xml` (the env N is the instance id; gaps preserved) + its own
+  `channelGroups/customTVGroups-<Name>.xml` (provider NAME, non-alnum stripped — "Network 24" →
+  `Network24`, deliberately identical to the legacy constant) + the multi-instance identity keys
+  (`kodi_addon_instance_name`/`_enabled`) that make a CREATED instance file real to Kodi's scanner.
+  The legacy single-instance keys map to a `legacy=True` provider 1 that keeps the monolith's exact
+  paths and writes NO identity keys — byte-compatible with every shipped box, so all existing
+  tests/envs pass unchanged. Per-provider failures are logged and skipped (the others still apply).
+- **Groups grammar (the in-Kodi half).** `_group_source` extracts the SOURCE side of
+  `SOURCE > Display Label | sort` — pvr.iptvsimple matches `<channelGroupName>` against the
+  playlist's group-title values (the provider's ORIGINAL names); pointing it at the display label
+  would load zero channels. Display relabel + the `| sort` directive + `IPTV_<N>_FAVORITES` are
+  host-side curation → deferred to step 2 (`build_iptv.py`).
+- **Xtream decision (scope boundary honored).** pvr.iptvsimple Omega (21.11.0) has NO native
+  Xtream-Codes connection mode — verified against the REAL installed instance-settings schema (its
+  only XTREAM reference is the `allChannelsCatchupMode` CATCHUP enum, no portal/user/pass source
+  settings) — and this provider's get.php m3u export is server-blocked, so URL derivation can't work
+  either. An xtream-mode provider is therefore SKIPPED in-Kodi with an honest log (no creds logged,
+  no instance file written); host-side xtream→m3u derivation lands in step 2.
+- **Snapshot delta (reviewed):** the `bare` characterization snapshot's `enable_sequence` gains
+  EXACTLY the pvr.iptvsimple disable→enable bounce after its install-enable (installed/disabled
+  sets, settings, builtins, files all unchanged); the `full` snapshot is byte-identical (its iptv
+  install is a no-state stub, so the guarded pause no-ops).
+- **Tested / mutation-proven:** +17 net new tests — `test_setup_iptv.py` (+14: the disabled-window
+  ordering probe [copy AND enforce observed running with pvr disabled, exact
+  install-enable→disable→enable sequence], finally-re-enable on a raising enforce, pause no-op
+  without the backend, pause/resume failure swallows, `_group_source` grammar, `_iptv_providers`
+  parsing + mode inference + legacy fallback, one-instance-per-provider with identity keys +
+  per-provider groups files + N-gap honored, xtream skip with zero secret leak, legacy-shape
+  back-compat incl. IPTV_NAME, one-bad-provider isolation, numbered-shape secrets-never-logged,
+  multi-provider `apply_iptv` reports "configured", outer parse-failure swallow),
+  `test_run_foundation.py` (+1: the REAL env shape through `run_foundation_setup` — m3u provider 1
+  configured + named, xtream provider 2 skipped, backend ends ENABLED), `test_bootstrap.py` (+2:
+  `_configure_box` writes inside the window with pvr installed / no toggles at all without pvr).
+  **575 passed / 1 xfailed** (was 558), `ruff` clean (`_tools/` + both add-ons), secret-leak green.
+- **Coverage:** iptv.py **100%**, bootstrap default.py 96% (every uncovered line is a pre-existing
+  defensive guard / `__main__` — all NEW code covered). Generated files regenerated (second regen
+  byte-identical); no version bumps (deferred to the milestone push).
+- **LIVE-VERIFIED (clean Kodi, fresh profile, `run_foundation_setup` with the FULL `.env.local`
+  multi-provider env — 28 keys, `has_iptv=True`):** the enforce logged
+  `instance 1: generated 3 custom group(s)` + `groups=True only=true m3u=True epg=True` and
+  `provider 2 is xtream-mode — skipped in-Kodi`; pvr.iptvsimple pulled the real playlist (2.3 MB
+  m3u cache + 19 MB EPG cache) from the written settings DURING the run; after the clean-shutdown
+  restart (the exact flush that clobbered the 5a·3 box) `instance-settings-1.xml` still carried
+  `kodi_addon_instance_name=Network 24`, `tvGroupMode=2`, `tvChannelGroupsOnly=true`, m3u/epg —
+  and JSON-RPC proved the acceptance: `PVR.GetChannelGroups` = **USA ENTERTAINMENT / USA
+  NEWS/WEATHER / PPV EVENTS** (+ the stock "All channels"), `PVR.GetChannels` totals **158 / 47 /
+  24** real channels per group. `skin.estuary.modv2` active, pvr.iptvsimple 21.11.0 enabled, no
+  `instance-settings-2.xml`, Setup self-uninstalled, staged env deleted.
 
-1. **FIX the two `apply_iptv` live-box bugs** (logged under Phase 5a·3, the live run surfaced them):
-   - **Instance-settings clobber** — write/enforce `instance-settings-*.xml` BEFORE enabling
-     pvr.iptvsimple (the running PVR client flushes stock in-memory defaults over a later file
-     write — same class as the `Skin.SetBool` clobber). Verify the Express `_configure_box` path
-     for the same latent race.
-   - **Multi-provider env gap** — `_ensure_iptv_custom_tv_groups` reads single-instance
-     `IPTV_M3U`/`IPTV_EPG`/`IPTV_GROUPS`, but the per-device `.env` uses `IPTV_<N>_*`. Generalize
-     `apply_iptv` to **N providers** → N `instance-settings-<N>.xml` + N `customTVGroups-*.xml`.
-2. **Integrate the host-side IPTV build** (the deferred P2 work): bring `_tools/build_iptv.py` +
+## Phase 5b — IN PROGRESS (step 1 DONE; steps 2–4 next)
+
+> **Status of the build:** Phases 0–3 + **5a (Foundation, incl. 5a·2/5a·3)** + **5b·1 (both
+> `apply_iptv` bugs fixed + clean-Kodi channel-load proof)** are DONE, gated, and committed LOCALLY
+> on `modular-setup` — **not pushed** (milestone-push pending: it needs the
+> `script.module.tony7bones` + `script.tony7bones.bootstrap` version bumps + a `--news`).
+> The Foundation deliverable is complete and clean-Kodi verified, and the env-gated IPTV chain now
+> PROVABLY loads channels. `run_express` (Express) and `run_foundation`/`run_foundation_setup`
+> (skin-only + env-gated IPTV chain) exist; the shipped `run()` still calls `run_express`.
+
+**5b makes the IPTV layer independently runnable AND correct.** In order:
+
+1. ~~**FIX the two `apply_iptv` live-box bugs**~~ — **DONE (Phase 5b·1, see the phase log above):**
+   the PVR-disabled config window (clobber fix, incl. the legacy `_configure_box` slot) + the
+   N-provider `IPTV_<N>_*` → N `instance-settings-<N>.xml` + N `customTVGroups-*.xml`
+   generalization (legacy single-instance keys = provider 1, byte-compatible). Clean-Kodi proof:
+   158/47/24 channels in the three custom groups, settings survive the shutdown flush.
+2. **Integrate the host-side IPTV build** (the deferred P2 work — **THE NEXT STEP**): bring `_tools/build_iptv.py` +
    `_tools/test_build_iptv.py` + the customization playbook over from the **`iptv` branch** (98%-
    covered, m3u + xtream modes) into the provisioner, and have `apply_iptv` consume its staged
    curated `instance-settings-<N>.xml` / `customTVGroups-*.xml` (per the panel's "IPTV is two

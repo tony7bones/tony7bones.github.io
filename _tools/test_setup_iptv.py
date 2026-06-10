@@ -748,3 +748,324 @@ def test_ensure_returns_false_on_swallowed_failure(boot, monkeypatch):
         )
         is False
     )
+
+
+# --------------------------------------------------------------------------- #
+# Phase 5b·1 — the PVR-disabled config window (instance-settings clobber fix).
+#
+# The 5a·3 clean-Kodi live run shipped an UNCONFIGURED pvr.iptvsimple: apply_iptv
+# ENABLED the backend (instantiating the live PVR client with stock in-memory
+# defaults) BEFORE writing instance-settings, and the running client flushed its
+# stale defaults back over the write (same class as the Skin.SetBool clobber).
+# The fix: disable the backend around the copy+enforce writes, re-enable after
+# (in a finally), so fresh clients start FROM the files just written.
+# --------------------------------------------------------------------------- #
+def _pvr_enable_calls(boot):
+    """Ordered [enabled-bool] of every Addons.SetAddonEnabled for pvr.iptvsimple."""
+    import json
+
+    out = []
+    for raw in boot.state["jsonrpc"]:
+        d = json.loads(raw)
+        if d.get("method") == "Addons.SetAddonEnabled":
+            p = d["params"]
+            if p.get("addonid") == "pvr.iptvsimple":
+                out.append(bool(p.get("enabled", True)))
+    return out
+
+
+def test_apply_iptv_writes_config_inside_pvr_disabled_window(boot, monkeypatch):
+    """THE BUG-1 FIX, pinned: apply_iptv must run BOTH file-writing halves (the
+    device-copy AND the instance-settings enforce) while pvr.iptvsimple is
+    DISABLED, then re-enable it. MUTATION: dropping the pause (or moving the
+    enforce outside the window) flips the observed disabled-state to False; the
+    pvr enable sequence must be exactly install-enable -> pause-disable ->
+    resume-enable."""
+    iptv = _iptv(boot)
+    seen = {}
+    real_enforce = iptv._ensure_iptv_custom_tv_groups
+    real_copy = iptv._copy_device_files
+
+    def enforce_probe(env):
+        seen["disabled_during_enforce"] = "pvr.iptvsimple" in boot.state["disabled"]
+        return real_enforce(env)
+
+    def copy_probe():
+        seen["disabled_during_copy"] = "pvr.iptvsimple" in boot.state["disabled"]
+        return real_copy()
+
+    monkeypatch.setattr(iptv, "_ensure_iptv_custom_tv_groups", enforce_probe)
+    monkeypatch.setattr(iptv, "_copy_device_files", copy_probe)
+    res = iptv.apply_iptv({"IPTV_M3U": "http://iptv.example/get?password=p"})
+    assert res.ok is True
+    assert seen["disabled_during_copy"] is True, "copy must run with pvr DISABLED"
+    assert seen["disabled_during_enforce"] is True, (
+        "enforce must run with pvr DISABLED"
+    )
+    assert "pvr.iptvsimple" not in boot.state["disabled"], "pvr must end RE-ENABLED"
+    assert _pvr_enable_calls(boot) == [True, False, True], (
+        "expected install-enable, pause-disable, resume-enable"
+    )
+
+
+def test_apply_iptv_reenables_pvr_even_if_enforce_raises(boot, monkeypatch):
+    """The resume is in a finally: even an (out-of-contract) raising enforce must
+    not leave the backend disabled — a disabled pvr is a broken box."""
+    import pytest
+
+    iptv = _iptv(boot)
+
+    def boom(env):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(iptv, "_ensure_iptv_custom_tv_groups", boom)
+    with pytest.raises(RuntimeError):
+        iptv.apply_iptv({"IPTV_M3U": "http://iptv.example/x"})
+    assert "pvr.iptvsimple" not in boot.state["disabled"], "finally must re-enable"
+    assert _pvr_enable_calls(boot)[-1] is True
+
+
+def test_pause_pvr_noops_when_backend_missing(boot):
+    """No pvr.iptvsimple installed -> the pause is a no-op returning False (no
+    SetAddonEnabled at all) — _configure_box on a pvr-less box pauses nothing."""
+    assert _iptv(boot)._pause_pvr_for_config() is False
+    assert _pvr_enable_calls(boot) == []
+
+
+def test_pause_and_resume_failures_are_swallowed(boot, monkeypatch):
+    """A failing disable returns False (the write still proceeds — a clobber risk
+    beats aborting setup); a failing enable is logged, never raised (the resume
+    runs in a finally)."""
+    iptv = _iptv(boot)
+    boot.state["installed"].add("pvr.iptvsimple")
+
+    def boom(aid):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(iptv, "disable", boom)
+    assert iptv._pause_pvr_for_config() is False
+    monkeypatch.setattr(iptv, "enable", boom)
+    iptv._resume_pvr_after_config()  # must not raise
+
+
+# --------------------------------------------------------------------------- #
+# Phase 5b·1 — multi-provider env (IPTV_<N>_*) -> one pvr instance per provider.
+# (All provider values are obviously-fake — no real creds anywhere here.)
+# --------------------------------------------------------------------------- #
+def _instance_path_n(boot, n):
+    return _dst_path(boot, _iptv(boot)._instance_settings_special(n))
+
+
+def _read_instance_n(boot, n):
+    root = ET.parse(_instance_path_n(boot, n)).getroot()
+    return {s.get("id"): (s.text or "") for s in root.findall("setting")}
+
+
+def test_group_source_extracts_source_side_of_grammar(boot):
+    """The groups grammar is `SOURCE > Display Label | sort`. pvr.iptvsimple
+    matches <channelGroupName> against the playlist's group-title values — the
+    SOURCE side — so that is what the in-Kodi half must emit. Display relabel and
+    the sort directive are host-side build work (Phase 5b step 2)."""
+    g = _iptv(boot)._group_source
+    assert g("USA ENTERTAINMENT > US Entertainment | sort") == "USA ENTERTAINMENT"
+    assert g("PPV EVENTS > PPV Events") == "PPV EVENTS"
+    assert g("PPV EVENTS | sort") == "PPV EVENTS"
+    assert g("USA ENTERTAINMENT") == "USA ENTERTAINMENT"
+    assert g("  padded  >  X ") == "padded"
+
+
+def test_iptv_providers_numbered_parsing_and_mode_inference(boot):
+    """Numbered blocks: one provider per N (sorted, gaps preserved — the env N is
+    the instance id); mode = explicit IPTV_<N>_MODE, else xtream iff PORTAL with
+    no M3U, else m3u."""
+    ps = _iptv(boot)._iptv_providers(
+        {
+            "IPTV_3_NAME": "Other One",
+            "IPTV_3_M3U": "http://h/3.m3u",
+            "IPTV_1_NAME": "Network 24",
+            "IPTV_1_MODE": "m3u",
+            "IPTV_1_M3U": "http://h/1.m3u",
+            "IPTV_2_NAME": "Streamvision",
+            "IPTV_2_MODE": "xtream",
+            "IPTV_2_PORTAL": "http://portal.example",
+            "IPTV_5_PORTAL": "http://p5.example",  # no MODE, no M3U -> xtream
+        }
+    )
+    assert [p["n"] for p in ps] == [1, 2, 3, 5]
+    assert [p["mode"] for p in ps] == ["m3u", "xtream", "m3u", "xtream"]
+    assert all(p["legacy"] is False for p in ps)
+    assert ps[0]["name"] == "Network 24" and ps[0]["m3u"] == "http://h/1.m3u"
+
+
+def test_iptv_providers_legacy_fallback(boot):
+    """With NO numbered keys the legacy single-instance shape maps to ONE
+    legacy=True provider 1 — and an EMPTY env still yields it (the legacy enforce
+    must run its gated no-op probe so a device-copied groups file keeps working)."""
+    ps = _iptv(boot)._iptv_providers({"IPTV_M3U": "http://h/x", "IPTV_GROUPS": "A"})
+    assert len(ps) == 1 and ps[0]["legacy"] is True and ps[0]["n"] == 1
+    assert ps[0]["m3u"] == "http://h/x" and ps[0]["groups"] == "A"
+    empty = _iptv(boot)._iptv_providers({})
+    assert len(empty) == 1 and empty[0]["legacy"] is True
+
+
+def test_multi_provider_env_writes_one_instance_per_provider(boot):
+    """Two m3u providers (with a gap: N=1 and N=3) -> instance-settings-1.xml AND
+    instance-settings-3.xml, each with its OWN m3u/epg, its OWN name-derived
+    customTVGroups file, custom group mode, and the multi-instance identity keys
+    (name + enabled) that make a created file real to Kodi's instance scanner."""
+    wrote = _iptv(boot)._ensure_iptv_custom_tv_groups(
+        {
+            "IPTV_1_NAME": "Network 24",
+            "IPTV_1_M3U": "http://iptv.example/1.m3u?password=p1",
+            "IPTV_1_EPG": "http://iptv.example/1.xml",
+            "IPTV_1_GROUPS": "USA ENTERTAINMENT > US Entertainment | sort",
+            "IPTV_3_NAME": "Other One",
+            "IPTV_3_M3U": "http://iptv.example/3.m3u?password=p3",
+            "IPTV_3_GROUPS": "SPORTS",
+            "IPTV_3_GROUPS_ONLY": "false",
+        }
+    )
+    assert wrote is True
+    one = _read_instance_n(boot, 1)
+    three = _read_instance_n(boot, 3)
+    assert one["m3uUrl"].endswith("password=p1") and one["m3uPathType"] == "1"
+    assert one["epgUrl"] == "http://iptv.example/1.xml"
+    assert three["m3uUrl"].endswith("password=p3")
+    # Identity keys (numbered providers only).
+    assert one["kodi_addon_instance_name"] == "Network 24"
+    assert one["kodi_addon_instance_enabled"] == "true"
+    assert three["kodi_addon_instance_name"] == "Other One"
+    # Per-provider groups files, name-derived; group mode enforced per instance.
+    assert one["tvGroupMode"] == "2" and three["tvGroupMode"] == "2"
+    assert one["customTvGroupsFile"].endswith("customTVGroups-Network24.xml")
+    assert three["customTvGroupsFile"].endswith("customTVGroups-OtherOne.xml")
+    assert one["tvChannelGroupsOnly"] == "true"
+    assert three["tvChannelGroupsOnly"] == "false"
+    g1 = open(_dst_path(boot, one["customTvGroupsFile"])).read()
+    g3 = open(_dst_path(boot, three["customTvGroupsFile"])).read()
+    assert "USA ENTERTAINMENT" in g1 and "US Entertainment" not in g1
+    assert "sort" not in g1, "the sort directive is host-side work, never emitted"
+    assert "SPORTS" in g3
+
+
+def test_xtream_provider_is_skipped_honestly_without_secret_leak(boot, monkeypatch):
+    """An xtream-mode provider is SKIPPED in-Kodi (pvr.iptvsimple Omega has no
+    native Xtream connection mode — its only XTREAM schema reference is a catchup
+    enum) with an honest log; its portal/user/pass never reach any log line or
+    file; the m3u provider still configures, so the enforce returns True."""
+    logged = []
+    monkeypatch.setattr(
+        boot.mod.xbmc, "log", lambda msg, *a, **k: logged.append(str(msg))
+    )
+    wrote = _iptv(boot)._ensure_iptv_custom_tv_groups(
+        {
+            "IPTV_1_NAME": "Network 24",
+            "IPTV_1_M3U": "http://iptv.example/1.m3u?password=M3USECRET",
+            "IPTV_2_NAME": "Streamvision",
+            "IPTV_2_MODE": "xtream",
+            "IPTV_2_PORTAL": "http://portal.example:8080/PORTALSECRET",
+            "IPTV_2_USER": "USERSECRET",
+            "IPTV_2_PASS": "PASSSECRET",
+            "IPTV_2_EPG": "http://portal.example/xmltv.php?password=PASSSECRET",
+            "IPTV_2_GROUPS": "58 > US Entertainment | sort",
+        }
+    )
+    assert wrote is True, "the m3u provider must still configure"
+    assert os.path.exists(_instance_path_n(boot, 1))
+    assert not os.path.exists(_instance_path_n(boot, 2)), (
+        "an xtream provider must write NO instance file (host-side build pending)"
+    )
+    blob = "\n".join(logged)
+    assert "xtream" in blob.lower(), "the skip must be logged honestly"
+    for secret in ("PORTALSECRET", "USERSECRET", "PASSSECRET", "M3USECRET"):
+        assert secret not in blob, f"secret value {secret!r} leaked into the log"
+
+
+def test_legacy_env_with_name_keeps_legacy_paths_and_no_identity_keys(boot):
+    """Back-compat: the LEGACY single-instance shape keeps the monolith's exact
+    file paths even when IPTV_NAME is present (no name-derived groups path) and
+    never writes the instance-identity keys — instance-settings-1.xml stays
+    byte-compatible with what every shipped box already has."""
+    _iptv(boot)._ensure_iptv_custom_tv_groups(
+        {
+            "IPTV_NAME": "My Provider",
+            "IPTV_M3U": "http://iptv.example/x?password=p",
+            "IPTV_GROUPS": "A; B",
+        }
+    )
+    got = _read_instance_settings(boot)
+    assert got["customTvGroupsFile"] == (
+        _iptv(boot).IPTV_CUSTOM_TV_GROUPS_FILE_VALUE
+    ), "legacy shape must keep the historical customTVGroups-Network24.xml path"
+    assert "kodi_addon_instance_name" not in got
+    assert "kodi_addon_instance_enabled" not in got
+
+
+def test_multi_provider_one_bad_provider_does_not_block_others(boot, monkeypatch):
+    """A failing provider is logged and skipped; the OTHERS still apply and the
+    aggregate return stays truthful (True because provider 3 wrote)."""
+    iptv = _iptv(boot)
+    real = iptv._ensure_iptv_instance
+
+    def flaky(provider):
+        if provider["n"] == 1:
+            raise RuntimeError("boom")
+        return real(provider)
+
+    monkeypatch.setattr(iptv, "_ensure_iptv_instance", flaky)
+    wrote = iptv._ensure_iptv_custom_tv_groups(
+        {
+            "IPTV_1_M3U": "http://iptv.example/1.m3u",
+            "IPTV_3_M3U": "http://iptv.example/3.m3u",
+        }
+    )
+    assert wrote is True
+    assert not os.path.exists(_instance_path_n(boot, 1))
+    assert os.path.exists(_instance_path_n(boot, 3))
+
+
+def test_multi_provider_secrets_never_logged(boot, monkeypatch):
+    """The numbered-shape twin of the legacy never-logged test: no provider URL
+    value may appear in any log line."""
+    logged = []
+    monkeypatch.setattr(
+        boot.mod.xbmc, "log", lambda msg, *a, **k: logged.append(str(msg))
+    )
+    _iptv(boot)._ensure_iptv_custom_tv_groups(
+        {
+            "IPTV_1_GROUPS": "A",
+            "IPTV_1_M3U": "http://host/get?password=SUPERSECRET123",
+            "IPTV_1_EPG": "http://host/epg?password=SUPERSECRET123",
+        }
+    )
+    blob = "\n".join(logged)
+    assert "SUPERSECRET123" not in blob and "http://host/get" not in blob
+
+
+def test_apply_iptv_multi_provider_reports_configured(boot):
+    """apply_iptv with a numbered multi-provider env installs the backend and
+    reports pvr.iptvsimple 'configured' (the enforce wrote real config)."""
+    res = _iptv(boot).apply_iptv(
+        {
+            "IPTV_1_NAME": "Network 24",
+            "IPTV_1_M3U": "http://iptv.example/1.m3u?password=p",
+            "IPTV_1_GROUPS": "USA ENTERTAINMENT > US Entertainment | sort",
+        }
+    )
+    assert res.ok is True
+    assert res.installed.get("pvr.iptvsimple") == "configured"
+    assert _read_instance_n(boot, 1)["tvGroupMode"] == "2"
+
+
+def test_ensure_outer_swallow_when_provider_parsing_fails(boot, monkeypatch):
+    """The OUTER defensive except (distinct from the per-provider one): if the
+    provider PARSING itself raises, the enforce still returns False and never
+    raises — the never-abort-setup contract holds end to end."""
+
+    def boom(env):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(_iptv(boot), "_iptv_providers", boom)
+    assert (
+        _iptv(boot)._ensure_iptv_custom_tv_groups({"IPTV_M3U": "http://h/x"}) is False
+    )

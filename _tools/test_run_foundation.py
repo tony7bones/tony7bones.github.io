@@ -638,3 +638,54 @@ def test_run_foundation_setup_self_uninstalls_after_summary_before_restart(
     assert events == ["summary", "self_uninstall", "restart"], (
         f"order must be summary -> self_uninstall -> restart, got {events}"
     )
+
+
+def test_run_foundation_setup_multi_provider_env_one_instance_per_provider(
+    boot, monkeypatch
+):
+    """Phase 5b·1 — the REAL per-device env shape through the chain: a numbered
+    multi-provider env (m3u provider 1 + xtream provider 2) fires the IPTV gate;
+    provider 1 lands in instance-settings-1.xml (m3u + custom groups from the
+    `SOURCE > Label | sort` grammar's SOURCE side + the instance name); the
+    xtream provider writes NO instance file (skipped in-Kodi — host-side m3u
+    derivation is step 2); and pvr.iptvsimple ends ENABLED (the clobber-fix
+    disable window must not leave it off)."""
+    import os
+    from xml.etree import ElementTree as ET
+
+    _stub_skin_success(boot, monkeypatch)
+    env = {
+        "IPTV_1_NAME": "Network 24",
+        "IPTV_1_MODE": "m3u",
+        "IPTV_1_M3U": "http://iptv.example/1.m3u?password=p1",
+        "IPTV_1_EPG": "http://iptv.example/1.xml",
+        "IPTV_1_GROUPS": "USA ENTERTAINMENT > US Entertainment | sort; PPV EVENTS",
+        "IPTV_2_NAME": "Streamvision",
+        "IPTV_2_MODE": "xtream",
+        "IPTV_2_PORTAL": "http://portal.example:8080",
+        "IPTV_2_USER": "u",
+        "IPTV_2_PASS": "p",
+    }
+    fnd_res, iptv_res = boot.mod.run_foundation_setup(env)
+    assert fnd_res.ok is True
+    assert iptv_res is not None and iptv_res.ok is True
+    assert iptv_res.installed.get("pvr.iptvsimple") == "configured"
+    assert "pvr.iptvsimple" in boot.state["installed"]
+    assert "pvr.iptvsimple" not in boot.state["disabled"], (
+        "the clobber-fix window must RE-ENABLE the backend"
+    )
+    one = boot.mod.xbmcvfs.translatePath(boot.mod._iptv._instance_settings_special(1))
+    two = boot.mod.xbmcvfs.translatePath(boot.mod._iptv._instance_settings_special(2))
+    assert os.path.exists(one), "provider 1 must write instance-settings-1.xml"
+    assert not os.path.exists(two), "the xtream provider must be skipped in-Kodi"
+    vals = {
+        s.get("id"): (s.text or "")
+        for s in ET.parse(one).getroot().findall("setting")
+    }
+    assert vals["m3uUrl"].endswith("password=p1")
+    assert vals["kodi_addon_instance_name"] == "Network 24"
+    assert vals["tvGroupMode"] == "2"
+    gpath = boot.mod.xbmcvfs.translatePath(vals["customTvGroupsFile"])
+    gtext = open(gpath).read()
+    assert "USA ENTERTAINMENT" in gtext and "PPV EVENTS" in gtext
+    assert "US Entertainment" not in gtext, "SOURCE side only — never the label"

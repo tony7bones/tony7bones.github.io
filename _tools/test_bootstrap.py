@@ -2100,3 +2100,43 @@ def test_install_skin_shim_forwards_bootstrap_deps(boot, monkeypatch):
     assert isinstance(seen["deps"], boot.mod._BootSkinDeps), (
         "the shim must forward a _BootSkinDeps so boot.mod.* patches take effect"
     )
+
+
+def test_configure_box_pauses_pvr_around_iptv_write(boot, monkeypatch):
+    """Phase 5b·1 — the legacy `_configure_box` path has the SAME clobber race as
+    apply_iptv (the monolith installed+enabled pvr.iptvsimple EARLY, then wrote
+    instance-settings LATE with the client live), so its copy+enforce slots now
+    run inside the PVR-disabled window too: with pvr installed, the enforce must
+    observe the backend DISABLED, and it must end RE-ENABLED."""
+    boot.state["installed"].add("pvr.iptvsimple")
+    seen = {}
+    real = boot.mod._ensure_iptv_custom_tv_groups
+
+    def probe(env):
+        seen["disabled_during_enforce"] = "pvr.iptvsimple" in boot.state["disabled"]
+        return real(env)
+
+    # _configure_box resolves the enforce through the boot.mod SHIM binding (the
+    # Phase-2d re-export), so the probe must replace THAT name, not the iptv
+    # module attribute the shim was bound from.
+    monkeypatch.setattr(boot.mod, "_ensure_iptv_custom_tv_groups", probe)
+    boot.mod._configure_box({"IPTV_M3U": "http://iptv.example/x?password=p"})
+    assert seen["disabled_during_enforce"] is True, (
+        "_configure_box must write IPTV config with pvr DISABLED (clobber fix)"
+    )
+    assert "pvr.iptvsimple" not in boot.state["disabled"], "must end re-enabled"
+
+
+def test_configure_box_no_pvr_pause_when_backend_absent(boot):
+    """A box without pvr.iptvsimple installed pauses nothing: `_configure_box`
+    issues NO SetAddonEnabled for the backend (the guarded no-op window)."""
+    import json as _json
+
+    boot.mod._configure_box({"IPTV_M3U": "http://iptv.example/x"})
+    pvr_toggles = [
+        _json.loads(raw)
+        for raw in boot.state["jsonrpc"]
+        if _json.loads(raw).get("method") == "Addons.SetAddonEnabled"
+        and _json.loads(raw)["params"].get("addonid") == "pvr.iptvsimple"
+    ]
+    assert pvr_toggles == [], "no pvr installed -> no pause/resume toggles"

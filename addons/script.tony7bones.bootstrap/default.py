@@ -324,11 +324,23 @@ def _configure_box(box_env=None):
         # Weather: env-driven (up to 5 resolved locations + the upgrade keys),
         # falling back to the keyless Sacramento default when no env is present.
         _apply_weather_from_env(box_env)
-        # Copy the user's device files into userdata (guarded; skips any missing).
-        _copy_device_files()
-        # IPTV from env: generate groups + inject m3u/epg, then enforce group mode
-        # (gated on the groups file). Falls back to the device-copied file / no-op.
-        _ensure_iptv_custom_tv_groups(box_env)
+        # Device-copy + IPTV enforce run inside the PVR-DISABLED window (the Phase
+        # 5b·1 clobber fix): both write pvr.iptvsimple's instance-settings files
+        # directly, and a LIVE pvr client (installed + enabled EARLY by the base
+        # step in this legacy monolith order) flushes its stale in-memory defaults
+        # back over direct file writes. Guarded: a box without pvr installed
+        # pauses nothing (the helpers no-op, and the resume only runs if paused).
+        paused = _iptv._pause_pvr_for_config()
+        try:
+            # Copy the user's device files into userdata (guarded; skips missing).
+            _copy_device_files()
+            # IPTV from env: generate groups + inject m3u/epg, then enforce group
+            # mode (gated on the groups file). Falls back to the device-copied
+            # file / no-op.
+            _ensure_iptv_custom_tv_groups(box_env)
+        finally:
+            if paused:
+                _iptv._resume_pvr_after_config()
         # RSS ticker feeds from env (writes userdata/RssFeeds.xml; else no-op).
         _apply_rss_from_env(box_env)
         # The top-bar toggle is an Estuary skin bool; set it live so the restart

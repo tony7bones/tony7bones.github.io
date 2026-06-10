@@ -281,6 +281,14 @@
       {
         "id": "pvr.iptvsimple",
         "enabled": true
+      },
+      {
+        "id": "pvr.iptvsimple",
+        "enabled": false
+      },
+      {
+        "id": "pvr.iptvsimple",
+        "enabled": true
       }
     ],
     "settings": [
