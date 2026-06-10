@@ -133,9 +133,18 @@ def lib(tmp_path, monkeypatch):
     xbmc = types.ModuleType("xbmc")
     xbmc.LOGERROR = 4
     xbmc.LOGINFO = 1
+    xbmc.LOGWARNING = 2
     xbmc.log = lambda *a, **k: None
-    xbmc.sleep = lambda ms: None
+
+    def _sleep(ms):
+        state.setdefault("sleeps", []).append(ms)
+
+    xbmc.sleep = _sleep
     xbmc.getCondVisibility = lambda cond: state.get("condvis", False)
+    # State-aware active skin: a Settings.SetSettingValue(lookandfeel.skin)
+    # through the fake JSON-RPC switches it immediately, mirroring real Kodi —
+    # the hardened activate_skin verifies its end state through this.
+    xbmc.getSkinDir = lambda: state.get("skin_dir", "skin.estuary")
 
     def _builtin(cmd, wait=False):
         state["builtins"].append(cmd)
@@ -154,6 +163,9 @@ def lib(tmp_path, monkeypatch):
                 state["disabled"].discard(aid)
             else:
                 state["disabled"].add(aid)
+        elif d.get("method") == "Settings.SetSettingValue":
+            if d["params"].get("setting") == "lookandfeel.skin":
+                state["skin_dir"] = d["params"].get("value")
         return "{}"
 
     xbmc.executeJSONRPC = _jsonrpc
@@ -172,6 +184,7 @@ def lib(tmp_path, monkeypatch):
     class _Dialog:
         def yesno(self, *a, **k):
             state["yesno"] = state.get("yesno", 0) + 1
+            state.setdefault("yesno_kwargs", []).append(k)
             return state.get("yesno_return", False)
 
         def notification(self, *a, **k):
@@ -214,7 +227,12 @@ def lib(tmp_path, monkeypatch):
     t7 = importlib.import_module("tony7bones")
 
     return types.SimpleNamespace(
-        t7=t7, state=state, addons=addons, database=database, tmp_path=tmp_path
+        t7=t7,
+        state=state,
+        addons=addons,
+        database=database,
+        tmp_path=tmp_path,
+        xbmc=xbmc,
     )
 
 
@@ -244,6 +262,213 @@ def test_activate_skin_no_dialog_no_click(lib):
     assert not any("SendClick" in b for b in lib.state["builtins"])
 
 
+# --------------------------------------------------------------------------- #
+# Keep-skin race hardening (Phase 6) — verify-and-reassert + quiescence settle
+# --------------------------------------------------------------------------- #
+def _skin_sets(lib):
+    """How many lookandfeel.skin sets went through the fake JSON-RPC."""
+    return sum(1 for j in lib.state["jsonrpc"] if "lookandfeel.skin" in j)
+
+
+def test_activate_skin_returns_true_when_verified_active(lib):
+    """The hardened activate_skin VERIFIES the end state (getSkinDir) and
+    returns True on the happy path — with exactly ONE skin set (no pointless
+    re-assert when the switch stuck)."""
+    lib.state["condvis"] = True
+    ok = lib.t7.activate_skin("skin.estuary.modv2", lambda *a, **k: None)
+    assert ok is True
+    assert _skin_sets(lib) == 1, "a verified switch must not be re-asserted"
+
+
+def test_activate_skin_reasserts_after_destroyed_confirm_revert(lib):
+    """THE 5b·3 race: the keep-skin confirm is DESTROYED by skinshortcuts'
+    first-build skin reload ~270ms after the switch, and Kodi silently reverts
+    to stock. The fix: the poll sees the live-then-reverted flip, and the
+    verify re-asserts the switch — the second set runs after the destructive
+    build, so it sticks. MUTATION: removing the re-assert loop (or the verify)
+    makes this return False / stop at one set."""
+    lib.state["condvis"] = False  # the confirm never becomes visible (destroyed)
+    seen = {"sets": 0, "calls": 0}
+
+    def _skin_dir():
+        sets = _skin_sets(lib)
+        if sets != seen["sets"]:
+            seen["sets"], seen["calls"] = sets, 0
+        seen["calls"] += 1
+        if sets >= 2:  # the re-asserted switch sticks
+            return "skin.estuary.modv2"
+        if sets == 1:  # live for two polls, then the destroyed-confirm revert
+            return "skin.estuary.modv2" if seen["calls"] <= 2 else "skin.estuary"
+        return "skin.estuary"
+
+    lib.xbmc.getSkinDir = _skin_dir
+    logs = []
+    ok = lib.t7.activate_skin("skin.estuary.modv2", lambda msg, lvl=0: logs.append(msg))
+    assert ok is True
+    assert _skin_sets(lib) == 2, "the revert must trigger exactly one re-assert"
+    assert any("confirm lost" in m for m in logs), (
+        "the destroyed-confirm revert must be detected (early poll exit) and logged"
+    )
+
+
+def test_activate_skin_reasserts_when_confirm_destroyed_while_visible(lib):
+    """THE EXACT LIVE SCENARIO (caught on the box): the confirm IS visible (the
+    skin is already live — Kodi switches live, then shows the confirm), we
+    click Yes, but skinshortcuts' reload destroys it as we click and the skin
+    reverts. saw_live MUST be recorded even though we were in the dialog-visible
+    branch, so the verify re-asserts instead of misreading it as 'never went
+    live'. MUTATION: tracking saw_live only in the no-dialog branch (the
+    pre-fix code) makes this bail with 'never went live' at one set."""
+    # The confirm is visible on attempt 1 only (then the reload killed it).
+    state = {"visible_attempts": {1}}
+
+    def _condvis(_cond):
+        return _skin_sets(lib) in state["visible_attempts"]
+
+    lib.xbmc.getCondVisibility = _condvis
+    seen = {"sets": 0, "calls": 0}
+
+    def _skin_dir():
+        sets = _skin_sets(lib)
+        if sets != seen["sets"]:
+            seen["sets"], seen["calls"] = sets, 0
+        seen["calls"] += 1
+        if sets >= 2:  # the re-asserted switch (confirm no longer visible) sticks
+            return "skin.estuary.modv2"
+        # attempt 1: live while the confirm shows, reverts right after the click
+        return "skin.estuary.modv2" if seen["calls"] <= 1 else "skin.estuary"
+
+    lib.xbmc.getSkinDir = _skin_dir
+    logs = []
+    ok = lib.t7.activate_skin("skin.estuary.modv2", lambda msg, lvl=0: logs.append(msg))
+    assert ok is True, "must re-assert and succeed, not bail as 'never went live'"
+    assert not any("never went live" in m for m in logs), (
+        "a confirm destroyed WHILE VISIBLE must not be misread as a rejected set"
+    )
+    assert _skin_sets(lib) == 2
+
+
+def test_activate_skin_returns_false_when_skin_never_sticks(lib):
+    """When every attempt reverts, activate_skin is HONEST: bounded attempts,
+    then return False with a loud FAILED log — never a silent stock-Estuary
+    box. MUTATION: an unconditional `return True` fails here."""
+    lib.state["condvis"] = False
+    seen = {"sets": 0, "calls": 0}
+
+    def _skin_dir():
+        sets = _skin_sets(lib)
+        if sets != seen["sets"]:
+            seen["sets"], seen["calls"] = sets, 0
+        seen["calls"] += 1
+        # Every attempt: briefly live, then reverted (the lost race, repeated).
+        return "skin.estuary.modv2" if seen["calls"] <= 2 else "skin.estuary"
+
+    lib.xbmc.getSkinDir = _skin_dir
+    logs = []
+    ok = lib.t7.activate_skin("skin.estuary.modv2", lambda msg, lvl=0: logs.append(msg))
+    assert ok is False
+    assert _skin_sets(lib) == 3, "bounded re-asserts: exactly `attempts` sets"
+    assert any("FAILED to keep" in m for m in logs)
+
+
+def test_activate_skin_bails_fast_when_set_rejected(lib):
+    """When the skin NEVER goes live and no confirm appears, the set was
+    rejected outright (skin not registered/enabled) — re-asserting cannot fix
+    that, so activate_skin bails after ONE attempt with an honest error.
+    MUTATION: removing the bail burns all attempts (3 sets) here."""
+    lib.state["condvis"] = False
+    lib.xbmc.getSkinDir = lambda: "skin.estuary"  # the switch never happens
+    logs = []
+    ok = lib.t7.activate_skin("skin.estuary.modv2", lambda msg, lvl=0: logs.append(msg))
+    assert ok is False
+    assert _skin_sets(lib) == 1, "a rejected set must not be blindly re-asserted"
+    assert any("never went live" in m for m in logs)
+
+
+def test_activate_skin_confirm_poll_is_fast(lib):
+    """The confirm poll must be 200ms — the destroyed confirm lived only
+    ~270ms on the real box, so the old 500ms poll lost the race outright.
+    MUTATION: reverting to a 500ms poll fails here."""
+    lib.state["condvis"] = False
+    lib.t7.activate_skin("skin.estuary.modv2", lambda *a, **k: None)
+    sleeps = lib.state.get("sleeps", [])
+    assert 200 in sleeps, "the confirm poll interval must be 200ms"
+    assert 500 not in sleeps, "the 500ms poll loses the ~270ms destroy race"
+
+
+def test_wait_skin_quiescent_skips_without_skinshortcuts(lib):
+    """No script.skinshortcuts on the box -> nothing will reload -> no wait."""
+    import importlib as _importlib
+
+    system = _importlib.import_module("tony7bones.system")
+    system._wait_skin_quiescent("skin.estuary.modv2", lambda *a, **k: None)
+    assert lib.state.get("sleeps", []) == []
+
+
+def test_wait_skin_quiescent_returns_after_includes_built(lib):
+    """skinshortcuts present + the skin's includes file on disk = the first
+    build is DONE: return after one short grace (for the ReloadSkin that
+    follows the write), no long poll."""
+    import importlib as _importlib
+
+    system = _importlib.import_module("tony7bones.system")
+    (lib.addons / "script.skinshortcuts").mkdir()
+    xml_dir = lib.addons / "skin.estuary.modv2" / "xml"
+    xml_dir.mkdir(parents=True)
+    (xml_dir / "script-skinshortcuts-includes.xml").write_text("<includes/>")
+    system._wait_skin_quiescent("skin.estuary.modv2", lambda *a, **k: None)
+    sleeps = lib.state.get("sleeps", [])
+    assert sleeps == [1000], f"expected only the post-build grace, got {sleeps}"
+
+
+def test_wait_skin_quiescent_bounded_wait_when_build_never_finishes(lib):
+    """skinshortcuts present but the includes never appear: the wait is BOUNDED
+    (never block activation forever) and says so in the log."""
+    import importlib as _importlib
+
+    system = _importlib.import_module("tony7bones.system")
+    (lib.addons / "script.skinshortcuts").mkdir()
+    logs = []
+    system._wait_skin_quiescent(
+        "skin.estuary.modv2", lambda msg, lvl=0: logs.append(msg)
+    )
+    sleeps = lib.state.get("sleeps", [])
+    assert sleeps.count(250) == 60, "bounded poll: exactly 60 x 250ms"
+    assert any("not built within the wait" in m for m in logs)
+
+
+def test_wait_skin_quiescent_never_raises(lib):
+    """A broken path translation must never break activation — the settle
+    helper swallows and proceeds (the caller's verify still runs)."""
+    import importlib as _importlib
+
+    system = _importlib.import_module("tony7bones.system")
+
+    def _boom(p):
+        raise RuntimeError("translatePath broke")
+
+    lib.t7.system.xbmcvfs.translatePath = _boom  # bind on the imported module
+    system._wait_skin_quiescent("skin.estuary.modv2", lambda *a, **k: None)
+
+
+def test_activate_skin_settles_through_skinshortcuts_quiescence(lib):
+    """activate_skin's settle WAITS for skinshortcuts quiescence before
+    returning — so the caller's next dialog (the restart prompt, the second
+    observed victim of the first-build reload) is shown AFTER the blast
+    radius. MUTATION: dropping the _wait_skin_quiescent call fails here (no
+    1000ms grace sleep)."""
+    lib.state["condvis"] = True
+    (lib.addons / "script.skinshortcuts").mkdir()
+    xml_dir = lib.addons / "skin.estuary.modv2" / "xml"
+    xml_dir.mkdir(parents=True)
+    (xml_dir / "script-skinshortcuts-includes.xml").write_text("<includes/>")
+    ok = lib.t7.activate_skin("skin.estuary.modv2", lambda *a, **k: None)
+    assert ok is True
+    assert 1000 in lib.state.get("sleeps", []), (
+        "the post-build grace must run inside the activation seam"
+    )
+
+
 def test_restart_kodi_android_clean_quit_no_blocking_prompt(lib, monkeypatch):
     """On Android: a clean Quit + a non-blocking notice, and NO blocking yes/no.
     A prompt there lets the just-set skin hit the 'Keep this skin?' revert and the
@@ -271,6 +496,27 @@ def test_restart_kodi_desktop_uses_restartapp(lib, monkeypatch):
     lib.t7.restart_kodi("Setup", lambda *a, **k: None)
     assert any("RestartApp" in c for c in lib.state["builtins"]), (
         "desktop restart must use RestartApp"
+    )
+
+
+def test_restart_kodi_desktop_prompt_is_autoclose_bounded(lib, monkeypatch):
+    """The desktop restart prompt must carry a BOUNDED autoclose (Phase 6,
+    live-proven): the box is reload-prone right after activation — modv2plus's
+    post-activation patch-apply ends in a skinshortcuts ReloadSkin that
+    DESTROYED a still-open prompt ~45s in on a live run (and Kodi segfaulted
+    tearing the modal down mid-reload). A timeout reads as the honest "Later"
+    self-heal path. MUTATION: dropping the autoclose kwarg (an unbounded
+    prompt) fails here; so does a bound outside (5s, 45s]."""
+    import tony7bones.system as system
+
+    monkeypatch.setattr(system, "is_android", lambda: False)
+    lib.t7.restart_kodi("Setup", lambda *a, **k: None)
+    kwargs = lib.state.get("yesno_kwargs", [])
+    assert kwargs, "the desktop restart prompt must be shown"
+    autoclose = kwargs[-1].get("autoclose")
+    assert autoclose is not None, "the restart prompt must autoclose (bounded)"
+    assert 5000 < autoclose < 45000, (
+        "autoclose must be human-generous but inside the ~45s destroyer window"
     )
 
 

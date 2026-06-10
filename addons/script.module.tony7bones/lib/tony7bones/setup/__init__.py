@@ -21,6 +21,17 @@ from .env import parse_env, read_box_env, split_list
 from .host import KodiHost, RealKodiHost
 from .result import LayerResult
 
+# The setup-API capability level this library ships (Phase 6). The bootstrap
+# declares the level it NEEDS (REQUIRED_SETUP_API in its default.py) and fails
+# LOUD at import when the installed library is older — a cross-gate or sideload
+# can pair a too-old library with a too-new bootstrap, and without this guard
+# that pairing dies as a cryptic mid-run crash instead of an honest "update the
+# library" message. Kodi's own <requires> version check does NOT cover our
+# direct-extract install path, so the guard lives at runtime. Bump this (and
+# the bootstrap's REQUIRED_SETUP_API) whenever the bootstrap starts depending
+# on a new library capability.
+SETUP_API = 1
+
 __all__ = [
     "KodiHost",
     "LayerResult",

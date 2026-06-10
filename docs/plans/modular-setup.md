@@ -1218,3 +1218,129 @@ plugin.video.dailymotion_com`, `_apply_rss: wrote 7 RSS feed(s) (interval 30)`; 
   real-Stick wipe-and-run matrix incl. the Guided manual-reopen UX; version-guard +
   `assert_box_complete`; optionally surfacing Guided without an env (a second launcher entry)
   if the owner wants a no-provisioner path; Model C (resume-notification service) stays v2.
+
+### Phase 6 — DONE (local; harden the computer-setup track: the keep-skin race fix, version guard, `assert_box_complete`, CI gates)
+
+> _(Provenance note: most of this phase's implementation was inherited from a session that was
+> killed mid-live-verify — the hardened `activate_skin` + `_wait_skin_quiescent`, the
+> `SETUP_API`/`REQUIRED_SETUP_API` version guard, `env_has_iptv`'s move to `setup/env.py`,
+> `box_state`/`_addons_missing`/`missing_required_imports`/`assert_box_complete`, the
+> `_guided_finish` wiring, the state-aware conftest skin fake, and the new
+> `test_version_guard.py` + probe/module tests. The resuming session adversarially QA'd that
+> work (one real bug found + fixed, below), added the system-tree/registry closure-walk fix,
+> the restart-prompt autoclose bound, the CI gates, and ran ALL the live verification.)_
+
+- **The keep-skin race fix (`tony7bones/system.py: activate_skin`)** — the 5b·3-recorded race
+  (the "Keep this skin?" confirm DESTROYED ~270 ms post-switch by script.skinshortcuts' first
+  `buildxml` ReloadSkin → silent revert to stock) and the 5d-recorded variant (the per-gate
+  restart PROMPT destroyed by the same reload) are both closed, by mechanism, not luck:
+  - **200 ms confirm poll** (the old 500 ms poll lost the ~270 ms destroy outright), tracking
+    skin live-ness EVERY iteration — including while the confirm is visible (Kodi switches
+    live, THEN shows the confirm; recording live-ness only in the no-dialog branch misread a
+    destroyed-while-visible confirm as "never went live" — caught on the live box).
+  - **Early revert detection** — the poll exits as soon as the skin was-live-then-flipped-back
+    (the confirm is gone; stop waiting for it).
+  - **The fundamental fix: verify-then-re-assert** — after the settle the END STATE is checked
+    via `getSkinDir()`; a non-stuck switch is re-asserted (bounded, 3 attempts). The re-assert
+    runs after the destructive first build (its includes file now exists), so the second
+    confirm survives and commits. A set that never goes live at all is a REJECTED set (skin not
+    registered/enabled) — bail after one attempt, loud. `activate_skin` now returns True/False.
+  - **`_wait_skin_quiescent`** — inside the activation seam, a bounded (~15 s) wait for the
+    skin's `script-skinshortcuts-includes.xml` (+1 s grace for the build's ReloadSkin), so the
+    caller's NEXT dialog (the restart prompt) renders AFTER the blast radius. Skipped instantly
+    when skinshortcuts is not installed; never raises; never blocks activation.
+- **The version guard (`tony7bones.setup.SETUP_API` = 1 / bootstrap `REQUIRED_SETUP_API` = 1 +
+  `_require_setup_library()`)** — a too-old library paired with a too-new bootstrap (cross-gate
+  update skew, or a sideload bypassing `<requires>` — our own direct-extract path does exactly
+  that) now fails LOUD at launch: one honest "update the library from the repository" dialog +
+  ERROR log + RuntimeError, BEFORE the real library imports (pinned structurally by test).
+  Bump both when the bootstrap starts needing a new library capability.
+- **`assert_box_complete` (`tony7bones.setup.probes`)** — the plan's verification primitive:
+  `box_state()` (foundation/iptv/addons done-ness; iptv `None` when the env expects none),
+  `_addons_missing()` (names the gaps), `missing_required_imports()` (the dependency-closure
+  walk over user add-ons), and `assert_box_complete(box_env, layers=…)` which raises NAMING
+  exactly what is missing or returns the verified state. Wired into `_guided_finish` —
+  INFORM, never block (an explicit Remove Setup on a half-built box stays legal).
+  - **QA find (real bug, fixed in the resume):** the inherited closure walk checked only
+    `special://home/addons/` and falsely "dangled" SEVEN imports on the owner's real complete
+    box (`metadata.common.allmusic.com/musicbrainz.org/theaudiodb.com` ×2 consumers +
+    `script.module.pil`) — all bundled INSIDE Kodi at `special://xbmc/addons/`, which never
+    appear in the user tree. Fixed: presence = user tree ∪ bundled system tree, with an
+    `is_installed` registry fallback (this probe informs, so a false alarm is worse than a
+    miss); system add-ons' own imports are not walked. Offline-validated against the real
+    box's archived profile (registry stubbed closed → dangling `[]`) and live in-Kodi.
+- **The restart-prompt autoclose (resume addition, live-forced):** the desktop restart prompt
+  now carries `autoclose=20000`. Live finding behind it — a THIRD dialog-destroy window, new
+  in the hardened flow: with the skin committed and live BEFORE the restart, the modv2plus
+  boot service auto-applies its patch ~45 s in, ending in a skinshortcuts rebuild + ReloadSkin
+  that DESTROYED the still-open restart prompt on the live Guided run — and Kodi SEGFAULTED
+  tearing the modal down mid-reload (`.ips` captured 02:41:01.07, the exact destroy moment).
+  The end state survived regardless (lookandfeel.skin already persisted; the relaunched
+  instance booted MOD V2, "[mod v2+ service] nothing to do", probes self-heal by design), but
+  an unbounded modal in a reload-prone window is now structurally disallowed. Observed live:
+  the autoclose answer is True → the restart proceeds (the one-tap completes itself
+  unattended); a False would be the documented "Later" self-heal. Both safe.
+- **CI gates (`.github/workflows/generate_repo.yml`)** — the workflow now also runs on
+  `modular-setup` pushes; the version-consistency step is conditioned to main only (a feature
+  branch legitimately carries unbumped versions until its milestone push); and a NAMED
+  "Setup invariant gates" step re-runs `test_no_fork.py` + `test_version_guard.py` +
+  `test_setup_probes.py` so a broken keystone invariant fails as its own loud check.
+- **Tested / mutation-proven:** suite **767 passed / 1 xfailed** (was 733), `ruff` clean,
+  secret-leak green, generator deterministic. New/inherited tests: the activate_skin race
+  shapes (verified-happy-path single set; destroyed-confirm revert → re-assert; the
+  destroyed-WHILE-VISIBLE live scenario; honest False when nothing sticks; fast-bail on a
+  rejected set; the 200 ms poll pin; the quiescence helper's skip/bounded/never-raises/seam
+  shapes), the version guard (compatible pairing pin, too-old API, missing modules, order pin,
+  dialog-failure-doesn't-mask), box_state/closure-walk/assert_box_complete (incl. the bundled
+  system tree, system-addons-not-walked, registry fallback), the autoclose bound pin.
+  **Eight mutations run, all killed** (500 ms poll revert; attempts=1; verify dropped;
+  quiescence call dropped; guard comparison dropped; guard raise dropped; system-tree union
+  dropped; registry fallback dropped; autoclose dropped). One attempted mutant proved
+  functionally equivalent (saw_live tracking moved but still recorded + the `accepted` flag
+  guards the bail) — not a gap; the historical bug shape is killed by the
+  destroyed-while-visible test. Coverage: all new code covered (probes 94% file-wide, the
+  misses are pre-existing defensive `except` arms; system/env new lines 100%; the guard fully
+  covered by `test_version_guard.py`).
+- **LIVE-VERIFIED (clean Kodi 21.3, fresh profiles, real `.env.local`):**
+  1. **The race, natural run (Guided Foundation gate on a fresh box):** includes file absent →
+     skin switch 02:40:12.497 → skinshortcuts first build started 12.551 → **keep-skin
+     accepted 12.553** (the 200 ms poll WON the exact race the 500 ms poll lost in 5b·3) →
+     build done 12.829 → verify + quiescence → "**active and committed (attempt 1)**" 15.561 →
+     the restart prompt rendered AFTER the blast radius (the 5d victim, protected). Then the
+     third-window finding above (segfault AFTER completion; end state intact + persisted —
+     guisettings already carried modv2; relaunch booted MOD V2 patched).
+  2. **The race, FORCED lost-confirm (the re-assert proof):** a local-only driver add-on
+     recreated the fresh-box precondition (includes deleted, hashes cleared) and SUPPRESSED
+     activate_skin's first SendClick so the real skinshortcuts reload destroyed the unaccepted
+     confirm. Log-stamped: attempt 1 "accepted" (the suppressed click — the code believes the
+     dance) → skin REVERTED → "**did not stick (attempt 1/3) — re-asserting**" → attempt 2
+     confirm survived (includes now built) → accepted → "**active and committed (attempt 2)**"
+     → returned True, final skin `skin.estuary.modv2`. The verify caught a revert the dialog
+     dance missed — the fundamental fix, live.
+  3. **The fresh full Express proof (closing the standing "Express not live-proven since the
+     rewrite" gap):** wipe → stage host-built IPTV artifacts (`build_iptv.py` from
+     `.env.local`: 229 ch/3 groups + 331 ch/4 groups incl. 5 healed favorites) + derived env
+     (no `SETUP_MODE`) → ONE unattended `run()`: repos + apps + curated video installed +
+     origins stamped (26+5), BOTH providers' staged config applied in-run, summary,
+     self-uninstall, keep-skin accepted + committed (attempt 1), restart prompt **autoclosed
+     at ~17 s answering True** (`restart: RestartApp()` — a no-op on macOS) — and the
+     modv2plus destroyer reload arrived AFTER, finding no modal: NO crash. After the real
+     restart (clean quit + relaunch): MOD V2 active on Home, **all 8 groups, counts == the
+     builder exactly (158/47/24 + 214/100/12 + 5 favorites, All channels 560)**, POV
+     `GetDirectory` = 11 real items, all four video apps enabled with origins
+     (kodifitzwell/loop/bugatsinho/xbmc.org), dailymotion installed-then-DISABLED, 7 RSS
+     feeds, bootstrap fully de-registered, env consumed. **`assert_box_complete` run IN-KODI
+     on this box: PASSED `{foundation: True, iptv: True, addons: True}`, dangling `[]`.**
+     Rendered-home screenshot captured (patched trimmed menu + top-bar weather + thin clock).
+  - The Express end state archived as `Kodi.phase6-*` profiles; the owner's box restored from
+    `Kodi.backup-6-pre-20260610-020420` (see TASKS).
+- **Fire TV (queue item 3) — reachability CHECKED, matrix DEFERRED pending owner go-ahead:**
+  a real Stick IS adb-reachable right now (192.168.7.84:5555, AFTHA001 "hailey", device name
+  "Bedroom TV") — but it is a provisioned LIVING-ROOM box, and the wipe-and-run matrix
+  (`_tools/provision-kodi.sh <device>` wipe → Express one-tap; then wipe → `SETUP_MODE=guided`
+  → the manual-reopen UX per gate) is destructive. Commands are ready in the provisioner +
+  `firetv.sh`; run it on an owner-designated stick (travelstick) at the milestone.
+- **Owner decisions recorded:** the computer-setup (provisioner-driven) track is COMPLETE as
+  of this phase; `SETUP_MODE=guided` (the env-key mechanism) STAYS as shipped in 5d; the
+  no-computer-setup track (running Setup with no provisioner/env at all) is a separate
+  follow-on plan doc — referenced here as a placeholder only, lands on its own.

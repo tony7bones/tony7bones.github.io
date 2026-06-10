@@ -252,6 +252,10 @@ def _reset_world(boot):
         boot.state[key] = set()
     for key in ("builtins", "jsonrpc", "ok", "yesno", "select", "mkdirs"):
         boot.state[key] = []
+    # A fresh box boots stock Estuary: drop the state-aware active skin the
+    # previous cadence's activate_skin switched (the conftest fake mirrors real
+    # Kodi's immediate live switch since the Phase 6 hardening).
+    boot.state.pop("skin_dir", None)
     profile = Path(boot.mod.xbmcvfs.translatePath("special://profile/"))
     shutil.rmtree(profile, ignore_errors=True)
     os.makedirs(profile, exist_ok=True)

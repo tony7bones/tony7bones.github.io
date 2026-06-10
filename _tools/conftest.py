@@ -100,8 +100,12 @@ def boot(tmp_path, monkeypatch):
     xbmc.log = lambda *a, **k: None
     xbmc.sleep = lambda ms: None
     # Active skin — default to Estuary so _trim_home_menu() is exercised. Tests
-    # that need another skin monkeypatch this.
-    xbmc.getSkinDir = lambda: "skin.estuary"
+    # that need another skin monkeypatch this. STATE-AWARE (Phase 6, additive):
+    # a Settings.SetSettingValue(lookandfeel.skin) through the fake JSON-RPC
+    # updates state["skin_dir"], mirroring real Kodi's immediate live switch —
+    # this is what lets the hardened activate_skin VERIFY its end state under
+    # the fake without re-asserting on the happy path (snapshot unchanged).
+    xbmc.getSkinDir = lambda: state.get("skin_dir", "skin.estuary")
     # activate_skin polls this for the "Keep this skin?" dialog; default False so
     # it falls through quickly (the JSON-RPC skin-set still happens regardless).
     xbmc.getCondVisibility = lambda cond: state.get("condvis", False)
@@ -125,6 +129,11 @@ def boot(tmp_path, monkeypatch):
             else:
                 # Disabling leaves the add-on installed; just record the state.
                 state["disabled"].add(aid)
+        elif d.get("method") == "Settings.SetSettingValue":
+            # Mirror real Kodi: setting lookandfeel.skin switches the live skin
+            # immediately (Phase 6, additive — see getSkinDir above).
+            if d["params"].get("setting") == "lookandfeel.skin":
+                state["skin_dir"] = d["params"].get("value")
         return "{}"
 
     xbmc.executeJSONRPC = _jsonrpc
@@ -203,9 +212,15 @@ def boot(tmp_path, monkeypatch):
     temp = tmp_path / "temp"
     addons = tmp_path / "addons"
     profile = tmp_path / "userdata"
+    # Kodi's BUNDLED system add-on tree (special://xbmc/addons/ — the app
+    # bundle / extracted apk assets). Distinct from the user tree: bundled
+    # add-ons (metadata.common.*, script.module.pil, …) satisfy required
+    # imports without ever appearing under special://home (Phase 6).
+    sysaddons = tmp_path / "sysaddons"
     temp.mkdir()
     addons.mkdir()
     profile.mkdir()
+    sysaddons.mkdir()
     sources_xml = profile / "sources.xml"
     # Record every mkdirs() call so the directory-create attempt is provable.
     state["mkdirs"] = []
@@ -217,6 +232,7 @@ def boot(tmp_path, monkeypatch):
             .replace("special://profile/", str(profile) + "/")
             .replace("special://home/userdata/", str(profile) + "/")
             .replace("special://userdata/", str(profile) + "/")
+            .replace("special://xbmc/addons/", str(sysaddons) + "/")
         )
 
     xbmcvfs.translatePath = _translate
@@ -316,6 +332,7 @@ def boot(tmp_path, monkeypatch):
         mod=mod,
         state=state,
         addons=addons,
+        sysaddons=sysaddons,
         sources_xml=sources_xml,
         estuary_settings=estuary_settings,
     )

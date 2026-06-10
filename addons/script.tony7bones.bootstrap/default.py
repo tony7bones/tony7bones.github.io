@@ -40,14 +40,83 @@ No secrets are embedded in this script.
 
 import json
 import os
-import re as _re
 
 import xbmc
 import xbmcgui
 
+MY_ID = "script.tony7bones.bootstrap"
+
+# ---------------------------------------------------------------------------- #
+# Shared-library compatibility guard (Phase 6). REQUIRED_SETUP_API is the
+# setup-API capability level this bootstrap NEEDS from script.module.tony7bones;
+# the library declares the level it SHIPS (tony7bones.setup.SETUP_API). A
+# too-old library paired with a too-new bootstrap (a cross-gate update skew, or
+# a sideload that bypassed Kodi's <requires> check — our own direct-extract
+# install path does exactly that) must fail LOUD AND HONEST at launch, never
+# crash weird mid-install. The guard runs BEFORE the real library imports below
+# so the failure is one honest dialog + log line + RuntimeError instead of a
+# cryptic ImportError deep in a gate.
+# ---------------------------------------------------------------------------- #
+REQUIRED_SETUP_API = 1
+
+
+def _require_setup_library():
+    """Verify the installed shared library carries the setup API this bootstrap
+    needs. Returns silently when compatible; otherwise logs ERROR, shows ONE
+    honest "update the library from the repository" dialog, and raises."""
+    detail = None
+    try:
+        import importlib
+
+        # A genuinely old library is missing the setup modules outright —
+        # probe the newest capability surface the bootstrap depends on.
+        importlib.import_module("tony7bones.setup.probes")
+        from tony7bones import setup as _setup_probe
+
+        api = int(getattr(_setup_probe, "SETUP_API", 0))
+        if api >= REQUIRED_SETUP_API:
+            return
+        detail = "library SETUP_API {} < required {}".format(api, REQUIRED_SETUP_API)
+    except Exception as e:  # noqa: BLE001 - any import failure = incompatible
+        detail = "library import failed: {}".format(e)
+    installed = "unknown"
+    try:
+        import xbmcaddon
+
+        installed = xbmcaddon.Addon("script.module.tony7bones").getAddonInfo("version")
+    except Exception:  # noqa: BLE001 - version is informational only
+        pass
+    xbmc.log(
+        "[{}] shared library INCOMPATIBLE: {} "
+        "(installed script.module.tony7bones: {})".format(MY_ID, detail, installed),
+        xbmc.LOGERROR,
+    )
+    try:
+        xbmcgui.Dialog().ok(
+            "Tony.7.Bones Setup",
+            "\n".join(
+                [
+                    "Setup needs a newer version of its shared library",
+                    "(script.module.tony7bones, installed: {}).".format(installed),
+                    "",
+                    "Update it from the Tony.7.Bones repository,",
+                    "then run Setup again.",
+                ]
+            ),
+        )
+    except Exception:  # noqa: BLE001 - the dialog must not mask the real error
+        pass
+    raise RuntimeError(
+        "script.tony7bones.bootstrap requires a newer script.module.tony7bones "
+        "({})".format(detail)
+    )
+
+
+_require_setup_library()
+
 # Shared install library (script.module.tony7bones). All the generic machinery
 # lives here; this file keeps only the base box's configuration + base-only steps.
-from tony7bones import (
+from tony7bones import (  # noqa: E402 - deliberately after the compat guard
     activate_skin,
     extract_zip,
     install_selection,
@@ -57,14 +126,15 @@ from tony7bones import (
     self_uninstall,
     update_local_addons,
 )
-from tony7bones import enable as _enable
+from tony7bones import enable as _enable  # noqa: E402
 
 # Per-device .env parsing moved into the shared sublibrary (Phase 2a); re-export
 # the same three names here so every existing reference and every test that
 # reaches them via this module (boot.mod.parse_env / read_box_env / split_list)
 # keeps working unchanged. Listed in __all__ so they are not pruned as "unused"
 # (this module re-exports them, but does call read_box_env in run()).
-from tony7bones.setup.env import parse_env, read_box_env, split_list
+from tony7bones.setup import env as _env_mod  # noqa: E402
+from tony7bones.setup.env import parse_env, read_box_env, split_list  # noqa: E402
 
 # The Foundation layer (skin closure + file-sources + home-trim) moved into the
 # shared sublibrary (Phase 2b). The lifted bodies + the layer entry point live in
@@ -73,8 +143,8 @@ from tony7bones.setup.env import parse_env, read_box_env, split_list
 # _add_file_sources / _trim_home_menu / _latest_zip_url + the SKIN_ID/PVR_ARTWORK
 # constants) keeps working unchanged, and run() calls apply_foundation in the
 # EXACT slot those three functions occupied.
-from tony7bones.setup import foundation as _foundation
-from tony7bones.setup.foundation import apply_foundation
+from tony7bones.setup import foundation as _foundation  # noqa: E402
+from tony7bones.setup.foundation import apply_foundation  # noqa: E402
 
 # The ADD-ONS layer (base repos + apps install, curated video install, env-driven
 # weather + RSS writers) moved into the shared sublibrary (Phase 2c). The lifted
@@ -85,8 +155,8 @@ from tony7bones.setup.foundation import apply_foundation
 # The moved bodies resolve their install primitives from the addons module globals,
 # so the few run()-driven tests that stubbed the base/video path patch addons.* (the
 # repointed boot.mod patches) — NO new deps-injection seam (Tech-debt ledger).
-from tony7bones.setup import addons as _addons
-from tony7bones.setup.addons import apply_addons
+from tony7bones.setup import addons as _addons  # noqa: E402
+from tony7bones.setup.addons import apply_addons  # noqa: E402
 
 # The IPTV layer's in-Kodi CONFIG half (the pvr.iptvsimple instance-settings
 # enforcement + the device→userdata file copies) moved into the shared sublibrary
@@ -99,16 +169,14 @@ from tony7bones.setup.addons import apply_addons
 # no deps-injection seam (Tech-debt ledger). NOTE: Phase 2d is CONFIG-ONLY; the
 # pvr.iptvsimple INSTALL stays in the base ADDONS list (its move to the IPTV gate
 # is the deliberate behaviour change reserved for Phase 3).
-from tony7bones.setup import iptv as _iptv
-from tony7bones.setup.iptv import apply_iptv
+from tony7bones.setup import iptv as _iptv  # noqa: E402
+from tony7bones.setup.iptv import apply_iptv  # noqa: E402
 
 # Installed-state done-probes for the Guided wizard (Phase 5d). The wizard
 # resumes via the box's ACTUAL state (skin active / instance file present /
 # per-id is_installed) — never marker files — so a crash, a declined restart,
 # or a reverted skin all self-heal by re-offering the incomplete gate.
-from tony7bones.setup import probes as _probes
-
-MY_ID = "script.tony7bones.bootstrap"
+from tony7bones.setup import probes as _probes  # noqa: E402
 
 # Re-exported public names (env parsing now lives in tony7bones.setup.env; the
 # Foundation layer entry point in tony7bones.setup.foundation; the Add-ons layer in
@@ -571,32 +639,17 @@ def run_express(box_env=None):
     return addons_res, foundation_res, iptv_res
 
 
-# IPTV env detection: an IPTV provider is configured when the per-device env carries
-# a PLAYLIST SOURCE — a multi-provider ``IPTV_<N>_M3U`` / ``IPTV_<N>_PORTAL`` key
-# (N a 1-based provider index) OR the single-instance ``IPTV_M3U`` / ``IPTV_PORTAL``.
-# NOTE: ``IPTV_EPG`` alone does NOT trip the gate — an EPG with no playlist is a
-# channel-less PVR (guide metadata, zero channels), not a usable source; ``apply_iptv``
-# still consumes ``IPTV_EPG`` when a real playlist provider IS present. ``IPTV_GROUPS``
-# alone (group names, useless without a playlist) likewise does not count.
-_IPTV_PROVIDER_KEY = _re.compile(r"^IPTV_(?:\d+_)?(?:M3U|PORTAL)$")
-
-
-def _env_has_iptv(box_env):
-    """True when the per-device env carries an IPTV provider PLAYLIST source.
-
-    Scans the env keys for any ``IPTV_<N>_M3U`` / ``IPTV_<N>_PORTAL`` (multi-provider)
-    or the single-instance ``IPTV_M3U`` / ``IPTV_PORTAL`` — and only counts a key whose
-    VALUE is non-empty (an empty ``IPTV_M3U=`` is not a provider). This is the gate
-    ``run_foundation_setup`` uses to decide whether to chain the IPTV layer: with no
-    provider it stops at the skin-only box; with one it installs pvr.iptvsimple + writes
-    instance-settings. ``IPTV_EPG`` alone and ``IPTV_GROUPS`` alone do NOT count (no
-    playlist = no channels). Pure-Python; never raises.
-    """
-    box_env = box_env or {}
-    for key, val in box_env.items():
-        if _IPTV_PROVIDER_KEY.match(key) and (val or "").strip():
-            return True
-    return False
+# IPTV env detection — MOVED to the shared sublibrary (tony7bones.setup.env,
+# Phase 6) so the installed-state probes can use the same gate for
+# assert_box_complete without importing the bootstrap. Semantics unchanged: an
+# IPTV provider is configured when the per-device env carries a PLAYLIST SOURCE
+# (``IPTV_<N>_M3U`` / ``IPTV_<N>_PORTAL`` or the single-instance ``IPTV_M3U`` /
+# ``IPTV_PORTAL``) with a non-empty value; ``IPTV_EPG`` / ``IPTV_GROUPS`` alone
+# do NOT count (no playlist = no channels). Re-exported here so every existing
+# reference and test (boot.mod._env_has_iptv / _IPTV_PROVIDER_KEY) keeps
+# working unchanged and there is a single source of truth.
+_IPTV_PROVIDER_KEY = _env_mod._IPTV_PROVIDER_KEY
+_env_has_iptv = _env_mod.env_has_iptv
 
 
 def _foundation_core(box_env, dialog):
@@ -1177,13 +1230,29 @@ def _guided_gate_addons(box_env):
     return res
 
 
-def _guided_finish():
+def _guided_finish(box_env=None):
     """The TERMINAL op — the ONLY place the Guided lifecycle removes Setup
     (Model A: self-uninstall on terminal Finish / explicit Remove Setup, never
     after a gate). Order matters: consume the env FIRST (no secret lingers and
     the delete cannot be lost to the restart), then self-uninstall, then ONE
     restart to finalise the removal (Kodi's next scan drops the deleted dir's
-    rows — the same shipped mechanism every standalone runner uses)."""
+    rows — the same shipped mechanism every standalone runner uses).
+
+    Before consuming anything it runs the ``assert_box_complete`` verification
+    (Phase 6) and LOGS the honest outcome. INFORM, never block: Finish is only
+    offered when every gate probes done, but an explicit Remove Setup on a
+    half-built box is legal — the user must still be able to remove Setup, so
+    an incomplete box logs a WARNING instead of aborting the removal."""
+    try:
+        state = _probes.assert_box_complete(box_env or {})
+        _log("finish: box verified complete {}".format(state))
+    except AssertionError as e:
+        _log("finish: {}".format(e), xbmc.LOGWARNING)
+    except Exception as e:  # noqa: BLE001 - the check must never block removal
+        _log(
+            "finish: completeness check failed (non-fatal): {}".format(e),
+            xbmc.LOGWARNING,
+        )
     _delete_box_env()
     self_uninstall(MY_ID, _log)
     restart_kodi("Tony.7.Bones Setup", _log)
@@ -1249,7 +1318,7 @@ def run_guided(box_env=None):
         if pick == 0:
             if gate == "finish":
                 _log("guided: terminal Finish — removing Setup")
-                _guided_finish()
+                _guided_finish(box_env)
                 return "finished"
             _log(f"guided: running gate '{gate}'")
             res = _GATE_RUNNERS[gate](box_env)
@@ -1269,7 +1338,7 @@ def run_guided(box_env=None):
                 "reinstall it any time from the Tony.7.Bones repository.",
             ):
                 _log("guided: explicit Remove Setup confirmed")
-                _guided_finish()
+                _guided_finish(box_env)
                 return "removed"
             continue  # declined — back to the menu
         # -1 (back/cancel) or "Exit": keep Setup + env; the tile resumes later.

@@ -22,43 +22,46 @@ tech-debt seam, the apply_iptv reporting bug, the zero-content guarantee). Keep 
 
 ---
 
-## ▶ VERY NEXT STEP — Phase 6 (harden + Fire TV)
+## ▶ VERY NEXT STEP — the MILESTONE PUSH
 
-> **Phase 5d is COMPLETE** — the Guided wizard + Model A lifecycle landed and were live-proven
-> as a full multi-gate walk on a clean local Kodi (see the 5d phase entry in
-> `docs/plans/modular-setup.md`): `run_guided` offers the next undone gate via the new
-> installed-state probes (`tony7bones.setup.probes`), the orchestrator PERSISTS across gates
-> (self-uninstall only on terminal Finish / confirmed Remove Setup), the env survives every
-> gate and is consumed only by the terminal ops, and the shipped `run()` routes
-> `SETUP_MODE=guided` (per-device env key — owner-vetoable mechanism, documented in the phase
-> log) to the wizard while staying byte-identical Express one-tap otherwise (snapshot +
-> `EXPECTED_NET_INSTALLED` unchanged). The no-fork/cadence/end-state-equivalence invariants
-> live in `_tools/test_no_fork.py`.
+> **Phase 6 is COMPLETE** — the computer-setup track is hardened and DONE (see the Phase 6
+> entry in `docs/plans/modular-setup.md`): the keep-skin race fix (verify-then-re-assert +
+> 200 ms poll + skinshortcuts quiescence; BOTH 5b·3/5d variants live-proven, incl. a FORCED
+> lost-confirm → re-assert run), the library/bootstrap version guard (`SETUP_API` /
+> `REQUIRED_SETUP_API`), `assert_box_complete` + the dependency-closure walk (live-passed
+> in-Kodi on the Express-built box), the restart-prompt autoclose (a NEW third dialog-destroy
+> window was found live: modv2plus's post-activation patch rebuild — Kodi even segfaulted —
+> end state survived; the prompt is now lifetime-bounded), CI gates on this branch, and the
+> standing "Express not live-proven since the rewrite" gap CLOSED with a fresh full
+> unattended Express run (all 8 groups, counts == builder, POV 11 items, origins, RSS,
+> self-uninstall, env consumed, `assert_box_complete` green).
 >
-> **Phase 6 — harden + Fire TV**, the queue:
+> **The milestone push, in order:**
 >
-> 1. **The keep-skin race** (5b·3-recorded, now with the 5d variant: the per-gate restart
->    PROMPT can also be destroyed by skinshortcuts' first buildxml reload) — faster confirm
->    poll / set-and-reconfirm / offline seed in the restart slot.
-> 2. **Version-guard shared `script.module.*` across gates**, `assert_box_complete()` +
->    dependency-closure walk, CI gates (no-fork + idempotency + seam-guard as required checks).
-> 3. **The wipe-and-run matrix on a real Fire TV Stick** — Express one-tap AND the Guided
->    manual-reopen UX (per-gate notification copy: "box is complete — reopen to continue");
->    Fire TV is where the Android restart shape is real.
-> 4. Owner decisions queued: veto window on the `SETUP_MODE` env-key mechanism (alternatives:
->    timeout launch dialog / second launcher entry); optionally document `SETUP_MODE` in
->    `.env.device.example` (a protect-hook kept the agent from adding the commented block).
+> 1. Version-bump `script.module.tony7bones` + `script.tony7bones.bootstrap`
+>    (`addons/<id>/addon.xml` + news; MINOR bumps — this is a feature batch), run
+>    `python3 _tools/generate_repo.py`, commit the regenerated files.
+> 2. Push the `modular-setup` branch (the pre-push hook runs tests/ruff/staleness; the CI
+>    workflow now gates this branch too, incl. the named invariant step).
+> 3. Delete the superseded `iptv` branch at the push.
+> 4. **Fire TV wipe-and-run matrix** (Phase 6 queue item 3, deferred pending owner go-ahead —
+>    it WIPES a real box): a Stick is adb-reachable (192.168.7.84:5555 "Bedroom TV"), but run
+>    the matrix on an owner-designated stick (travelstick): `provision-kodi.sh` wipe →
+>    Express one-tap; wipe → `SETUP_MODE=guided` → the per-gate manual-reopen UX.
+> 5. Owner decisions still queued: optionally document `SETUP_MODE` in `.env.device.example`
+>    (a protect-hook kept the agent from adding the commented block); the no-computer-setup
+>    track (Setup with no provisioner/env) is a SEPARATE follow-on plan doc.
 
-Context: all of Phase 5 is DONE — 5a (Foundation), 5b·1/2/3 (IPTV: clobber window, host-side
-build, `run_iptv`), 5c (`run_addons`), 5d (Guided + Model A). NOTE: Kodi's `RestartApp` is a
-NO-OP on macOS — the clean-quit+relaunch IS the real restart on the local box; drive wizard
-list dialogs over JSON-RPC with `Input.ButtonEvent` (key-level), not `Input.Select`.
+Context: all of Phase 5 + Phase 6 are DONE — 5a (Foundation), 5b·1/2/3 (IPTV), 5c
+(`run_addons`), 5d (Guided + Model A), 6 (harden). NOTE: Kodi's `RestartApp` is a NO-OP on
+macOS — the clean-quit+relaunch IS the real restart on the local box; drive wizard list
+dialogs over JSON-RPC with `Input.ButtonEvent` (key-level), not `Input.Select`.
 
 ---
 
 ## Build status (modular-setup branch)
 
-- **DONE, gated, committed LOCALLY** (suite **733 passed / 1 xfailed**):
+- **DONE, gated, committed LOCALLY** (suite **767 passed / 1 xfailed**):
   Phases 0–3 + 5a (Foundation, incl. 5a·2/5a·3) + **5b·1** (the two `apply_iptv` bugs — clobber
   window + N-provider env) + **5b·2** (the host-side IPTV build integrated — BOTH real
   providers, xtream included, clean-Kodi channel-load proven with the full curation grammar) +
@@ -74,7 +77,12 @@ list dialogs over JSON-RPC with `Input.ButtonEvent` (key-level), not `Input.Sele
   on a clean local Kodi: per-gate restarts each landing on a complete working box, Setup
   persisting across gates, env consumed only at Finish, Finish self-uninstall; the
   no-fork/cadence/end-state-equivalence invariants in `_tools/test_no_fork.py`; Express
-  byte-identical — snapshot + `EXPECTED_NET_INSTALLED` unchanged).
+  byte-identical — snapshot + `EXPECTED_NET_INSTALLED` unchanged) +
+  **6** (harden — the keep-skin verify-then-re-assert fix + quiescence settle, the
+  `SETUP_API` version guard, `assert_box_complete` + the closure walk with the bundled
+  system-tree fix, the restart-prompt autoclose, CI gates on this branch; live-proven incl.
+  a forced lost-confirm re-assert AND the fresh full Express run — the computer-setup track
+  is COMPLETE).
 - **NOT PUSHED** — milestone-push pending: needs `script.module.tony7bones` + `script.tony7bones.bootstrap`
   version bumps + `--news` (modv2plus is already 1.4.8). Push the branch once 5b lands or at the next
   coherent milestone.
