@@ -182,6 +182,20 @@ a semicolon group-title (`group-title="24/7 Cartoon;24/7 Favorites"`) so it appe
 Favorites WITHOUT a groups selection force `tvChannelGroupsOnly=false` (the favorites
 group must never hide the rest of an uncurated playlist).
 
+**Favorite icons are healed at build time (xtream mode).** Some panels stamp a whole
+category with ONE placeholder `stream_icon` that 404s — live case: every stream in
+Streamvision's "US| CINEMA TV SHOWS" category (the source of all five favorites) pointed
+at the same dead picon, so the 24/7 Favorites group rendered **iconless** in Kodi while
+every other group's icons worked. The builder now HTTP-checks each favorite's icon
+(memoized; blank = dead) and, when dead, borrows the first **live** icon from another copy
+of the same channel elsewhere in the stream list (same normalized name core —
+`"US: THE SIMPSONS 4K"` ≡ `"24/7: THE SIMPSONS"`; country prefix, `24/7` markers, quality
+tags, and Unicode decorations are ignored). No donor → the original is kept and a note is
+printed. Only favorites are checked — validating every emitted channel would cost hundreds
+of fetches for groups that already render fine. `m3u` mode reuses the provider's EXTINF
+verbatim and is deliberately not healed (the observed failure is xtream's category-wide
+placeholder).
+
 ---
 
 ## Honest verification — an HTTP 200 is NOT proof it plays

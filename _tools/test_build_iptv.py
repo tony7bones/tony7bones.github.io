@@ -95,8 +95,13 @@ def _xtream_cats():
     ]
 
 
-def _patch_xtream(monkeypatch, streams=None, cats=None):
-    """Replace build_iptv.xtream_api with a fixture dispatcher (no network)."""
+def _patch_xtream(monkeypatch, streams=None, cats=None, icon_status=None):
+    """Replace build_iptv.xtream_api with a fixture dispatcher (no network).
+
+    Also stubs ``http_get`` (the favorite-icon liveness check fetches icon
+    URLs): every URL answers 200 with the m3u fixture body — so a same-test
+    m3u-mode provider still parses — unless ``icon_status`` maps the URL to
+    another status. Returns the list of URLs the stub was asked for."""
     streams = streams if streams is not None else _xtream_streams()
     cats = cats if cats is not None else _xtream_cats()
 
@@ -109,6 +114,15 @@ def _patch_xtream(monkeypatch, streams=None, cats=None):
         raise AssertionError(f"unexpected action {action}")
 
     monkeypatch.setattr(bi, "xtream_api", fake)
+
+    calls = []
+
+    def fake_http(url):
+        calls.append(url)
+        return (icon_status or {}).get(url, 200), _M3U_BODY.encode()
+
+    monkeypatch.setattr(bi, "http_get", fake_http)
+    return calls
 
 
 _M3U_BODY = (
@@ -581,6 +595,228 @@ def test_build_xtream_mode_sort_within_category(monkeypatch):
 
 
 # ===========================================================================
+# favorite-icon healing — _name_core / _icon_alive / _fix_favorite_icons
+# (regression: a panel stamped a whole category with one DEAD placeholder
+# stream_icon, so the curated 24/7 Favorites group rendered iconless in Kodi
+# while every other group's icons worked)
+# ===========================================================================
+_DEAD_ICON = "http://prov.example/picons/placeholder.jpg"
+_DEAD_ICON2 = "http://prov.example/picons/placeholder2.jpg"
+_LIVE_ICON = "http://prov.example/logos/toon.png"
+
+
+def _icon_streams():
+    """A dead-icon 4K favorite + two same-channel copies (one dead, one live)."""
+    return [
+        {
+            "stream_id": 100,
+            "name": "US: TOON 4K",
+            "category_id": "50",
+            "epg_channel_id": "",
+            "stream_icon": _DEAD_ICON,
+        },
+        {
+            "stream_id": 150,
+            "name": "US: 24/7 TOON",
+            "category_id": "55",
+            "epg_channel_id": "",
+            "stream_icon": _DEAD_ICON2,
+        },
+        {
+            "stream_id": 200,
+            "name": "24/7: TOON",
+            "category_id": "60",
+            "epg_channel_id": "",
+            "stream_icon": _LIVE_ICON,
+        },
+        {
+            "stream_id": 300,
+            "name": "Other Channel",
+            "category_id": "60",
+            "epg_channel_id": "",
+            "stream_icon": "http://prov.example/logos/other.png",
+        },
+    ]
+
+
+_ICON_CATS = [
+    {"category_id": "50", "category_name": "Cinema"},
+    {"category_id": "55", "category_name": "Stale"},
+    {"category_id": "60", "category_name": "Toons"},
+]
+
+
+@pytest.mark.parametrize(
+    ("name", "core"),
+    [
+        ("US: THE SIMPSONS 4K", "the simpsons"),
+        ("24/7: THE SIMPSONS", "the simpsons"),
+        ("UK: 24/7 RICK AND MORTY 4K", "rick and morty"),
+        ("NL: FAMILY GUY ᴿᴬᵂ", "family guy"),  # superscript RAW
+        ("US| TOON HD", "toon"),
+        ("", ""),
+        ("US: 4K", ""),  # nothing but decoration -> empty core
+        (None, ""),
+    ],
+)
+def test_name_core_normalizes_prefix_decoration_and_quality(name, core):
+    assert bi._name_core(name) == core
+
+
+def test_icon_alive_memoizes_blank_and_errors(monkeypatch):
+    calls = []
+
+    def fake(url):
+        calls.append(url)
+        if url == "http://x/err.png":
+            raise OSError("boom")
+        return (404 if url.endswith("dead.png") else 200), b""
+
+    monkeypatch.setattr(bi, "http_get", fake)
+    cache = {}
+    assert bi._icon_alive("", cache) is False  # blank = dead, never fetched
+    assert calls == []
+    assert bi._icon_alive("http://x/ok.png", cache) is True
+    assert bi._icon_alive("http://x/ok.png", cache) is True  # memoized
+    assert calls == ["http://x/ok.png"]
+    assert bi._icon_alive("http://x/dead.png", cache) is False
+    assert bi._icon_alive("http://x/err.png", cache) is False  # fetch error = dead
+
+
+def test_build_xtream_mode_dead_favorite_icon_borrows_live_same_channel_copy(
+    monkeypatch, capsys
+):
+    """The favorites-only emission of a dead-icon favorite carries the LIVE
+    icon of another copy of the same channel (a dead-icon copy is skipped)."""
+    _patch_xtream(
+        monkeypatch,
+        streams=_icon_streams(),
+        cats=_ICON_CATS,
+        icon_status={_DEAD_ICON: 404, _DEAD_ICON2: 404},
+    )
+    p = {
+        "portal": PORTAL,
+        "user": USER,
+        "pass": PW,
+        "groups": "60 > Toons",
+        "favorites": "id:100",
+    }
+    text, _, labels = bi.build_xtream_mode(p)
+
+    assert labels[0] == "24/7 Favorites"
+    assert f'tvg-logo="{_LIVE_ICON}" group-title="24/7 Favorites",US: TOON 4K' in text
+    assert _DEAD_ICON not in text  # the dead placeholder is gone
+    out = capsys.readouterr().out
+    assert "borrowing the icon of '24/7: TOON'" in out
+
+
+def test_build_xtream_mode_multigroup_favorite_icon_also_healed(monkeypatch):
+    """A favorite INSIDE a selected group (multi-group title) is healed too."""
+    _patch_xtream(
+        monkeypatch,
+        streams=_icon_streams(),
+        cats=_ICON_CATS,
+        icon_status={_DEAD_ICON: 404, _DEAD_ICON2: 404},
+    )
+    p = {
+        "portal": PORTAL,
+        "user": USER,
+        "pass": PW,
+        "groups": "50 > Cinema",
+        "favorites": "id:100",
+    }
+    text, _, _ = bi.build_xtream_mode(p)
+    assert (
+        f'tvg-logo="{_LIVE_ICON}" group-title="Cinema;24/7 Favorites",US: TOON 4K'
+        in text
+    )
+
+
+def test_build_xtream_mode_live_favorite_icon_untouched(monkeypatch):
+    """A favorite whose own icon fetches 200 keeps it — and ONLY the favorite's
+    icon is checked (non-favorite channels never cost a fetch)."""
+    calls = _patch_xtream(monkeypatch, streams=_icon_streams(), cats=_ICON_CATS)
+    p = {
+        "portal": PORTAL,
+        "user": USER,
+        "pass": PW,
+        "groups": "60 > Toons",
+        "favorites": "id:100",
+    }
+    text, _, _ = bi.build_xtream_mode(p)
+    assert f'tvg-logo="{_DEAD_ICON}" group-title="24/7 Favorites"' in text
+    assert calls == [_DEAD_ICON]
+
+
+def test_build_xtream_mode_dead_favorite_icon_no_alternate_keeps_and_notes(
+    monkeypatch, capsys
+):
+    streams = [s for s in _icon_streams() if s["stream_id"] in (100, 300)]
+    _patch_xtream(
+        monkeypatch, streams=streams, cats=_ICON_CATS, icon_status={_DEAD_ICON: 404}
+    )
+    p = {
+        "portal": PORTAL,
+        "user": USER,
+        "pass": PW,
+        "groups": "60 > Toons",
+        "favorites": "id:100",
+    }
+    text, _, _ = bi.build_xtream_mode(p)
+    assert f'tvg-logo="{_DEAD_ICON}" group-title="24/7 Favorites"' in text
+    assert "no live same-channel alternate found" in capsys.readouterr().out
+
+
+def test_build_xtream_mode_blank_favorite_icon_healed(monkeypatch):
+    """A BLANK favorite icon is dead too — it borrows without any fetch of ''."""
+    streams = _icon_streams()
+    streams[0]["stream_icon"] = ""
+    _patch_xtream(
+        monkeypatch, streams=streams, cats=_ICON_CATS, icon_status={_DEAD_ICON2: 404}
+    )
+    p = {
+        "portal": PORTAL,
+        "user": USER,
+        "pass": PW,
+        "groups": "60 > Toons",
+        "favorites": "id:100",
+    }
+    text, _, _ = bi.build_xtream_mode(p)
+    assert f'tvg-logo="{_LIVE_ICON}" group-title="24/7 Favorites",US: TOON 4K' in text
+
+
+def test_build_xtream_mode_decoration_only_favorite_name_keeps_icon(
+    monkeypatch, capsys
+):
+    """An empty name core cannot match a donor — the dead icon is kept, noted."""
+    streams = _icon_streams()
+    streams[0]["name"] = "US: 4K"
+    _patch_xtream(
+        monkeypatch,
+        streams=streams,
+        cats=_ICON_CATS,
+        icon_status={_DEAD_ICON: 404},
+    )
+    p = {
+        "portal": PORTAL,
+        "user": USER,
+        "pass": PW,
+        "groups": "60 > Toons",
+        "favorites": "id:100",
+    }
+    text, _, _ = bi.build_xtream_mode(p)
+    assert f'tvg-logo="{_DEAD_ICON}" group-title="24/7 Favorites",US: 4K' in text
+    assert "no live same-channel alternate found" in capsys.readouterr().out
+
+
+def test_build_xtream_mode_no_favorites_means_no_icon_checks(monkeypatch):
+    calls = _patch_xtream(monkeypatch, streams=_icon_streams(), cats=_ICON_CATS)
+    p = {"portal": PORTAL, "user": USER, "pass": PW, "groups": "60 > Toons"}
+    bi.build_xtream_mode(p)
+    assert calls == []
+
+
+# ===========================================================================
 # _custom_groups_xml / _instance_xml
 # ===========================================================================
 def test_custom_groups_xml_escapes_and_structure():
@@ -757,8 +993,7 @@ def test_build_walks_both_modes(tmp_path, monkeypatch, capsys):
 
 def test_build_one_failed_provider_continues_and_reports(tmp_path, monkeypatch, capsys):
     # m3u fetch breaks (HTTP 500) but the xtream provider still builds
-    monkeypatch.setattr(bi, "http_get", lambda url: (500, b""))
-    _patch_xtream(monkeypatch)
+    _patch_xtream(monkeypatch, icon_status={"http://prov.example/list.m3u": 500})
     env_file = _two_provider_env(tmp_path)
     out = tmp_path / "staging"
     failed = bi.build(env_file, out)
@@ -775,8 +1010,7 @@ def test_build_no_providers_is_a_clean_noop(tmp_path, capsys):
 
 
 def test_main_exit_1_when_any_provider_failed(tmp_path, monkeypatch):
-    monkeypatch.setattr(bi, "http_get", lambda url: (500, b""))
-    _patch_xtream(monkeypatch)
+    _patch_xtream(monkeypatch, icon_status={"http://prov.example/list.m3u": 500})
     env_file = _two_provider_env(tmp_path)
     monkeypatch.setattr(
         sys,

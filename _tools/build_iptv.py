@@ -57,6 +57,14 @@ A favorite inside a selected group gets a multi-group title
 (``group-title="Label;24/7 Favorites"``); one OUTSIDE every selected group is
 emitted favorites-only (it survives trimming its origin group away).
 
+Favorite ICONS are validated at build time (xtream mode): some panels stamp a
+whole category with one dead placeholder ``stream_icon`` (live case: every
+"US| CINEMA TV SHOWS" stream pointed at a 404 picon, so the curated favorites
+rendered iconless in Kodi while every other group's icons worked). A favorite
+whose icon is blank or not HTTP 200 borrows the icon of another copy of the
+SAME channel (same normalized name core) elsewhere in the provider's stream
+list that fetches live; if none exists the original is kept and noted.
+
 Secrets: provider URLs/creds are read from the gitignored env and written ONLY
 into the gitignored staging artifacts — never printed and never committed
 (``test_secret_leak.py`` forbids tracked ``iptv-build/`` and ``*.m3u``).
@@ -360,6 +368,76 @@ def _resolve_favorites(spec, all_streams, by_cat, cat_name):
     return fav_ids
 
 
+# Decoration tokens dropped when normalizing a channel name to its "core"
+# (quality tags + the 24/7 marker split into bare tokens by the regex).
+_NAME_NOISE = {"24", "7", "4k", "uhd", "fhd", "hd", "sd", "raw", "60fps"}
+
+
+def _name_core(name):
+    """A channel name reduced to its comparable core.
+
+    Lowercase, country/prefix tag stripped (``US:`` / ``UK|``), every
+    non-alphanumeric run (incl. the panels' Unicode superscript decorations)
+    collapsed to a space, quality/24-7 noise tokens dropped:
+    ``"US: THE SIMPSONS 4K"`` == ``"24/7: THE SIMPSONS"`` -> ``"the simpsons"``."""
+    s = (name or "").lower()
+    s = re.sub(r"^[a-z]{2,3}\s*[:|]", "", s)
+    s = re.sub(r"[^a-z0-9]+", " ", s)
+    return " ".join(t for t in s.split() if t not in _NAME_NOISE)
+
+
+def _icon_alive(url, cache):
+    """True iff ``url`` fetches HTTP 200 (memoized in ``cache``; blank/error = dead)."""
+    if url not in cache:
+        try:
+            cache[url] = bool(url) and http_get(url)[0] == 200
+        except Exception:  # noqa: BLE001 - any fetch failure just means "dead icon"
+            cache[url] = False
+    return cache[url]
+
+
+def _fix_favorite_icons(fav_ids, stream_by_id, all_streams):
+    """stream_id -> replacement icon URL for favorites whose own icon is dead.
+
+    The curated favorites are the box's hand-picked shelf — a dead provider
+    placeholder there is the ONE place iconless tiles are guaranteed to be
+    noticed (live case: the whole "US| CINEMA TV SHOWS" category shared one
+    404 picon). For each favorite whose ``stream_icon`` is blank or dead,
+    borrow the first LIVE icon from another stream with the same name core
+    (providers carry several copies of these channels across categories).
+    Only favorites are checked — validating every emitted channel would mean
+    hundreds of fetches per build for groups that already render fine."""
+    cache, fixes = {}, {}
+    for sid in fav_ids:
+        s = stream_by_id[sid]
+        if _icon_alive(s.get("stream_icon") or "", cache):
+            continue
+        core = _name_core(s.get("name"))
+        donor = None
+        if core:
+            for t in all_streams:
+                cand = t.get("stream_icon") or ""
+                if (
+                    cand
+                    and _name_core(t.get("name")) == core
+                    and _icon_alive(cand, cache)
+                ):
+                    donor = t
+                    break
+        if donor:
+            fixes[sid] = donor.get("stream_icon")
+            print(
+                f"  note: favorite {s.get('name')!r} icon is dead — "
+                f"borrowing the icon of {donor.get('name')!r}"
+            )
+        else:
+            print(
+                f"  note: favorite {s.get('name')!r} icon is dead — "
+                "no live same-channel alternate found, keeping it"
+            )
+    return fixes
+
+
 def build_xtream_mode(p):
     """Synthesize + curate an xtream-mode provider's playlist from the API.
 
@@ -387,13 +465,15 @@ def build_xtream_mode(p):
     fav_ids = _resolve_favorites(p.get("favorites", ""), all_streams, by_cat, cat_name)
     fav_set = set(fav_ids)
     stream_by_id = {s.get("stream_id"): s for s in all_streams}
+    # heal dead favorite icons (the hand-picked shelf must render icons)
+    icon_fix = _fix_favorite_icons(fav_ids, stream_by_id, all_streams)
 
     out, counts, labels = ["#EXTM3U"], {}, []
     base = portal.rstrip("/")
 
     def emit(s, group):
         tvg = s.get("epg_channel_id") or ""
-        logo = s.get("stream_icon") or ""
+        logo = icon_fix.get(s.get("stream_id")) or s.get("stream_icon") or ""
         out.append(
             f'#EXTINF:-1 tvg-id="{tvg}" tvg-logo="{logo}" '
             f'group-title="{group}",{s.get("name", "")}'

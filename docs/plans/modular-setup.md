@@ -803,6 +803,29 @@ US News/Weather 47 / PPV Events 24` (DISPLAY labels, alpha-sorted: A&E → ABC �
   `run_foundation_setup` with a local env path — the repo source is untouched; the
   shipped `run()` still calls `run_express`.)
 
+- **Addendum — live-box bug: the 24/7 Favorites group rendered ICONLESS.** Root
+  cause (diagnosed on the real data, not the code): all five favorites resolve to
+  Streamvision's "US| CINEMA TV SHOWS" category — the verified 4K feeds — and the
+  panel stamps EVERY stream in that category with the same placeholder
+  `stream_icon` (`picons.cmshulk.com/.../cinemania.jpg`), which is **HTTP 404**;
+  the other groups' `photo-tmdb.com` icons fetch fine. The synthesized playlist
+  faithfully carried the dead URL, Kodi fetched nothing, and `tvg-id=""` meant no
+  EPG fallback. Fix (`build_xtream_mode`): favorite icons are now validated at
+  build time (`_icon_alive` — memoized HTTP check, blank = dead) and a dead one
+  borrows the first LIVE icon from another copy of the same channel in the stream
+  list (`_name_core` match: country prefix / `24/7` markers / quality tags /
+  Unicode decorations ignored, so `"US: THE SIMPSONS 4K"` ≡ `"24/7: THE
+SIMPSONS"`); no donor → original kept + a printed note. Only favorites are
+  checked (the hand-picked shelf; validating every channel = hundreds of fetches);
+  m3u mode is untouched (verbatim provider EXTINF — the failure is xtream's
+  category-wide placeholder). +16 tests (suite 663 passed / 1 xfailed;
+  build_iptv.py still 99%). Live-proven: rebuild from the real `.env.local` healed
+  5/5 (`borrowing the icon of …` notes), re-applied to the live box, and after a
+  clean-shutdown restart JSON-RPC `PVR.GetChannels` group 9 + the PVR DB
+  (`TV46.db` `sIconPath`) + a rendered-screen screenshot all show the five
+  favorites carrying the live `photo-tmdb.com/.../14330.png` icon exactly like
+  the working groups. Playbook updated (favorites-icon healing section).
+
 ## Phase 5b — IN PROGRESS (steps 1–2 DONE; steps 3–4 next)
 
 > **Status of the build:** Phases 0–3 + **5a (Foundation, incl. 5a·2/5a·3)** + **5b·1 (both
