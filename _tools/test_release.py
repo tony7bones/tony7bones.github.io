@@ -554,12 +554,16 @@ def inproc(sandbox, monkeypatch):
 class _Args:
     def __init__(self, **kw):
         self.patch = kw.get("patch", False)
+        self.minor = kw.get("minor", False)
         self.major = kw.get("major", False)
         self.version = kw.get("version")
         self.addon = kw.get("addon")
         self.news = kw.get("news")
         self.dry_run = kw.get("dry_run", False)
         self.push = kw.get("push", False)
+        self.proxy = kw.get("proxy", False)
+        self.no_push = kw.get("no_push", False)
+        self.no_verify = kw.get("no_verify", False)
 
 
 def test_inproc_build_plan_detects_source_change(inproc):
@@ -834,3 +838,326 @@ def test_inproc_behind_origin_no_remote(inproc, monkeypatch):
     monkeypatch.chdir(repo)
     rel.git("remote", "remove", "origin")
     assert rel._behind_origin("origin/main") == []
+
+
+# ============================================================================ #
+# Phase 5 — UNIFIED PROXY PATH
+#
+# release.py --proxy must run the EXACT proven proxy transaction (deploy.py's
+# `deploy()`), not a reimplementation. These tests mirror test_deploy.py's
+# bare-remote sandbox but drive the proxy release THROUGH release.py, proving
+# the unified front door is byte-for-byte the same transaction (same bump, same
+# tag, same atomic push, same rollback). deploy.py itself stays an independent
+# entry point — its whole test_deploy.py suite still passes unchanged.
+# ============================================================================ #
+
+PROXY_ID = "repository.tony7bones"
+
+_PROXY_SEED_ADDON = """<?xml version="1.0" encoding="UTF-8"?>
+<addon id="repository.tony7bones" name="Tony.7.Bones Repository" provider-name="Tony.7.Bones" version="1.0.0">
+    <extension point="xbmc.python.script" library="default.py"/>
+    <extension point="xbmc.addon.metadata">
+        <summary lang="en">Welcome to Tony.7.Bones repository. Enjoy!</summary>
+        <description lang="en">Welcome to Tony.7.Bones repository. Enjoy!</description>
+        <news>
+seed
+        </news>
+        <assets><icon>icon.png</icon></assets>
+    </extension>
+</addon>"""
+
+_PROXY_SEED_INDEX = (
+    "<!doctype html><html><body><pre>"
+    '<a href="repository.tony7bones-1.0.0.zip">repository.tony7bones-1.0.0.zip</a>\n'
+    '<a href="repo/">repo/</a></pre></body></html>\n'
+)
+
+
+@pytest.fixture
+def proxy_sandbox(tmp_path):
+    """A single-branch (main) repo wired to a bare 'remote', seeded with the proxy
+    at 1.0.0 — the same shape test_deploy.py's sandbox uses, but it ALSO ships
+    release.py + release_detect.py so the proxy release can be driven through the
+    unified front door.
+    """
+    repo = tmp_path / "proxy_work"
+    repo.mkdir()
+    tools = repo / "_tools"
+    tools.mkdir()
+    for name in (
+        "generate_repo.py",
+        "release_lib.py",
+        "release_detect.py",
+        "check_consistency.py",
+        "deploy.py",
+        "release.py",
+    ):
+        shutil.copyfile(HERE / name, tools / name)
+
+    addon = repo / "addons" / PROXY_ID
+    addon.mkdir(parents=True)
+    (addon / "addon.xml").write_text(_PROXY_SEED_ADDON)
+    (addon / "default.py").write_text("# entry\n")
+    (addon / "icon.png").write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 32)
+    (repo / "index.html").write_text(_PROXY_SEED_INDEX)
+    (repo / ".gitignore").write_text(
+        "__pycache__/\n*.pyc\n.pytest_cache/\n.ruff_cache/\n"
+    )
+
+    _git(repo, "init", "-q", "-b", "main")
+    _git_identity(repo)
+    _run([sys.executable, str(tools / "generate_repo.py")], cwd=str(repo))
+    shutil.copyfile(
+        addon / "repository.tony7bones-1.0.0.zip",
+        repo / "repository.tony7bones-1.0.0.zip",
+    )
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "seed 1.0.0")
+    _git(repo, "tag", "-a", "v1.0.0", "-m", "seed")
+
+    bare = tmp_path / "proxy_remote.git"
+    _run(["git", "init", "-q", "--bare", str(bare)], cwd=str(tmp_path))
+    _git(repo, "remote", "add", "origin", str(bare))
+    _git(repo, "push", "-q", "origin", "main", "v1.0.0")
+    return repo, bare
+
+
+def _release_proxy(repo, *flags, check=True):
+    return _run(
+        [sys.executable, str(repo / "_tools" / "release.py"), "--proxy", *flags],
+        cwd=str(repo),
+        env={"PRE_COMMIT_ALLOW_NO_CONFIG": "1"},
+        check=check,
+    )
+
+
+def _show(repo, ref, path):
+    return _git(repo, "show", f"{ref}:{path}").stdout
+
+
+def test_proxy_full_release_through_release_py(proxy_sandbox):
+    """release.py --proxy runs the full deploy.py transaction: bump (patch default),
+    sync addon.xml + root zip + tag, atomic push of main + tag."""
+    repo, bare = proxy_sandbox
+    _release_proxy(repo, "--news", "unified proxy release", "--no-verify")
+
+    # patch bump (deploy.py's default level — preserved through the front door)
+    assert (
+        rl.read_addon_version(_show(repo, "main", f"addons/{PROXY_ID}/addon.xml"))
+        == "1.0.1"
+    )
+    assert (repo / "repository.tony7bones-1.0.1.zip").exists()
+    # superseded root zip pruned
+    assert not (repo / "repository.tony7bones-1.0.0.zip").exists()
+    # tag on the release commit, pushed to the bare remote (the proxy IS the push)
+    assert (
+        _git(repo, "rev-parse", "v1.0.1^{commit}").stdout.strip()
+        == _git(repo, "rev-parse", "main").stdout.strip()
+    )
+    assert "v1.0.1" in _git(repo, "ls-remote", "--tags", "origin").stdout
+    # clean main afterwards
+    assert _git(repo, "status", "--porcelain").stdout.strip() == ""
+
+
+def test_proxy_minor_level_through_release_py(proxy_sandbox):
+    """--proxy --minor bumps the minor field (proxy default is patch)."""
+    repo, _ = proxy_sandbox
+    _release_proxy(repo, "--minor", "--news", "x", "--no-verify")
+    assert (
+        rl.read_addon_version(_show(repo, "main", f"addons/{PROXY_ID}/addon.xml"))
+        == "1.1.0"
+    )
+
+
+def test_proxy_explicit_version_through_release_py(proxy_sandbox):
+    repo, _ = proxy_sandbox
+    _release_proxy(repo, "--version", "2.0.0", "--news", "x", "--no-verify")
+    assert (
+        rl.read_addon_version(_show(repo, "main", f"addons/{PROXY_ID}/addon.xml"))
+        == "2.0.0"
+    )
+    assert "v2.0.0" in _git(repo, "ls-remote", "--tags", "origin").stdout
+
+
+def test_proxy_dry_run_changes_nothing(proxy_sandbox):
+    repo, _ = proxy_sandbox
+    before = _git(repo, "rev-parse", "main").stdout.strip()
+    r = _release_proxy(repo, "--news", "x", "--dry-run")
+    assert "next version" in r.stdout  # deploy.py's plan text
+    assert _git(repo, "rev-parse", "main").stdout.strip() == before
+    assert _git(repo, "tag", "-l", "v1.0.1").stdout.strip() == ""
+    assert _git(repo, "status", "--porcelain").stdout.strip() == ""
+
+
+def test_proxy_no_push_keeps_local_only(proxy_sandbox):
+    repo, _ = proxy_sandbox
+    _release_proxy(repo, "--news", "x", "--no-push")
+    assert _git(repo, "tag", "-l", "v1.0.1").stdout.strip() == "v1.0.1"
+    assert "v1.0.1" not in _git(repo, "ls-remote", "--tags", "origin").stdout
+
+
+def test_proxy_requires_news(proxy_sandbox):
+    """The proxy transaction needs a changelog line; --proxy without --news refuses."""
+    repo, _ = proxy_sandbox
+    r = _release_proxy(repo, "--no-verify", check=False)
+    assert r.returncode != 0
+    assert "requires --news" in (r.stdout + r.stderr)
+
+
+def test_proxy_same_version_refused(proxy_sandbox):
+    repo, _ = proxy_sandbox
+    r = _release_proxy(repo, "--version", "1.0.0", "--news", "x", check=False)
+    assert r.returncode != 0
+    assert "not greater" in (r.stdout + r.stderr)
+
+
+def test_proxy_rollback_on_push_failure(proxy_sandbox):
+    """A rejected push rolls main + the tag back — deploy.py's rollback, reached
+    through release.py --proxy."""
+    repo, bare = proxy_sandbox
+    hook = bare / "hooks" / "pre-receive"
+    hook.write_text("#!/bin/sh\necho 'rejected' >&2\nexit 1\n")
+    hook.chmod(0o755)
+    main_head = _git(repo, "rev-parse", "main").stdout.strip()
+
+    r = _release_proxy(repo, "--news", "x", "--no-verify", check=False)
+    assert r.returncode != 0
+    assert _git(repo, "rev-parse", "main").stdout.strip() == main_head
+    assert _git(repo, "tag", "-l", "v1.0.1").stdout.strip() == ""
+    assert _git(repo, "status", "--porcelain").stdout.strip() == ""
+    assert "v1.0.1" not in _git(repo, "ls-remote", "--tags", "origin").stdout
+
+
+def test_proxy_dirty_tree_refused(proxy_sandbox):
+    repo, _ = proxy_sandbox
+    (repo / "dirt.txt").write_text("uncommitted")
+    r = _release_proxy(repo, "--news", "x", "--no-verify", check=False)
+    assert r.returncode != 0
+    assert "clean" in (r.stdout + r.stderr)
+
+
+def test_proxy_auto_detected_when_only_proxy_changed(proxy_sandbox):
+    """A bare `release.py --news ...` (no --proxy) on a proxy-only change auto-routes
+    to the proxy transaction rather than reporting 'nothing to release'."""
+    repo, _ = proxy_sandbox
+    # edit the proxy source (committed so it diffs against origin/main as HEAD)
+    (repo / "addons" / PROXY_ID / "default.py").write_text("# proxy change\n")
+    _commit(repo, "fix: proxy tweak")
+    r = _run(
+        [
+            sys.executable,
+            str(repo / "_tools" / "release.py"),
+            "--news",
+            "auto routed",
+            "--no-verify",
+        ],
+        cwd=str(repo),
+        env={"PRE_COMMIT_ALLOW_NO_CONFIG": "1"},
+        check=True,
+    )
+    assert "next version" in r.stdout  # deploy.py's plan text → proxy path ran
+    assert (
+        rl.read_addon_version(_show(repo, "main", f"addons/{PROXY_ID}/addon.xml"))
+        == "1.0.1"
+    )
+
+
+def test_proxy_equivalence_release_py_matches_deploy_py(proxy_sandbox):
+    """The headline parity proof: the tree+remote after `release.py --proxy` is
+    identical to the tree+remote after `deploy.py` for the same release."""
+    repo_a, _ = proxy_sandbox
+    # second independent sandbox to run deploy.py directly
+    repo_b = repo_a.parent / "proxy_work_b"
+    shutil.copytree(repo_a, repo_b)
+    # repoint repo_b at its OWN bare clone so the two pushes don't collide
+    bare_b = repo_a.parent / "proxy_remote_b.git"
+    _run(["git", "init", "-q", "--bare", str(bare_b)], cwd=str(repo_a.parent))
+    _git(repo_b, "remote", "set-url", "origin", str(bare_b))
+    _git(repo_b, "push", "-q", "origin", "main", "v1.0.0")
+
+    # A: via release.py --proxy ; B: via deploy.py directly
+    _release_proxy(repo_a, "--news", "parity", "--no-verify")
+    _run(
+        [
+            sys.executable,
+            str(repo_b / "_tools" / "deploy.py"),
+            "--news",
+            "parity",
+            "--no-verify",
+        ],
+        cwd=str(repo_b),
+        env={"PRE_COMMIT_ALLOW_NO_CONFIG": "1"},
+    )
+
+    # identical resulting addon.xml version, identical committed root zip name,
+    # identical tag — proof the front door changes nothing about the transaction
+    assert rl.read_addon_version(
+        _show(repo_a, "main", f"addons/{PROXY_ID}/addon.xml")
+    ) == rl.read_addon_version(_show(repo_b, "main", f"addons/{PROXY_ID}/addon.xml"))
+    assert (repo_a / "repository.tony7bones-1.0.1.zip").exists()
+    assert (repo_b / "repository.tony7bones-1.0.1.zip").exists()
+    assert _git(repo_a, "tag", "-l", "v1.0.1").stdout.strip() == "v1.0.1"
+    assert _git(repo_b, "tag", "-l", "v1.0.1").stdout.strip() == "v1.0.1"
+
+
+# --------------------------------------------------------------------------- #
+# In-process — the proxy translation + routing (raise coverage on the new code)
+# --------------------------------------------------------------------------- #
+def test_inproc_proxy_args_translation():
+    import release as rel
+
+    a = _Args(
+        version="2.0.0",
+        major=True,
+        minor=True,
+        news="line",
+        dry_run=True,
+        no_push=True,
+        no_verify=True,
+    )
+    pa = rel._ProxyArgs(a)
+    assert pa.version == "2.0.0"
+    assert pa.major is True
+    assert pa.minor is True
+    assert pa.news == "line"
+    assert pa.dry_run is True
+    assert pa.no_push is True
+    assert pa.no_verify is True
+
+
+def test_inproc_release_proxy_requires_news(capsys):
+    import release as rel
+
+    rc = rel.release_proxy(_Args(proxy=True))
+    assert rc == 1
+    assert "requires --news" in capsys.readouterr().err
+
+
+def test_inproc_proxy_requested_explicit_flag(inproc):
+    rel, _, _ = inproc
+    assert rel._proxy_requested(_Args(proxy=True)) is True
+
+
+def test_inproc_proxy_requested_scoped_addon(inproc):
+    rel, _, _ = inproc
+    assert rel._proxy_requested(_Args(addon=PROXY_ID)) is True
+
+
+def test_inproc_proxy_requested_false_for_script_change(inproc):
+    rel, repo, _ = inproc
+    (repo / "addons" / MODV2_ID / "service.py").write_text("# change\n")
+    assert rel._proxy_requested(_Args()) is False
+
+
+def test_inproc_proxy_requested_auto_on_proxy_only_change(inproc):
+    rel, repo, _ = inproc
+    # add a proxy dir and change it; it must auto-route to the proxy path. Stage
+    # it so the working-tree diff vs origin/main sees it (git diff ignores
+    # untracked files — the real proxy dir is always tracked).
+    proxy_dir = repo / "addons" / PROXY_ID
+    proxy_dir.mkdir()
+    (proxy_dir / "addon.xml").write_text(
+        '<addon id="repository.tony7bones" version="1.0.0"/>\n'
+    )
+    _git(repo, "add", "addons/" + PROXY_ID)
+    assert rel._proxy_requested(_Args()) is True

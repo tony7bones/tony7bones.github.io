@@ -1,13 +1,27 @@
 #!/usr/bin/env python3
-"""One-command release for the script.* / script.module.* first-party add-ons.
+"""One-command release for EVERY add-on in the Tony.7.Bones repo.
 
-Ends the manual version-bump ritual. Detects which first-party add-ons changed
-since the last released state (`origin/main`), computes the correct next version
-(MINOR by default), auto-drafts and prepends the news line, raises the lockstep
-`<import>` when the shared library moves (and bumps its holder atomically),
-regenerates the repo deterministically, runs the gates, and commits ON THE
-BRANCH — then STOPS. No auto-push, no auto-merge (the owner keeps the
-branch -> merge -> main flow); `--push` is opt-in.
+THE single release entry point (Phase 5 unified both paths):
+
+  * The first-party **script.* / script.module.*** add-ons (the default mode).
+    Detects which changed since the last released state (`origin/main`), computes
+    the correct next version (MINOR by default), auto-drafts and prepends the news
+    line, raises the lockstep `<import>` when the shared library moves (and bumps
+    its holder atomically), regenerates the repo deterministically, runs the
+    gates, and commits ON THE BRANCH — then STOPS. No auto-push, no auto-merge
+    (the owner keeps the branch -> merge -> main flow); `--push` is opt-in.
+
+  * The **`repository.tony7bones` proxy** (`--proxy`, or auto-detected when the
+    proxy is the changed add-on). The proxy release is FUNDAMENTALLY different:
+    it IS the push. It runs the proven atomic transaction — bump -> deterministic
+    build -> sync all three version-bearing locations -> commit main -> tag ->
+    `git push --atomic main <tag>` -> force a Pages build -> verify live, with
+    rollback on any failure. This mode DELEGATES to `deploy.py`'s exact, proven
+    transaction (`deploy.deploy`) — it does NOT reimplement it — so the proxy
+    release is byte-for-byte the same code that has shipped every proxy release.
+    `deploy.py` itself stays a fully-working independent entry point (its whole
+    `test_deploy.py` suite passes unchanged); `release.py --proxy` is a thin
+    front door onto the same transaction.
 
 This is the script.* analog of the proxy's `deploy.py`, sharing its atomic
 structure (preflight -> write -> build -> determinism gate -> commit, with full
@@ -23,6 +37,12 @@ Usage:
     python3 _tools/release.py --news "script.tony7bones.bootstrap=Fix first-boot race"
     python3 _tools/release.py --push          # also push the branch (default: do not)
     python3 _tools/release.py check           # the script-side consistency gate only
+
+    # Proxy (repository.tony7bones) — the full atomic push+tag+Pages+verify:
+    python3 _tools/release.py --proxy --news "What changed"   # patch bump (proxy default)
+    python3 _tools/release.py --proxy --minor --news "..."    # or --major / --version
+    python3 _tools/release.py --proxy --news "..." --dry-run  # show the plan only
+    python3 _tools/release.py --proxy --news "..." --no-push  # local commit + tag only
 """
 
 from __future__ import annotations
@@ -41,6 +61,7 @@ REPO = rd.REPO_ROOT
 ADDON_DIR = os.path.join(REPO, "addons")
 GENERATOR = os.path.join(REPO, "_tools", "generate_repo.py")
 LIBRARY_ID = "script.module.tony7bones"
+PROXY_ID = "repository.tony7bones"
 
 # Strip a leading conventional-commit prefix when drafting a news line.
 _CONVENTIONAL_RE = re.compile(r"^[a-z]+(\([^)]*\))?!?:\s*")
@@ -513,6 +534,52 @@ def script_consistency(
 
 
 # --------------------------------------------------------------------------- #
+# Proxy mode — delegate to deploy.py's PROVEN atomic transaction
+# --------------------------------------------------------------------------- #
+class _ProxyArgs:
+    """Translate release.py's flags into the attribute shape ``deploy.deploy``
+    expects, so the proxy release runs deploy.py's exact code (no reimplementation).
+
+    ``deploy.deploy`` reads: ``version``, ``major``, ``minor``, ``news``,
+    ``dry_run``, ``no_push``, ``no_verify``. The proxy keeps deploy.py's own
+    default level (PATCH) when no level flag is given — identical to running
+    ``deploy.py`` directly.
+    """
+
+    def __init__(self, args):
+        self.version = args.version
+        self.major = args.major
+        # release.py's --patch maps to deploy's "not --minor and not --major"
+        # (deploy's default level is patch); --minor is explicit.
+        self.minor = args.minor
+        self.news = args.news
+        self.dry_run = args.dry_run
+        # release.py uses opt-in --push; deploy.py uses opt-out --no-push. The
+        # proxy release IS the push, so the default is to push (no_push=False)
+        # unless the caller explicitly passed --no-push.
+        self.no_push = args.no_push
+        self.no_verify = args.no_verify
+
+
+def release_proxy(args) -> int:
+    """Run the proxy (`repository.tony7bones`) release via deploy.py's transaction.
+
+    Imported lazily so the script.* path never pays deploy.py's import cost (and
+    so a test exercising only the script.* flow needs no deploy.py on the path).
+    ``--news`` is required by the proxy transaction (deploy.py asserts it).
+    """
+    if not args.news:
+        print(
+            'PRE-FLIGHT FAILED:\n  - the proxy release requires --news "What changed"',
+            file=sys.stderr,
+        )
+        return 1
+    import deploy as dp  # lazy: only the proxy path needs it
+
+    return dp.deploy(_ProxyArgs(args))
+
+
+# --------------------------------------------------------------------------- #
 # CLI
 # --------------------------------------------------------------------------- #
 def _print_plan(bumps: list[AddonBump], already: list[str], base_ref: str) -> None:
@@ -534,7 +601,31 @@ def _print_plan(bumps: list[AddonBump], already: list[str], base_ref: str) -> No
         print(f"  {aid}: already released (greater than {base_ref}, bump-only) — no-op")
 
 
+def _proxy_requested(args) -> bool:
+    """True when this invocation should run the proxy transaction.
+
+    Explicit ``--proxy`` always wins. Otherwise auto-detect: if the ONLY add-on
+    changed vs the baseline is the proxy (`repository.tony7bones`), route to the
+    proxy path — the proxy is excluded from the script.* flow, so a bare
+    ``release.py`` on a proxy-only change would otherwise report "nothing to
+    release". A mixed change (proxy + a script.* add-on) is NOT auto-routed: the
+    two transactions are distinct and the owner must pick (`--proxy` for the
+    proxy, a plain run for the script.* add-ons) so neither is silently skipped.
+    """
+    if args.proxy:
+        return True
+    if args.addon == PROXY_ID:
+        return True
+    if not rd.base_ref_exists(REPO, rd.BASE_REF):
+        return False
+    changed = set(rd.changed_addons(REPO, rd.BASE_REF, worktree=True))
+    return changed == {PROXY_ID}
+
+
 def run(args) -> int:
+    if _proxy_requested(args):
+        return release_proxy(args)
+
     base_ref = rd.BASE_REF
     if not rd.base_ref_exists(REPO, base_ref):
         print(f"no {base_ref} to compare against — nothing to release.")
@@ -580,22 +671,52 @@ def main(argv=None) -> int:
         return 1
 
     ap = argparse.ArgumentParser(
-        description="Release the first-party script.* add-ons (auto bump + news + lockstep)."
+        description=(
+            "Release any add-on: the first-party script.* add-ons (auto bump + "
+            "news + lockstep, commit-on-branch) or the repository.tony7bones proxy "
+            "(--proxy: the atomic push + tag + Pages + verify, via deploy.py)."
+        )
     )
     grp = ap.add_mutually_exclusive_group()
-    grp.add_argument("--patch", action="store_true", help="patch bump (default: minor)")
+    grp.add_argument(
+        "--patch",
+        action="store_true",
+        help="patch bump (script default: minor; proxy default: patch)",
+    )
+    grp.add_argument(
+        "--minor",
+        action="store_true",
+        help="minor bump (the proxy default is patch — use this for a proxy minor)",
+    )
     grp.add_argument("--major", action="store_true", help="major bump")
-    grp.add_argument("--version", help="explicit X.Y.Z (use with --addon)")
+    grp.add_argument("--version", help="explicit X.Y.Z (use with --addon, or --proxy)")
     ap.add_argument("--addon", help="scope the release to a single first-party add-on")
     ap.add_argument(
+        "--proxy",
+        action="store_true",
+        help="release the repository.tony7bones proxy (delegates to deploy.py's "
+        "atomic push+tag+Pages+verify transaction)",
+    )
+    ap.add_argument(
         "--news",
-        help="override the drafted news: 'id=line' for one add-on, or a bare line",
+        help="override the drafted news: 'id=line' for one add-on, a bare line, "
+        "or (with --proxy) the proxy changelog line (required for the proxy)",
     )
     ap.add_argument(
         "--dry-run", action="store_true", help="show the plan, change nothing"
     )
     ap.add_argument(
         "--push", action="store_true", help="push the branch (default: commit only)"
+    )
+    ap.add_argument(
+        "--no-push",
+        action="store_true",
+        help="proxy only: commit + tag locally, do not push",
+    )
+    ap.add_argument(
+        "--no-verify",
+        action="store_true",
+        help="proxy only: skip the live Pages verification poll",
     )
     args = ap.parse_args(argv)
     return run(args)
