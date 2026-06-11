@@ -19,13 +19,17 @@ import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import release_detect as rd  # noqa: E402
 import release_lib as rl  # noqa: E402
 
-REPO_ROOT = os.path.normpath(
-    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-)
+REPO_ROOT = rd.REPO_ROOT
 ADDON_BASE = os.path.join(REPO_ROOT, "addons")
-BASE_REF = "origin/main"
+# Baseline = the last released state. Defaults to origin/main (the pre-push hook
+# case). CI overrides it with CHECK_VERSIONS_BASE_REF=<github.event.before> so a
+# main push validates the bump across the pushed RANGE — on main, origin/main
+# already equals the pushed HEAD, so without this the gate would compare a commit
+# against itself and pass vacuously. An empty/whitespace override is ignored.
+BASE_REF = (os.environ.get("CHECK_VERSIONS_BASE_REF") or "").strip() or rd.BASE_REF
 
 
 def _git(*args):
@@ -34,35 +38,22 @@ def _git(*args):
     )
 
 
-def _addon_dirs():
-    if not os.path.isdir(ADDON_BASE):
-        return
-    for entry in sorted(os.listdir(ADDON_BASE)):
-        path = os.path.join(ADDON_BASE, entry)
-        if os.path.isfile(os.path.join(path, "addon.xml")):
-            yield entry, path
-
-
 def check(base_ref: str = BASE_REF):
-    """Return (ok, info_lines, problems)."""
-    if _git("rev-parse", "--verify", "--quiet", base_ref).returncode != 0:
+    """Return (ok, info_lines, problems).
+
+    Uses the SHARED detector (release_detect.changed_addons, gate mode =
+    committed `base_ref..HEAD`) so the per-add-on "did the source change?"
+    decision is byte-for-byte the same one the release tool makes — the detector
+    and the gate can never disagree (MF-1).
+    """
+    if not rd.base_ref_exists(REPO_ROOT, base_ref):
         return True, [f"no {base_ref} to compare against — skipping"], []
 
+    changed = set(rd.changed_addons(REPO_ROOT, base_ref, worktree=False))
     info, problems = [], []
-    for name, path in _addon_dirs():
+    for name, path in rd.addon_dirs(REPO_ROOT):
         rel = f"addons/{name}"
-        # Did any source file change (excluding the generated zip + index.html)?
-        diff = _git(
-            "diff",
-            "--quiet",
-            base_ref,
-            "HEAD",
-            "--",
-            rel,
-            f":(exclude){rel}/*.zip",
-            f":(exclude){rel}/index.html",
-        )
-        if diff.returncode == 0:
+        if name not in changed:
             continue  # no source change → no bump required
 
         base_xml = _git("show", f"{base_ref}:{rel}/addon.xml")

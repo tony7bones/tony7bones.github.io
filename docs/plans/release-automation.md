@@ -509,14 +509,39 @@ Release plan (baseline origin/main):
   in the pre-push hook, NOT in CI. De-pinning makes the monotonic guarantee
   depend on the hook alone — Phase 2 must wire the per-add-on bump gate into CI.
 
-### Phase 2 — Change detector + script-side consistency gate
+### Phase 2 — Change detector + CI version-bump gate (O7) — SHIPPED 2026-06-10
 
-- Add `changed_addons(base_ref)` (Decision 1) shared by `check_versions` and the
-  new tool. Add a `check_consistency`-style relation for the `script.*` add-ons
-  (single-digit, monotonic vs `origin/main`, lockstep == library). Wire into the
-  hook + CI behind the existing gates (additive, fail-closed).
-- **Acceptance:** ≥90% coverage on the new module; the gate flags an unbumped
-  change and a broken lockstep; existing hook/CI behavior preserved.
+- ✅ Added `_tools/release_detect.py` — the ONE shared change detector:
+  `changed_addons(repo_root, base_ref="origin/main", *, worktree=False)` returns
+  the sorted ids of first-party add-ons whose source changed vs `base_ref`,
+  EXCLUDING the generated `*.zip` + `index.html` (the exact definition
+  `check_versions.py` used inline). The explicit `worktree` flag is the ONLY
+  difference between the two call sites: `worktree=False` = committed
+  `base_ref..HEAD` (the gate); `worktree=True` = working-tree vs `base_ref` (the
+  tool, pre-commit). Plus `changed_files(...)` for the tool's `--dry-run` "why is
+  this changed?" (MF-4) and `base_ref_exists`/`addon_dirs` helpers. Skips cleanly
+  (`[]`) when `base_ref` does not resolve.
+- ✅ **REPLACED** `check_versions.py`'s inline diff (old lines ~37–64) with a call
+  to `rd.changed_addons(..., worktree=False)` and `rd.addon_dirs` — no duplicated
+  logic; the gate's behavior is byte-identical (all 6 pre-existing
+  `test_check_versions.py` tests pass unchanged).
+- ✅ **MF-1 regression guard:** `test_release_detect.py` asserts gate-mode and
+  tool-mode return the SAME set on a committed tree (single + multiple changed),
+  and that the only legitimate divergence is an UNCOMMITTED edit (tool sees it,
+  gate does not). 14 detector tests, 100% coverage on `release_detect`.
+- ✅ **O7 (the CI gap the de-pinning made load-bearing):** wired
+  `check_versions.py` into `.github/workflows/generate_repo.yml` as a MAIN-ONLY
+  "Version-bump gate" step. Because on a `main` push `origin/main` already equals
+  the pushed HEAD (the default baseline would compare a commit against itself and
+  pass vacuously), the step points the gate at the push's `github.event.before`
+  SHA via a new `CHECK_VERSIONS_BASE_REF` env override (empty override ignored →
+  falls back to `origin/main`; the all-zeros first-push "before" and a missing
+  baseline are skipped cleanly). CI still NEVER commits — validate only. 3 new
+  override tests prove it catches an unbumped pushed range and passes a bumped one.
+- **Acceptance MET:** 899 passed / 1 xfailed (+17 new); 100% coverage on
+  `release_detect`; the gate flags an unbumped change (hook + CI); existing
+  hook/CI behavior preserved; deterministic regen; NO add-on bump. Commit (local):
+  `feat(release): shared changed_addons detector + CI version gate (Phase 2)`.
 
 ### Phase 3 — `release.py` for the `script.*` path (the headline)
 

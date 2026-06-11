@@ -76,3 +76,30 @@ jobs:
         run: |
           git fetch --quiet --tags origin
           python3 _tools/check_consistency.py
+
+      - name: Version-bump gate (every changed add-on bumped)
+        # O7 fix: the per-add-on monotonic "every changed add-on bumped its
+        # version" gate (check_versions.py) used to run ONLY in the pre-push
+        # hook. De-pinning the version tests (release-automation Phase 1) made
+        # that the SOLE place the guarantee lived — so a --no-verify or un-hooked
+        # push could ship a same-version byte change (invisible to Kodi's
+        # version-only auto-upgrade). This wires the gate into CI as a backstop.
+        #
+        # MAIN ONLY, and the baseline is the push's "before" SHA: on main,
+        # origin/main already equals the pushed HEAD, so comparing against
+        # origin/main would judge the commit against itself and pass vacuously.
+        # github.event.before is the commit main pointed at before this push, so
+        # the gate validates the bump across exactly the pushed range. The
+        # all-zeros "before" (a branch's first push) and a missing baseline are
+        # skipped cleanly (no false block).
+        if: github.ref == 'refs/heads/main'
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          if [ -z "$BEFORE_SHA" ] || \
+             [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ] || \
+             ! git rev-parse --verify --quiet "$BEFORE_SHA" >/dev/null; then
+            echo "no usable 'before' baseline ($BEFORE_SHA) — skipping version-bump gate"
+            exit 0
+          fi
+          CHECK_VERSIONS_BASE_REF="$BEFORE_SHA" python3 _tools/check_versions.py
