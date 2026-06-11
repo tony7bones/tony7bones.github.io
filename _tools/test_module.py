@@ -28,10 +28,14 @@ from xml.etree import ElementTree as ET
 import pytest
 
 HERE = Path(__file__).parent
+sys.path.insert(0, str(HERE))
+import release_lib as rl  # noqa: E402
+
 REPO_ROOT = HERE.parent
 MODULE_DIR = REPO_ROOT / "addons" / "script.module.tony7bones"
 LIB = MODULE_DIR / "lib"
 ADDON_XML = MODULE_DIR / "addon.xml"
+BOOTSTRAP_XML = REPO_ROOT / "addons" / "script.tony7bones.bootstrap" / "addon.xml"
 
 
 def _addon_root():
@@ -58,8 +62,53 @@ class _FakeResp:
 def test_module_id_and_version():
     root = _addon_root()
     assert root.get("id") == "script.module.tony7bones"
-    assert root.get("version") == "1.5.0"
+    # Version is asserted RELATIONALLY, never as a literal pin — the literal
+    # forced a hand-edit every release (release-automation Phase 1). The
+    # well-formedness half of the old pin is preserved: the version must parse
+    # and be single-digit-per-component (the canonical release_lib check the
+    # gates and DeployPlan enforce), so a malformed / double-digit / typo'd
+    # version (1.10.0, 1..5.0, 1.5.O) still fails here.
+    version = root.get("version")
+    assert version, "addon.xml must declare a version"
+    rl.parse_version(version)  # raises on a malformed version
+    assert rl.is_single_digit(version), (
+        f"library version {version!r} must be single-digit-per-component (0-9)"
+    )
     assert root.get("provider-name") == "tony7bones"
+
+
+def _version_well_formed(version: str) -> bool:
+    """The exact relation test_module_id_and_version asserts on the shipped
+    version — factored out so the negative test exercises the SAME predicate the
+    de-pinned test relies on, proving it rejects malformed input."""
+    if not version:
+        return False
+    try:
+        rl.parse_version(version)
+    except (ValueError, TypeError):
+        return False
+    return rl.is_single_digit(version)
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "1.10.0",  # double-digit component — the single-digit scheme forbids it
+        "1.5.O",  # typo: letter O instead of 0
+        "1..5.0",  # malformed
+        "1.5",  # too few components
+        "",  # empty
+        "abc",  # not a version
+    ],
+)
+def test_module_version_well_formedness_rejects_malformed(bad):
+    """NEGATIVE (release-automation Phase 1): the well-formedness predicate the
+    de-pinned manifest test asserts must REJECT a malformed / double-digit /
+    typo'd version — so de-pinning does not drop the typo-catching coverage the
+    literal '== "1.5.0"' pin provided."""
+    assert not _version_well_formed(bad)
+    # And the live shipped version passes the same predicate.
+    assert _version_well_formed(_addon_root().get("version"))
 
 
 def test_module_is_a_python_library_not_executable():

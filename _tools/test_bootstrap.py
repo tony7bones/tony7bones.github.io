@@ -832,12 +832,72 @@ def test_run_trims_home_menu(boot):
 # --------------------------------------------------------------------------- #
 # Shared-library wiring + unattended video add-ons (one-tap onboarding)
 # --------------------------------------------------------------------------- #
+def _library_version() -> str:
+    """The shipped version of script.module.tony7bones, read live from its
+    addon.xml — the lockstep target bootstrap's <import> must match."""
+    lib_xml = REPO_ROOT / "addons" / "script.module.tony7bones" / "addon.xml"
+    return ET.parse(lib_xml).getroot().get("version")
+
+
 def test_requires_the_shared_module():
     """The manifest must declare the shared library as a required import so Kodi
-    auto-installs script.module.tony7bones when this Setup is installed."""
+    auto-installs script.module.tony7bones when this Setup is installed.
+
+    The lockstep is asserted RELATIONALLY, never as a literal pin (which forced a
+    hand-edit every release — release-automation Phase 1). Bootstrap's <import>
+    of the library must equal the library's ACTUAL shipped version (STRICT ==,
+    read live from both manifests). A floor (>=) would let the two drift silently
+    and is a coverage regression vs the old literal — so this stays exact. This
+    catches a forgotten lockstep bump, the one real class the literal pin caught.
+    """
     imp = _addon_root().find("requires/import[@addon='script.module.tony7bones']")
     assert imp is not None, "must <import> script.module.tony7bones"
-    assert imp.get("version") == "1.5.0"
+    assert imp.get("version") == _library_version(), (
+        "bootstrap's <import script.module.tony7bones version=…> must equal the "
+        f"library's shipped version {_library_version()!r} (lockstep out of sync: "
+        f"import pins {imp.get('version')!r}) — raise the import when the library bumps"
+    )
+
+
+def _lockstep_in_sync(library_xml: str, bootstrap_xml: str) -> bool:
+    """The exact relation test_requires_the_shared_module asserts, factored over
+    two arbitrary manifest strings: bootstrap's <import> of the library equals
+    the library's declared version. Drives the negative test below so it
+    exercises the SAME predicate the de-pinned test relies on."""
+    lib_root = ET.fromstring(library_xml)
+    boot_root = ET.fromstring(bootstrap_xml)
+    imp = boot_root.find("requires/import[@addon='script.module.tony7bones']")
+    assert imp is not None, "fixture must <import> the library"
+    return imp.get("version") == lib_root.get("version")
+
+
+def test_lockstep_negative_library_raised_without_import_raise():
+    """NEGATIVE (release-automation Phase 1): if the library version is RAISED but
+    bootstrap's <import> is NOT raised in lockstep, the lockstep relation must
+    FAIL on the MISMATCH — not vacuously pass and not error on a parse fault.
+
+    This is the one real regression class the literal '== "1.5.0"' pin caught (a
+    forgotten lockstep bump). The relational assert only preserves that coverage
+    if it actually rejects a drifted pair, which this proves."""
+    library_v15 = '<addon id="script.module.tony7bones" version="1.5.0"/>'
+    library_v16 = '<addon id="script.module.tony7bones" version="1.6.0"/>'
+    bootstrap_imports_15 = (
+        '<addon id="script.tony7bones.bootstrap" version="1.8.0">'
+        "<requires>"
+        '<import addon="script.module.tony7bones" version="1.5.0"/>'
+        "</requires>"
+        "</addon>"
+    )
+    # In sync: library 1.5.0, import 1.5.0 → relation holds (no false alarm).
+    assert _lockstep_in_sync(library_v15, bootstrap_imports_15) is True
+    # Drifted: library raised to 1.6.0 but import still pins 1.5.0 → FAIL.
+    # Crucially this is a clean False (a value MISMATCH), not a raised exception.
+    assert _lockstep_in_sync(library_v16, bootstrap_imports_15) is False
+    # And the live shipped pair is in sync (the test guards reality, not a stub).
+    live_lib = (
+        REPO_ROOT / "addons" / "script.module.tony7bones" / "addon.xml"
+    ).read_text()
+    assert _lockstep_in_sync(live_lib, ADDON_XML.read_text()) is True
 
 
 def test_imports_from_shared_module():
