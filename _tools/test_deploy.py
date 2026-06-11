@@ -216,6 +216,153 @@ def test_set_addon_news_missing_block():
         rl.set_addon_news('<addon version="1.0.0"/>', "x")
 
 
+# ============================================================================ #
+# Unit tests — Phase 0: release_lib generalization for the script.* tool
+# (next_version, prepend_addon_news with cap, set_import_version lockstep)
+# ============================================================================ #
+
+# A bootstrap-shaped manifest: multiple imports, one of which is the lockstep
+# target (the shared library). Mirrors the real addon.xml attribute order.
+BOOTSTRAP_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<addon id="script.tony7bones.bootstrap" version="1.8.0" provider-name="tony7bones">
+  <requires>
+    <import addon="xbmc.python" version="3.0.0"/>
+    <import addon="xbmc.addon" version="12.0.0"/>
+    <import addon="script.module.tony7bones" version="1.5.0"/>
+  </requires>
+  <extension point="xbmc.addon.metadata">
+    <news>
+        v1.8.0: latest line
+        v1.7.0: prior line
+    </news>
+  </extension>
+</addon>"""
+
+
+def test_next_version_default_is_minor():
+    # The locked default level for the script.* tool is MINOR (deploy.py keeps
+    # its own patch default by calling bump directly).
+    assert rl.next_version("1.5.0") == "1.6.0"
+
+
+@pytest.mark.parametrize(
+    "level,expected",
+    [("patch", "1.5.1"), ("minor", "1.6.0"), ("major", "2.0.0")],
+)
+def test_next_version_levels(level, expected):
+    assert rl.next_version("1.5.0", level) == expected
+
+
+def test_next_version_ceiling_raises():
+    with pytest.raises(ValueError, match="ceiling"):
+        rl.next_version("9.9.9", "minor")
+
+
+# --- set_import_version (the lockstep transform) ---------------------------- #
+
+
+def test_set_import_version_raises_the_lockstep_target():
+    out = rl.set_import_version(BOOTSTRAP_XML, "script.module.tony7bones", "1.6.0")
+    assert rl.read_import_version(out, "script.module.tony7bones") == "1.6.0"
+
+
+def test_set_import_version_leaves_other_imports_untouched():
+    out = rl.set_import_version(BOOTSTRAP_XML, "script.module.tony7bones", "1.6.0")
+    # the framework imports must be byte-for-byte unchanged
+    assert '<import addon="xbmc.python" version="3.0.0"/>' in out
+    assert '<import addon="xbmc.addon" version="12.0.0"/>' in out
+    assert rl.read_import_version(out, "xbmc.python") == "3.0.0"
+    assert rl.read_import_version(out, "xbmc.addon") == "12.0.0"
+
+
+def test_set_import_version_is_idempotent():
+    out1 = rl.set_import_version(BOOTSTRAP_XML, "script.module.tony7bones", "1.6.0")
+    out2 = rl.set_import_version(out1, "script.module.tony7bones", "1.6.0")
+    assert out1 == out2
+
+
+def test_set_import_version_raises_when_import_absent():
+    with pytest.raises(ValueError, match="no <import"):
+        rl.set_import_version(BOOTSTRAP_XML, "plugin.video.nope", "1.0.0")
+
+
+def test_set_import_version_rejects_bad_version():
+    with pytest.raises(ValueError):
+        rl.set_import_version(BOOTSTRAP_XML, "script.module.tony7bones", "1.6")
+
+
+def test_read_import_version_absent_is_none():
+    assert rl.read_import_version(BOOTSTRAP_XML, "plugin.video.nope") is None
+
+
+def test_set_import_version_reversed_attribute_order():
+    # version= before addon= must still be rewritten correctly.
+    xml = '<requires><import version="1.5.0" addon="script.module.tony7bones"/></requires>'
+    assert rl.read_import_version(xml, "script.module.tony7bones") == "1.5.0"
+    out = rl.set_import_version(xml, "script.module.tony7bones", "1.6.0")
+    assert rl.read_import_version(out, "script.module.tony7bones") == "1.6.0"
+    assert 'addon="script.module.tony7bones"' in out
+
+
+# --- prepend_addon_news (rolling, capped, idempotent) ----------------------- #
+
+
+def test_prepend_addon_news_prepends_newest_first():
+    out = rl.prepend_addon_news(BOOTSTRAP_XML, "brand new fix", version="1.9.0")
+    body = rl._NEWS_RE.search(out).group(2)
+    lines = [ln.strip() for ln in body.splitlines() if ln.strip()]
+    assert lines[0] == "v1.9.0: brand new fix"
+    assert lines[1] == "v1.8.0: latest line"
+    assert lines[2] == "v1.7.0: prior line"
+
+
+def test_prepend_addon_news_caps_rolling_history():
+    xml = BOOTSTRAP_XML
+    # ship 1.9.0 ... up the chain past the cap; the oldest must fall off
+    for i, v in enumerate(["1.9.0", "2.0.0", "2.1.0", "2.2.0", "2.3.0"]):
+        xml = rl.prepend_addon_news(xml, f"entry {i}", version=v)
+    body = rl._NEWS_RE.search(xml).group(2)
+    lines = [ln.strip() for ln in body.splitlines() if ln.strip()]
+    assert len(lines) == rl.NEWS_CAP  # capped at 6
+    assert lines[0] == "v2.3.0: entry 4"
+    # the original oldest (v1.7.0) has rolled off
+    assert not any("v1.7.0" in ln for ln in lines)
+
+
+def test_prepend_addon_news_respects_explicit_cap():
+    out = rl.prepend_addon_news(BOOTSTRAP_XML, "x", version="1.9.0", cap=2)
+    lines = [
+        ln.strip() for ln in rl._NEWS_RE.search(out).group(2).splitlines() if ln.strip()
+    ]
+    assert lines == ["v1.9.0: x", "v1.8.0: latest line"]
+
+
+def test_prepend_addon_news_idempotent_same_version():
+    # MF-9: re-running for the SAME version must not stack a duplicate entry.
+    out1 = rl.prepend_addon_news(BOOTSTRAP_XML, "the fix", version="1.9.0")
+    out2 = rl.prepend_addon_news(out1, "the fix again", version="1.9.0")
+    assert out1 == out2  # second prepend for v1.9.0 is a no-op
+
+
+def test_prepend_addon_news_missing_block_raises():
+    with pytest.raises(ValueError, match="no <news>"):
+        rl.prepend_addon_news('<addon version="1.0.0"/>', "x", version="1.0.1")
+
+
+def test_prepend_addon_news_rejects_bad_version():
+    with pytest.raises(ValueError):
+        rl.prepend_addon_news(BOOTSTRAP_XML, "x", version="1.9")
+
+
+def test_prepend_addon_news_into_empty_body():
+    xml = "<addon><extension><news>\n        </news></extension></addon>"
+    out = rl.prepend_addon_news(xml, "first ever", version="1.0.0")
+    lines = [
+        ln.strip() for ln in rl._NEWS_RE.search(out).group(2).splitlines() if ln.strip()
+    ]
+    assert lines == ["v1.0.0: first ever"]
+
+
 def test_is_root_zip_name():
     # the consistency gate reads the shipped version from this filename
     assert rl.is_root_zip_name("repository.tony7bones-1.0.7.zip")

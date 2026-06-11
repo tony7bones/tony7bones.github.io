@@ -1,11 +1,17 @@
 # Plan — Eliminate manual version bumping for the first-party add-ons
 
-> Status: **DECISIONS LOCKED (2026-06-10) — Phase 1 SHIPPED.** The owner's calls
-> on O1–O6 are recorded below (see "Owner decisions — LOCKED"). **Phase 1
-> (de-pin the version tests) is implemented and committed locally** on branch
-> `no-computer-setup` — the two literal pins are now relational, with negative
-> tests, no add-on bump. O7–O10 remain open (O7 has a confirmed CI gap — see the
-> must-fix note). Phases 0, 2–5 remain proposed.
+> Status: **DECISIONS LOCKED (2026-06-10) — Phases 0, 1, 2, 3 + O7 SHIPPED
+> (committed locally on `no-computer-setup`, not pushed).** The owner's calls on
+> O1–O6 are recorded below. **Phase 0** generalized `release_lib` (pure transforms
+> `next_version` / `set_import_version` / `read_import_version` /
+> `prepend_addon_news` capped+idempotent), no add-on bump. **Phase 1** de-pinned
+> the two literal version tests (relational + negative tests). **Phase 2** added
+> the ONE shared `changed_addons()` detector (tool + gate route through it, MF-1)
+> and wired `check_versions.py` into CI (O7). **Phase 3** shipped `_tools/release.py`
+> (detect → bump (minor default) → news → lockstep → regen → determinism gate →
+> commit; `--dry-run`/`--patch`/`--major`/`--version`/`--news`/`--push`/`check`;
+> all QA must-fixes MF-1…MF-9; bare-remote e2e tests). O8–O10 remain owner
+> questions. Phases 4 (docs default) and 5 (proxy unification) remain proposed.
 
 ## Owner decisions — LOCKED (2026-06-10)
 
@@ -455,14 +461,32 @@ Release plan (baseline origin/main):
 
 ## Phase plan (numbered, with per-phase acceptance)
 
-### Phase 0 — Generalize `release_lib` (no behavior change)
+### Phase 0 — Generalize `release_lib` (no behavior change) — SHIPPED 2026-06-10
 
-- Lift the ID-bound assumptions: parameterize the addon.xml transforms by add-on
-  (the version math is already ID-agnostic). Add `set_import_version(xml,
-addon_id, version)`. Keep the proxy's zip/tag helpers as a proxy-specific
-  submodule so `deploy.py` is untouched.
-- **Acceptance:** `deploy.py` and all existing tests pass byte-for-byte unchanged;
-  new pure transforms have unit tests; no `addons/**` change (no bump needed).
+- ✅ Added pure, ID-agnostic transforms to `_tools/release_lib.py` (no I/O, no git):
+  - `next_version(current, level="minor")` — explicitly-named alias over `bump`
+    for the tool's locked MINOR default (the proxy `deploy.py` keeps its PATCH
+    default by calling `bump` directly). Version math stays single-source in `bump`
+    (single-digit rollover + 9.9.9 ceiling).
+  - `read_import_version(xml, addon_id)` / `set_import_version(xml, addon_id, version)`
+    — read/rewrite a `<import addon=… version=…>` (the lockstep). Only the matching
+    import is touched; idempotent; raises if the import is absent; order-independent
+    regex (handles `addon=` before or after `version=`).
+  - `prepend_addon_news(xml, line, *, version, cap=NEWS_CAP)` — PREPEND-with-cap news
+    (O3): `vX.Y.Z: <line>` newest-first, rolling cap of ~6, **idempotent (MF-9)** —
+    a re-run for the same version is a no-op (does not stack a duplicate). The
+    existing `set_addon_news` (REPLACE) is kept UNCHANGED for the proxy `deploy.py`.
+- **Decision (documented):** `set_addon_news` kept as-is (REPLACE) for `deploy.py`;
+  the new `prepend_addon_news` is a SEPARATE function so the proxy path is untouched
+  and byte-identical. The ID-bound proxy helpers (`zip_name`, `_ZIP_RE`, `DeployPlan`)
+  stay in `release_lib` as-is — the script.\* tool uses the ID-agnostic transforms
+  (`set_addon_version`, `set_import_version`, `prepend_addon_news`) directly with an
+  arbitrary add-on id, so no module split was needed.
+- **Acceptance MET:** `deploy.py` and all existing tests pass unchanged (882 passed
+  / 1 xfailed; +19 new Phase-0 unit tests in `test_deploy.py`); `release_lib` at 99%
+  coverage (the 2 uncovered lines are pre-existing `read/set_addon_version` error
+  paths, not Phase-0 code); ruff clean; deterministic regen (no `addons/**` diff);
+  NO add-on bump. Commit (local): `feat(release): release_lib lockstep+news transforms (Phase 0)`.
 
 ### Phase 1 — De-pin the tests (independently shippable, no add-on bump) — SHIPPED 2026-06-10
 

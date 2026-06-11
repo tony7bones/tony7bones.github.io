@@ -34,6 +34,9 @@ _ADDON_VERSION_RE = re.compile(r'(<addon\b[^>]*?\bversion=")([^"]*)(")')
 _ZIP_RE = re.compile(re.escape(ADDON_ID) + r"-(\d+\.\d+\.\d+)\.zip")
 _NEWS_RE = re.compile(r"(<news>)(.*?)(</news>)", re.DOTALL)
 
+# Default rolling-history cap for the prepend-mode news (O3: keep ~6 entries).
+NEWS_CAP = 6
+
 
 # --------------------------------------------------------------------------- #
 # Version math
@@ -97,6 +100,18 @@ def bump(version: str, level: str = "patch") -> str:
             "(single-digit version space exhausted)"
         )
     return format_version((a, b, c))
+
+
+def next_version(current: str, level: str = "minor") -> str:
+    """Compute the next version from `current` at `level`.
+
+    A thin, explicitly-named alias over ``bump`` for the release tool, whose
+    locked default level is MINOR (the proxy's ``deploy.py`` keeps its own PATCH
+    default by calling ``bump`` directly). Keeping the math here means the tool
+    never re-implements version arithmetic — single source of truth (single-digit
+    rollover, 9.9.9 ceiling) stays in ``bump``.
+    """
+    return bump(current, level)
 
 
 def is_greater(new: str, old: str) -> bool:
@@ -171,6 +186,92 @@ def set_addon_news(xml_text: str, news_line: str) -> str:
         raise ValueError("no <news> block found")
     body = f"\n{news_line}\n        "
     return _NEWS_RE.sub(lambda m: m.group(1) + body + m.group(3), xml_text, count=1)
+
+
+def prepend_addon_news(
+    xml_text: str, news_line: str, *, version: str, cap: int = NEWS_CAP
+) -> str:
+    """Prepend ``vX.Y.Z: <news_line>`` to the <news> body, keeping a rolling cap.
+
+    Unlike ``set_addon_news`` (which REPLACES the body with one line — the proxy's
+    ``deploy.py`` behaviour), this keeps a bounded rolling changelog: one entry per
+    line, newest first, at most ``cap`` entries. This is the locked O3 model for the
+    script.* release tool.
+
+    Idempotent (MF-9): if the top entry already begins with ``vX.Y.Z:`` for the
+    version being shipped, the body is returned unchanged — a re-run does not stack a
+    duplicate. Existing entries are split on newlines (each non-blank line is one
+    historical entry); the indentation of the manifests in this repo (8 spaces) is
+    preserved.
+    """
+    parse_version(version)
+    m = _NEWS_RE.search(xml_text)
+    if not m:
+        raise ValueError("no <news> block found")
+
+    new_entry = f"v{version}: {news_line}"
+    existing = [ln.strip() for ln in m.group(2).splitlines() if ln.strip()]
+
+    # Idempotency: a re-run for the SAME version must not re-prepend.
+    prefix = f"v{version}:"
+    if existing and existing[0].startswith(prefix):
+        return xml_text
+
+    entries = [new_entry, *existing][:cap]
+    indent = "        "  # 8 spaces — matches this repo's manifests
+    body = "\n" + "\n".join(f"{indent}{e}" for e in entries) + "\n" + indent
+    return _NEWS_RE.sub(lambda mm: mm.group(1) + body + mm.group(3), xml_text, count=1)
+
+
+# Matches the version= of an <import addon="ID" ... version="..."/>. Both repos'
+# manifests put addon= before version=; the second alternative keeps it correct
+# if a future manifest reverses the attribute order (version= before addon=).
+_IMPORT_RE_TMPL = (
+    r'(<import\b[^>]*?\baddon="{addon_id}"[^>]*?\bversion=")([^"]*)(")'
+    r'|(<import\b[^>]*?\bversion=")([^"]*)("[^>]*?\baddon="{addon_id}")'
+)
+
+
+def _import_re(addon_id: str) -> re.Pattern:
+    return re.compile(_IMPORT_RE_TMPL.format(addon_id=re.escape(addon_id)))
+
+
+def _import_match_version(m: re.Match) -> str:
+    """The captured version= regardless of which attribute-order alternative hit."""
+    return m.group(2) if m.group(2) is not None else m.group(5)
+
+
+def read_import_version(xml_text: str, addon_id: str) -> str | None:
+    """Return the ``version=`` of the ``<import addon="addon_id" .../>``, or None.
+
+    Used to read the lockstep target (bootstrap's import of the shared library).
+    Returns None when the add-on is not imported at all (the import is absent),
+    distinguishing "not a dependency" from a present-but-stale pin.
+    """
+    m = _import_re(addon_id).search(xml_text)
+    return _import_match_version(m) if m else None
+
+
+def set_import_version(xml_text: str, addon_id: str, version: str) -> str:
+    """Rewrite the ``version=`` of ``<import addon="addon_id" .../>`` (the lockstep).
+
+    Mirrors ``set_addon_version`` for the dependency import. Only the matching
+    import is touched — other ``<import>`` lines (xbmc.python, xbmc.addon, a second
+    dependency) are left byte-for-byte unchanged. Idempotent: setting the version it
+    already holds is a no-op. Raises ValueError if ``addon_id`` is not imported, so a
+    caller never silently believes it raised a lockstep that does not exist.
+    """
+    parse_version(version)
+
+    def _repl(m: re.Match) -> str:
+        if m.group(2) is not None:  # addon= before version=
+            return m.group(1) + version + m.group(3)
+        return m.group(4) + version + m.group(6)  # version= before addon=
+
+    new, n = _import_re(addon_id).subn(_repl, xml_text, count=1)
+    if n != 1:
+        raise ValueError(f"no <import addon={addon_id!r} version=...> found to set")
+    return new
 
 
 def is_root_zip_name(name: str) -> bool:

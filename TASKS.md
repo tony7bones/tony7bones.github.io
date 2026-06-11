@@ -23,6 +23,33 @@ tech-debt seam, the apply_iptv reporting bug, the zero-content guarantee). Keep 
 
 ---
 
+## Release automation — kill manual version bumping (script.\* path)
+
+> Design + phase log: **`docs/plans/release-automation.md`** (LOCKED owner decisions
+> O1–O6, the QA must-fixes MF-1…MF-9). Committed LOCALLY on `no-computer-setup`, NOT
+> pushed. No add-on versions were bumped by this work — the TOOL is what bumps.
+
+- [x] **P0** Generalize `release_lib`: `next_version`, `set_import_version` /
+      `read_import_version` (lockstep), `prepend_addon_news` (capped + idempotent,
+      MF-9); `set_addon_news` REPLACE kept for `deploy.py`. +19 unit tests, 99% cov,
+      no add-on bump. Shipped 2026-06-10.
+- [x] **P1** De-pin the two literal version tests → relational + negative tests.
+      Shipped 2026-06-10 (pre-existing).
+- [x] **P2** ONE shared `changed_addons(repo, base_ref, *, worktree)` detector (tool + gate route through it, MF-1); `check_versions.py` inline diff REPLACED by the
+      call; `check_versions.py` wired into CI on `main` (O7).
+- [x] **P3** `_tools/release.py`: detect → bump (minor default / `--patch`/`--major`/
+      `--version`) → auto-draft+prepend news (`--news` override) → lockstep (MF-2) →
+      regen → determinism gate → commit on branch; `--dry-run` (shows WHICH files,
+      MF-4), `--push`, `check`; guardrails dirty/behind-origin (MF-5)/monotonic/ceiling
+      (MF-8)/idempotent (MF-6); rollback on any failure. Bare-remote e2e tests.
+- [ ] **P4** Make `release.py` the documented Path A; auto-derive the version table.
+- [ ] **P5** (optional) Unify: `deploy.py` becomes a shim over `release.py --addon repository.tony7bones`.
+- Open owner Qs: **O8** (lockstep test `==` permanent?), **O9** (scoped `--addon`
+  excluding a must-re-ship dependent: auto-include vs refuse — implemented as
+  auto-include), **O10** (idempotent re-run: no-op with message — implemented).
+
+---
+
 ## ▶ VERY NEXT STEP — N2, the on-box config collector (no-computer-setup track)
 
 > **Phase N1.2 is RELEASED to `main` (2026-06-10)** — `script.tony7bones.bootstrap`
