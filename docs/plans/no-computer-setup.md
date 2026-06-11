@@ -1,12 +1,15 @@
 # Plan — No-Computer Setup (repository-direct, remote-only provisioning)
 
 > Status: **N1 RELEASED to `main` (2026-06-10 — bootstrap 1.6.0 + library 1.3.0,
-> release `fbf4b24`, merge `38b9237`); N1.1 (the `_T7B` canonical device root +
-> the persistent device-resident master env + the no-env scaffold) is COMMITTED on
-> `no-computer-setup` (unreleased — ships with the next milestone release) — N2 is
+> release `fbf4b24`, merge `38b9237`); N1.1 RELEASED to `main` (2026-06-10 —
+> bootstrap 1.7.0 + library 1.4.0, release `4ce11ec`, fast-forward merge of
+> `no-computer-setup`): the `_T7B` brand root + the persistent device-resident
+> master env + the no-env scaffold; the owner places `env.<device>` (dot-optional)
+> at the brand root `/storage/emulated/0/_T7B/`. N2 is
 > next.** Completed boxes
-> auto-update to library 1.3.0 (import-only, benign); the bootstrap is not installed
-> on completed boxes. The design
+> auto-update the library 1.3.0 → 1.4.0 (import-only superset, benign); the bootstrap
+> is not installed on completed boxes (self-uninstalls). Live-verified: the 1.7.0/1.4.0
+> zips serve 200 from raw `main`, the old 1.6.0/1.3.0 zips 404. The design
 > below is the panel-style plan; the build log at the bottom records what landed.
 > This track started AFTER the modular-setup Phase 6 hardening completed and the
 > milestone push landed the `modular-setup` branch on `main` (the wizard this plan
@@ -589,7 +592,7 @@ Same gated treatment as every modular phase, plus the no-env dimension:
   artifacts), added the delivery-mode-2 contract + its pin test per the owner
   directive, and committed. Nothing inherited was reshaped.
 
-### Phase N1.1 — COMMITTED on `no-computer-setup` 2026-06-10 (the `_T7B` canonical device root + the persistent device-resident master env + the no-env scaffold; unreleased — no version bumps, ships with the next milestone release)
+### Phase N1.1 — RELEASED to `main` 2026-06-10 (bootstrap 1.7.0 + library 1.4.0, merge `4ce11ec`) — the `_T7B` brand root + the persistent device-resident master env + the no-env scaffold
 
 - **Owner directives encoded (all 2026-06-10, all binding):** (1) the canonical
   device root is `/storage/emulated/0/_T7B/kodi/` (layout: `backups/ iptv/ media/

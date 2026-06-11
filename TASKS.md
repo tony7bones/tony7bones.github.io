@@ -25,28 +25,38 @@ tech-debt seam, the apply_iptv reporting bug, the zero-content guarantee). Keep 
 
 ## ▶ VERY NEXT STEP — N2, the on-box config collector (no-computer-setup track)
 
-> **Phase N1.1 is COMMITTED on `no-computer-setup` (2026-06-10, unreleased — no
-> version bumps; ships with the next milestone release).** The canonical device
-> root is now `/storage/emulated/0/_T7B/kodi/` (layout: `backups/ iptv/ media/
-repositories/ rss/ scripts/`); the old `kodi/tony.7.bones/` root is a read-only
+> **Phase N1.1 is RELEASED to `main` (2026-06-10)** — `script.tony7bones.bootstrap`
+> **1.7.0** + `script.module.tony7bones` **1.4.0** (release commit `4ce11ec`,
+> fast-forward merge of `no-computer-setup`; proxy untouched at 2.2.1; live-verified:
+> the 1.7.0/1.4.0 zips serve 200 from raw `main`, the old 1.6.0/1.3.0 zips 404,
+> `addons.xml` advertises the new versions and the bootstrap's `<requires>` on the
+> library is 1.4.0). The owner PLACES the device-resident master env at the BRAND
+> ROOT `/storage/emulated/0/_T7B/` (dot-optional `env.<device>`); the STAGING tree
+> `/storage/emulated/0/_T7B/kodi/` (layout: `backups/ iptv/ media/
+repositories/ rss/ scripts/`) is one level below it; the old `kodi/tony.7.bones/` root is a read-only
 > LEGACY fallback (read second, never written). The device-resident MASTER
 > `.env.<device>` lives at the canonical root, is read with provisioner-parity
 > derivation (`DEVICE_IP` dropped, `IPTV_STAGING_DIR` injected iff staged), and is
 > **NEVER deleted** (wipe-and-redo forever); only the derived `tony7bones.env`
 > (both roots) + the profile-local collector env are terminal-deletable. With NO
 > env anywhere Setup SCAFFOLDS the comment-disabled master template
-> `.env.<device-name>` at the canonical root (bundled `resources/env.device.example`,
-> drift-pinned) and still opens the wizard. Provisioner push targets (env + IPTV
-> staging) moved under `_T7B`; `DEVICE_FILE_COPIES` reads both roots (canonical
-> first). Env-source order: derived (canonical → legacy) → masters (canonical →
-> legacy, sorted) → profile-local. Gate: 830 passed / 1 xfailed, env.py + iptv.py
-> 100% / default.py 98%, 3 keystone mutations killed, deterministic regen.
+> `env.<device-name>` (no leading dot) at the BRAND ROOT (bundled
+> `resources/env.device.example`, drift-pinned byte-identical to the committed
+> `.env.device.example`) and still opens the wizard. Provisioner push targets (env +
+> IPTV staging) moved under `_T7B`; `DEVICE_FILE_COPIES` reads both roots (canonical
+> first). Env-source order: derived (canonical → legacy) → masters (brand root →
+> staging → legacy, sorted) → profile-local. Gate at release: 839 passed / 1 xfailed,
+> ruff clean, deterministic regen, version-bump + consistency gates green on main.
 > **DEVICE-PROVEN (2026-06-10): the Office Fire TV ran the working-tree N1.1
 > Express end-to-end off the device-resident master alone (no derived env, no
 > adb-pushed `tony7bones.env`) — full box verified (MOD V2 + patch, both IPTV
 > providers 1:1 with the host build, 555 channels, restart-survival) and the
 > master `.env.office` SURVIVED the run untouched.** Full
 > record: the N1.1 build-log entry in `docs/plans/no-computer-setup.md`.
+> Auto-update impact on completed boxes: they auto-update the library 1.3.0 → 1.4.0
+> (an import-only superset — new env-source helpers + scaffold; no caller change on a
+> box that already has its env — benign); the bootstrap self-uninstalls so 1.7.0 is
+> not on completed boxes (it lands only on the next fresh Setup install from the repo).
 >
 > **Phase N1 is RELEASED to `main` (2026-06-10)** — `script.tony7bones.bootstrap`
 > **1.6.0** + `script.module.tony7bones` **1.3.0** (release commit `fbf4b24`, merge

@@ -68,14 +68,16 @@ WHY and the exact code locations.
   (2) a self-contained, device-resident MASTER `.env.<device>` placed at the
   device root by any means (no adb); (3) no env → the Guided wizard (Setup
   scaffolds the comment-disabled master template for fill-in-and-re-run; N1.1).
-  - **Canonical device root (N1.1, branch-only until released):**
-    `/storage/emulated/0/_T7B/kodi/` (layout `backups/ iptv/ media/
-repositories/ rss/ scripts/`). The old
+  - **Device roots (N1.1, RELEASED to `main` — bootstrap 1.7.0 / library 1.4.0):**
+    the owner PLACES the master `env.<device>` (dot-optional) at the BRAND ROOT
+    `/storage/emulated/0/_T7B/`; the STAGING tree `/storage/emulated/0/_T7B/kodi/`
+    (layout `backups/ iptv/ media/
+repositories/ rss/ scripts/`) is one level below. The old
     `/storage/emulated/0/kodi/tony.7.bones/` root is a read-only LEGACY
-    fallback — read second, NEVER written (no push, no scaffold).
+    fallback — read last, NEVER written (no push, no scaffold).
   - **Env-source order** (`setup/env.py box_env_paths`): pushed derived
-    `tony7bones.env` at the canonical root → legacy push path → device-resident
-    MASTER `.env.*` (canonical root then legacy, sorted) → profile-local
+    `tony7bones.env` (canonical staging → legacy) → device-resident
+    MASTER `env.*` (brand root → staging → legacy, sorted) → profile-local
     persisted env. Derived-before-master: a fresh push outranks the standing
     identity.
   - **The MASTER is PERSISTENT — never delete it.** `deletable_env_paths`
