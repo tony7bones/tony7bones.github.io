@@ -25,6 +25,27 @@ tech-debt seam, the apply_iptv reporting bug, the zero-content guarantee). Keep 
 
 ## ▶ VERY NEXT STEP — N2, the on-box config collector (no-computer-setup track)
 
+> **Phase N1.2 is RELEASED to `main` (2026-06-10)** — `script.tony7bones.bootstrap`
+> **1.8.0** + `script.module.tony7bones` **1.5.0** (release commit `74e4553`,
+> fast-forward merge of `no-computer-setup`; proxy untouched at 2.2.1; live-verified:
+> the 1.8.0/1.5.0 zips serve 200 from raw `main`, the old 1.7.0/1.4.0 zips 404,
+> `addons.xml` advertises both new versions and the bootstrap's `<requires>` on the
+> library is 1.5.0). Onboarding (`run()` first statement + every route: Express,
+> Guided, and the no-env wizard) now **self-creates** the `_T7B/kodi/{backups,iptv,
+media,repositories,rss}` device staging tree via the shared library's new
+> `ensure_device_dirs()` / `DEVICE_STAGING_SUBDIRS`; the provisioner `mkdir -p`s the
+> same set; and the `IPTV_STAGING_DIR` injection now requires a **NON-EMPTY** `iptv/`
+> dir, fixing the empty-dir false-Express route. Gate at release: 856 passed / 1
+> xfailed, ruff clean, deterministic regen (byte-identical second run), version-bump
+>
+> - consistency gates green on main. Auto-update impact on completed boxes: they
+>   auto-update the library 1.4.0 → 1.5.0 (an import-only superset — adds
+>   `ensure_device_dirs`/`DEVICE_STAGING_SUBDIRS` + the staging guard; idempotent
+>   mkdir, no behavior change on a configured box — benign); the bootstrap
+>   self-uninstalls so 1.8.0 is not on completed boxes (it lands only on the next fresh
+>   Setup install from the repo). Full record: the N1.2 build-log entry in
+>   `docs/plans/no-computer-setup.md`.
+>
 > **Phase N1.1 is RELEASED to `main` (2026-06-10)** — `script.tony7bones.bootstrap`
 > **1.7.0** + `script.module.tony7bones` **1.4.0** (release commit `4ce11ec`,
 > fast-forward merge of `no-computer-setup`; proxy untouched at 2.2.1; live-verified:

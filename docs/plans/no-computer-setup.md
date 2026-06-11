@@ -5,11 +5,19 @@
 > bootstrap 1.7.0 + library 1.4.0, release `4ce11ec`, fast-forward merge of
 > `no-computer-setup`): the `_T7B` brand root + the persistent device-resident
 > master env + the no-env scaffold; the owner places `env.<device>` (dot-optional)
-> at the brand root `/storage/emulated/0/_T7B/`. N2 is
-> next.** Completed boxes
-> auto-update the library 1.3.0 → 1.4.0 (import-only superset, benign); the bootstrap
-> is not installed on completed boxes (self-uninstalls). Live-verified: the 1.7.0/1.4.0
-> zips serve 200 from raw `main`, the old 1.6.0/1.3.0 zips 404. The design
+> at the brand root `/storage/emulated/0/_T7B/`. **N1.2 RELEASED to `main`
+> (2026-06-10 — bootstrap 1.8.0 + library 1.5.0, release `74e4553`, fast-forward
+> merge of `no-computer-setup`): onboarding self-creates the
+> `_T7B/kodi/{backups,iptv,media,repositories,rss}` device staging tree via the
+> library's new `ensure_device_dirs()` / `DEVICE_STAGING_SUBDIRS` on every route
+> (Express, Guided, no-env wizard), the provisioner `mkdir -p`s the same set, and
+> `IPTV_STAGING_DIR` is injected only when `iptv/` actually holds artifacts (fixing
+> the empty-dir false-Express route).** N2 is next. Completed boxes
+> auto-update the library 1.3.0 → 1.4.0 → 1.5.0 (import-only supersets, benign — the
+> 1.5.0 step adds `ensure_device_dirs`/`DEVICE_STAGING_SUBDIRS` + the staging guard,
+> idempotent mkdir, no behavior change on a configured box); the bootstrap
+> is not installed on completed boxes (self-uninstalls). Live-verified: the
+> 1.8.0/1.5.0 zips serve 200 from raw `main`, the old 1.7.0/1.4.0 zips 404. The design
 > below is the panel-style plan; the build log at the bottom records what landed.
 > This track started AFTER the modular-setup Phase 6 hardening completed and the
 > milestone push landed the `modular-setup` branch on `main` (the wizard this plan
@@ -18,7 +26,7 @@
 > `docs/plans/modular-setup.md` — the three layers (`apply_foundation` / `apply_iptv` /
 > `apply_addons`), the Guided wizard + Model A lifecycle (`run_guided`, installed-state
 > probes), and the `SETUP_MODE` routing are all REUSED, not reshaped. Phase numbering
-> here is **N1…N5** to avoid colliding with the modular plan's 0–7.
+> here is **N1…N5\*\* to avoid colliding with the modular plan's 0–7.
 
 ## Goal
 
@@ -741,3 +749,40 @@ repositories/ rss/ scripts/`, + `backups/EM+`); the `.env.<device>` masters live
     closure — pil 5.1.0 was already installed and weather.multi landed enabled,
     so the resolver miss was harmless. End state: complete working box, Kodi
     foregrounded at Home.
+
+### Phase N1.2 — RELEASED to `main` 2026-06-10 (bootstrap 1.8.0 + library 1.5.0, release `74e4553`, fast-forward merge of `no-computer-setup`) — onboarding self-creates the `_T7B/kodi` device tree
+
+- **What shipped.** Onboarding now self-creates the device staging tree instead of
+  depending on the provisioner (or the owner) to have made it. The shared library
+  gained `DEVICE_STAGING_SUBDIRS = (backups, iptv, media, repositories, rss)` and
+  `ensure_device_dirs()`, called ONCE EARLY from `run()`'s first statement and on
+  EVERY route (Express, Guided, the no-env wizard) so the
+  `/storage/emulated/0/_T7B/kodi/{backups,iptv,media,repositories,rss}` tree exists
+  before any env read or config step. The provisioner `mkdir -p`s the identical set
+  for parity. The `IPTV_STAGING_DIR` injection was tightened to require a
+  **NON-EMPTY** `iptv/` dir — an empty staging dir previously injected the key and
+  pushed a no-artifact box down the wrong route (the empty-dir false-Express bug);
+  now staging is advertised only when `iptv/` actually holds artifacts.
+- **Versions.** `script.module.tony7bones` 1.4.0 → **1.5.0** (the new helper +
+  constant + staging guard); `script.tony7bones.bootstrap` 1.7.0 → **1.8.0**
+  (scaffolds the tree on every run; `<requires>` on the library bumped 1.4.0 →
+  **1.5.0** in lockstep). `SETUP_API`/`REQUIRED_SETUP_API` unchanged at 3 (no new
+  cross-layer contract). Version-pinned tests bumped (`test_module.py`,
+  `test_bootstrap.py`).
+- **Gate.** 856 passed / 1 xfailed, ruff clean, generator deterministic
+  (byte-identical second run, sha256 `17156cdc…`), `check_versions.py` green (both
+  add-ons bumped), `check_consistency.py` green (proxy untouched at 2.2.1). Re-run
+  in full ON MAIN after the fast-forward merge before pushing; staleness clean.
+- **Live verification.** New zips serve 200 from raw `main`
+  (`script.tony7bones.bootstrap-1.8.0.zip`, `script.module.tony7bones-1.5.0.zip`),
+  old 1.7.0/1.4.0 zips 404; `addons.xml` advertises both new versions and the
+  bootstrap's `<requires>` reads 1.5.0. Pages rebuilt commit `74e4553` (installer
+  zip untouched at 2.2.1, so no install-relevant root change). The `Validate Kodi
+Repository` CI re-runs the same gate as a backstop.
+- **Auto-update reality.** Completed boxes auto-update the library 1.4.0 → 1.5.0 —
+  an import-only superset (adds the helper/constant + the staging guard; the mkdir
+  is idempotent, no caller change on a configured box) — benign. The bootstrap
+  self-uninstalls, so 1.8.0 lands only on the next fresh Setup install from the repo.
+- **Not device-re-verified this release** (no behavior change on an already-provisioned
+  box; the change is creation-side scaffolding proven by unit tests + the live
+  raw/addons.xml checks). N1.1's full Office Fire TV box verification still stands.
