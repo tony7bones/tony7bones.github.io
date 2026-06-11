@@ -648,11 +648,16 @@ def test_multiple_masters_sorted_first_nonempty_wins_and_warns(boot, monkeypatch
 
 def test_master_derivation_drops_device_ip_and_injects_staging(boot, monkeypatch):
     """Provisioner parity: DEVICE_IP dropped (the derivation greps it out);
-    IPTV_STAGING_DIR injected iff the sibling iptv/ staging dir exists —
-    equivalent to the provisioner appending the key iff the push landed."""
+    IPTV_STAGING_DIR injected iff the sibling iptv/ staging dir holds STAGED
+    ARTIFACTS (is non-empty) — equivalent to the provisioner appending the key
+    iff the push landed. An EMPTY iptv/ (onboarding self-creates one) is not
+    staging and does NOT inject (see test_empty_iptv_staging_dir_not_injected)."""
     _no_env(boot)
     iptv_dir = os.path.join(_staging(boot), "iptv")
     os.makedirs(iptv_dir, exist_ok=True)
+    # A staged artifact landed (non-empty) — the real provisioner-push signal.
+    with open(os.path.join(iptv_dir, "instance-settings-1.xml"), "w") as fh:
+        fh.write("<settings/>")
     _write_master(boot, "office", 'DEVICE_IP="1.2.3.4"\nMARKER="x"\n')
     calls = []
     _stub_express_ok(boot, monkeypatch, calls)
@@ -916,7 +921,11 @@ def test_full_shape_master_fixture_parity(boot, monkeypatch):
     MASTER'S OWN VALUE (documented divergence: no prompt to override it on
     the no-computer path), and IPTV_STAGING_DIR is injected iff staged."""
     _no_env(boot)
-    os.makedirs(os.path.join(_staging(boot), "iptv"), exist_ok=True)
+    iptv_dir = os.path.join(_staging(boot), "iptv")
+    os.makedirs(iptv_dir, exist_ok=True)
+    # Non-empty = staged artifacts landed (the provisioner-push signal).
+    with open(os.path.join(iptv_dir, "instance-settings-1.xml"), "w") as fh:
+        fh.write("<settings/>")
     _write_master(
         boot,
         "office",
@@ -1222,10 +1231,17 @@ def test_scaffold_writes_nodot_at_brand_root_not_staging(boot, monkeypatch):
 
     boot.mod.run()
 
+    from tony7bones.setup import env as env_mod
+
     scaffolded = os.path.join(brand, "env.office-fire-tv")
     assert os.path.exists(scaffolded), "scaffold lands at the brand root, no dot"
-    # nothing dropped into the staging tree (only the dir itself exists)
-    assert os.listdir(staging) == [], "the staging tree is not the scaffold target"
+    # No MASTER env is dropped into the staging tree (the scaffold target is the
+    # brand root). The staging tree DOES hold the five non-master onboarding
+    # subdirs (backups/ iptv/ media/ repositories/ rss/ — ensure_device_dirs),
+    # so assert specifically that no master-named file lands there.
+    assert [
+        n for n in os.listdir(staging) if env_mod.is_master_env_filename(n)
+    ] == [], "the staging tree is not the scaffold target"
     toast = boot.state.get("notification", [])
     assert any(scaffolded in msg for _t, msg in toast)
 
@@ -1257,6 +1273,9 @@ def test_iptv_staging_injected_for_brand_root_master(boot, monkeypatch):
     os.remove(boot.env_file)
     iptv_dir = os.path.join(staging, "iptv")
     os.makedirs(iptv_dir, exist_ok=True)
+    # Staged artifacts landed (non-empty) — the provisioner-push signal.
+    with open(os.path.join(iptv_dir, "instance-settings-1.xml"), "w") as fh:
+        fh.write("<settings/>")
     with open(os.path.join(brand, "env.office"), "w", encoding="utf-8") as fh:
         fh.write('DEVICE_IP="1.2.3.4"\nMARKER="x"\n')
     calls = []
@@ -1266,6 +1285,26 @@ def test_iptv_staging_injected_for_brand_root_master(boot, monkeypatch):
 
     assert calls and "DEVICE_IP" not in calls[0]
     assert calls[0]["IPTV_STAGING_DIR"] == iptv_dir
+
+
+def test_empty_iptv_staging_dir_not_injected(boot, monkeypatch):
+    """REGRESSION GUARD for the ensure_device_dirs interaction: onboarding
+    self-creates an EMPTY iptv/ on every box, so derive_master_env must require
+    NON-EMPTY content before injecting IPTV_STAGING_DIR. A DEVICE_IP-only master
+    beside an empty iptv/ derives to {} -> the no-env class -> the wizard (NOT a
+    false Express run)."""
+    brand, _staging_dir = _prod_layout(boot, monkeypatch)
+    os.remove(boot.env_file)
+    with open(os.path.join(brand, "env.office"), "w", encoding="utf-8") as fh:
+        fh.write('DEVICE_IP="1.2.3.4"\n')
+    # ensure_device_dirs (run() runs it first) creates the empty kodi/iptv/.
+    _forbid_express(boot, monkeypatch)
+    calls = []
+    _stub_guided(boot, monkeypatch, calls)
+
+    boot.mod.run()  # must route the wizard, not Express
+
+    assert calls == [{}]
 
 
 def test_non_master_artifacts_at_brand_root_are_ignored(boot, monkeypatch):
@@ -1288,6 +1327,146 @@ def test_non_master_artifacts_at_brand_root_are_ignored(boot, monkeypatch):
     assert env_mod.master_env_paths(primary=boot.mod.BOX_ENV_PATH) == [
         os.path.join(brand, "env.device")
     ], "only the scaffolded master is recognised among the artifacts"
+
+
+# --------------------------------------------------------------------------- #
+# Onboarding self-creates the canonical _T7B/kodi/ staging tree
+# (backups/ iptv/ media/ repositories/ rss/) — on EVERY entry path (Express AND
+# Guided), EARLY (before config), idempotent, guarded, master never touched.
+# --------------------------------------------------------------------------- #
+def _five_subdirs():
+    return ["backups", "iptv", "media", "repositories", "rss"]
+
+
+def _spy_ensure(boot, monkeypatch):
+    """Record every _ensure_device_dirs() call (the EARLY onboarding hook).
+    Returns the call-list; delegates to the real function so dirs still land."""
+    calls = []
+    real = boot.mod._ensure_device_dirs
+
+    def _spy():
+        calls.append(True)
+        return real()
+
+    monkeypatch.setattr(boot.mod, "_ensure_device_dirs", _spy)
+    return calls
+
+
+def test_run_creates_device_tree_on_express(boot, monkeypatch):
+    """The provisioned/Express route (env present, no SETUP_MODE) creates the
+    canonical _T7B/kodi/{backups,iptv,media,repositories,rss} tree."""
+    brand, staging = _prod_layout(boot, monkeypatch)
+    # Production env at the pushed path so run() routes Express.
+    with open(boot.mod.BOX_ENV_PATH, "w", encoding="utf-8") as fh:
+        fh.write('MARKER="derived"\n')
+    _stub_express_ok(boot, monkeypatch, [])
+
+    boot.mod.run()
+
+    for sub in _five_subdirs():
+        assert os.path.isdir(os.path.join(staging, sub)), f"{sub} not created"
+    assert os.path.isdir(brand)
+    # No stray subdir (no scripts/).
+    assert sorted(os.listdir(staging)) == _five_subdirs()
+
+
+def test_run_creates_device_tree_on_guided(boot, monkeypatch):
+    """The Guided route (SETUP_MODE=guided) ALSO creates the tree — onboarding
+    self-creates it regardless of which orchestrator run() dispatches to."""
+    brand, staging = _prod_layout(boot, monkeypatch)
+    with open(boot.mod.BOX_ENV_PATH, "w", encoding="utf-8") as fh:
+        fh.write('SETUP_MODE="guided"\nMARKER="m"\n')
+    monkeypatch.setattr(boot.mod, "run_guided", lambda env=None: "exit")
+
+    boot.mod.run()
+
+    for sub in _five_subdirs():
+        assert os.path.isdir(os.path.join(staging, sub)), f"{sub} not created"
+    assert os.path.isdir(brand)
+
+
+def test_run_creates_device_tree_on_no_env_wizard(boot, monkeypatch):
+    """A no-env wizard box (the remote-only / no-computer launch) STILL gets its
+    folders — it must run regardless of whether an env exists."""
+    brand, staging = _prod_layout(boot, monkeypatch)
+    os.remove(boot.env_file)  # no derived env
+    monkeypatch.setattr(boot.mod, "run_guided", lambda env=None: "exit")
+
+    boot.mod.run()
+
+    for sub in _five_subdirs():
+        assert os.path.isdir(os.path.join(staging, sub)), f"{sub} not created"
+
+
+def test_ensure_device_dirs_fires_before_routing_on_both_paths(boot, monkeypatch):
+    """MUTATION KILLER: _ensure_device_dirs() is called on the Express route AND
+    the Guided route. Removing the run() call (or moving it behind the route
+    branch) fails one of these. The spy delegates to the real function, so the
+    dirs still land."""
+    # Express route.
+    _prod_layout(boot, monkeypatch)
+    with open(boot.mod.BOX_ENV_PATH, "w", encoding="utf-8") as fh:
+        fh.write('MARKER="derived"\n')
+    _stub_express_ok(boot, monkeypatch, [])
+    express_calls = _spy_ensure(boot, monkeypatch)
+    boot.mod.run()
+    assert express_calls == [True], "onboarding must create dirs on the Express route"
+
+    # Guided route (fresh spy + env).
+    with open(boot.mod.BOX_ENV_PATH, "w", encoding="utf-8") as fh:
+        fh.write('SETUP_MODE="guided"\nMARKER="m"\n')
+    monkeypatch.setattr(boot.mod, "run_guided", lambda env=None: "exit")
+    guided_calls = _spy_ensure(boot, monkeypatch)
+    boot.mod.run()
+    assert guided_calls == [True], "onboarding must create dirs on the Guided route"
+
+
+def test_run_device_tree_guarded_on_desktop(boot, monkeypatch):
+    """Off-device / read-only fs: makedirs raises -> run() must NOT abort. The
+    box still routes Express normally; the guarded failure is swallowed."""
+    _prod_layout(boot, monkeypatch)
+    with open(boot.mod.BOX_ENV_PATH, "w", encoding="utf-8") as fh:
+        fh.write('MARKER="derived"\n')
+    _stub_express_ok(boot, monkeypatch, [])
+
+    from tony7bones.setup import env as env_mod
+
+    real_makedirs = env_mod._os.makedirs
+
+    def _boom(path, exist_ok=False):
+        # Only the device-tree creates explode; everything else (the rest of the
+        # fake-Kodi flow) keeps working so run() reaches its route.
+        if "_T7B" in path:
+            raise OSError("read-only filesystem")
+        return real_makedirs(path, exist_ok=exist_ok)
+
+    monkeypatch.setattr(env_mod._os, "makedirs", _boom)
+
+    boot.mod.run()  # must not raise
+
+
+def test_run_device_tree_never_touches_master(boot, monkeypatch):
+    """Onboarding's dir-create never creates/deletes/overwrites the master
+    .env.<device> at the brand root."""
+    brand, staging = _prod_layout(boot, monkeypatch)
+    os.remove(boot.env_file)
+    master = os.path.join(brand, "env.office")
+    sentinel = 'MARKER="master"\n'
+    with open(master, "w", encoding="utf-8") as fh:
+        fh.write(sentinel)
+    _stub_express_ok(boot, monkeypatch, [])
+
+    boot.mod.run()
+
+    assert os.path.exists(master), "the master must survive onboarding"
+    assert open(master, encoding="utf-8").read() == sentinel
+
+
+def test_bootstrap_reexports_device_subdirs_constant(boot):
+    """default.py re-exports the SAME constant object (single source of truth)."""
+    from tony7bones.setup import env as env_mod
+
+    assert boot.mod.DEVICE_STAGING_SUBDIRS is env_mod.DEVICE_STAGING_SUBDIRS
 
 
 def test_is_master_env_filename_dot_optional_and_denylist():

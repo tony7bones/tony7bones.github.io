@@ -72,19 +72,29 @@ everything the env drives (weather keys, RSS, direct-env IPTV); only the host-bu
 curated IPTV artifacts still need mode 1 until N4.
 
 **The canonical device root (N1.1, owner directive 2026-06-10):**
-`/storage/emulated/0/_T7B/kodi/` — layout `backups/ iptv/ media/ repositories/
-rss/ scripts/` (+ `backups/EM+`). The individual `.env.<device>` masters live
-THERE on all machines; the derived `tony7bones.env` push and the IPTV artifact
-staging land there too. The old `/storage/emulated/0/kodi/tony.7.bones/` root is
+`/storage/emulated/0/_T7B/kodi/` — the staging layout is the **five subdirs**
+`backups/ iptv/ media/ repositories/ rss/`, the single source of truth
+`DEVICE_STAGING_SUBDIRS` in `tony7bones.setup.env` (mirroring the canonical
+`docs/directory_structure.txt`). **Onboarding self-creates this tree:** `run()`
+calls `ensure_device_dirs()` ONCE, EARLY (before any env read or config) on
+EVERY entry path — Express AND Guided AND the no-env wizard — so a box the adb
+provisioner never touched still gets its folders. Idempotent, guarded/non-fatal
+(off-Kodi/read-only logs + swallows), and it NEVER creates or touches the master
+(the scaffold owns that). The provisioner `mkdir -p`s the SAME five
+(belt-and-suspenders for the computer path). The individual `.env.<device>`
+masters live at the BRAND ROOT (`_T7B/`, one level up); the derived
+`tony7bones.env` push and the IPTV artifact staging land under
+`_T7B/kodi/`. The old `/storage/emulated/0/kodi/tony.7.bones/` root is
 a **read-only LEGACY fallback** — devices set up before the move still carry
 files there, so every reader scans it AFTER the canonical root; nothing ever
 writes there again. **The lifecycle split (mode 2's heart):** the MASTER
 `.env.<device>` is the box's persistent identity — read, applied through the
 provisioner-parity derivation (`derive_master_env`: `DEVICE_IP` dropped,
-`IPTV_STAGING_DIR` injected iff the sibling `iptv/` staging exists; documented
-divergence: `DEVICE_NAME` is the master's own — there is no prompt to override
-it), and **NEVER deleted**, so a Kodi wipe-and-redo works forever off the same
-file. Only the machine-derived candidates (the pushed `tony7bones.env` at both
+`IPTV_STAGING_DIR` injected iff the sibling `iptv/` staging holds artifacts —
+**non-empty**, since onboarding now always creates an empty `iptv/` that must
+not look like staging; documented divergence: `DEVICE_NAME` is the master's
+own — there is no prompt to override it), and **NEVER deleted**, so a Kodi
+wipe-and-redo works forever off the same file. Only the machine-derived candidates (the pushed `tony7bones.env` at both
 roots + the profile-local collector env) are in the terminal-delete set
 (`deletable_env_paths`).
 

@@ -396,6 +396,26 @@ PVR_BACKEND_ID = _iptv.PVR_BACKEND_ID
 BOX_ENV_PATH = _env_mod.BOX_ENV_PATH
 
 
+# The canonical device-staging tree onboarding self-creates (N1.1+). Re-exported
+# from the shared sublibrary so there is one source of truth (the constant
+# mirrors docs/directory_structure.txt) and every reference / test reaches them
+# via boot.mod. run() calls _ensure_device_dirs() ONCE, EARLY (before any env
+# read or config), so it covers Express AND Guided AND a no-env wizard box.
+DEVICE_STAGING_SUBDIRS = _env_mod.DEVICE_STAGING_SUBDIRS
+
+
+def _ensure_device_dirs():
+    """Create the canonical ``_T7B/kodi/{backups,iptv,media,repositories,rss}``
+    tree if it does not exist on this box — idempotent, guarded, non-fatal
+    (logged + swallowed where ``/storage`` cannot exist, e.g. desktop dev). Runs
+    on EVERY onboarding entry path (Express + Guided + the standalone layers go
+    through ``run()``), regardless of whether an env exists, so a no-computer
+    wizard box still gets its folders. Resolves THIS module's ``BOX_ENV_PATH``
+    late so a test's monkeypatched staging is honored. Does NOT touch the master
+    env. Returns the dirs actually created (for the log)."""
+    return _env_mod.ensure_device_dirs(primary=BOX_ENV_PATH, log=_log)
+
+
 def _box_env_paths():
     """The ORDERED env-source candidates (Phase N1, N1.1): the provisioner's
     pushed file (``BOX_ENV_PATH`` under the ``_T7B/kodi`` staging tree — wins
@@ -1505,7 +1525,15 @@ def run():
     read+delete in one coordinator is what lets the multi-gate Guided flow
     share the env safely (an earlier gate must not delete the env a later gate
     needs).
+
+    Before any of that, onboarding SELF-CREATES the canonical ``_T7B/kodi/``
+    staging tree (``_ensure_device_dirs`` — guarded/idempotent) so a box the adb
+    provisioner never touched (the no-computer path) still has the
+    ``backups/ iptv/ media/ repositories/ rss/`` folders the device→userdata
+    conventions expect. It runs FIRST, on EVERY route (Express AND Guided),
+    regardless of whether an env is present.
     """
+    _ensure_device_dirs()
     paths = _box_env_paths()
     # reader=read_box_env resolves THIS module's (monkeypatchable) name late —
     # the env-lifecycle tests spy on it; behaviour identical to the library's.

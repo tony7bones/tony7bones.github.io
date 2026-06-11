@@ -125,6 +125,50 @@ def legacy_staging_dir():
     return _os.path.dirname(LEGACY_BOX_ENV_PATH)
 
 
+# The STAGING subdirs onboarding ensures under the DEVICE_ROOT (``_T7B/kodi/``).
+# Single source of truth, mirrored from ``docs/directory_structure.txt`` (the
+# canonical layout) and the provisioner's pre-boot ``mkdir -p``. Setup creates
+# any of these that are missing so the device→userdata file conventions
+# (RSS / IPTV staging / media / repositories / backups) have a home on a box
+# that was never touched by the adb provisioner (the no-computer path).
+DEVICE_STAGING_SUBDIRS = ("backups", "iptv", "media", "repositories", "rss")
+
+
+def ensure_device_dirs(primary=None, log=None):
+    """Create the canonical ``_T7B`` device tree if it is not already there.
+
+    Ensures (idempotent, ``makedirs(..., exist_ok=True)``) the BRAND ROOT
+    (``_T7B/``), the DEVICE_ROOT staging tree (``_T7B/kodi/``), and each
+    :data:`DEVICE_STAGING_SUBDIRS` entry under it — only the ones missing.
+    Reuses :func:`brand_root` / :func:`staging_dir`, so a test's monkeypatched
+    ``primary`` (its tmp staging root) is honored exactly like every other
+    helper, and production resolves the real ``/storage/emulated/0/_T7B`` roots.
+
+    Does NOT create or touch the device-resident master ``.env.<device>`` (the
+    scaffold owns that). Fully GUARDED and NON-FATAL: any failure — a read-only
+    filesystem, an off-Kodi host where ``/storage`` cannot exist (macOS dev),
+    a permission error — is logged through ``log`` (FILE PATHS only, never
+    secrets) and SWALLOWED, because onboarding must never abort over staging
+    dirs. Returns the list of directories ACTUALLY created this call (for an
+    honest log line); an already-complete box returns ``[]`` (a clean no-op)."""
+    created = []
+    roots = [brand_root(primary), staging_dir(primary)]
+    staging = staging_dir(primary)
+    roots.extend(_os.path.join(staging, sub) for sub in DEVICE_STAGING_SUBDIRS)
+    for path in roots:
+        if _os.path.isdir(path):
+            continue
+        try:
+            _os.makedirs(path, exist_ok=True)
+            created.append(path)
+        except OSError as e:  # noqa: PERF203 - per-dir guard: one failure ≠ abort
+            if log:
+                log("device-dir create skipped ({}): {}".format(path, e))
+    if created and log:
+        log("device tree ensured: created {}".format(", ".join(created)))
+    return created
+
+
 def derived_env_paths(primary=None):
     """The DERIVED (provisioner-pushed ``tony7bones.env``) candidates, ordered:
     the canonical push path first, the legacy push path second (boxes
@@ -227,6 +271,17 @@ def master_env_paths(primary=None, log=None):
     return paths
 
 
+def _dir_has_content(path):
+    """True when ``path`` is a directory holding at least one entry. Guarded —
+    an absent/unreadable dir is ``False`` (off-device, no ``/storage``). Used to
+    distinguish a REAL IPTV staging dir (artifacts pushed in) from the EMPTY
+    ``iptv/`` :func:`ensure_device_dirs` self-creates on every box."""
+    try:
+        return _os.path.isdir(path) and bool(_os.listdir(path))
+    except OSError:
+        return False
+
+
 def derive_master_env(env, path):
     """Provisioner-parity derivation for a RAW master env (the provisioner
     applies the same shaping when it derives ``tony7bones.env`` — see
@@ -235,10 +290,14 @@ def derive_master_env(env, path):
       * ``DEVICE_IP`` is DROPPED (laptop-only connection metadata; the
         provisioner greps it out).
       * ``IPTV_STAGING_DIR`` is injected iff absent AND the sibling ``iptv/``
-        staging dir exists — equivalent to the provisioner appending the key
-        iff the artifact push landed (``apply_iptv`` validates per-provider
-        artifacts and falls back to direct-env, so a stale/partial dir is
-        safe).
+        staging dir holds STAGED ARTIFACTS (is non-empty) — equivalent to the
+        provisioner appending the key iff the artifact push landed
+        (``apply_iptv`` validates per-provider artifacts and falls back to
+        direct-env, so a stale/partial dir is safe). NOTE: the test is
+        NON-EMPTY, not mere existence, because onboarding now self-creates an
+        EMPTY ``iptv/`` on every box (:func:`ensure_device_dirs`); an empty
+        staging dir is no staging, and must not make an otherwise-empty master
+        (e.g. one carrying only ``DEVICE_IP``) look configured.
       * ``DEVICE_NAME`` divergence (documented): the provisioner overrides it
         with its interactive prompt; there is no prompt on the no-computer
         path, so the master's own value is authoritative.
@@ -255,7 +314,9 @@ def derive_master_env(env, path):
             _os.path.join(master_dir, "iptv"),
             _os.path.join(master_dir, "kodi", "iptv"),
         ):
-            if _os.path.isdir(iptv_dir):
+            # Non-empty = staged artifacts actually landed. An EMPTY iptv/ (the
+            # one onboarding self-creates) is not staging and must not inject.
+            if _dir_has_content(iptv_dir):
                 env["IPTV_STAGING_DIR"] = iptv_dir
                 break
     return env

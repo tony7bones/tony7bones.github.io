@@ -227,8 +227,12 @@ ok "Setup $BV + library $MV installed."
 # IPTV_STAGING_DIR so apply_iptv consumes them; on ANY failure the box falls
 # back to the 5b·1 direct-env config (m3u providers still work; xtream skips).
 # Establish the canonical device tree (N1.1 — _T7B/kodi/ layout; survives the
-# Kodi wipe above because it lives outside the Kodi data dir). Idempotent.
-_adb shell "mkdir -p '$DEVICE_ROOT/backups/EM+' $DEVICE_ROOT/iptv $DEVICE_ROOT/media $DEVICE_ROOT/repositories $DEVICE_ROOT/rss $DEVICE_ROOT/scripts" >/dev/null 2>&1
+# Kodi wipe above because it lives outside the Kodi data dir). Idempotent. The
+# five subdirs are the canonical layout (docs/directory_structure.txt) and match
+# DEVICE_STAGING_SUBDIRS in tony7bones.setup.env — onboarding self-creates the
+# SAME tree in-Kodi (ensure_device_dirs), so this is belt-and-suspenders for the
+# computer path.
+_adb shell "mkdir -p $DEVICE_ROOT/backups $DEVICE_ROOT/iptv $DEVICE_ROOT/media $DEVICE_ROOT/repositories $DEVICE_ROOT/rss" >/dev/null 2>&1
 
 IPTV_STAGED=""
 if grep -qE '^IPTV_[0-9]+_' "$ENV_FILE"; then

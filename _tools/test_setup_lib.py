@@ -511,6 +511,197 @@ def test_read_box_env_reads_file(setup_pkg, tmp_path):
 
 
 # --------------------------------------------------------------------------- #
+# ensure_device_dirs — onboarding self-creates the canonical _T7B/kodi/ tree
+# (backups/ iptv/ media/ repositories/ rss/). Pure-library, guarded, idempotent.
+# --------------------------------------------------------------------------- #
+def _staging_primary(tmp_path):
+    """A production-shaped primary (…/_T7B/kodi/tony7bones.env) so brand_root
+    resolves to the _T7B parent and staging_dir to the kodi/ child — the real
+    two-level layout, NOT a flat tmp dir."""
+    import os
+
+    staging = tmp_path / "_T7B" / "kodi"
+    return os.path.join(str(staging), "tony7bones.env")
+
+
+def test_ensure_device_dirs_canonical_subdirs_constant(setup_pkg):
+    """The single source of truth is exactly the five canonical subdirs
+    (docs/directory_structure.txt) — in order, no scripts/, no EM+."""
+    from tony7bones.setup import env as env_mod
+
+    assert env_mod.DEVICE_STAGING_SUBDIRS == (
+        "backups",
+        "iptv",
+        "media",
+        "repositories",
+        "rss",
+    )
+
+
+def test_ensure_device_dirs_creates_roots_and_five_subdirs(setup_pkg, tmp_path):
+    """From a clean slate: creates the BRAND ROOT, the DEVICE_ROOT staging tree,
+    and each of the five subdirs — and returns exactly those paths created."""
+    import os
+
+    from tony7bones.setup import env as env_mod
+
+    primary = _staging_primary(tmp_path)
+    brand = env_mod.brand_root(primary)
+    staging = env_mod.staging_dir(primary)
+    assert not os.path.isdir(brand)  # nothing exists yet
+
+    created = env_mod.ensure_device_dirs(primary=primary)
+
+    assert os.path.isdir(brand)
+    assert os.path.isdir(staging)
+    for sub in ("backups", "iptv", "media", "repositories", "rss"):
+        assert os.path.isdir(os.path.join(staging, sub)), f"{sub} not created"
+    # EXACTLY the five subdirs + the two roots — no extras (no scripts/).
+    assert set(created) == {brand, staging} | {
+        os.path.join(staging, s) for s in env_mod.DEVICE_STAGING_SUBDIRS
+    }
+    # No stray dirs in staging.
+    assert sorted(os.listdir(staging)) == [
+        "backups",
+        "iptv",
+        "media",
+        "repositories",
+        "rss",
+    ]
+
+
+def test_ensure_device_dirs_idempotent_noop_when_present(setup_pkg, tmp_path):
+    """A second call on an already-complete tree creates NOTHING (clean no-op)."""
+    from tony7bones.setup import env as env_mod
+
+    primary = _staging_primary(tmp_path)
+    first = env_mod.ensure_device_dirs(primary=primary)
+    assert first  # first call created the tree
+
+    again = env_mod.ensure_device_dirs(primary=primary)
+
+    assert again == [], "an already-provisioned box is a clean no-op"
+
+
+def test_ensure_device_dirs_creates_only_the_missing(setup_pkg, tmp_path):
+    """Partial tree: only the missing subdirs are created (not the ones that
+    already exist) — proves the per-dir isdir() short-circuit."""
+    import os
+
+    from tony7bones.setup import env as env_mod
+
+    primary = _staging_primary(tmp_path)
+    staging = env_mod.staging_dir(primary)
+    # Pre-create the staging root + iptv/ only.
+    os.makedirs(os.path.join(staging, "iptv"), exist_ok=True)
+
+    created = env_mod.ensure_device_dirs(primary=primary)
+
+    assert os.path.join(staging, "iptv") not in created
+    assert os.path.join(staging, "rss") in created
+    assert staging not in created  # already existed
+
+
+def test_ensure_device_dirs_guarded_when_makedirs_raises(
+    setup_pkg, tmp_path, monkeypatch
+):
+    """A failing filesystem (read-only / off-Kodi where /storage can't exist):
+    makedirs raises -> logged + swallowed, returns [], NEVER raises."""
+
+    from tony7bones.setup import env as env_mod
+
+    def _boom(path, exist_ok=False):
+        raise OSError("read-only filesystem")
+
+    monkeypatch.setattr(env_mod._os, "makedirs", _boom)
+    logged = []
+
+    created = env_mod.ensure_device_dirs(
+        primary=_staging_primary(tmp_path), log=logged.append
+    )
+
+    assert created == []
+    assert logged, "the guarded failure must be logged"
+    assert any("skipped" in m for m in logged)
+
+
+def test_ensure_device_dirs_never_touches_master_env(setup_pkg, tmp_path):
+    """The master .env.<device> at the brand root is NEVER created, deleted, or
+    overwritten by ensure_device_dirs — the scaffold owns the master."""
+    import os
+
+    from tony7bones.setup import env as env_mod
+
+    primary = _staging_primary(tmp_path)
+    brand = env_mod.brand_root(primary)
+    os.makedirs(brand, exist_ok=True)
+    master = os.path.join(brand, "env.office")
+    sentinel = "WEATHER_LOCATIONS=Sacramento\n"
+    with open(master, "w", encoding="utf-8") as fh:
+        fh.write(sentinel)
+
+    env_mod.ensure_device_dirs(primary=primary)
+
+    assert os.path.isfile(master), "the master must survive"
+    assert open(master, encoding="utf-8").read() == sentinel, "master untouched"
+    # And the function added zero master-like files anywhere.
+    assert env_mod.master_env_paths(primary) == [master]
+
+
+def test_derive_master_env_empty_iptv_dir_not_injected(setup_pkg, tmp_path):
+    """The ensure_device_dirs interaction: an EMPTY iptv/ (onboarding creates
+    one on every box) must NOT inject IPTV_STAGING_DIR — only a NON-EMPTY iptv/
+    (real staged artifacts) does. Guards against a DEVICE_IP-only master falsely
+    looking configured."""
+    import os
+
+    from tony7bones.setup import env as env_mod
+
+    master = str(tmp_path / "env.office")
+    empty_iptv = tmp_path / "iptv"
+    empty_iptv.mkdir()
+
+    # Empty iptv/ -> no injection.
+    env = env_mod.derive_master_env({"MARKER": "x"}, master)
+    assert "IPTV_STAGING_DIR" not in env
+
+    # Now drop a staged artifact in -> injection.
+    (empty_iptv / "instance-settings-1.xml").write_text("<settings/>")
+    env2 = env_mod.derive_master_env({"MARKER": "x"}, master)
+    assert env2["IPTV_STAGING_DIR"] == os.path.join(str(tmp_path), "iptv")
+
+
+def test_dir_has_content_guarded_on_oserror(setup_pkg, monkeypatch, tmp_path):
+    """_dir_has_content swallows an OSError from listdir (a vanished/unreadable
+    dir) and returns False — so a transient fs error never injects staging."""
+    import os
+
+    from tony7bones.setup import env as env_mod
+
+    d = tmp_path / "iptv"
+    d.mkdir()
+
+    def _boom(p):
+        raise OSError("gone")
+
+    monkeypatch.setattr(env_mod._os, "listdir", _boom)
+    assert env_mod._dir_has_content(str(d)) is False
+    # Absent dir is also False (no isdir).
+    assert env_mod._dir_has_content(str(tmp_path / "nope")) is False
+    assert os  # keep import referenced
+
+
+def test_ensure_device_dirs_logs_created_summary(setup_pkg, tmp_path):
+    """When dirs are created, ONE honest summary line is logged listing them."""
+    from tony7bones.setup import env as env_mod
+
+    logged = []
+    env_mod.ensure_device_dirs(primary=_staging_primary(tmp_path), log=logged.append)
+
+    assert any("device tree ensured" in m for m in logged)
+
+
+# --------------------------------------------------------------------------- #
 # Relocation contract — the bootstrap still exposes the SAME callables, and they
 # are the very objects from the sublibrary (re-export, not a copy).
 # --------------------------------------------------------------------------- #
