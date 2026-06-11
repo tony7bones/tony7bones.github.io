@@ -1,8 +1,30 @@
 # Plan — Eliminate manual version bumping for the first-party add-ons
 
-> Status: **PROPOSED — for review, nothing built.** Decisions in the "Open
-> questions for the owner" section must be confirmed before any code. No repo
-> changes yet, no version changes, no bumps in this doc.
+> Status: **DECISIONS LOCKED (2026-06-10) — Phase 1 SHIPPED.** The owner's calls
+> on O1–O6 are recorded below (see "Owner decisions — LOCKED"). **Phase 1
+> (de-pin the version tests) is implemented and committed locally** on branch
+> `no-computer-setup` — the two literal pins are now relational, with negative
+> tests, no add-on bump. O7–O10 remain open (O7 has a confirmed CI gap — see the
+> must-fix note). Phases 0, 2–5 remain proposed.
+
+## Owner decisions — LOCKED (2026-06-10)
+
+These supersede the recommendations in the Design Decisions section where they
+differ; the per-decision prose below is annotated `LOCKED`.
+
+- **Bump level (O1):** **MINOR by default**, with `--patch` / `--major` /
+  `--version` overrides. NOT conventional-commit auto-level by default
+  (`--auto-level` remains an opt-in suggestion mode, never the default).
+- **Autonomy (O4):** the tool **BUMPS + COMMITS ON BRANCH and STOPS.** The owner
+  keeps the branch → merge → main push flow. No auto-push, no auto-merge. A
+  `--push` flag may exist but is never the default.
+- **News (O2 + O3):** **AUTO-DRAFT** the news line from commit subjects, and
+  **PREPEND** to the existing `<news>` body (switch `set_addon_news` from REPLACE
+  to PREPEND), keeping a rolling **~6 entries** (capped). `--news` overrides the
+  draft.
+- **Scope (O5):** **EVENTUALLY UNIFY** both release paths (`script.*` + the proxy)
+  under one `release.py`, **PHASED** so the working proxy `deploy.py` is never
+  broken (Phase 5 stays last and optional).
 
 ## Goal
 
@@ -104,15 +126,16 @@ three add-ons people actually iterate on do not.
 
 ### The version-pinned tests (the hand-edit tax — confirmed, all sites)
 
-Two of these are LITERAL `==` pins that must be hand-edited every release; two are
-floors that are already automation-safe:
+Two of these WERE LITERAL `==` pins that had to be hand-edited every release; two
+are floors that are already automation-safe. **Phase 1 (shipped 2026-06-10)
+de-pinned the two literals** to relational asserts:
 
-| Site                           | Assertion                                                                              | Type        | Needs hand-edit?  |
-| ------------------------------ | -------------------------------------------------------------------------------------- | ----------- | ----------------- |
-| `_tools/test_module.py:61`     | `root.get("version") == "1.5.0"`                                                       | literal pin | **YES**           |
-| `_tools/test_bootstrap.py:840` | `imp.get("version") == "1.5.0"` (bootstrap's `<import>` of the library = the lockstep) | literal pin | **YES**           |
-| `_tools/test_modv2plus.py:195` | `parts >= (1, 3, 4)`                                                                   | floor       | no (already safe) |
-| `_tools/test_bootstrap.py:95`  | `rl.is_greater(v, "1.0.22")`                                                           | floor       | no (already safe) |
+| Site                           | Assertion (after Phase 1)                                              | Type            | Needs hand-edit?  |
+| ------------------------------ | ---------------------------------------------------------------------- | --------------- | ----------------- |
+| `_tools/test_module.py`        | `parse_version(v)` + `is_single_digit(v)` (was `== "1.5.0"`)           | relational      | NO (de-pinned)    |
+| `_tools/test_bootstrap.py`     | `import.version == library.version` (both read live; was `== "1.5.0"`) | relational `==` | NO (de-pinned)    |
+| `_tools/test_modv2plus.py:195` | `parts >= (1, 3, 4)`                                                   | floor           | no (already safe) |
+| `_tools/test_bootstrap.py:95`  | `rl.is_greater(v, "1.0.22")`                                           | floor           | no (already safe) |
 
 So the recurring pin tax is exactly **two assertions**: the library's own version,
 and bootstrap's lockstep import of it. Both encode an invariant that is better
@@ -191,6 +214,9 @@ Options:
   `--patch`. No magic. Trade-off: it is one more required input, but it is a
   _flag_, not five file edits, so it is still a 95% reduction in friction.
 
+**LOCKED (2026-06-10): 2b — MINOR default with `--patch`/`--major`/`--version`
+overrides; `--auto-level` opt-in only, never default.**
+
 **Recommendation: hybrid 2b + 2a-assist.** Default level is **MINOR** (honors the
 cadence; the common case is a feature batch). Accept `--patch` / `--major` /
 `--version X.Y.Z` overrides. **Additionally**, parse conventional-commit prefixes
@@ -207,6 +233,10 @@ handled by `release_lib.bump`.
 predictable, human-authored, one line. (3b) Auto-generate from commit subjects
 since the baseline (the conventional-commit bodies). (3c) Hybrid: auto-generate a
 draft from commit subjects, but let `--news` override.
+
+**LOCKED (2026-06-10): 3c + PREPEND.** Auto-draft the news line from commit
+subjects (override with `--news`), and switch `set_addon_news` from REPLACE to
+PREPEND, capped at ~6 rolling entries.
 
 **Recommendation: 3c.** Default to auto-drafting the news line from the changed
 add-on's commit subjects since `origin/main` (strip the conventional-commit
@@ -265,6 +295,15 @@ library.version` (or `<=`, if we ever allow bootstrap to pin a floor below
   that is only "true" because the tool keeps overwriting it. Strictly worse than
   4a. Rejected.
 
+**LOCKED + SHIPPED (2026-06-10): 4a, strict `==` lockstep.** Implemented in
+Phase 1 (this commit). `test_module.py` now asserts the library version is
+well-formed + single-digit (via `release_lib.parse_version` + `is_single_digit`)
+instead of `== "1.5.0"`; `test_bootstrap.py` now asserts bootstrap's `<import>`
+of the library **== the library's actual shipped version** (both read live),
+strict equality, NOT a `>=` floor. Two negative tests landed in the same commit
+(lockstep drift FAILS on mismatch; malformed version rejected). The existing
+floors are kept.
+
 **Recommendation: 4a.** Rewrite the two pinned assertions to be relational/dynamic
 **as Phase 1** (it is independently shippable, requires no version bump of any
 add-on — it only touches `_tools/test_*.py`, not `addons/**`, so `check_versions`
@@ -299,6 +338,10 @@ _including_ `repository.tony7bones` — and dispatches: a proxy change runs the
 existing proxy transaction (root zip, tag, Pages force-build, live verify); a
 `script.*` change runs the new transaction; a release touching both does both in
 the right order.
+
+**LOCKED (2026-06-10): 5b, phased.** Eventually unify under one `release.py`,
+phased so the working proxy `deploy.py` is never broken (Phase 5 last + optional).
+Autonomy is fixed to **commit-on-branch + STOP** (no auto-push / auto-merge).
 
 **Recommendation: 5b, phased.** The end state is **one** `release.py` so the owner
 never has to remember which path. But ship it incrementally: Phase 3 delivers the
@@ -421,14 +464,26 @@ addon_id, version)`. Keep the proxy's zip/tag helpers as a proxy-specific
 - **Acceptance:** `deploy.py` and all existing tests pass byte-for-byte unchanged;
   new pure transforms have unit tests; no `addons/**` change (no bump needed).
 
-### Phase 1 — De-pin the tests (independently shippable, no add-on bump)
+### Phase 1 — De-pin the tests (independently shippable, no add-on bump) — SHIPPED 2026-06-10
 
-- Rewrite `test_module.py:61` and `test_bootstrap.py:840` to assert the relation
-  (Decision 4a): library version is single-digit; bootstrap's import == library
-  version. Keep the existing floors.
-- **Acceptance:** suite green; deliberately mutating the library version (in a temp
-  fixture) WITHOUT the lockstep raise fails the new relational test;
-  `check_versions` does NOT demand a bump (only `_tools/**` changed). Ship it.
+- ✅ Rewrote `test_module.py` (was `:61`) and `test_bootstrap.py` (was `:840`) to
+  assert the relation (Decision 4a): library version is well-formed +
+  single-digit (`release_lib.parse_version` + `is_single_digit`); bootstrap's
+  `<import>` == the library's actual shipped version (both read live, strict `==`).
+  Existing floors kept.
+- ✅ Negative tests landed in the same commit:
+  `test_lockstep_negative_library_raised_without_import_raise` (a synthetic
+  manifest pair: library raised, import not → relation FAILS on a value
+  **mismatch**, proven `is False`, not a parse exception) and
+  `test_module_version_well_formedness_rejects_malformed` (rejects `1.10.0`,
+  `1.5.O`, `1..5.0`, `1.5`, ``, `abc`).
+- ✅ **Acceptance met:** suite green; the de-pinned tests fail on a real lockstep
+  drift and on a malformed version (proven); `check_versions` does NOT demand a
+  bump (only `_tools/**` changed — no `addons/**` content, so `generate_repo.py`
+  produces no diff and no add-on version moves).
+- ⚠️ **O7 finding (CI gap, recorded for Phase 2):** `check_versions.py` runs only
+  in the pre-push hook, NOT in CI. De-pinning makes the monotonic guarantee
+  depend on the hook alone — Phase 2 must wire the per-add-on bump gate into CI.
 
 ### Phase 2 — Change detector + script-side consistency gate
 
@@ -468,23 +523,52 @@ addon_id, version)`. Keep the proxy's zip/tag helpers as a proxy-specific
 
 ## Open questions for the owner (need your call)
 
-- **O1 — Bump-level default.** Confirm **MINOR as the default** for any changed
-  add-on (honors your "minor for feature batches" preference), with `--patch` for
-  small fixes? Or do you want `--auto-level` (conventional-commits) on by default
-  once commit discipline is trusted?
-- **O2 — News source.** Auto-draft the news line from commit subjects (override
-  with `--news`), or always require `--news` like `deploy.py` does today?
-- **O3 — News history.** Switch `set_addon_news` from REPLACE to PREPEND so the
-  rolling `(vX: … (vY: …` history your manifests carry is maintained
-  automatically, capped at ~6 entries? (Recommended.)
-- **O4 — Push behavior.** Default to **commit-on-branch, don't push** (you merge to
-  main yourself), with `--push` to publish? Or push automatically like `deploy.py`?
-- **O5 — Unify the tools (Phase 5).** Do you want the eventual single `release.py`
-  that also handles the proxy, or keep `deploy.py` separate forever?
-- **O6 — Lockstep direction.** Should bootstrap's import be pinned `==` the library
-  version (strict lockstep, current behavior) or `>=` a floor (allows the library
-  to lead by a release without forcing a bootstrap re-ship)? Strict `==` is simpler
-  and matches today; `>=` reduces coupling but weakens the guarantee.
+- **O1 — Bump-level default. RESOLVED (2026-06-10): MINOR by default**, with
+  `--patch` / `--major` / `--version` overrides. NOT conventional-commit
+  auto-level by default; `--auto-level` stays an opt-in suggestion mode.
+- **O2 — News source. RESOLVED (2026-06-10): AUTO-DRAFT** the news line from
+  commit subjects, override with `--news`.
+- **O3 — News history. RESOLVED (2026-06-10): PREPEND** — switch `set_addon_news`
+  from REPLACE to PREPEND, keep a rolling ~6 entries (capped).
+- **O4 — Push behavior. RESOLVED (2026-06-10): commit-on-branch, do NOT push.**
+  The owner keeps the branch → merge → main flow; `--push` may exist but is never
+  the default. (No auto-push / auto-merge.)
+- **O5 — Unify the tools (Phase 5). RESOLVED (2026-06-10): EVENTUALLY UNIFY**
+  both paths under one `release.py`, **phased** so the working proxy `deploy.py`
+  is never broken (Phase 5 stays last and optional).
+- **O6 — Lockstep direction. RESOLVED for the TEST (2026-06-10): strict `==`.**
+  The shipped lockstep test (now de-pinned, Phase 1) asserts bootstrap's import
+  **equals** the library's actual version — a `>=` floor would let the manifests
+  drift silently and is a coverage regression vs the old literal. (The _runtime_
+  Kodi `<import>` min-version semantics are unchanged; this is about what the
+  manifests must SHIP. See O8 for the explicit runtime-vs-test split, still open.)
+
+### Still open (QA's O7–O10 — genuinely unresolved)
+
+- **O7 — Does `check_versions.py` run in CI? CONFIRMED: NO — must-fix for Phase 2.**
+  `check_versions.py` (the per-add-on monotonic "every changed add-on bumped"
+  gate) runs **only** in `.githooks/pre-push` (line 33). CI
+  (`.github/workflows/generate_repo.yml`) runs the test suite, ruff, the
+  generated-staleness check, and `check_consistency.py` (the **proxy-only**
+  3-location gate, main-only, line 78) — but **never invokes `check_versions.py`.**
+  Phase 1's de-pinning REMOVES the literal pins that implicitly froze a known-good
+  version, so the monotonic guarantee now lives **only** in the hook. A push from
+  an un-hooked clone, a `--no-verify` push, or any non-hooked path therefore loses
+  the "every changed add-on is bumped" guarantee entirely. **This is a real,
+  pre-existing CI gap that the de-pinning makes load-bearing.** Phase 2 MUST add
+  `check_versions.py` (or the shared `script_consistency` gate that subsumes it)
+  to CI on `main`. Not fixed in Phase 1 (out of scope: Phase 1 is test-only and
+  ships no `addons/**` change), but recorded here as a Phase 2 must-fix.
+- **O8 — Should the lockstep TEST assert `==` even if the runtime O6 decision is
+  `>=`?** QA recommendation (and the Phase 1 implementation): the shipped lockstep
+  **test** asserts `==` regardless of any runtime min-version floor. Confirm this
+  split is the intended permanent policy.
+- **O9 — Scoped `--addon` that excludes a must-re-ship dependent (MF-2).**
+  Auto-include the dependent (recommended) or hard-refuse with a message? Owner's
+  call — deferred to Phase 3 (the tool does not exist yet).
+- **O10 — Idempotency policy on re-run (MF-6).** No-op silently, or print "already
+  released at vX.Y.Z (run `--force` to re-bump)"? Recommend: no-op with an explicit
+  message, never silent. Deferred to Phase 3.
 
 ---
 
@@ -494,7 +578,7 @@ addon_id, version)`. Keep the proxy's zip/tag helpers as a proxy-specific
 ## Release automation — kill manual version bumping (script.\* path)
 
 - [ ] P0 Generalize release_lib (set_import_version; proxy helpers isolated) — deploy.py + tests unchanged
-- [ ] P1 De-pin tests: test_module.py:61 / test_bootstrap.py:840 assert the relation (library single-digit; bootstrap import == library). Ships with NO add-on bump.
+- [x] P1 De-pin tests: test_module.py / test_bootstrap.py assert the relation (library single-digit; bootstrap import == library, strict ==) + negative tests. Shipped 2026-06-10, NO add-on bump. (O7 CI gap recorded as a Phase 2 must-fix.)
 - [ ] P2 changed_addons() detector + script-side consistency gate (single-digit / monotonic / lockstep) wired into hook + CI
 - [ ] P3 release.py for script.\* : detect → bump (minor default) → news → lockstep → regen → determinism gate → commit; --dry-run/--patch/--news/--push/check; rollback on failure; sandbox e2e test; ≥90% cov
 - [ ] P4 Make release.py the documented Path A; auto-derive the version table in the playbook
