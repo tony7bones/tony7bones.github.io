@@ -67,7 +67,21 @@ tech-debt seam, the apply_iptv reporting bug, the zero-content guarantee). Keep 
 
 ---
 
-## ▶ VERY NEXT STEP — N2, the on-box config collector (no-computer-setup track)
+## ▶ VERY NEXT STEP — none queued (no-computer-setup track CLOSED at N1.2)
+
+> **N2–N5 CANCELLED (owner decision 2026-06-10): "nuke N2… our .env method is working
+> fine."** The device-resident `.env.<device>` delivery mode (owner edits `.env.<device>`
+> on the Mac → drops it at the box's `/storage/emulated/0/_T7B/` → Setup reads, applies,
+> never deletes it; scaffolds a template if missing; self-creates the folder tree) is the
+> CHOSEN, WORKING solution — proven across all 5 boxes (Office, Bedroom, Travelstick,
+> Travelstick2, Shield). The on-box config collector (N2 prefs/weather, N3 IPTV creds
+> interview, N4 in-Kodi IPTV build, N5 remote-only acceptance) was only for the
+> "no env file at all, configure from on-screen dialogs" case — which the owner does not
+> need. The no-computer-setup track is CLOSED at N1.2 (shipped, live). Its open questions
+> Q2–Q5 are moot (collector-only). No active track queued; await direction. Cancelled
+> detail: `docs/plans/no-computer-setup.md`.
+
+## ▶ Prior next-step (now superseded) — N2, the on-box config collector (CANCELLED)
 
 > **Phase N1.2 is RELEASED to `main` (2026-06-10)** — `script.tony7bones.bootstrap`
 > **1.8.0** + `script.module.tony7bones` **1.5.0** (release commit `74e4553`,

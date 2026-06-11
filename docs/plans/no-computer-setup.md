@@ -1,5 +1,16 @@
 # Plan — No-Computer Setup (repository-direct, remote-only provisioning)
 
+> **⛔ TRACK CLOSED at N1.2 — N2–N5 CANCELLED (owner decision 2026-06-10: "nuke N2…
+> our .env method is working fine").** The shipped N1/N1.1/N1.2 are the chosen, working
+> solution: a box reads its own device-resident `.env.<device>` from
+> `/storage/emulated/0/_T7B/` (placed by the owner by any means), applies it, never
+> deletes it, scaffolds a template if missing, and self-creates the folder tree — proven
+> on all 5 boxes. The on-box config COLLECTOR (N2 prefs/weather, N3 IPTV creds interview,
+> N4 in-Kodi IPTV build, N5 remote-only acceptance) was only for the "no env file exists,
+> configure via on-screen dialogs" case, which the owner does NOT need. **N2–N5 below are
+> retained as a HISTORICAL / REJECTED design — do not build them.** Open questions Q2–Q5
+> are moot (collector-only).
+>
 > Status: **N1 RELEASED to `main` (2026-06-10 — bootstrap 1.6.0 + library 1.3.0,
 > release `fbf4b24`, merge `38b9237`); N1.1 RELEASED to `main` (2026-06-10 —
 > bootstrap 1.7.0 + library 1.4.0, release `4ce11ec`, fast-forward merge of
