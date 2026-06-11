@@ -23,6 +23,28 @@ tech-debt seam, the apply_iptv reporting bug, the zero-content guarantee). Keep 
 
 ---
 
+## Bedroom box — full-customization backup + clone-restore test — 🔲 ACTIVE
+
+> Operational (not a repo code change). Backup system + runbook live OUTSIDE the repo:
+> on the box at `/storage/emulated/0/_T7B/kodi/backups/snapshots/` (survives a Kodi wipe)
+> and mirrored on the Mac at `~/T7B-backups/snapshots/`. Full method: that dir's
+> `README.txt`. Box = Bedroom Fire TV, `192.168.7.84`, Kodi 21.3 Omega.
+
+Sequence (do in order — do NOT wipe/test until the fresh backup is taken):
+
+- [ ] **1. Fine-tune** — owner finishes tweaking remaining items (video add-ons, program
+      add-on settings, skin, etc.) so the box reflects FULL customization.
+- [ ] **2. Fresh full backup** — re-snapshot BOTH halves capturing the final state:
+      `bedroom-userdata-<date>/` (settings/data, IPTV EPG cache stripped) +
+      `bedroom-addons-<date>/` (programs). Mirror both to the Mac. These supersede the
+      throwaway `2026-06-10` snapshots.
+- [ ] **3. Clone-restore test** — `pm clear org.xbmc.kodi` (pristine, NO bootstrap) →
+      copy both folders into `.kodi` → open Kodi → verify it boots identical (skin =
+      Estuary MOD V2, ~69 add-ons enabled, POV/resolveurl/pvr.iptvsimple present, RD
+      token intact, home-screen screenshot). Backups make this fully recoverable.
+
+---
+
 ## Release automation — kill manual version bumping — ✅ TRACK COMPLETE (2026-06-10)
 
 > Design + phase log: **`docs/plans/release-automation.md`** (LOCKED owner decisions
