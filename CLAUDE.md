@@ -21,7 +21,7 @@ The repo has two pristine, committed source trees, each with a different job:
 
 Everything lives on `main` and the proxy fetches everything from `main` via raw.githubusercontent. `main` is served by GitHub Pages and holds the root installer zip(s), the generated root `index.html`, the served canvas (mirrored from `dropbox/`), the `addons/` tree (add-on source + the proxy source at `addons/repository.tony7bones/` + the mirrored third-party-repo trees under `addons/hosted/<id>/`), and all `_tools/`.
 
-A release bumps the version in one place — `addons/repository.tony7bones/addon.xml` — which is **both** the installed-addon metadata and the proxy's self-update version source. `_tools/deploy.py` does this atomically and pushes `main + tag` (see below).
+A proxy release bumps the version in one place — `addons/repository.tony7bones/addon.xml` — which is **both** the installed-addon metadata and the proxy's self-update version source. `python3 _tools/release.py --proxy` does this atomically and pushes `main + tag` (delegating to the proven `_tools/deploy.py` transaction — see "Releasing" below).
 
 > The `virtual-repo` branch is **retired** (the single-branch migration moved its `hosted/<id>/` trees to `addons/hosted/` on main and consolidated the self-update source into the main `addon.xml`). It may still exist as a fallback but is **unreferenced** by all shipped manifests and tooling — do not add anything to it. `hybrid-repo` is an abandoned experiment — ignore it.
 
@@ -102,6 +102,11 @@ python3 -m pytest _tools/test_bootstrap.py::test_video_installs_unattended -q
 
 # Lint the Python tooling
 ruff check _tools/
+
+# Release ANY add-on — one command (see "Releasing" below)
+python3 _tools/release.py --dry-run                 # script.* add-ons: preview the plan
+python3 _tools/release.py                            # script.*: bump+news+lockstep+commit
+python3 _tools/release.py --proxy --news "..."       # the repository.tony7bones proxy
 ```
 
 Test files map to what they cover (all tests import the add-on `default.py` under **mocked Kodi modules** — `run()` is `__main__`-guarded, so importing is side-effect-free, and the install/resolve logic is exercised directly with fake `xbmc*`):
@@ -112,57 +117,56 @@ Test files map to what they cover (all tests import the add-on `default.py` unde
 | `test_module.py`         | `script.module.tony7bones` (shared install library, incl. `install_selection`)                                            |
 | `test_modv2plus.py`      | `script.tony7bones.modv2plus` (the Estuary MOD V2+ skin patch + the auto-apply boot service)                              |
 | `test_proxy.py`          | `repository.tony7bones` proxy engine (version math, manifest validators, tag/URL resolution, cache, platform)             |
-| `test_deploy.py`         | `deploy.py` / `release_lib.py` (sandbox end-to-end with a bare remote)                                                    |
+| `test_deploy.py`         | `deploy.py` / `release_lib.py` (proxy release; sandbox end-to-end with a bare remote)                                     |
+| `test_release.py`        | `release.py` (the unified release tool: script.\* bump/news/lockstep + the `--proxy` delegation to deploy.py)             |
+| `test_release_detect.py` | `release_detect.py` (the shared `changed_addons` detector — tool/gate agreement)                                          |
 | `test_check_versions.py` | the per-add-on version-bump gate                                                                                          |
 | `test_generate_repo.py`  | the generator (zips, indexes, canvas mirror, determinism)                                                                 |
 | `test_secret_leak.py`    | no secret artifact/value reaches the tracked tree (allowlists `.env.example` / `.env.device.example` via `_EXAMPLE_ENVS`) |
 
 ## Releasing
 
-> **Restore points.** The pre-modular-merge `main` (the shipped 3.0 one-shot state, bootstrap 1.4.0 / library 1.1.3 / modv2plus 1.4.7) is tagged `main-pre-modular-2026-06-10`; the hardware-proven 3.0 one-shot state is `perfectly-working-2026-06-06`; the pre-3.0 `main` is `main-rollback-2026-06-06`; the current repository-add-on release is `v2.2.1`; the current `script.*` Setup state on `main` is bootstrap 1.7.0 / library 1.4.0 (N1.1, merge `4ce11ec`). Use these to roll back if a release regresses the box.
+> **Restore points.** The pre-modular-merge `main` (the shipped 3.0 one-shot state, bootstrap 1.4.0 / library 1.1.3 / modv2plus 1.4.7) is tagged `main-pre-modular-2026-06-10`; the hardware-proven 3.0 one-shot state is `perfectly-working-2026-06-06`; the pre-3.0 `main` is `main-rollback-2026-06-06`; the current repository-add-on release is `v2.2.1`. Current shipped `script.*` versions on `main`: bootstrap 1.8.0 / library 1.5.0 / modv2plus 1.4.8 (read live from the manifests — never hand-maintained). Use these to roll back if a release regresses the box.
 
-There are **two** release paths — pick the right one (full detail in `docs/playbooks/release-and-deploy.md`):
+**`python3 _tools/release.py` is THE release command for BOTH paths** (full detail in `docs/playbooks/release-and-deploy.md`). It detects what changed, computes the next version, drafts the news, raises the lockstep, regenerates, gates, and commits — **no hand-edited `addon.xml`, no hand-written `<news>`, no hand-raised `<import>`, no hand-edited tests.** Every release still MUST bump the version (Kodi auto-upgrades by version number only, so same-version byte changes silently break upgrades) — the tool computes the correct bump, it never skips it. The bump rule is enforced automatically and in CI (`check_versions.py` runs in both the pre-push hook and CI on main).
 
-- **A `script.*` / `script.module.*` add-on** (`script.module.tony7bones`, `script.tony7bones.bootstrap`, `script.tony7bones.modv2plus`): bump its `addons/<id>/addon.xml` version (+ news), run `python3 _tools/generate_repo.py`, commit the regenerated files, `git push`. **Not** `deploy.py`. The pre-push hook enforces tests, ruff, generated-files freshness, version consistency on main, and a per-add-on version-bump (`check_versions.py`).
-- **The repository add-on (`repository.tony7bones`)**: use the one-command release tool below.
+The one tool routes between two **modes**:
 
-### Releasing the repository add-on (`repository.tony7bones`)
+- **The `script.*` / `script.module.*` add-ons** (`script.module.tony7bones`, `script.tony7bones.bootstrap`, `script.tony7bones.modv2plus`) — the default mode:
 
-**Never hand-edit the version in multiple places.** Use the one-command release tool.
-Every release MUST bump the version — Kodi keys auto-upgrade off the version number,
-so same-version byte changes are forbidden (they silently break upgrades).
+  ```bash
+  python3 _tools/release.py                 # minor-bump every changed add-on, commit on the branch, STOP
+  python3 _tools/release.py --dry-run       # show the plan (incl. WHICH files changed), change nothing
+  python3 _tools/release.py --patch         # patch instead of the minor default (or --major / --version X.Y.Z)
+  python3 _tools/release.py --addon script.module.tony7bones --version 1.6.0
+  python3 _tools/release.py --news "script.tony7bones.bootstrap=Fix first-boot race"  # override the drafted news
+  python3 _tools/release.py --push          # also push the branch (default: commit only, keep the merge→main flow)
+  python3 _tools/release.py check           # the script-side consistency gate only
+  ```
 
-```bash
-python3 _tools/deploy.py --news "What changed"     # patch bump (default)
-python3 _tools/deploy.py --minor --news "..."      # or --major / --version X.Y.Z
-python3 _tools/deploy.py --news "..." --dry-run     # preview the plan, change nothing
-python3 _tools/deploy.py check                      # version-consistency gate only
-```
+  Detects changed add-ons vs `origin/main` (the **shared** `release_detect.changed_addons`, the SAME detector the pre-push gate uses — they can never disagree), computes the next version (MINOR default; single-digit, monotonic, 9.9.9 ceiling), auto-drafts + **PREPENDS** the `<news>` (rolling cap ~6, idempotent), raises the lockstep `<import>` atomically when the library bumps (each dependent's import → new library version AND the dependent bumps, one commit; a library-scoped run auto-includes the dependent), regenerates deterministically, runs the script-side consistency gate (well-formed / single-digit / monotonic / lockstep `==`), commits `chore(release): …` on the branch, then **STOPS** (no auto-push; `--push` is opt-in). Idempotent — a re-run with no new source edit is a no-op, never a double-bump. Refuses when behind origin or at the version ceiling.
 
-Or via npm (thin wrappers): `npm run deploy -- --news "..."`, `deploy:dry`, `deploy:minor`, `deploy:major`, `deploy:local` (`--no-push`), `check`, `verify`.
+- **The repository add-on (`repository.tony7bones`)** — the virtual proxy; `--proxy` (auto-routed when the proxy is the only changed add-on):
 
-`deploy.py` runs the whole pipeline atomically: bump → build deterministically →
-sync all three version-bearing locations (main `addons/repository.tony7bones/addon.xml`
-— which doubles as the proxy self-update source — the root zip filename, and the
-git tag) → commit main → tag → `git push --atomic main <tag>` →
-force a GitHub Pages build → verify live on Pages. The root `index.html` is the
-bare-URL canvas listing and **deliberately does NOT list the install zip** — the
-consistency gate reads the shipped version from the **root zip filename** instead,
-so there is no index link to rewrite. Any failure
-before the push rolls main and the tag back. It refuses to run on a dirty tree, when
-behind origin, or when the new version is not greater than the current one. The
-version lives ONLY in `addon.xml`; `package.json` deliberately does not mirror it.
+  ```bash
+  python3 _tools/release.py --proxy --news "What changed"     # patch bump (proxy default)
+  python3 _tools/release.py --proxy --minor --news "..."      # or --major / --version X.Y.Z
+  python3 _tools/release.py --proxy --news "..." --dry-run     # preview the plan, change nothing
+  python3 _tools/release.py --proxy --news "..." --no-push     # local commit + tag only
+  ```
 
-The release tooling is split for testability: `_tools/release_lib.py` (pure version
-math + file transforms + the single-source-of-truth `DeployPlan`), `_tools/check_consistency.py`
-(reads all three locations on main and fails on any mismatch — reused by
-the hook, CI, and deploy), `_tools/deploy.py` (orchestrator), `_tools/test_deploy.py`
-(unit + end-to-end sandbox tests with a bare remote).
+  The proxy release **IS the push** (tag + atomic push + Pages force-build + live verify), because the self-update fetches the new zip live. `release.py --proxy` **delegates to `deploy.py`'s proven transaction** (`deploy.deploy` — the exact hardware-proven code that has shipped every proxy release; not a reimplementation): bump → build deterministically → sync the three version-bearing locations (main `addons/repository.tony7bones/addon.xml` — which doubles as the proxy self-update source — the root zip filename, and the git tag) → commit main → tag → `git push --atomic main <tag>` → force a GitHub Pages build → verify live. The root `index.html` is the bare-URL canvas listing and **deliberately does NOT list the install zip** — the consistency gate reads the shipped version from the **root zip filename** instead. Any failure before the push rolls main and the tag back. Refuses on a dirty tree, off main, behind origin, or a non-greater version. The version lives ONLY in `addon.xml`; `package.json` deliberately does not mirror it.
+
+  `deploy.py` remains a **fully-working independent entry point** (`release.py --proxy` is a thin front door onto the identical transaction — `test_deploy.py` passes unchanged, and a parity test proves the resulting tree + remote are identical whichever entry point is used). The npm wrappers still call `deploy.py`: `npm run deploy -- --news "..."`, `deploy:dry`, `deploy:minor`, `deploy:major`, `deploy:local` (`--no-push`), `check`, `verify`.
+
+The release tooling is split for testability: `_tools/release_lib.py` (pure version math + file transforms + the single-source-of-truth `DeployPlan`; the lockstep/news transforms `set_import_version` / `prepend_addon_news`), `_tools/release_detect.py` (the ONE shared `changed_addons` detector behind both the tool and the gate), `_tools/check_consistency.py` (the proxy 3-location gate; reused by the hook, CI, and the proxy transaction), `_tools/deploy.py` (the proxy orchestrator), `_tools/release.py` (the unified tool + the script-side consistency gate), with `_tools/test_deploy.py` / `_tools/test_release.py` / `_tools/test_release_detect.py` (unit + bare-remote sandbox e2e).
 
 ## Gates (pre-push hook)
 
 `.githooks/pre-push` blocks a push unless tests pass, lint is clean, generated files
-are up to date, and all three version locations agree and are tagged. Install once
+are up to date, the proxy's three version locations agree and are tagged
+(`check_consistency.py`), and every changed add-on bumped its version
+(`check_versions.py`, the per-add-on monotonic gate). Install once
 after cloning:
 
 ```bash
@@ -182,7 +186,9 @@ If they're missing, the hook can't validate and a red-test release can reach `ma
 (CI only catches it post-push). Re-run after a python **minor** upgrade (new user-site).
 
 CI (`generate_repo.yml`) re-runs the same checks as a backstop and **never commits to
-main**. The old `.pre-commit-config.yaml` (pytest on commit) still works if installed.
+main** — including the per-add-on version-bump gate (`check_versions.py`) on main,
+so the "every changed add-on bumped" guarantee no longer lives only in the pre-push
+hook. The old `.pre-commit-config.yaml` (pytest on commit) still works if installed.
 
 ## Architecture
 
@@ -260,4 +266,4 @@ Runs the full `_tools/` test suite, `ruff`, the generator + `git status --porcel
 
 **`https://tony7bones.github.io/`** (the root). Users add this as a file-manager source, then install `repository.tony7bones-<version>.zip` from it. This URL must never change — only the zip filename's version moves. The legacy static endpoint `https://tony7bones.github.io/addons/addons.xml` exists for migration but is not the install path.
 
-Note: the `repository.tony7bones` add-on is the virtual proxy and is released only via `_tools/deploy.py` (single-branch: it bumps `main` and tags, then pushes `main + tag`). The "adding a new add-on / zip" steps above are for _other_ content (third-party repos, scripts, images) and do not bump `repository.tony7bones`. After any of them, the pre-push hook will run tests + lint + staleness + consistency before the push is accepted.
+Note: the `repository.tony7bones` add-on is the virtual proxy and is released via `python3 _tools/release.py --proxy` (which delegates to `_tools/deploy.py`'s proven transaction; running `deploy.py` directly still works identically) — single-branch: it bumps `main` and tags, then pushes `main + tag`. The "adding a new add-on / zip" steps above are for _other_ content (third-party repos, scripts, images) and do not bump `repository.tony7bones`. After any of them, the pre-push hook will run tests + lint + staleness + consistency before the push is accepted.

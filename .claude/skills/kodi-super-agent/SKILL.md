@@ -5,8 +5,8 @@ description: >-
   (tony7bones.github.io). Load when working anywhere in this repo on Kodi
   add-on tasks — installing add-ons via the Setup script, building/editing the
   script.module.tony7bones shared library or the bootstrap Setup,
-  releasing repository.tony7bones with deploy.py, releasing the script.* add-ons
-  via generate_repo.py, adding an entry to repository.json, debugging the local
+  releasing any add-on with release.py (script.* add-ons or the
+  repository.tony7bones proxy via --proxy), adding an entry to repository.json, debugging the local
   Kodi 21 Omega install, or verifying behaviour on the real local Kodi. Triggers
   on Kodi add-on install / dependency-closure / origin / release / deploy /
   GitHub Pages / verification work in this project.
@@ -22,14 +22,16 @@ WHY and the exact code locations.
 
 - Project overview, branches, releases: repo-root `CLAUDE.md` + `README.md`.
 - Architecture & one-shot flow: `docs/playbooks/one-shot-and-architecture.md`.
-- The four first-party add-ons (current shipped versions on `main`):
+- The four first-party add-ons (shipped versions on `main` — auto-derived from
+  the manifests; `release.py` keeps them bumped, the gates verify it):
   - `repository.tony7bones` **2.2.1** — the virtual proxy repository (local
-    `127.0.0.1:61234` server; released via `deploy.py`).
-  - `script.module.tony7bones` **1.3.0** — shared LIBRARY (`xbmc.python.module`,
+    `127.0.0.1:61234` server; released via `release.py --proxy`, which delegates
+    to `deploy.py`'s transaction).
+  - `script.module.tony7bones` **1.5.0** — shared LIBRARY (`xbmc.python.module`,
     hidden); holds all the generic install machinery incl. `install_selection`
     plus the modular `setup/` layers (`foundation` / `iptv` / `addons`, `env`,
     `probes`).
-  - `script.tony7bones.bootstrap` **1.6.0** — "Tony.7.Bones Setup", the
+  - `script.tony7bones.bootstrap` **1.8.0** — "Tony.7.Bones Setup", the
     **modular** Setup. `run()` reads the per-device env from the ORDERED env
     sources and routes: **no env anywhere → the Guided wizard** (`run_guided({})`
     — with an "Install everything with defaults" one-tap escape equal to the old
@@ -201,19 +203,31 @@ repositories/ rss/ scripts/`) is one level below. The old
 
 → all in `docs/playbooks/release-and-deploy.md`
 
-- **Path A — `script.*` / `script.module.*` add-on:** edit `addon.xml` version +
-  news → `python3 _tools/generate_repo.py` → commit regenerated files → `git push`.
-  NOT deploy.py.
-- **Path B — `repository.tony7bones` (single-branch):** `python3 _tools/deploy.py --news "…"`
-  — it syncs the 4 version locations on `main` (the main `addon.xml` is also the
-  proxy self-update source), builds deterministically, commits main, tags,
-  pushes `main + tag`, forces a Pages build, verifies live.
+- **One command for BOTH paths: `python3 _tools/release.py`.** It detects what
+  changed, computes the bump, drafts+prepends news, raises the lockstep,
+  regenerates, gates, commits. NO hand-edited `addon.xml` / news / `<import>` /
+  tests (the version tests are de-pinned to relational asserts).
+- **Mode A — `script.*` / `script.module.*` add-on (default):**
+  `python3 _tools/release.py` → minor-bump every changed add-on, auto-news,
+  lockstep raise (library bump auto-raises + bumps every dependent in one
+  commit), regen, script-side consistency gate, commit **on the branch**, STOP.
+  `--dry-run` / `--patch` / `--major` / `--version X.Y.Z` / `--addon <id>` /
+  `--news "id=line"` / `--push` (opt-in) / `check`. Idempotent (re-run = no-op,
+  never double-bump); refuses behind-origin or at the 9.9.9 ceiling.
+- **Mode B — `repository.tony7bones` proxy:** `python3 _tools/release.py --proxy
+--news "…"` (auto-routed when the proxy is the only changed add-on). It IS the
+  push — **delegates to `deploy.py`'s proven transaction** (not a reimplementation;
+  `deploy.py` still works identically and `npm run deploy:*` still call it): syncs
+  the 3 version locations on `main` (the main `addon.xml` is also the proxy
+  self-update source), builds deterministically, commits main, tags, pushes
+  `main + tag`, forces a Pages build, verifies live. `--minor`/`--major`/
+  `--version`/`--dry-run`/`--no-push`.
 - **Add a served add-on:** edit the single `repository.json`
   (`addons/repository.tony7bones/resources/`); for a mirrored third-party repo drop
   its `addon.xml`/zip under `addons/hosted/<id>/` with `"branch": "main"` +
-  `asset_prefix` `.../{ref}/addons/hosted/{id}/`, then `deploy.py`.
-- **Pages gotcha:** Pages often skips the build → live-verify times out.
-  `deploy.py` now forces a build automatically; by hand:
+  `asset_prefix` `.../{ref}/addons/hosted/{id}/`, then `release.py --proxy`.
+- **Pages gotcha:** Pages often skips the build → live-verify times out. The proxy
+  transaction forces a build automatically; by hand:
   `gh api --method POST repos/tony7bones/tony7bones.github.io/pages/builds`, then
   poll the root zip for HTTP 200. (Add-on zips + `addons/hosted/**` come from
   raw.githubusercontent — instant; only the installer zip rides Pages.)
@@ -222,7 +236,8 @@ repositories/ rss/ scripts/`) is one level below. The old
   mtime, commit → regenerate → `git commit --amend --no-edit` → confirm a second
   regenerate is clean.
 - Gates: `.githooks/pre-push` (tests, ruff, staleness, consistency, per-add-on
-  version bump). CI validates on `main` only, never commits. `docs/**` + `.claude/**`
+  version bump). CI validates on `main` only (incl. the per-add-on version-bump
+  gate `check_versions.py`), never commits. `docs/**` + `.claude/**`
   are outside the CI path filter.
 
 ## Golden rule — verification

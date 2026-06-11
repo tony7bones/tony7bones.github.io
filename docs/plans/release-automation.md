@@ -1,17 +1,39 @@
 # Plan — Eliminate manual version bumping for the first-party add-ons
 
-> Status: **DECISIONS LOCKED (2026-06-10) — Phases 0, 1, 2, 3 + O7 SHIPPED
-> (committed locally on `no-computer-setup`, not pushed).** The owner's calls on
-> O1–O6 are recorded below. **Phase 0** generalized `release_lib` (pure transforms
-> `next_version` / `set_import_version` / `read_import_version` /
+> Status: **✅ TRACK COMPLETE (2026-06-10) — ALL phases (0–5) + O7 SHIPPED,
+> committed locally on `no-computer-setup`, not pushed.** The owner's calls on
+> O1–O10 are all recorded/resolved below. **Phase 0** generalized `release_lib`
+> (pure transforms `next_version` / `set_import_version` / `read_import_version` /
 > `prepend_addon_news` capped+idempotent), no add-on bump. **Phase 1** de-pinned
 > the two literal version tests (relational + negative tests). **Phase 2** added
 > the ONE shared `changed_addons()` detector (tool + gate route through it, MF-1)
 > and wired `check_versions.py` into CI (O7). **Phase 3** shipped `_tools/release.py`
 > (detect → bump (minor default) → news → lockstep → regen → determinism gate →
 > commit; `--dry-run`/`--patch`/`--major`/`--version`/`--news`/`--push`/`check`;
-> all QA must-fixes MF-1…MF-9; bare-remote e2e tests). O8–O10 remain owner
-> questions. Phases 4 (docs default) and 5 (proxy unification) remain proposed.
+> all QA must-fixes MF-1…MF-9; bare-remote e2e tests). **Phase 4** made `release.py`
+> the documented release command for BOTH paths and purged the manual ritual from
+> every doc. **Phase 5** unified the proxy: `release.py --proxy` runs the proxy
+> release by DELEGATING to `deploy.py`'s proven transaction (not a reimplementation;
+> `deploy.py` stays an independent entry point, `test_deploy.py` UNCHANGED, parity
+> proven). O8 LOCKED (strict `==`); O9/O10 resolved in Phase 3.
+>
+> **Final UX — one command, both paths:**
+>
+> ```bash
+> # script.* / script.module.* add-ons (commit-on-branch, STOP):
+> python3 _tools/release.py                 # minor-bump every changed add-on
+> python3 _tools/release.py --dry-run       # plan only (shows WHICH files changed)
+> python3 _tools/release.py --patch | --major | --version X.Y.Z [--addon <id>]
+> python3 _tools/release.py --news "id=line"     # override the drafted news
+> python3 _tools/release.py --push          # opt-in push (default: commit only)
+> python3 _tools/release.py check           # the script-side consistency gate
+>
+> # repository.tony7bones proxy (IS the push: tag + atomic push + Pages + verify):
+> python3 _tools/release.py --proxy --news "What changed"   # delegates to deploy.py
+> python3 _tools/release.py --proxy --minor|--major|--version X.Y.Z
+> python3 _tools/release.py --proxy --news "..." --dry-run | --no-push
+> # (deploy.py + npm run deploy:* still work identically as the proxy fallback)
+> ```
 
 ## Owner decisions — LOCKED (2026-06-10)
 
@@ -593,20 +615,60 @@ Release plan (baseline origin/main):
   green; NO add-on bump by the work. Commit (local): `feat(release): release.py
 one-command bump+news+lockstep (Phase 3)`.
 
-### Phase 4 — Make it the documented default; auto-derive the version table
+### Phase 4 — Make it the documented default; auto-derive the version table — SHIPPED 2026-06-10
 
-- Update `docs/playbooks/release-and-deploy.md`: Path A becomes "run
-  `release.py`"; keep the manual steps as the fallback. Generate the "current
-  versions" table from the manifests so it stops drifting.
-- **Acceptance:** playbook updated; a script regenerates the version table; QA
-  signs off the docs.
+- ✅ `docs/playbooks/release-and-deploy.md` rewritten to the unified flow: ONE
+  `release.py`, two MODES (script.\* default + `--proxy`). The old manual `script.*`
+  ritual moved to an explicit "Historical" note (it still works via the hook
+  backstop, but there is no reason to use it). Kept the determinism rules + the
+  Pages-skip gotcha. The "current versions" table fixed (was stale: 1.1.3/1.4.0/
+  1.4.7) and annotated as read-live-from-the-manifests with a one-liner to
+  regenerate it, so it stops drifting.
+- ✅ `CLAUDE.md` — the "Releasing" section now leads with `python3 _tools/release.py`
+  as THE command for BOTH paths (script.\* UX + proxy `--proxy` UX); the manual
+  bump ritual is gone; the pinned-test caveat removed (de-pinned in P1); the
+  version table noted auto-derived; "Commands" gained the release one-liners;
+  "Gates" + the CI note record `check_versions.py` running in the hook AND CI.
+- ✅ `.claude/skills/kodi-super-agent/SKILL.md` — release guidance updated to the one
+  `release.py` (both modes), the de-pinned tests, the CI gate; the add-on inventory
+  versions corrected + noted auto-derived.
+- ✅ `TASKS.md` — release-automation track marked COMPLETE; next focus returns to
+  the no-computer-setup track (N2, the on-box collector).
+- **Acceptance MET:** every release doc reflects `release.py`; the manual steps are
+  marked historical; the version tables are accurate + flagged auto-derivable; no
+  add-on bump; ZERO AI attribution. Commit (local): `docs(release): release.py is
+the one release command (Phase 4)`.
 
-### Phase 5 — Unify the proxy path (optional end state)
+### Phase 5 — Unify the proxy path — SHIPPED 2026-06-10
 
-- Fold `deploy.py`'s proxy transaction into `release.py` (Decision 5b); `deploy.py`
-  becomes a thin shim that calls `release.py --addon repository.tony7bones`.
-- **Acceptance:** the proxy release is byte-for-byte equivalent through the new
-  tool (sandbox + live dry-run); `npm run deploy:*` wrappers still work.
+- ✅ `release.py` gained a **proxy mode** (`--proxy`, plus auto-detect when the only
+  changed add-on is `repository.tony7bones`) that runs the proxy release by
+  **DELEGATING to `deploy.py`'s proven transaction** — `release_proxy()` translates
+  release.py's flags into the attribute shape `deploy.deploy` expects (a small
+  `_ProxyArgs` shim) and calls `deploy.deploy(...)` directly. The proxy path is
+  therefore NOT reimplemented: it runs deploy.py's exact, hardware-proven code
+  (bump → deterministic build → sync the 3 version locations → commit main → tag →
+  atomic push of main+tag → force Pages build → verify live, with rollback).
+- ✅ **`deploy.py` is byte-for-byte UNCHANGED** (an independent, fully-working entry
+  point and the proxy fallback) — its entire `test_deploy.py` suite (88 tests)
+  passes UNCHANGED, which is the proxy-parity proof. `npm run deploy:*` still call
+  `deploy.py`.
+- ✅ The asymmetry is respected: script.\* = commit-on-branch + STOP; proxy = the
+  full atomic push+tag+Pages+verify (the proxy release IS the push). All guardrails
+  (dirty/behind/monotonic/single-digit/rollback) and `--dry-run`/idempotency hold
+  for both because the proxy path runs deploy.py's own guards.
+- ✅ **Tests** (`test_release.py`, +17): a bare-remote **proxy sandbox** driving
+  `release.py --proxy` end-to-end (full release, minor/explicit-version levels,
+  dry-run, no-push, rollback-on-push-failure, dirty-tree refusal, news-required,
+  same-version refusal, auto-detect on a proxy-only change) **plus a parity test**
+  that runs `release.py --proxy` and `deploy.py` against two independent sandboxes
+  and asserts the resulting addon.xml version + root zip + tag are identical, and
+  in-process translation/routing tests. 92% line coverage on `release.py`.
+- **Acceptance MET:** the proxy release is byte-for-byte equivalent through
+  `release.py --proxy` (delegation = same code; parity test + live dry-run prove
+  it); `test_deploy.py` passes UNCHANGED; `npm run deploy:*` wrappers still work; no
+  add-on bump; ZERO AI attribution. Commit (local): `feat(release): unify proxy
+release into release.py (Phase 5)`.
 
 ---
 
@@ -632,7 +694,29 @@ one-command bump+news+lockstep (Phase 3)`.
   Kodi `<import>` min-version semantics are unchanged; this is about what the
   manifests must SHIP. See O8 for the explicit runtime-vs-test split, still open.)
 
-### Still open (QA's O7–O10 — genuinely unresolved)
+### QA's O7–O10 — ALL RESOLVED (2026-06-10)
+
+- **O7 — `check_versions.py` in CI. RESOLVED: DONE in Phase 2.** Wired into
+  `.github/workflows/generate_repo.yml` as a main-only "Version-bump gate" step,
+  baselined on the push's `before` SHA (`CHECK_VERSIONS_BASE_REF`). The monotonic
+  "every changed add-on bumped" guarantee now lives in BOTH the hook and CI. The
+  original finding is preserved verbatim below for the record.
+- **O8 — Lockstep TEST `==` permanent? RESOLVED: YES, LOCKED STRICT `==`.** The
+  shipped lockstep test asserts bootstrap's `<import>` **==** the library's actual
+  shipped version, independent of any runtime Kodi min-version floor (a `>=` would
+  let the manifests drift silently — a coverage regression vs the old literal pin).
+  This is the intended permanent policy. (The `script_consistency` gate in
+  `release.py` enforces the same strict `==` at release time.)
+- **O9 — Scoped `--addon` excluding a must-re-ship dependent. RESOLVED:
+  AUTO-INCLUDE.** A `--addon script.module.tony7bones`-scoped run auto-includes
+  every dependent (bumps it + raises its import) so the lockstep is never orphaned
+  — implemented + tested in Phase 3 (`test_library_only_scoped_run_still_bumps_dependent`).
+- **O10 — Idempotent re-run. RESOLVED: NO-OP WITH A MESSAGE.** An already-bumped-
+  but-unpushed add-on with no new source change is a printed no-op ("already
+  released"), never a double-bump — implemented + tested in Phase 3 (`_already_released`,
+  `test_idempotent_rerun_is_noop`).
+
+#### Original O7 finding (preserved for the record)
 
 - **O7 — Does `check_versions.py` run in CI? CONFIRMED: NO — must-fix for Phase 2.**
   `check_versions.py` (the per-add-on monotonic "every changed add-on bumped"
@@ -648,16 +732,9 @@ one-command bump+news+lockstep (Phase 3)`.
   `check_versions.py` (or the shared `script_consistency` gate that subsumes it)
   to CI on `main`. Not fixed in Phase 1 (out of scope: Phase 1 is test-only and
   ships no `addons/**` change), but recorded here as a Phase 2 must-fix.
-- **O8 — Should the lockstep TEST assert `==` even if the runtime O6 decision is
-  `>=`?** QA recommendation (and the Phase 1 implementation): the shipped lockstep
-  **test** asserts `==` regardless of any runtime min-version floor. Confirm this
-  split is the intended permanent policy.
-- **O9 — Scoped `--addon` that excludes a must-re-ship dependent (MF-2).**
-  Auto-include the dependent (recommended) or hard-refuse with a message? Owner's
-  call — deferred to Phase 3 (the tool does not exist yet).
-- **O10 — Idempotency policy on re-run (MF-6).** No-op silently, or print "already
-  released at vX.Y.Z (run `--force` to re-bump)"? Recommend: no-op with an explicit
-  message, never silent. Deferred to Phase 3.
+  > _(O8/O9/O10's original "still open" prose lived here; all three are now
+  > resolved — see the RESOLVED block above. Removed to avoid contradicting the
+  > resolutions.)_
 
 ---
 

@@ -23,11 +23,20 @@ tech-debt seam, the apply_iptv reporting bug, the zero-content guarantee). Keep 
 
 ---
 
-## Release automation — kill manual version bumping (script.\* path)
+## Release automation — kill manual version bumping — ✅ TRACK COMPLETE (2026-06-10)
 
 > Design + phase log: **`docs/plans/release-automation.md`** (LOCKED owner decisions
-> O1–O6, the QA must-fixes MF-1…MF-9). Committed LOCALLY on `no-computer-setup`, NOT
+> O1–O10, the QA must-fixes MF-1…MF-9). Committed LOCALLY on `no-computer-setup`, NOT
 > pushed. No add-on versions were bumped by this work — the TOOL is what bumps.
+>
+> **DONE.** `python3 _tools/release.py` is now THE release command for BOTH paths:
+> the `script.*` add-ons (detect → minor-bump → auto-news → lockstep → commit on
+> branch, STOP) AND the `repository.tony7bones` proxy (`--proxy`, delegating to
+> `deploy.py`'s proven atomic push+tag+Pages+verify transaction — byte-for-byte the
+> same code, `test_deploy.py` passes UNCHANGED). The manual `addon.xml`/news/import/
+> pinned-test ritual is GONE from the docs. CI now runs the per-add-on version-bump
+> gate on `main` (O7). All docs (CLAUDE.md, the release playbook, the SKILL, this
+> file) updated to the unified flow.
 
 - [x] **P0** Generalize `release_lib`: `next_version`, `set_import_version` /
       `read_import_version` (lockstep), `prepend_addon_news` (capped + idempotent,
@@ -42,11 +51,19 @@ tech-debt seam, the apply_iptv reporting bug, the zero-content guarantee). Keep 
       regen → determinism gate → commit on branch; `--dry-run` (shows WHICH files,
       MF-4), `--push`, `check`; guardrails dirty/behind-origin (MF-5)/monotonic/ceiling
       (MF-8)/idempotent (MF-6); rollback on any failure. Bare-remote e2e tests.
-- [ ] **P4** Make `release.py` the documented Path A; auto-derive the version table.
-- [ ] **P5** (optional) Unify: `deploy.py` becomes a shim over `release.py --addon repository.tony7bones`.
-- Open owner Qs: **O8** (lockstep test `==` permanent?), **O9** (scoped `--addon`
-  excluding a must-re-ship dependent: auto-include vs refuse — implemented as
-  auto-include), **O10** (idempotent re-run: no-op with message — implemented).
+- [x] **P4** `release.py` is the documented release command for BOTH paths; the
+      manual ritual purged from CLAUDE.md / the playbook / the SKILL; the version
+      tables noted as auto-derived; the pinned-test caveat removed (de-pinned in
+      P1). Shipped 2026-06-10.
+- [x] **P5** Unify: `release.py --proxy` (and proxy auto-detect) runs the proxy
+      release by **delegating to `deploy.py`'s exact transaction** (`deploy.deploy`) —
+      NOT a reimplementation; `deploy.py` stays an independent fully-working entry
+      point with `test_deploy.py` UNCHANGED, and a parity test proves the resulting
+      tree+remote are identical via either entry point. +17 e2e/in-proc tests, 92%
+      cov on `release.py`. Shipped 2026-06-10.
+- Open owner Qs — all RESOLVED: **O8** lockstep test strict `==` (LOCKED permanent),
+  **O9** scoped `--addon` auto-includes the dependent, **O10** idempotent re-run is a
+  no-op with a message.
 
 ---
 
