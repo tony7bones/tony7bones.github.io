@@ -543,15 +543,55 @@ Release plan (baseline origin/main):
   hook/CI behavior preserved; deterministic regen; NO add-on bump. Commit (local):
   `feat(release): shared changed_addons detector + CI version gate (Phase 2)`.
 
-### Phase 3 — `release.py` for the `script.*` path (the headline)
+### Phase 3 — `release.py` for the `script.*` path (the headline) — SHIPPED 2026-06-10
 
-- Implement the tool (Decisions 2, 3, 5, 6, 7): detect → compute → write
-  version+news+lockstep → regenerate → determinism gate → commit; `--dry-run`,
-  level flags, `--news`, `--push`, `check`. Rollback on any failure.
-- **Acceptance:** end-to-end sandbox test (bare remote, like `test_deploy.py`):
-  edit a `script.*` source, run the tool, assert correct bumps/news/lockstep/regen
-  and a clean determinism gate; `--dry-run` changes nothing; failure mid-transaction
-  rolls back. ≥90% coverage. **The manual path still works** — the tool is opt-in.
+- ✅ Added `_tools/release.py`: detect (shared `changed_addons`, worktree mode) →
+  compute next version (MINOR default; `--patch`/`--major`/`--version`) →
+  auto-draft + PREPEND news (`--news` override, per-addon `id=line` or bare) →
+  raise lockstep import + bump holder atomically (MF-2) → `generate_repo.py` →
+  determinism gate → script-side consistency gate → commit on the branch → STOP.
+  `--dry-run` (prints WHICH files per add-on, MF-4), `--push` (opt-in),
+  `check` sub-command (the script-side consistency gate). Full rollback
+  (`git reset --hard <pre-release HEAD>`) on any mid-transaction failure.
+- ✅ **Guardrails (the QA must-fixes):**
+  - MF-2 atomic lockstep: the dependency graph is read live (`dependents_of`), so
+    a library bump always raises every dependent's `<import>` AND bumps it; a
+    `--addon script.module.tony7bones` scoped run auto-includes bootstrap (O9:
+    auto-include, not refuse).
+  - MF-5 behind-origin preflight (ported from `deploy.py`): refuses when the
+    branch is behind its origin counterpart; offline fetch degrades to a warning.
+  - MF-6 idempotency: an already-bumped-but-unpushed add-on with NO new source
+    change since its bump commit is a NO-OP (printed "already released"), never a
+    double-bump (O10: no-op with a message). Implemented via
+    `_last_version_change_commit` + `_source_changed_since` (compares source —
+    excluding `addon.xml`'s own version/news — between the last bump and the tree).
+  - MF-7 single bump regardless of reason count (source + lockstep → one bump).
+  - MF-8 single-digit ceiling: a 9.9.9 add-on with a source change fails cleanly
+    with a readable "version space exhausted … use --version" message, not a
+    traceback.
+  - MF-9 news prepended once, capped at `NEWS_CAP` (6), idempotent on re-run.
+- ✅ **Tests** (`_tools/test_release.py`, mirroring `test_deploy.py`): 22
+  bare-remote e2e (happy path, lockstep atomicity, modv2plus independence,
+  dry-run snapshot, idempotent re-run no-op, news cap, behind-origin/ceiling/
+  double-digit/unknown-addon refusals, determinism, push vs default-no-push,
+  rollback-on-push-failure) + 29 in-process tests (build_plan, lockstep two-pass,
+  news drafting, script_consistency, idempotency, `main()`/`check`/`--patch`/
+  `--dry-run`, behind-origin, push, rollback). 51 tests; **92% line coverage on
+  `release.py` from the in-process suite alone** (the remaining lines are
+  offline/error-print branches the subprocess e2e tests exercise).
+- ⚠️ **Test-safety hardening (lesson encoded):** `release.git()` resolves `REPO`
+  at CALL time (not as a default arg bound at import) so an in-process test that
+  monkeypatches `release.REPO` to a sandbox redirects EVERY git call — including
+  the rollback `git reset --hard` — into the sandbox, never the real repo. The
+  `inproc` fixture asserts `REPO` is the sandbox before running, as a tripwire.
+  (A default-arg binding of `REPO` is a footgun: a sandbox rollback can reset the
+  real working tree.)
+- **Acceptance MET:** 950 passed / 1 xfailed; ≥90% coverage on `release.py`;
+  `--dry-run`/`check` demonstrated live (reports "no changed add-ons" + lockstep
+  in sync on the current tree); the manual path is untouched (the tool is opt-in,
+  the hook still backstops a hand-edit); deterministic regen; ruff + secret-leak
+  green; NO add-on bump by the work. Commit (local): `feat(release): release.py
+one-command bump+news+lockstep (Phase 3)`.
 
 ### Phase 4 — Make it the documented default; auto-derive the version table
 
