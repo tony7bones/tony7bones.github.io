@@ -323,14 +323,25 @@ def write_root_index(canvas_listing: list[str]) -> None:
     style = "<style>body>*{display:none}</style>"
     html = (
         '<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">\n'
-        "<html>\n<head><title>Index of /</title>\n"
+        "<html>\n<head><title></title>\n"
         f"{style}\n</head>\n"
-        "<body>\n<h1>Index of /</h1>\n<pre>\n"
-        + "\n".join(rows)
-        + "\n</pre>\n</body>\n</html>\n"
+        "<body>\n<pre>\n" + "\n".join(rows) + "\n</pre>\n</body>\n</html>\n"
     )
     with open(os.path.join(ROOT_DIR, "index.html"), "w", encoding="utf-8") as fh:
         fh.write(html)
+
+
+def write_robots() -> None:
+    """Write a served-root robots.txt that asks crawlers to index nothing.
+
+    Disallow-all keeps the listing out of search engines (the realistic scraper
+    exposure on public Pages). It is advisory only — well-behaved crawlers obey,
+    malicious scrapers and direct path access do not, and it has no effect on
+    Kodi (not a crawler). Generated, not canvas: it survives the mirror because
+    pruning only removes stale dirs, never loose root files.
+    """
+    with open(os.path.join(ROOT_DIR, "robots.txt"), "w", encoding="utf-8") as fh:
+        fh.write("User-agent: *\nDisallow: /\n")
 
 
 def _inject_install_zip_into_repositories() -> None:
@@ -363,6 +374,7 @@ def generate() -> None:
     # 3. Make the proxy installer browsable in the canvas, then the root listing.
     _inject_install_zip_into_repositories()
     write_root_index(canvas_listing)
+    write_robots()
 
     print(f"\naddons.xml: {len(roots)} add-on(s)")
     print(f"addons.xml.sha256: {sha256}")

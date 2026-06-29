@@ -382,8 +382,18 @@ def test_write_root_index_links_present_but_css_hidden(tmp_path, monkeypatch):
     assert '<a href="note.txt">note.txt</a>' in content
     # ...but a <style> block hides them from a web browser.
     assert "display:none" in content
+    # the page carries no visible title (empty <title>, no <h1>)
+    assert "<title></title>" in content
+    assert "<h1>" not in content
     # the install zip is served at the root but still NOT advertised here
     assert "repository.tony7bones-2.2.0.zip" not in content
+
+
+def test_write_robots_disallows_all(tmp_path, monkeypatch):
+    _patch_dirs(monkeypatch, tmp_path)
+    gr.write_robots()
+    content = (tmp_path / "robots.txt").read_text()
+    assert content == "User-agent: *\nDisallow: /\n"
 
 
 def test_inject_install_zip_into_repositories(tmp_path, monkeypatch):
