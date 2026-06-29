@@ -167,6 +167,14 @@ def sandbox(tmp_path):
 
     bare = tmp_path / "remote.git"
     _run(["git", "init", "-q", "--bare", str(bare)], cwd=str(tmp_path))
+    # Pin the bare repo to its OWN hooks dir so a test's pre-receive hook runs
+    # even when the developer's global git config sets core.hooksPath (which
+    # would otherwise shadow the per-repo hooks/ dir and let a rejected push
+    # silently "succeed", breaking the rollback tests on their machine but not CI).
+    _run(
+        ["git", "-C", str(bare), "config", "core.hooksPath", str(bare / "hooks")],
+        cwd=str(tmp_path),
+    )
     _git(repo, "remote", "add", "origin", str(bare))
     _git(repo, "push", "-q", "origin", "main")
     # work on a feature branch (the merge-to-main flow)
@@ -917,6 +925,14 @@ def proxy_sandbox(tmp_path):
 
     bare = tmp_path / "proxy_remote.git"
     _run(["git", "init", "-q", "--bare", str(bare)], cwd=str(tmp_path))
+    # Pin the bare repo to its OWN hooks dir so a test's pre-receive hook runs
+    # even when the developer's global git config sets core.hooksPath (which
+    # would otherwise shadow the per-repo hooks/ dir and let a rejected push
+    # silently "succeed", breaking the rollback tests on their machine but not CI).
+    _run(
+        ["git", "-C", str(bare), "config", "core.hooksPath", str(bare / "hooks")],
+        cwd=str(tmp_path),
+    )
     _git(repo, "remote", "add", "origin", str(bare))
     _git(repo, "push", "-q", "origin", "main", "v1.0.0")
     return repo, bare
