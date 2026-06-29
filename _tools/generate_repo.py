@@ -306,18 +306,22 @@ def _root_install_zip() -> str | None:
 
 
 def write_root_index(canvas_listing: list[str]) -> None:
-    """Generate the bare-URL root index.html: the canvas 1:1, nothing else.
+    """Generate the bare-URL root index.html: deliberately link-free.
 
-    HTML 3.2 so Kodi's File Manager parses it. Lists EXACTLY the canvas entries
-    (mirrored from dropbox/) — no addons/, dropbox/, _tools/, docs/, and NOT the
-    root install zip. The install zip stays served at the repo root (so the proxy
-    self-update keeps working) but is deliberately NOT listed here, so the
-    bare-URL view shows only the owner's canvas; the installer is browsed from the
-    served repositories/ folder (where _inject_install_zip_into_repositories puts
-    a copy).
+    HTML 3.2 (so Kodi's File Manager still parses it) but lists NOTHING — the
+    bare URL is a dead-end for both a browser and Kodi pointed at the root. The
+    canvas folders (repositories/ media/ iptv/ rss/) and the root install zip are
+    all STILL served and STILL browsable by their direct subpaths (each keeps its
+    own generated index.html); they are merely not advertised at the root. Kodi
+    users add the full subpath as a File-Manager source (e.g.
+    https://tony7bones.github.io/repositories/), and the proxy self-update keeps
+    fetching the root zip by its full path regardless.
+
+    canvas_listing is accepted (and ignored) to keep the generate() call site
+    stable — the listing is intentionally not rendered here.
     """
-    rows = [f'<a href="{e}">{e}</a>' for e in canvas_listing]
-    _make_index(ROOT_DIR, "Index of /", rows)
+    del canvas_listing  # intentionally not listed — see docstring
+    _make_index(ROOT_DIR, "Index of /", [])
 
 
 def _inject_install_zip_into_repositories() -> None:
