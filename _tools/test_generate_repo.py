@@ -369,20 +369,21 @@ def test_root_install_zip_picks_proxy_zip(tmp_path, monkeypatch):
     assert gr._root_install_zip() == "repository.tony7bones-2.2.0.zip"
 
 
-def test_write_root_index_is_link_free(tmp_path, monkeypatch):
+def test_write_root_index_links_present_but_css_hidden(tmp_path, monkeypatch):
     _patch_dirs(monkeypatch, tmp_path)
     (tmp_path / "repository.tony7bones-2.2.0.zip").write_bytes(b"z")
     gr.write_root_index(["repositories/", "media/", "note.txt"])
     content = (tmp_path / "index.html").read_text()
-    # still valid HTML 3.2 so Kodi can parse it, but it lists NOTHING — the bare
-    # URL is a deliberate dead-end; folders stay reachable by direct subpath only.
+    # HTML 3.2 so Kodi parses it; the canvas links ARE present (Kodi scans href=
+    # and ignores CSS) so the bare URL stays browsable from the root...
     assert "HTML 3.2" in content
-    assert "<a href" not in content
-    # neither the canvas entries nor the install zip are advertised at the root
+    assert '<a href="repositories/">repositories/</a>' in content
+    assert '<a href="media/">media/</a>' in content
+    assert '<a href="note.txt">note.txt</a>' in content
+    # ...but a <style> block hides them from a web browser.
+    assert "display:none" in content
+    # the install zip is served at the root but still NOT advertised here
     assert "repository.tony7bones-2.2.0.zip" not in content
-    assert "repositories/" not in content
-    assert "media/" not in content
-    assert "note.txt" not in content
 
 
 def test_inject_install_zip_into_repositories(tmp_path, monkeypatch):
@@ -442,12 +443,14 @@ def test_generate_integration(tmp_path, monkeypatch):
     assert (tmp_path / "media" / "index.html").exists()
     # proxy installer injected into served repositories/ (the install path)
     assert (tmp_path / "repositories" / "repository.tony7bones-2.2.0.zip").exists()
-    # bare-URL root index is link-free by design: nothing advertised at the root,
-    # though every canvas folder stays served + browsable by its direct subpath
+    # bare-URL root index: canvas links present (so Kodi browses the root) but
+    # CSS-hidden (so a browser shows blank); the installer + machine dirs are not
+    # advertised here.
     root_index = (tmp_path / "index.html").read_text()
-    assert "<a href" not in root_index
+    assert "display:none" in root_index
+    assert '<a href="repositories/">repositories/</a>' in root_index
+    assert '<a href="media/">media/</a>' in root_index
     assert "repository.tony7bones-2.2.0.zip" not in root_index
-    assert "repositories/" not in root_index and "media/" not in root_index
     assert "addons/" not in root_index and "dropbox/" not in root_index
     # the canvas folders remain browsable directly (their own indexes are intact)
     assert (

@@ -306,22 +306,31 @@ def _root_install_zip() -> str | None:
 
 
 def write_root_index(canvas_listing: list[str]) -> None:
-    """Generate the bare-URL root index.html: deliberately link-free.
+    """Generate the bare-URL root index.html: links present, visually hidden.
 
-    HTML 3.2 (so Kodi's File Manager still parses it) but lists NOTHING — the
-    bare URL is a dead-end for both a browser and Kodi pointed at the root. The
-    canvas folders (repositories/ media/ iptv/ rss/) and the root install zip are
-    all STILL served and STILL browsable by their direct subpaths (each keeps its
-    own generated index.html); they are merely not advertised at the root. Kodi
-    users add the full subpath as a File-Manager source (e.g.
-    https://tony7bones.github.io/repositories/), and the proxy self-update keeps
-    fetching the root zip by its full path regardless.
+    The canvas entries (mirrored from dropbox/) ARE written as <a href> anchors
+    so Kodi's File Manager, which discovers folders by scanning the HTML for
+    href= and ignores CSS, can still browse the bare URL exactly as before. A
+    <style> block hides the listing in a web browser (display:none on the body's
+    children), so a human visiting https://tony7bones.github.io/ sees a blank
+    page while Kodi sees the full folder list. HTML 3.2 doctype is kept for the
+    Kodi parser; the style block is inert to it.
 
-    canvas_listing is accepted (and ignored) to keep the generate() call site
-    stable — the listing is intentionally not rendered here.
+    The root install zip stays served at the root (proxy self-update) but is
+    still NOT listed — only the canvas folders are.
     """
-    del canvas_listing  # intentionally not listed — see docstring
-    _make_index(ROOT_DIR, "Index of /", [])
+    rows = [f'<a href="{e}">{e}</a>' for e in canvas_listing]
+    style = "<style>body>*{display:none}</style>"
+    html = (
+        '<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">\n'
+        "<html>\n<head><title>Index of /</title>\n"
+        f"{style}\n</head>\n"
+        "<body>\n<h1>Index of /</h1>\n<pre>\n"
+        + "\n".join(rows)
+        + "\n</pre>\n</body>\n</html>\n"
+    )
+    with open(os.path.join(ROOT_DIR, "index.html"), "w", encoding="utf-8") as fh:
+        fh.write(html)
 
 
 def _inject_install_zip_into_repositories() -> None:
