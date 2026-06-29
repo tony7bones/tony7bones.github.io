@@ -103,6 +103,12 @@ python3 -m pytest _tools/test_bootstrap.py::test_video_installs_unattended -q
 # Lint the Python tooling
 ruff check _tools/
 
+# Publish canvas-only changes (dropbox/ edits) WITHOUT a proxy release:
+# regenerate, commit, push main. Refuses to publish credential-like content to
+# the public site unless --allow-secrets. Use this, NOT deploy.py, for canvas.
+python3 _tools/publish_canvas.py -m "Add foo repo zip to canvas"   # npm run publish
+python3 _tools/publish_canvas.py -m "..." --dry-run                # npm run publish:dry
+
 # Release ANY add-on — one command (see "Releasing" below)
 python3 _tools/release.py --dry-run                 # script.* add-ons: preview the plan
 python3 _tools/release.py                            # script.*: bump+news+lockstep+commit
@@ -122,6 +128,7 @@ Test files map to what they cover (all tests import the add-on `default.py` unde
 | `test_release_detect.py` | `release_detect.py` (the shared `changed_addons` detector — tool/gate agreement)                                          |
 | `test_check_versions.py` | the per-add-on version-bump gate                                                                                          |
 | `test_generate_repo.py`  | the generator (zips, indexes, canvas mirror, determinism)                                                                 |
+| `test_publish_canvas.py` | `publish_canvas.py` (the canvas-only publish path: staged-diff parse + the secret guard)                                  |
 | `test_secret_leak.py`    | no secret artifact/value reaches the tracked tree (allowlists `.env.example` / `.env.device.example` via `_EXAMPLE_ENVS`) |
 
 ## Releasing

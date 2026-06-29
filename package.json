@@ -8,6 +8,8 @@
     "deploy:minor": "python3 _tools/deploy.py --minor",
     "deploy:major": "python3 _tools/deploy.py --major",
     "deploy:local": "python3 _tools/deploy.py --no-push",
+    "publish": "python3 _tools/publish_canvas.py",
+    "publish:dry": "python3 _tools/publish_canvas.py --dry-run",
     "check": "python3 _tools/deploy.py check",
     "build": "python3 _tools/generate_repo.py",
     "test": "python3 -m pytest _tools/ -q",
