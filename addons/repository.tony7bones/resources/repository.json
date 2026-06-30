@@ -168,5 +168,15 @@
     "assets": {
       "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/{id}/{id}-{version}.zip"
     }
+  },
+  {
+    "id": "script.ezmaintenanceplusplus",
+    "username": "tony7bones",
+    "repository": "tony7bones.github.io",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/{id}/",
+    "assets": {
+      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/{id}/{id}-{version}.zip"
+    }
   }
 ]
