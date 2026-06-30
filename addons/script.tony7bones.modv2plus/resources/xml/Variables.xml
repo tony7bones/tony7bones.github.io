@@ -488,7 +488,7 @@
 		<value condition="Skin.HasSetting(MenuLogoCE)">icons/ce-logo-text.png</value>
 		<value>icons/logo-text.png</value>
 	</variable>
-	<!-- Tony.7.Bones MOD V2+ toggles. Each defaults to the stock look we ship.
+	<!-- Tony.7.Bones MOD V2++ toggles. Each defaults to the stock look we ship.
 	     Weather icons are now the official Outline HD set (no toggle): the texture
 	     is wired directly in Includes.xml to
 	     resource://resource.images.weathericons.outline-hd/. -->
@@ -1910,7 +1910,7 @@
 		<value condition="Container(9000).HasFocus(8)">$LOCALIZE[31316]</value>
 		<value condition="Container(9000).HasFocus(9)">$LOCALIZE[31313]</value>
 		<value condition="Container(9000).HasFocus(10)">$LOCALIZE[31314]</value>
-		<value condition="Container(9000).HasFocus(11)">Tony.7.Bones MOD V2+ settings</value>
+		<value condition="Container(9000).HasFocus(11)">Tony.7.Bones MOD V2++ settings</value>
 		<value condition="Control.HasFocus(301)">$LOCALIZE[31330].</value>
 		<value condition="Control.HasFocus(302)">$LOCALIZE[31331].</value>
 		<value condition="Control.HasFocus(303)">$LOCALIZE[31328].</value>

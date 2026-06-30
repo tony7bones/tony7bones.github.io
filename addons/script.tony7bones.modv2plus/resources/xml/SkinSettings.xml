@@ -1669,7 +1669,7 @@
 					<textoffsetx>45</textoffsetx>
 					<top>0</top>
 					<height>80</height>
-					<label>Tony.7.Bones MOD V2+</label>
+					<label>Tony.7.Bones MOD V2++</label>
 					<align>center</align>
 					<aligny>center</aligny>
 					<font>font28_title</font>
@@ -1798,7 +1798,7 @@
 						<label>$LOCALIZE[31273]</label>
 					</item>
 					<item id="11">
-						<label>Tony.7.Bones MOD V2+</label>
+						<label>Tony.7.Bones MOD V2++</label>
 					</item>
 				</content>
 			</control>

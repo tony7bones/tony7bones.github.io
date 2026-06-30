@@ -1,6 +1,6 @@
-"""Auto-apply service for Estuary MOD V2+.
+"""Auto-apply service for Estuary MOD V2++.
 
-The MOD V2+ patch can only run when skin.estuary.modv2 is the ACTIVE skin (it
+The MOD V2++ patch can only run when skin.estuary.modv2 is the ACTIVE skin (it
 overwrites the live skin's XML, sets skin strings, and reloads). In the one-tap
 Setup flow the skin is installed and selected, but it only becomes active after
 the end-of-Setup restart — at which point the Setup add-on is gone. This service

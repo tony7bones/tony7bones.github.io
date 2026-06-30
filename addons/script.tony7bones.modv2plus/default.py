@@ -421,7 +421,7 @@ def run():
 
     # Direct-action routing: RunScript(...,apply) / RunScript(...,restore) run the
     # matching path straight away (used by the in-tab Apply / Restore buttons in
-    # the "Tony.7.Bones MOD V2+" Skin Settings category). With no/unknown arg we
+    # the "Tony.7.Bones MOD V2++" Skin Settings category). With no/unknown arg we
     # fall back to the interactive chooser.
     arg = sys.argv[1].strip().lower() if len(sys.argv) > 1 and sys.argv[1] else ""
     if arg == "apply":
@@ -432,7 +432,7 @@ def run():
         return
 
     choice = xbmcgui.Dialog().select(
-        "Estuary MOD V2+", ["Apply patches", "Restore original"]
+        "Estuary MOD V2++", ["Apply patches", "Restore original"]
     )
 
     if choice == 0:
@@ -638,7 +638,7 @@ def _apply(skin_root, skin_xml):
     # Non-blocking: notify and reload immediately. A modal ok() here would block
     # the reload until the user clicked it (while claiming to be reloading).
     xbmcgui.Dialog().notification(
-        "Estuary MOD V2+",
+        "Estuary MOD V2++",
         "Applied {} files + {} media — reloading skin".format(applied, media_applied),
         xbmcgui.NOTIFICATION_INFO,
         4000,
@@ -675,7 +675,7 @@ def _restore(skin_root, skin_xml):
         )
     else:
         xbmcgui.Dialog().notification(
-            "Estuary MOD V2+",
+            "Estuary MOD V2++",
             "Restored {} files, removed {} media — reloading skin".format(
                 restored, media_removed
             ),

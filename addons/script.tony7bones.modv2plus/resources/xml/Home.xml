@@ -2396,7 +2396,7 @@
 					<visible>Skin.HasSetting(EnableGradientColor)</visible>
 					<visible>!$EXP[ChristmasTheme] + !$EXP[HalloweenTheme] + !$EXP[PreEasterTheme] + !$EXP[EasterTheme] + !$EXP[ValentineTheme]</visible>
 				</control>
-				<!-- Tony.7.Bones MOD V2+ nav wordmark toggle (fallback group).
+				<!-- Tony.7.Bones MOD V2++ nav wordmark toggle (fallback group).
 				     Default (flag unset) = our stock white hi-res wordmark. -->
 				<control type="image">
 					<left>40</left>
@@ -2471,7 +2471,7 @@
 					<texture colordiffuse="$VAR[LogoColorVar]">$VAR[LogoVar]</texture>
 					<visible>!$EXP[ChristmasTheme] + !$EXP[HalloweenTheme] + !$EXP[PreEasterTheme] + !$EXP[EasterTheme] + !$EXP[ValentineTheme]</visible>
 				</control>
-				<!-- Tony.7.Bones MOD V2+ nav wordmark toggle (main group).
+				<!-- Tony.7.Bones MOD V2++ nav wordmark toggle (main group).
 				     Default (flag unset) = our stock white hi-res wordmark. -->
 				<control type="image">
 					<left>55</left>
