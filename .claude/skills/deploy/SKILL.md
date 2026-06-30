@@ -94,6 +94,32 @@ it just confirms the chain and prints the box steps.
 | `repository.json` has the add-on but the proxy does not serve it                                           | An explicit `platforms` list that excludes the box's platform (`repository.py` skips it).                                                                                  | Remove/widen the `platforms` key, re-release.                                                                                       |
 | `git status` shows commits "to push" but the deploy worked                                                 | You are looking at the **source** repo (e.g. `moquette/ezmaintenanceplusplus`), not this one. They are independent; the deploy copies source _into_ this repo.             | Confirm with `git -C <repo> ls-remote origin main` vs local HEAD.                                                                   |
 
+## Why a released update lags on the box (caches) + the icon gotcha
+
+Two device-side caches bite _after_ a successful ship; neither means the release failed:
+
+**1. The proxy caches its add-on list for 1 hour, in memory.** `repository.py` builds the
+`Repository` with `cache_ttl = 60*60`, so after you push a new version the box keeps serving
+the OLD list for up to an hour. Backing out to the home screen does NOT clear it (the service
+keeps running). To force it now:
+
+- **Fully force-quit Kodi** (from the OS app switcher, not just exit to home) and reopen - the
+  in-memory cache is dropped, so the proxy re-fetches on next access.
+- or run the proxy's built-in refresh: `RunScript(repository.tony7bones,update_repository)`.
+- or wait out the hour.
+
+Recommended fix: lower `cache_ttl` in `addons/repository.tony7bones/lib/repository.py` (e.g.
+`60*5`) so updates show in minutes. That is a proxy change, so it needs a proxy release + the
+publish gate.
+
+**2. Kodi caches add-on ICONS (texture cache).** Change an add-on's `icon.png` but keep the
+same path, and Kodi keeps showing the OLD render from `userdata/Thumbnails/` (+ `Textures13.db`)
+even after the add-on updates. Fix: clear the thumbnail cache (EZ Maintenance++ -> Delete
+Thumbnails, or wipe `Textures13.db`) and restart; or uninstall/reinstall the add-on.
+
+**3. Skin-patching add-ons (e.g. modv2plus) copy files INTO the active skin on Apply.** A
+renamed label or asset in the add-on does not change the skin until the user re-runs **Apply**.
+
 ## Root-cause fix (recommended, do deliberately)
 
 The fragility is that the proxy self-updates from Pages. Point its **own** zip at
