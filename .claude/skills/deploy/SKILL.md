@@ -54,6 +54,23 @@ the box cannot update until Pages serves the zip (step 3).
 4. `python3 -m pytest _tools/ -q` and `ruff check _tools/`: both must pass.
 5. Release (TL;DR step 2) then the publish gate (step 3).
 
+### Manifest pre-flight (or the add-on will be INVISIBLE)
+
+Every served add-on's `addon.xml` MUST declare
+`<import addon="xbmc.python" version="3.0.0"/>` in `<requires>`. **Kodi 19+/Omega silently
+hides any add-on that does not** - no error, no log, and no amount of refreshing, restarting,
+or re-releasing will ever surface it. Lint before shipping:
+
+```sh
+grep -L 'addon="xbmc.python"' addons/*/addon.xml   # must print NOTHING
+```
+
+If something you released never appears under ANY category on the box, this is almost always
+the cause (it cost ~2 hours once: `docs/incident-2026-06-30-ezmpp-deploy.md`). And the
+general rule that would have caught it fast: when a deployed thing is not visible,
+**reproduce the proxy's served `addons.xml` from live data before blaming Kodi's cache.**
+Theories are not evidence.
+
 ## The publish gate (the thing that was missing)
 
 `.claude/skills/deploy/publish-gate.sh [version]` (version auto-detected):
