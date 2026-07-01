@@ -19,6 +19,7 @@ import xbmcgui
 import xbmcvfs
 import re
 from resources.lib.modules.backtothefuture import unicode, PY2
+from resources.lib.modules import ui
 
 if PY2:
     translatePath = xbmc.translatePath
@@ -31,42 +32,6 @@ addonInfo = xbmcaddon.Addon().getAddonInfo
 
 AddonTitle = "EZ Maintenance++"
 AddonID = "script.ezmaintenanceplusplus"
-
-
-def xml_data_advSettings_old(size):
-    xml_data = (
-        """<advancedsettings>
-      <network>
-        <curlclienttimeout>10</curlclienttimeout>
-        <curllowspeedtime>20</curllowspeedtime>
-        <curlretries>2</curlretries>
-        <cachemembuffersize>%s</cachemembuffersize>
-        <buffermode>2</buffermode>
-        <readbufferfactor>20</readbufferfactor>
-      </network>
-</advancedsettings>"""
-        % size
-    )
-    return xml_data
-
-
-def xml_data_advSettings_New(size):
-    xml_data = (
-        """<advancedsettings>
-      <network>
-        <curlclienttimeout>10</curlclienttimeout>
-        <curllowspeedtime>20</curllowspeedtime>
-        <curlretries>2</curlretries>
-      </network>
-      <cache>
-        <memorysize>%s</memorysize>
-        <buffermode>2</buffermode>
-        <readfactor>20</readfactor>
-      </cache>
-</advancedsettings>"""
-        % size
-    )
-    return xml_data
 
 
 ADV_XML = "special://home/userdata/advancedsettings.xml"
@@ -163,8 +128,7 @@ def advancedSettings():
         if not entered or entered == "-" or not str(entered).isdigit():
             return
         mb = int(entered)
-        if mb > 400 and not dialog.yesno(
-            AddonTitle,
+        if mb > 400 and not ui.confirm(
             "%d MB is very large. Kodi buffers up to ~500 MB and a big buffer can make "
             "playback fail on low-memory devices. Use it anyway?" % mb,
             yeslabel="Use it",
@@ -176,15 +140,12 @@ def advancedSettings():
         _clean_stale_advancedsettings()
 
     if _set_cache_mb(mb):
-        dialog.ok(
-            AddonTitle,
+        ui.done(
             "Cache buffer set to %d MB.\n"
-            "Applies to the next video you play - no restart needed." % mb,
+            "Applies to the next video you play - no restart needed." % mb
         )
     else:
-        dialog.ok(
-            AddonTitle, "Could not change the cache setting. Nothing was changed."
-        )
+        ui.error("Could not change the cache setting. Nothing was changed.")
 
 
 def open_Settings():

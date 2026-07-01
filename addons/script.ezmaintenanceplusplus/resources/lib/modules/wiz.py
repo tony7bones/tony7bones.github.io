@@ -23,7 +23,7 @@ import urllib
 import re
 import time
 import zipfile
-from resources.lib.modules import control, maintenance, tools
+from resources.lib.modules import control, maintenance, tools, ui
 from datetime import datetime
 from resources.lib.modules.backtothefuture import unicode, PY2
 
@@ -45,14 +45,11 @@ AddonTitle = "EZ Maintenance++"
 AddonID = "script.ezmaintenanceplusplus"
 
 
-class VfsCopyError(Exception):
-    """Raised when shipping the finished zip to a VFS destination fails.
-
-    Lets backup() tell a FAILED copy apart from a user CANCEL: a cancel returns
-    canceled=True (delete temp, no rotation), while a copy failure raises this
-    so backup() can report an error and SKIP rotation - the prior good backup
-    is never pruned behind a ship that never landed.
-    """
+# VfsCopyError now lives in ui.py (one definition for the whole add-on); alias it here so
+# `wiz.VfsCopyError` and `except VfsCopyError` keep working. A FAILED ship raises this so
+# backup() reports an error and SKIPS rotation (a cancel instead returns canceled=True),
+# and the prior good backup is never pruned behind a ship that never landed.
+VfsCopyError = ui.VfsCopyError
 
 
 # Backup filenames carry a trailing _YYYYMMDDHHMM stamp before ".zip".
@@ -331,37 +328,19 @@ def _backup_dropbox(mode, defaultName, BACKUPDATA):
         if canceled:
             dialog.ok(AddonTitle, "Backup canceled")
             return
-        dp2 = xbmcgui.DialogProgress()
-        dp2.create(AddonTitle, "Uploading to Dropbox...")
-        dp2.update(
-            0, "Uploading to Dropbox...\nStarting..."
-        )  # avoid Kodi's default 100% bar
-
-        def _upload_progress(sent, total):
-            mb = 1024 * 1024
-            pct = int(sent * 100 / total) if total else 0
-            dp2.update(
-                pct, "Uploading to Dropbox...\n%d of %d MB" % (sent // mb, total // mb)
-            )
-            return not dp2.iscanceled()
-
         try:
-            dropbox_remote.upload(staged, name, progress=_upload_progress)
-            dp2.close()
+            # One uniform upload gauge. The cancel is handled by the adapter
+            # (as_dropbox_callback returns not cancelled()), so a canceled upload raises
+            # DropboxCanceled and never touches the last good backup. The context manager
+            # closes the dialog even if upload raises.
+            with ui.Progress("Uploading to Dropbox...", heading=AddonTitle) as sp:
+                dropbox_remote.upload(staged, name, progress=sp.as_dropbox_callback())
         except dropbox_remote.DropboxCanceled:
-            try:
-                dp2.close()
-            except:
-                pass
             dialog.ok(
                 AddonTitle, "Backup canceled. Your previous backup was not touched."
             )
             return
         except Exception as e:
-            try:
-                dp2.close()
-            except:
-                pass
             xbmc.log(
                 "%s : Dropbox upload failed: %s" % (AddonTitle, type(e).__name__),
                 level=xbmc.LOGERROR,
@@ -487,27 +466,18 @@ def _restore_dropbox():
     chosen = names[select]
     local = None
     try:
-        dp2 = xbmcgui.DialogProgress()
-        dp2.create(AddonTitle, "Downloading from Dropbox...")
-        dp2.update(0, "Downloading from Dropbox...\nStarting...")
-
-        def _dl_progress(received, total):
-            mb = 1024 * 1024
-            pct = int(received * 100 / total) if total else 0
-            dp2.update(
-                pct,
-                "Downloading from Dropbox...\n%d of %d MB"
-                % (received // mb, total // mb),
+        # One uniform download gauge. The adapter enables cancel (download honors a
+        # False return by dropping the partial and raising DropboxCanceled), where the
+        # old hand-rolled callback returned None and the cancel was a silent no-op.
+        with ui.Progress("Downloading from Dropbox...", heading=AddonTitle) as dp2:
+            special = dropbox_remote.download(
+                chosen, progress=dp2.as_dropbox_callback()
             )
-
-        special = dropbox_remote.download(chosen, progress=_dl_progress)
-        dp2.close()
         local = translatePath(special)
+    except dropbox_remote.DropboxCanceled:
+        # User canceled the download - the partial was already removed; nothing changed.
+        return
     except Exception as e:
-        try:
-            dp2.close()
-        except:
-            pass
         xbmc.log(
             "%s : Dropbox download failed: %s" % (AddonTitle, type(e).__name__),
             level=xbmc.LOGERROR,
@@ -526,36 +496,53 @@ def _restore_dropbox():
             pass
 
 
-def restore(zipFile, confirm=True):
-    if confirm:
-        yesDialog = dialog.yesno(
-            AddonTitle,
+def restore(zipFile, confirm=True, post_wipe=False):
+    """Extract a backup zip over special://home and offer a restart.
+
+    post_wipe=True is the One-Tap path: the box has ALREADY been wiped and the snapshot
+    ALREADY fully validated by the caller before the wipe. In that mode the extract is a
+    single UNINTERRUPTIBLE unit (no cancel) and we NEVER early-return - a wiped box must
+    always be driven to the restart prompt, never left silent on a partial/empty extract.
+    """
+    if confirm and not post_wipe:
+        if not ui.confirm(
             "This will overwrite all your current settings ... Are you sure?",
+            heading=AddonTitle,
             yeslabel="Yes",
             nolabel="No",
-        )
-        if not yesDialog:
+        ):
             return
 
-    # Stage a remote (VFS) zip locally first; a plain local path extracts directly.
+    # Stage a remote (VFS) zip locally first; a plain local path extracts directly. The
+    # staging copy now has a gauge + cancel (it used to be a silent xbmcvfs.copy).
     local = zipFile
     staged = False
     if "://" in zipFile:
         local = translatePath(os.path.join("special://temp", os.path.basename(zipFile)))
         try:
-            xbmcvfs.copy(zipFile, local)
+            with ui.Progress("Preparing the backup...", heading=AddonTitle) as sp:
+                if (
+                    ui.copy_with_progress(zipFile, local, progress=sp)
+                    == ui.COPY_CANCELLED
+                ):
+                    try:
+                        os.remove(local)
+                    except OSError:
+                        pass
+                    return
             staged = True
         except Exception:
+            # Staging failed; the validation below reports the missing/short zip.
             pass
 
     # Validate BEFORE extracting so we never report success on a missing / empty / bad
-    # zip (the false-success the QA pass killed on the backup side, now on restore too).
-    # The byte count in the failure message also diagnoses a download that came up short.
+    # zip. After a wipe the snapshot was already validated by the caller BEFORE the box was
+    # touched, so post_wipe does NOT early-return here (that would strand a wiped box).
     try:
         size = os.path.getsize(local)
     except OSError:
         size = 0
-    if size == 0 or not zipfile.is_zipfile(local):
+    if not post_wipe and (size == 0 or not zipfile.is_zipfile(local)):
         if staged:
             try:
                 os.remove(local)
@@ -586,11 +573,18 @@ def restore(zipFile, confirm=True):
     except Exception:
         pass
 
+    # Post-wipe the extract is uninterruptible: a cancel here would strand the wiped box,
+    # so cancelable is off and we ALWAYS fall through to the restart prompt below.
+    canceled = False
     try:
-        dp = xbmcgui.DialogProgress()
-        dp.create("Restoring File", "In Progress..." + "\n" + "Please Wait")
-        dp.update(0, "" + "\n" + "Extracting Zip Please Wait")
-        canceled = ExtractZip(local, control.HOME, dp, skip_prefix=skip_prefix)
+        with ui.Progress("Extracting the backup...", heading="Restoring") as p:
+            canceled = ExtractWithProgress(
+                local,
+                control.HOME,
+                p,
+                skip_prefix=skip_prefix,
+                cancelable=not post_wipe,
+            )
     finally:
         if staged:
             try:
@@ -598,15 +592,14 @@ def restore(zipFile, confirm=True):
             except OSError:
                 pass
 
-    if canceled:
+    if canceled and not post_wipe:
         dialog.ok(AddonTitle, "Restore Canceled")
         return
 
     # Make the restore actually take effect on every platform - critically on tvOS,
     # where Kodi mirrors guisettings.xml in NSUserDefaults and would otherwise revert a
     # file-only restore. Mirror the official Backup add-on: re-apply settings through
-    # the JSON-RPC API and rescan add-ons, then exit cleanly (Quit, not ShutDown) so the
-    # applied settings flush.
+    # the JSON-RPC API and rescan add-ons, then offer the (unified) restart.
     applied = 0
     try:
         from resources.lib.modules import _kodisettings
@@ -621,14 +614,10 @@ def restore(zipFile, confirm=True):
     except Exception:
         pass
 
-    if dialog.yesno(
-        AddonTitle,
+    ui.ask_restart(
         "Restore Complete: %d items, %d settings applied.\n"
-        "Kodi must restart to finish. Restart now?" % (items, applied),
-        yeslabel="Restart",
-        nolabel="Later",
-    ):
-        xbmc.executebuiltin("Quit")
+        "Kodi must restart to finish. Restart now?" % (items, applied)
+    )
 
 
 def CreateZip(
@@ -644,94 +633,77 @@ def CreateZip(
             os.path.join("special://temp", os.path.basename(target))
         )
     abs_src = os.path.abspath(folder)
-    for_progress = []
-    ITEM = []
-    dp = xbmcgui.DialogProgress()
-    dp.create(message_header, message1)
     try:
         os.remove(zip_filename)
-    except:
+    except Exception:
         pass
-    for base, dirs, files in os.walk(folder):
-        for file in files:
-            ITEM.append(file)
-    N_ITEM = len(ITEM)
-    count = 0
+
     canceled = False
-    zip_file = zipfile.ZipFile(zip_filename, "w", zipfile.ZIP_DEFLATED, allowZip64=True)
-    for dirpath, dirnames, filenames in os.walk(folder):
-        if canceled:
-            break
+    # ONE uniform gauge (percent + count). The divide-by-zero guard lives INSIDE
+    # ui.Progress.items(), so an empty backup folder (0 files) no longer raises, and the
+    # context manager guarantees the dialog is closed - the old DialogProgress leaked.
+    with ui.Progress(message1, heading=message_header) as p:
+        ITEM = []
+        for _base, _dirs, files in os.walk(folder):
+            ITEM.extend(files)
+        n_item = len(ITEM)
+        count = 0
+        zip_file = zipfile.ZipFile(
+            zip_filename, "w", zipfile.ZIP_DEFLATED, allowZip64=True
+        )
         try:
-            dirnames[:] = [d for d in dirnames if d not in exclude_dirs]
-            filenames[:] = [f for f in filenames if f not in exclude_files]
-
-            for file in filenames:
-                if dp.iscanceled():
-                    canceled = True
+            for dirpath, dirnames, filenames in os.walk(folder):
+                if canceled:
                     break
-                count += 1
-                for_progress.append(file)
-                progress = len(for_progress) / float(N_ITEM) * 100
-                if PY2:
-                    dp.update(
-                        int(progress),
-                        "Backing Up",
-                        "FILES: "
-                        + str(count)
-                        + "/"
-                        + str(N_ITEM)
-                        + "   [COLOR lime]"
-                        + str(file)
-                        + "[/COLOR]",
-                        "Please Wait",
-                    )
-                else:
-                    dp.update(
-                        int(progress),
-                        "Backing Up"
-                        + "\n"
-                        + "FILES: "
-                        + str(count)
-                        + "/"
-                        + str(N_ITEM)
-                        + "   [COLOR lime]"
-                        + str(file)
-                        + "[/COLOR]"
-                        + "\n"
-                        + "Please Wait",
-                    )
-                file = os.path.join(dirpath, file)
-                file = os.path.normpath(file)
-                arcname = file[len(abs_src) + 1 :]
-                zip_file.write(file, arcname)
-        except:
-            pass
-    zip_file.close()
+                try:
+                    dirnames[:] = [d for d in dirnames if d not in exclude_dirs]
+                    filenames[:] = [f for f in filenames if f not in exclude_files]
+                    for fname in filenames:
+                        if p.cancelled():
+                            canceled = True
+                            break
+                        count += 1
+                        p.items(count, n_item, note="[COLOR lime]%s[/COLOR]" % fname)
+                        fpath = os.path.normpath(os.path.join(dirpath, fname))
+                        zip_file.write(fpath, fpath[len(abs_src) + 1 :])
+                except Exception:
+                    pass
+        finally:
+            zip_file.close()
 
-    # EZ Maintenance++ : if the destination was a VFS path, the zip was built in
-    # special://temp - ship the finished file to the share/cloud, then drop the temp.
-    copy_ok = True
+    # If the destination was a VFS path, the zip was built in special://temp - ship the
+    # finished file to the share/cloud with a gauge, then drop the staged temp.
     if remote:
-        if not canceled:
-            # xbmcvfs.copy returns False on failure (share offline, no space,
-            # permission). Capture it - a discarded False let a failed ship look
-            # like success, so backup() rotated and pruned a good old backup.
-            copy_ok = bool(xbmcvfs.copy(zip_filename, target))
         try:
-            os.remove(zip_filename)
-        except:
-            pass
-        if not canceled and not copy_ok:
-            raise VfsCopyError("VFS copy to %s failed" % target)
+            if not canceled:
+                # Chunked, gauged, ATOMIC copy. It raises VfsCopyError on a definitive
+                # failure (share offline / no space / permission) so backup() reports the
+                # error and SKIPS rotation - a discarded failure used to look like success
+                # and prune a good old backup. A cancel mid-ship returns COPY_CANCELLED.
+                with ui.Progress(
+                    "Copying to the backup location", heading=message_header
+                ) as sp:
+                    result = ui.copy_with_progress(zip_filename, target, progress=sp)
+                if result == ui.COPY_CANCELLED:
+                    canceled = True
+        finally:
+            try:
+                os.remove(zip_filename)
+            except Exception:
+                pass
 
     return canceled
 
 
 # EXTRACT ZIP
-def ExtractZip(_in, _out, dp=None, skip_prefix=None):
-    if dp:
-        return ExtractWithProgress(_in, _out, dp, skip_prefix=skip_prefix)
+def ExtractZip(_in, _out, progress=None, skip_prefix=None, cancelable=True):
+    """Extract _in over _out. `progress` is a ui.Progress (gauge + cancel); None means a
+    silent extract. cancelable=False makes the extract UNINTERRUPTIBLE (the post-wipe
+    One-Tap path, where a cancel would strand a wiped box)."""
+    if progress is not None:
+        return ExtractWithProgress(
+            _in, _out, progress, skip_prefix=skip_prefix, cancelable=cancelable
+        )
     return ExtractNOProgress(_in, _out)
 
 
@@ -746,7 +718,7 @@ def ExtractNOProgress(_in, _out):
     return canceled
 
 
-def ExtractWithProgress(_in, _out, dp, skip_prefix=None):
+def ExtractWithProgress(_in, _out, progress, skip_prefix=None, cancelable=True):
     count = 0
     extracted = 0
     errors = 0
@@ -755,10 +727,13 @@ def ExtractWithProgress(_in, _out, dp, skip_prefix=None):
     last_error = ""
     try:
         zin = zipfile.ZipFile(_in, "r")
-        nFiles = float(len(zin.infolist())) or 1.0
-        for item in zin.infolist():
-            canceled = dp.iscanceled()
-            if canceled:
+        infos = zin.infolist()
+        n_files = len(infos)
+        for item in infos:
+            # Post-wipe this is off (cancelable=False): the box is already wiped, so a
+            # cancel here would strand it - the extract must run to completion.
+            if cancelable and progress.cancelled():
+                canceled = True
                 break
             # Never restore the transient temp tree: a full backup includes a partial
             # copy of itself at temp/<backup>.zip, and the restore zip is staged in temp
@@ -767,20 +742,15 @@ def ExtractWithProgress(_in, _out, dp, skip_prefix=None):
                 skipped += 1
                 continue
             count += 1
-            update = count / nFiles * 100
             try:
                 name = os.path.basename(item.filename)
-            except:
+            except Exception:
                 name = item.filename
-            label = "[COLOR skyblue][B]%s[/B][/COLOR]" % str(name)
-            if PY2:
-                dp.update(
-                    int(update), "Extracting... Errors:  " + str(errors), label, ""
-                )
-            else:
-                dp.update(
-                    int(update), "Extracting... Errors:  " + str(errors) + "\n" + label
-                )
+            # The divide-by-zero guard lives inside ui.Progress.items() (n_files is never
+            # 0 in the loop body - an empty archive has no items to iterate).
+            progress.items(
+                count, n_files, note="[COLOR skyblue][B]%s[/B][/COLOR]" % str(name)
+            )
             try:
                 zin.extract(item, _out)
                 extracted += 1
@@ -820,7 +790,7 @@ def buildInstaller(url):
         time.sleep(2)
         dp.create("Installing Build", "In Progress..." + "\n" + "Please Wait")
         dp.update(0, "" + "\n" + "Extracting Zip Please Wait")
-        ExtractZip(dest, control.HOME, dp)
+        ExtractZip(dest, control.HOME)  # buildInstaller is dead (removed in a later PR)
         time.sleep(2)
         dp.close()
         dialog.ok(
