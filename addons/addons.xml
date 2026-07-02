@@ -27,7 +27,7 @@ v2.2.2: Add EZ Maintenance++: Dropbox + network-share backup and restore
             </assets>
         </extension>
     </addon>
-    <addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.01.1" provider-name="tony7bones">
+    <addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.02.0" provider-name="tony7bones">
         <requires>
             <import addon="xbmc.python" version="3.0.0" />
             <import addon="script.module.requests" version="1.0.0" />
@@ -49,6 +49,13 @@ v2.2.2: Add EZ Maintenance++: Dropbox + network-share backup and restore
                 <fanart>fanart.jpg</fanart>
             </assets>
             <news>
+2026.07.02.0
+ - Backup/Restore/One-Tap network copies now retry a failed NFS/SMB write instead of
+   giving up on the first try. Kodi's own NFS client can leave a connection stale right
+   after it auto-closes an idle one; a same-instant retry used to hit that same broken
+   connection and fail again, so backups could fail even though the share was fine. Now
+   a failed copy waits a few seconds and tries again (up to 3 attempts total) before
+   reporting failure, giving Kodi room to open a fresh connection.
 2026.07.01.1
  - IMPORTANT data-loss fix: "Keep how many backups" (rotation) no longer deletes a backup
    you renamed. It now only prunes the tool's own automatic backups (the ones ending in a

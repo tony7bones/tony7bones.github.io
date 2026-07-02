@@ -17,6 +17,13 @@ Design rules (enforced by test_ui.py):
   * `copy_with_progress` is atomic (temp + rename), checks `write()`'s bool return,
     validates size after close, cleans its partial on ANY non-success exit, and falls
     back to the opaque `xbmcvfs.copy` ONLY on a transient failure, NEVER on cancel.
+  * `copy_with_progress` retries a definitive `VfsCopyError` up to `COPY_RETRY_ATTEMPTS`
+    times with a `COPY_RETRY_DELAY_SECS` pause between tries (never on cancel). Kodi's
+    NFS/SMB client can leave a connection stale after its own idle-close reaper fires
+    (observed: instant `VfsCopyError` on the very next write after "NFS is idle,
+    closing the remaining connections"); an immediate in-process retry reuses the same
+    broken connection object and fails identically, but a short pause gives Kodi's VFS
+    layer room to open a genuinely fresh one, and the next attempt succeeds.
   * One heading (`HEADING`), one restart (`Quit`).
 
 GPL v3 or later (see the other modules).
@@ -56,6 +63,13 @@ COPY_CANCELLED = "cancelled"
 COPY_CHUNK = 1024 * 1024
 # Sidecar name for the in-progress copy so the final path only ever appears complete.
 COPY_TMP_SUFFIX = ".ezmpart"
+
+# A VfsCopyError can mean the share is genuinely gone, OR that Kodi's own NFS/SMB
+# idle-close reaper just tore down the connection a moment ago and the next open
+# hit that stale state. 1 initial attempt + 2 retries, paused so Kodi's VFS layer
+# has time to establish a fresh connection instead of reusing the broken one.
+COPY_RETRY_ATTEMPTS = 3
+COPY_RETRY_DELAY_SECS = 5
 
 
 class VfsCopyError(Exception):
@@ -216,6 +230,28 @@ def _vfs_finalize(tmp, dst):
 
 
 def copy_with_progress(src, dst, progress=None):
+    """Copy `src` -> `dst` over Kodi VFS, retrying a definitive `VfsCopyError` up to
+    `COPY_RETRY_ATTEMPTS` times (paused `COPY_RETRY_DELAY_SECS` apart) before giving
+    up - never on cancel, which returns COPY_CANCELLED immediately with no retry.
+    See `_copy_once` for the per-attempt guarantees.
+    """
+    attempt = 1
+    while True:
+        try:
+            return _copy_once(src, dst, progress)
+        except VfsCopyError as e:
+            if attempt >= COPY_RETRY_ATTEMPTS:
+                raise
+            xbmc.log(
+                "EZ Maintenance++ : copy attempt %d/%d failed (%s); retrying in %ds"
+                % (attempt, COPY_RETRY_ATTEMPTS, e, COPY_RETRY_DELAY_SECS),
+                level=xbmc.LOGWARNING,
+            )
+            xbmc.sleep(COPY_RETRY_DELAY_SECS * 1000)
+            attempt += 1
+
+
+def _copy_once(src, dst, progress=None):
     """Copy `src` -> `dst` over Kodi VFS in chunks, reporting to `progress` (a Progress)
     and honouring its cancel.
 
