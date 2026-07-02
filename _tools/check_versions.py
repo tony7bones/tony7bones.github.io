@@ -68,13 +68,32 @@ def check(base_ref: str = BASE_REF):
         # origin/main and may be the legacy 1.0.14, which parse_version (and
         # is_greater below) still accept; only the version being introduced must
         # obey the single-digit-per-component rule.
-        if not rl.is_single_digit(cur_ver):
-            problems.append(
-                f"{name}: version {cur_ver} is not single-digit "
-                "(each component must be 0-9)"
-            )
-            continue
-        if rl.is_greater(cur_ver, base_ver):
+        #
+        # An add-on whose BASELINE already predates the single-digit scheme
+        # (a real, pre-existing, Kodi-facing version lineage such as a
+        # date-stamped 2026.07.01.1) must keep comparing within that same
+        # scheme. Kodi's own AddonVersion comparison is component-wise
+        # unbounded, so 2026.07.01.1 already outranks any legal single-digit
+        # X.Y.Z (max 9.9.9) - forcing a "compliant" version here would look
+        # like a downgrade to every box and the real update would never land.
+        if rl.is_single_digit(base_ver):
+            if not rl.is_single_digit(cur_ver):
+                problems.append(
+                    f"{name}: version {cur_ver} is not single-digit "
+                    "(each component must be 0-9)"
+                )
+                continue
+            bumped = rl.is_greater(cur_ver, base_ver)
+        else:
+            try:
+                bumped = rl.is_greater_loose(cur_ver, base_ver)
+            except ValueError:
+                problems.append(
+                    f"{name}: version {cur_ver!r} (baseline {base_ver!r}) is not "
+                    "a valid dotted numeric version"
+                )
+                continue
+        if bumped:
             info.append(f"{name}: {base_ver} -> {cur_ver} (bumped)")
         else:
             problems.append(

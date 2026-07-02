@@ -139,6 +139,88 @@ def test_allows_clean_rollover_bump(tmp_path):
     assert r.returncode == 0, r.stdout + r.stderr
 
 
+def test_legacy_scheme_addon_requires_bump_within_its_own_scheme(tmp_path):
+    """A pre-existing add-on whose baseline predates the single-digit scheme
+    (a real, Kodi-facing 4-component date stamp like 2026.07.01.1) must NOT be
+    forced onto single-digit X.Y.Z - Kodi's own AddonVersion comparison already
+    ranks 2026.07.01.1 above any legal single-digit version (max 9.9.9), so a
+    "compliant" version would look like a downgrade and real boxes would never
+    receive the update. The gate must instead require a genuine bump within
+    the add-on's own scheme, and must not crash comparing it."""
+    repo = _scaffold(tmp_path)
+    (repo / "addons" / "plugin.test" / "addon.xml").write_text(
+        '<addon id="plugin.test" version="2026.07.01.1"/>\n'
+    )
+    (repo / "addons" / "plugin.test" / "default.py").write_text("# legacy base\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "legacy date-stamped base")
+    base = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    _run(
+        ["git", "-C", str(repo), "update-ref", "refs/remotes/origin/main", base],
+        cwd=repo,
+    )
+
+    # Same-scheme bump (2026.07.01.1 -> 2026.07.02.0): accepted.
+    (repo / "addons" / "plugin.test" / "default.py").write_text("# changed\n")
+    (repo / "addons" / "plugin.test" / "addon.xml").write_text(
+        '<addon id="plugin.test" version="2026.07.02.0"/>\n'
+    )
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "bump within legacy scheme")
+    r = _check(repo)
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert "bumped" in r.stdout
+
+
+def test_legacy_scheme_addon_blocks_change_without_bump(tmp_path):
+    repo = _scaffold(tmp_path)
+    (repo / "addons" / "plugin.test" / "addon.xml").write_text(
+        '<addon id="plugin.test" version="2026.07.01.1"/>\n'
+    )
+    (repo / "addons" / "plugin.test" / "default.py").write_text("# legacy base\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "legacy date-stamped base")
+    base = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    _run(
+        ["git", "-C", str(repo), "update-ref", "refs/remotes/origin/main", base],
+        cwd=repo,
+    )
+    (repo / "addons" / "plugin.test" / "default.py").write_text("# changed, no bump\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "change without bump")
+    r = _check(repo)
+    assert r.returncode == 1
+    assert "not bumped" in r.stdout
+
+
+def test_legacy_scheme_addon_rejects_forced_single_digit_migration(tmp_path):
+    """A single-digit-looking version is NOT automatically valid for a legacy
+    add-on if it would rank LOWER than the real baseline under Kodi's own
+    comparison - e.g. migrating 2026.07.01.1 -> 1.0.0 must be blocked, not
+    silently accepted just because 1.0.0 happens to be single-digit."""
+    repo = _scaffold(tmp_path)
+    (repo / "addons" / "plugin.test" / "addon.xml").write_text(
+        '<addon id="plugin.test" version="2026.07.01.1"/>\n'
+    )
+    (repo / "addons" / "plugin.test" / "default.py").write_text("# legacy base\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "legacy date-stamped base")
+    base = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    _run(
+        ["git", "-C", str(repo), "update-ref", "refs/remotes/origin/main", base],
+        cwd=repo,
+    )
+    (repo / "addons" / "plugin.test" / "default.py").write_text("# migrated\n")
+    (repo / "addons" / "plugin.test" / "addon.xml").write_text(
+        '<addon id="plugin.test" version="1.0.0"/>\n'
+    )
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "would-be downgrade to single-digit")
+    r = _check(repo)
+    assert r.returncode == 1
+    assert "not bumped" in r.stdout
+
+
 def test_skips_when_no_origin(tmp_path):
     repo = _scaffold(tmp_path, with_origin=False)
     (repo / "addons" / "plugin.test" / "default.py").write_text("# changed\n")

@@ -119,6 +119,29 @@ def is_greater(new: str, old: str) -> bool:
     return parse_version(new) > parse_version(old)
 
 
+_LOOSE_VERSION_RE = re.compile(r"^\d+(\.\d+)*$")
+
+
+def parse_version_loose(s: str) -> tuple[int, ...]:
+    """Parse an arbitrary-length dotted numeric version (e.g. a legacy
+    date-stamped scheme like 2026.07.01.1) into a comparable tuple. Raises
+    ValueError on anything that isn't purely dot-separated digits."""
+    if not isinstance(s, str) or not _LOOSE_VERSION_RE.match(s.strip()):
+        raise ValueError(f"invalid version: {s!r}")
+    return tuple(int(x) for x in s.strip().split("."))
+
+
+def is_greater_loose(new: str, old: str) -> bool:
+    """True iff `new` is strictly greater than `old`, comparing dotted numeric
+    versions of ANY length component-wise (this is how Kodi's own AddonVersion
+    compares them too). For add-ons that predate the single-digit X.Y.Z scheme
+    and must keep their own real, Kodi-comparable version lineage - forcing
+    those onto single-digit X.Y.Z would look like a downgrade to every box
+    (2026.07.01.1 > 9.9.9 under Kodi's own comparison) and updates would
+    silently stop landing."""
+    return parse_version_loose(new) > parse_version_loose(old)
+
+
 def zip_name(version: str) -> str:
     parse_version(version)  # validate
     return f"{ADDON_ID}-{version}.zip"
