@@ -1,4 +1,4 @@
-"""Coverage for the Estuary MOD V2+ add-on (script.tony7bones.modv2plus).
+"""Coverage for the Estuary MOD V2++ add-on (script.tony7bones.modv2plus).
 
 Two layers, mirroring the other add-on tests:
 
@@ -7,7 +7,7 @@ Two layers, mirroring the other add-on tests:
   loose media logo mapping is present and its source PNG ships. The shipped XMLs
   carry the features: Home.xml gates the system-info overlay (default HIDDEN) on
   Skin.HasSetting(show_system_info_overlay) AND Control.HasFocus(802);
-  SkinSettings.xml carries a "Tony.7.Bones MOD V2+" category (list 9000 item
+  SkinSettings.xml carries a "Tony.7.Bones MOD V2++" category (list 9000 item
   id=11) whose panel (grouplist 1100) holds a "Disable System Info overlay"
   radiobutton toggling show_system_info_overlay (checked-by-default, overlay
   hidden by default), plus the clock and nav-logo per-item toggles and the
@@ -59,7 +59,7 @@ WEATHER_TEXTURE = (
 
 def test_includes_clock_label_uses_var():
     """The top-right clock label now routes through $VAR[ClockLabelVar] so the
-    Tony.7.Bones MOD V2+ clock toggle can switch stock-thin <-> MOD V2 bold. The
+    Tony.7.Bones MOD V2++ clock toggle can switch stock-thin <-> MOD V2 bold. The
     raw bold/plain literals must no longer be hard-wired in the clock control, and
     the control still uses font_clock."""
     text = INCLUDES_XML.read_text(encoding="utf-8")
@@ -187,7 +187,7 @@ def test_addon_id():
 
 
 def test_addon_name():
-    assert _addon_root().get("name") == "Estuary MOD V2+"
+    assert _addon_root().get("name") == "Estuary MOD V2++"
 
 
 def test_addon_version_floor_1_3_4():
@@ -641,7 +641,7 @@ def test_home_wordmark_height_balances_with_mark():
 
 
 # --------------------------------------------------------------------------- #
-# Static contract — SkinSettings.xml (new Tony.7.Bones MOD V2+ category)
+# Static contract — SkinSettings.xml (new Tony.7.Bones MOD V2++ category)
 # --------------------------------------------------------------------------- #
 def _find_grouplist(root, gid):
     for ctrl in root.iter("control"):
@@ -660,7 +660,7 @@ def _find_list(root, lid):
 def test_skinsettings_old_overlay_toggle_removed_from_extras():
     """The old opt-in/opt-out overlay radiobuttons must be gone from Extras
     (grouplist 500) — and from the whole file (the new toggle lives in the
-    Tony.7.Bones MOD V2+ panel)."""
+    Tony.7.Bones MOD V2++ panel)."""
     root = ET.parse(SKINSETTINGS_XML).getroot()
     grouplist = _find_grouplist(root, "500")
     stale = [
@@ -685,7 +685,7 @@ def test_skinsettings_old_overlay_toggle_removed_from_extras():
 
 
 def test_skinsettings_new_category_item_is_last():
-    """List 9000 gains item id=11 'Tony.7.Bones MOD V2+' as the LAST item."""
+    """List 9000 gains item id=11 'Tony.7.Bones MOD V2++' as the LAST item."""
     root = ET.parse(SKINSETTINGS_XML).getroot()
     lst = _find_list(root, "9000")
     content = lst.find("content")
@@ -696,7 +696,7 @@ def test_skinsettings_new_category_item_is_last():
     assert last.get("id") == "11", (
         f"the new category must be the LAST item, got id={last.get('id')!r}"
     )
-    assert last.findtext("label") == "Tony.7.Bones MOD V2+"
+    assert last.findtext("label") == "Tony.7.Bones MOD V2++"
     # the height must have been bumped to reveal the 11th row
     assert lst.findtext("height") == "770", (
         "list 9000 height must be bumped to 770 to reveal the 11th row"
@@ -832,7 +832,7 @@ def test_variables_has_help_for_new_category():
         for e in var.findall("value")
         if e.get("condition") == "Container(9000).HasFocus(11)"
     ]
-    assert values == ["Tony.7.Bones MOD V2+ settings"], (
+    assert values == ["Tony.7.Bones MOD V2++ settings"], (
         f"help text for the new category must be set, got {values}"
     )
 
