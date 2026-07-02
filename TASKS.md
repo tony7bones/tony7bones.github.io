@@ -45,6 +45,73 @@ Sequence (do in order — do NOT wipe/test until the fresh backup is taken):
 
 ---
 
+## Mini / home-server ops - open items 🔲 ACTIVE
+
+> Operational (not a repo code change). Mac mini home server, reachable at
+> `192.168.7.2` (WiFi; eero DHCP reservation WiFi -> .2, wired -> .3). Context: the
+> 2026-07-02 session fixed Kodi<->mini NFS (a SurfShark per-app VPN was tunneling
+> Kodi's traffic through the VPN), mini Screen Sharing (disabled Kerberos so the
+> Finder button falls back to password auth), the Hue / HomeKit lights (bridge was
+> plugged into the modem, moved behind the eero -> `192.168.7.69`), and iptv2 (now a
+> system LaunchDaemon at 10am/4pm, was a broken user agent). These remain open:
+
+> **2026-07-02 REORG DONE (Model B - data vs workers split):** the mini home is now
+> `~/Kodi/{Share,Backup,services/{iptv,backup}}` (+ `~/Kodi/.attic`). **DATA:** `Share`
+> = NFS/SMB export, content-only (`apps iptv media repositories rss`); `Backup` =
+> ATV1/ATV2 device backups. **WORKERS:** `services/iptv` = the populator (package
+> renamed `iptv2`->`iptv`, daemon runs `python3 -m iptv`, logs `services/iptv/logs`).
+> The `services/backup` worker was later TRASHED per owner (see item 1) - only
+> `services/iptv` remains; `~/Kodi/Backup` (the data folder) is kept.
+> NFS export + SMB "KodiShare" share both repointed to `/Users/moquette/Kodi/Share`;
+> bedroom box source -> `nfs://192.168.7.2/Users/moquette/Kodi/Share/`; the IPTV output
+> folder renamed `Share/2.0/iptv`->`Share/iptv` (`nfs_base=nfs://KodiShare/iptv`).
+> Daemon + providers.yaml + backup scripts (`BASE_PATH`) + crontab all repointed and
+> verified live. Logs kept per-service (not a top-level `~/Kodi/logs`).
+
+- [x] **1. Backup rotation/sync - TRASHED per owner (2026-07-02).** Owner decided the
+      rotation + sync machinery isn't needed ("all we need is the backup folder").
+      Removed the cron jobs (crontab is now EMPTY) and retired the whole
+      `services/backup` worker (kodi_rotate/kodi_sync/kodi_git_sync/cert_reminder +
+      its sync tree: git-config, profiles, pvr-config, restore_points) to
+      `~/Kodi/.attic/services-backup` (recoverable). `~/Kodi/Backup` (ATV1/ATV2 device
+      backups) is KEPT as-is. Trade-off: nothing prunes backups now, so `~/Kodi/Backup`
+      grows over time (currently ~1.1G, and the boxes write into nested `ATV*/EZM/` +
+      `ATV*/KB/` from two backup tools) - clean up by hand if it gets large. Purge
+      `~/Kodi/.attic` when sure none of it is needed.
+- [x] **2. Share declutter - DONE (2026-07-02).** Reorganized as above; the TV browse
+      is now content-only. `_eztest` (test 777) + legacy top-level `iptv` (superseded
+      by `2.0/iptv`, no local EPG, no box referenced it) moved to `~/Kodi/.attic`
+      (recoverable); empty `1.0/` removed; `backups/` + `sync/` surfaced out of the
+      share. Tier 3 ALSO DONE: renamed `Share/2.0/iptv` -> `Share/iptv`
+      (providers.yaml `output.root` + `nfs_base` -> `nfs://KodiShare/iptv`,
+      regenerated all 8 artifacts, old `2.0` wrapper in `.attic`); low-risk because no
+      live box reads the mini NFS for IPTV (bedroom has no pvr.iptvsimple config, zero
+      active 2049 conns). CAVEAT: if the repo box Setup/`apply_iptv` hardcodes
+      `2.0/iptv` anywhere, update it there so future box provisions use `iptv`.
+- [x] **3. Gigabit switch (mini back to WIRED) - DONE (2026-07-02).** Netgear switch on
+      the eero's single LAN port -> mini AND Hue both wired. Mini moved off WiFi to wired
+      `en0`, WiFi turned OFF (`en1` down). Addressing finished DHCP-native: the eero's WIRED
+      reservation (MAC `d0:11:e5:7a:05:ec`) now hands `en0` -> `.2` (the old WiFi `.2`
+      reservation was removed), so `en0` reports `DHCP Configuration` at `192.168.7.2` - a
+      real reservation, NOT the manual/static hack. Both Kodi NFS exports live, ~8-14ms
+      wired. (The flip auto-reverted to static once when the eero change hadn't propagated,
+      then stuck on the retry.)
+- [x] **3a. WiFi keepalive - REMOVED (2026-07-02).** No longer needed now the mini is WIRED
+      (the radio-nap latency problem only existed while WiFi was the primary link). Retired
+      the daemon: `launchctl bootout system/com.moquette.wifi-keepalive` + removed the plist + `~/bin/wifi-keepalive.sh`. Verified gone.
+- [x] **3b. iptv populator daemon - CONFIRMED LOADED (2026-07-02).** After the network/reboot
+      work `com.tony7bones.iptv2` was booted out; re-bootstrapped clean (bootout ghost ->
+      enable -> bootstrap). Verified `- 0 com.tony7bones.iptv2` in `launchctl list`, both
+      calendar fires (10:00 + 16:00) registered, last populate run built 492 channels + EPG.
+      Op-note: over SSH to the mini WITHOUT a PTY, a bare `sudo` fails silently on the
+      password prompt (`2>/dev/null` hides it) and reads come back empty/false-negative -
+      pipe the password once per shell: `printf 'test\n' | sudo -S -p "" -v` then reuse.
+
+> Reference: memory files `mini-nfs-kodi-share`, `mini-screensharing-kerberos`,
+> `home-network-topology`, `mini-iptv2-share-populator`.
+
+---
+
 ## Release automation — kill manual version bumping — ✅ TRACK COMPLETE (2026-06-10)
 
 > Design + phase log: **`docs/plans/release-automation.md`** (LOCKED owner decisions
