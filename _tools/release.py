@@ -507,16 +507,40 @@ def script_consistency(
 
     for addon_id in first_party_ids():
         cur = current_version(addon_id)
-        if not rl.is_single_digit(cur):
+        base_v = baseline_version(addon_id, base_ref) if have_base else None
+        # An add-on whose BASELINE already predates the single-digit scheme (a
+        # real, pre-existing, Kodi-facing version lineage such as EZ
+        # Maintenance++'s date-stamped 2026.07.02.0 or modv2plus's 1.4.10) must
+        # keep comparing within that same scheme — mirrors check_versions.py's
+        # gate exactly. Kodi's own AddonVersion comparison is component-wise
+        # unbounded, so a legacy version already outranks any legal
+        # single-digit X.Y.Z (max 9.9.9); forcing "compliance" here would look
+        # like a downgrade to every box and the real update would never land.
+        # Only enforce single-digit on add-ons whose baseline is ALREADY
+        # single-digit (or brand new, no baseline at all).
+        legacy_baseline = base_v is not None and not rl.is_single_digit(base_v)
+        if not legacy_baseline and not rl.is_single_digit(cur):
             problems.append(f"{addon_id}: version {cur} is not single-digit (0-9)")
         if have_base:
-            base_v = baseline_version(addon_id, base_ref)
             changed = addon_id in set(rd.changed_addons(REPO, base_ref, worktree=True))
-            if base_v is not None and changed and not rl.is_greater(cur, base_v):
-                problems.append(
-                    f"{addon_id}: source changed but version not bumped "
-                    f"({base_v} -> {cur})"
-                )
+            if base_v is not None and changed:
+                try:
+                    bumped = (
+                        rl.is_greater_loose(cur, base_v)
+                        if legacy_baseline
+                        else rl.is_greater(cur, base_v)
+                    )
+                except ValueError:
+                    problems.append(
+                        f"{addon_id}: version {cur!r} (baseline {base_v!r}) is not "
+                        "a valid dotted numeric version"
+                    )
+                    continue
+                if not bumped:
+                    problems.append(
+                        f"{addon_id}: source changed but version not bumped "
+                        f"({base_v} -> {cur})"
+                    )
 
     # Lockstep: every dependent's import == the library's shipped version.
     if lib_version is not None:
