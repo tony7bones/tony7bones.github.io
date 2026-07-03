@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<addon id="repository.tony7bones" name="Tony.7.Bones repository" provider-name="Tony.7.Bones" version="2.2.3">
+<addon id="repository.tony7bones" name="Tony.7.Bones repository" provider-name="Tony.7.Bones" version="2.2.4">
     <requires>
         <import addon="xbmc.python" version="3.0.0"/>
     </requires>
@@ -18,7 +18,7 @@
         <summary lang="en">Welcome to Tony.7.Bones repository. Enjoy!</summary>
         <description lang="en">Welcome to Tony.7.Bones repository. Enjoy!</description>
         <news>
-v2.2.3: Fix: platform detection failed on Apple TV / tvOS / Apple Silicon (any ARM Darwin device) - only ARM on Android and Linux was handled, so tvOS raised an internal error that the fallback then silently mislabeled as x64 instead of arm64. Both paths now correctly resolve arm64.
+v2.2.4: Fix: the proxy's background service could crash entirely at add-on-enable time if it could not create its optional entries.json storage file (e.g. a restrictive filesystem) - this and a missing/malformed local file are now logged and skipped instead of crashing the whole service.
         </news>
         <assets>
             <icon>icon.png</icon>
