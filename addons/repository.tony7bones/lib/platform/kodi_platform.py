@@ -18,13 +18,32 @@ DARWIN_PLATFORMS = ("macOS", "iOS", "tvOS")
 LINUX_PLATFORMS = ("Linux", "webOS")
 ANDROID_PLATFORMS = ("Android",)
 WINDOWS_PLATFORMS = ("Windows NT", "unknown Win32 platform")
-SUPPORTED_PLATFORMS = DARWIN_PLATFORMS + ANDROID_PLATFORMS + LINUX_PLATFORMS + WINDOWS_PLATFORMS + (
-    "FreeBSD", "unknown platform")
+SUPPORTED_PLATFORMS = (
+    DARWIN_PLATFORMS
+    + ANDROID_PLATFORMS
+    + LINUX_PLATFORMS
+    + WINDOWS_PLATFORMS
+    + ("FreeBSD", "unknown platform")
+)
 
-SUPPORTED_CPUS = ["ARM (Thumb)", "ARM", "LoongArch", "MIPS", "x86", "s390", "PowerPC", "RISC-V", "unknown CPU family"]
+SUPPORTED_CPUS = [
+    "ARM (Thumb)",
+    "ARM",
+    "LoongArch",
+    "MIPS",
+    "x86",
+    "s390",
+    "PowerPC",
+    "RISC-V",
+    "unknown CPU family",
+]
 
-_PLATFORM_RE = re.compile(r"^({}) ({}) (\d+)-bit$".format(
-    "|".join(map(re.escape, SUPPORTED_PLATFORMS)), "|".join(map(re.escape, SUPPORTED_CPUS))))
+_PLATFORM_RE = re.compile(
+    r"^({}) ({}) (\d+)-bit$".format(
+        "|".join(map(re.escape, SUPPORTED_PLATFORMS)),
+        "|".join(map(re.escape, SUPPORTED_CPUS)),
+    )
+)
 
 
 def get_application_name():
@@ -34,7 +53,9 @@ def get_application_name():
 
 
 def get_kodi_log_path():
-    log_name = os.path.join(translatePath("special://logpath"), get_application_name().lower())
+    log_name = os.path.join(
+        translatePath("special://logpath"), get_application_name().lower()
+    )
     return log_name + ".log", log_name + ".old.log"
 
 
@@ -44,7 +65,9 @@ def get_kodi_platform_from_log():
     # https://github.com/xbmc/xbmc/tree/master/xbmc/utils/SystemInfo.cpp
     # https://github.com/xbmc/xbmc/tree/master/xbmc/application/Application.cpp#L3673
     new_log_path, old_log_path = get_kodi_log_path()
-    with open(old_log_path if os.path.exists(old_log_path) else new_log_path, encoding="utf-8") as f:
+    with open(
+        old_log_path if os.path.exists(old_log_path) else new_log_path, encoding="utf-8"
+    ) as f:
         # Ignore first line
         next(f)
         # Second line ends with the platform
@@ -88,8 +111,12 @@ def get_platform():
             arch = Arch.arm64 if bitness == 64 else Arch.arm
         elif system == System.linux:
             arch = Arch.arm64 if bitness == 64 else Arch.armv7
+        elif system == System.darwin:
+            arch = Arch.arm64 if bitness == 64 else Arch.arm
         else:
-            raise PlatformError("Unknown arch {} for platform: {}".format(cpu_family, system))
+            raise PlatformError(
+                "Unknown arch {} for platform: {}".format(cpu_family, system)
+            )
     elif cpu_family == "x86":
         arch = Arch.x64 if bitness == 64 else Arch.x86
     else:

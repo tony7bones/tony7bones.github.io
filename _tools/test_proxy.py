@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 import sys
 import types
 from pathlib import Path
@@ -102,9 +103,11 @@ def test_version_ordering_is_numeric_not_lexical(proxy):
     Version = proxy.version.Version
     assert Version("1.2") < Version("1.10")
     assert Version("2.0.0") > Version("1.9.9")
-    assert sorted(
-        [Version("1.10"), Version("1.2"), Version("1.1")]
-    ) == [Version("1.1"), Version("1.2"), Version("1.10")]
+    assert sorted([Version("1.10"), Version("1.2"), Version("1.1")]) == [
+        Version("1.1"),
+        Version("1.2"),
+        Version("1.10"),
+    ]
 
 
 def test_version_invalid_raises(proxy):
@@ -207,7 +210,9 @@ def test_request_appends_params_and_wraps_response(proxy, monkeypatch):
 
 def test_request_maps_httperror_to_response(proxy, monkeypatch):
     err = proxy.utils.HTTPError("http://h", 404, "nf", {}, None)
-    monkeypatch.setattr(proxy.utils, "urlopen", lambda *a, **k: (_ for _ in ()).throw(err))
+    monkeypatch.setattr(
+        proxy.utils, "urlopen", lambda *a, **k: (_ for _ in ()).throw(err)
+    )
     resp = proxy.utils.request("http://h")
     assert resp.status_code == 404
 
@@ -231,7 +236,9 @@ def test_loading_cache_memoizes_per_key(proxy):
 
 def test_loading_cache_expires(proxy, monkeypatch):
     calls = []
-    cache = proxy.cache.LoadingCache(lambda: calls.append(1) or len(calls), ttl_seconds=10)
+    cache = proxy.cache.LoadingCache(
+        lambda: calls.append(1) or len(calls), ttl_seconds=10
+    )
 
     now = [1000.0]
     monkeypatch.setattr(proxy.cache.time, "time", lambda: now[0])
@@ -318,7 +325,9 @@ def test_github_builds_base_url(proxy):
 
 
 def test_github_request_paths_and_headers(proxy, monkeypatch):
-    seen, _ = _patch_github_request(proxy, monkeypatch, payload={"default_branch": "main"})
+    seen, _ = _patch_github_request(
+        proxy, monkeypatch, payload={"default_branch": "main"}
+    )
     api = proxy.github.GitHubRepositoryApi("u", "r", token="secret")
     info = api.get_repository_info()
     assert info.default_branch == "main"  # _Dict attribute access
@@ -395,11 +404,19 @@ def test_validate_schema_rejects_non_list(proxy):
 
 
 def test_repository_loads_entries_and_applies_defaults(proxy, tmp_path):
-    manifest = [{"id": "plugin.video.foo", "username": "bar", "tag_pattern": r"v(?P<version>\d+)"}]
+    manifest = [
+        {
+            "id": "plugin.video.foo",
+            "username": "bar",
+            "tag_pattern": r"v(?P<version>\d+)",
+        }
+    ]
     path = tmp_path / "repository.json"
     path.write_text(json.dumps(manifest))
 
-    repo = proxy.repository.Repository(files=(str(path),), platform=_platform(proxy), max_threads=1)
+    repo = proxy.repository.Repository(
+        files=(str(path),), platform=_platform(proxy), max_threads=1
+    )
     addon = repo._addons["plugin.video.foo"]
     assert addon.username == "bar"
     assert addon.repository == "plugin.video.foo"  # defaults to id
@@ -415,7 +432,9 @@ def test_repository_filters_unsupported_platform(proxy, tmp_path):
     path = tmp_path / "repository.json"
     path.write_text(json.dumps(manifest))
 
-    repo = proxy.repository.Repository(files=(str(path),), platform=_platform(proxy), max_threads=1)
+    repo = proxy.repository.Repository(
+        files=(str(path),), platform=_platform(proxy), max_threads=1
+    )
     assert "a" not in repo._addons
     assert "b" in repo._addons
 
@@ -423,7 +442,9 @@ def test_repository_filters_unsupported_platform(proxy, tmp_path):
 def test_repository_get_asset_unknown_raises(proxy, tmp_path):
     path = tmp_path / "repository.json"
     path.write_text("[]")
-    repo = proxy.repository.Repository(files=(str(path),), platform=_platform(proxy), max_threads=1)
+    repo = proxy.repository.Repository(
+        files=(str(path),), platform=_platform(proxy), max_threads=1
+    )
     with pytest.raises(proxy.repository.AddonNotFound):
         repo.get_asset("nope", "addon.xml")
 
@@ -435,7 +456,9 @@ def test_repository_addons_xml_and_md5(proxy, tmp_path):
     manifest = [{"id": "a", "username": "u"}, {"id": "b", "username": "u"}]
     path = tmp_path / "repository.json"
     path.write_text(json.dumps(manifest))
-    repo = proxy.repository.Repository(files=(str(path),), platform=_platform(proxy), max_threads=1)
+    repo = proxy.repository.Repository(
+        files=(str(path),), platform=_platform(proxy), max_threads=1
+    )
 
     # Skip the network: synthesize each add-on's <addon> element.
     repo._get_addon_xml = lambda addon: ET.Element("addon", id=addon.id)
@@ -450,9 +473,13 @@ def test_repository_addons_xml_skips_failed_fetches(proxy, tmp_path):
     manifest = [{"id": "a", "username": "u"}, {"id": "b", "username": "u"}]
     path = tmp_path / "repository.json"
     path.write_text(json.dumps(manifest))
-    repo = proxy.repository.Repository(files=(str(path),), platform=_platform(proxy), max_threads=1)
+    repo = proxy.repository.Repository(
+        files=(str(path),), platform=_platform(proxy), max_threads=1
+    )
 
-    repo._get_addon_xml = lambda addon: None if addon.id == "a" else ET.Element("addon", id=addon.id)
+    repo._get_addon_xml = lambda addon: (
+        None if addon.id == "a" else ET.Element("addon", id=addon.id)
+    )
     xml = repo.get_addons_xml()
     assert b'id="a"' not in xml
     assert b'id="b"' in xml
@@ -473,7 +500,9 @@ def test_tag_match_plain_version(proxy):
 def test_tag_match_with_named_group(proxy):
     import re
 
-    pred = proxy.repository.TagMatchPredicate("1.2.3", tag_pattern=re.compile(r"release-(?P<version>[\d.]+)"))
+    pred = proxy.repository.TagMatchPredicate(
+        "1.2.3", tag_pattern=re.compile(r"release-(?P<version>[\d.]+)")
+    )
     assert pred("release-1.2.3")
     assert not pred("nightly-1.2.3")
 
@@ -514,7 +543,9 @@ class _FakeRepo:
 def _empty_repo(proxy, tmp_path):
     path = tmp_path / "repository.json"
     path.write_text("[]")
-    return proxy.repository.Repository(files=(str(path),), platform=_platform(proxy), max_threads=1)
+    return proxy.repository.Repository(
+        files=(str(path),), platform=_platform(proxy), max_threads=1
+    )
 
 
 def test_fallback_ref_prefers_latest_release_without_pattern(proxy, tmp_path):
@@ -548,7 +579,10 @@ def test_fallback_ref_with_pattern_prefers_matching_tag(proxy, tmp_path):
 
     repo = _empty_repo(proxy, tmp_path)
     fake = _FakeRepo(proxy, tags=["nightly", "stable-1.0"], latest="ignored")
-    assert repo._get_fallback_ref(fake, tag_pattern=re.compile(r"stable-.*")) == "stable-1.0"
+    assert (
+        repo._get_fallback_ref(fake, tag_pattern=re.compile(r"stable-.*"))
+        == "stable-1.0"
+    )
 
 
 # =========================================================================== #
@@ -562,7 +596,7 @@ def test_platform_definitions_enum_values_and_name(proxy):
     assert d.Platform("linux", "5", "x64").name(sep="/") == "linux/x64"
 
 
-def _set_uname(proxy, monkeypatch, *, system, machine, maxsize=2 ** 63, android=False):
+def _set_uname(proxy, monkeypatch, *, system, machine, maxsize=2**63, android=False):
     op = proxy.os_platform
     monkeypatch.setattr(op.platform, "system", lambda: system)
     monkeypatch.setattr(op.platform, "machine", lambda: machine)
@@ -592,8 +626,18 @@ def test_os_platform_windows_64(proxy, monkeypatch):
     assert p.system == "windows" and p.arch == "x64"
 
 
-def test_os_platform_darwin(proxy, monkeypatch):
+def test_os_platform_darwin_arm64(proxy, monkeypatch):
+    # Apple Silicon Mac / Apple TV (tvOS) / iOS all report an "arm64" machine
+    # under Darwin — must resolve to arm64, not the Intel x64 default, or any
+    # platform-gated dependency (a binary add-on with separate arm64/x64
+    # zips) silently resolves the wrong one.
     _set_uname(proxy, monkeypatch, system="Darwin", machine="arm64")
+    p = proxy.os_platform.get_platform()
+    assert p.system == "darwin" and p.arch == "arm64"
+
+
+def test_os_platform_darwin_x64(proxy, monkeypatch):
+    _set_uname(proxy, monkeypatch, system="Darwin", machine="x86_64")
     p = proxy.os_platform.get_platform()
     assert p.system == "darwin" and p.arch == "x64"
 
@@ -602,3 +646,44 @@ def test_os_platform_android_arm64(proxy, monkeypatch):
     _set_uname(proxy, monkeypatch, system="Linux", machine="aarch64", android=True)
     p = proxy.os_platform.get_platform()
     assert p.system == "android" and p.arch == "arm64"
+
+
+# =========================================================================== #
+# lib/platform/kodi_platform.py — the PRIMARY path (parses Kodi's own log
+# line); os_platform.py above is only the fallback used when this raises
+# PlatformError. Needs a minimal fake ``xbmc`` since the module imports it
+# directly; deliberately does not register ``xbmcvfs`` so the import exercises
+# the real fallback `from xbmc import translatePath` branch.
+# =========================================================================== #
+def _import_kodi_platform(monkeypatch, tmp_path, second_log_line):
+    log_path = tmp_path / "kodi.log"
+    log_path.write_text("startup\n" + second_log_line + "\n", encoding="utf-8")
+
+    fake_xbmc = types.SimpleNamespace(
+        executeJSONRPC=lambda cmd: json.dumps({"result": {"name": "Kodi"}}),
+        translatePath=lambda p: str(tmp_path) + os.sep,
+    )
+    monkeypatch.setitem(sys.modules, "xbmc", fake_xbmc)
+    monkeypatch.delitem(sys.modules, "xbmcvfs", raising=False)
+    monkeypatch.delitem(sys.modules, "lib.platform.kodi_platform", raising=False)
+    return importlib.import_module("lib.platform.kodi_platform")
+
+
+def test_kodi_platform_apple_tv_arm64(proxy, monkeypatch, tmp_path):
+    # An Apple TV (tvOS) box hitting "Install from zip" runs this at
+    # add-on-service-startup time; before this fix, ANY ARM Darwin device
+    # (tvOS, iOS, Apple Silicon Mac) raised PlatformError here uncaught by the
+    # inner branch, which used to surface as an install-time add-on error.
+    kodi_platform = _import_kodi_platform(
+        monkeypatch, tmp_path, "...Platform: tvOS ARM 64-bit"
+    )
+    p = kodi_platform.get_platform()
+    assert p.system == "darwin" and p.arch == "arm64"
+
+
+def test_kodi_platform_macos_x64(proxy, monkeypatch, tmp_path):
+    kodi_platform = _import_kodi_platform(
+        monkeypatch, tmp_path, "...Platform: macOS x86 64-bit"
+    )
+    p = kodi_platform.get_platform()
+    assert p.system == "darwin" and p.arch == "x64"
