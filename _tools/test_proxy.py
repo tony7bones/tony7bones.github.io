@@ -882,3 +882,36 @@ def test_service_module_survives_sandboxed_write_failure(proxy, monkeypatch, tmp
     from lib.httpserver import HTTPRequestHandler
 
     assert len(HTTPRequestHandler.get_routes) == 4
+
+
+# =========================================================================== #
+# lib/platform/core.py — the last unguarded module-level re-raise in the
+# import chain. kodi_platform.get_platform() failing is expected and caught
+# (falls back to os_platform); but if THAT also raises (an environment
+# neither path has ever been exercised on), core.py used to log fatally and
+# re-raise anyway, crashing the whole service import.
+# =========================================================================== #
+def test_platform_core_falls_back_to_unknown_when_both_paths_fail(
+    proxy, monkeypatch, tmp_path
+):
+    fake_xbmc = types.SimpleNamespace(
+        executeJSONRPC=lambda cmd: json.dumps({"result": {"name": "Kodi"}}),
+        translatePath=lambda p: str(tmp_path) + os.sep,
+    )
+    monkeypatch.setitem(sys.modules, "xbmc", fake_xbmc)
+    monkeypatch.delitem(sys.modules, "xbmcvfs", raising=False)
+    for mod in ("lib.platform.core", "lib.platform.kodi_platform"):
+        monkeypatch.delitem(sys.modules, mod, raising=False)
+
+    # No kodi.log at tmp_path -> kodi_platform's log read raises ->
+    # dump_platform() swallows it, returns "unknown" -> regex fails to match
+    # -> PlatformError, caught by core.get_platform(), falls to os_platform.
+    def _broken_uname():
+        raise RuntimeError("sandbox denied uname()")
+
+    monkeypatch.setattr(proxy.os_platform.platform, "system", _broken_uname)
+
+    core = importlib.import_module("lib.platform.core")  # must not raise
+    assert core.PLATFORM == core.UNKNOWN_PLATFORM
+    assert core.SHARED_LIB_EXTENSION == ""
+    assert core.EXECUTABLE_EXTENSION == ""
