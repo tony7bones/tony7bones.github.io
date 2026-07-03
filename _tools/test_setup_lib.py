@@ -167,7 +167,7 @@ def test_layerresult_repr_already_done(setup_pkg):
 def test_layers_constant(setup_pkg):
     from tony7bones.setup.result import LAYERS
 
-    assert LAYERS == ("foundation", "iptv", "addons")
+    assert LAYERS == ("foundation", "backup", "iptv", "skin", "addons")
 
 
 # --------------------------------------------------------------------------- #

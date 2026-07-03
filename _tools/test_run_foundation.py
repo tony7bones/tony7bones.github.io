@@ -51,10 +51,11 @@ def _settings_set(boot):
 
 def _stub_skin_success(boot, monkeypatch):
     """Make the skin closure install (the bare fake index can't resolve
-    skin.estuary.modv2). Patch the LAYER modules + the bootstrap module's primitives
-    (run_foundation calls apply_foundation via the BARE form, so the layer resolves
-    install_selection/extract_zip from foundation's globals). Repos still go through
-    the REAL engine (extract_zip on the addons module / the fake urlopen builds real
+    skin.estuary.modv2). Patch the SKIN layer's primitives (run_foundation calls
+    apply_skin via the BARE form, so the layer resolves install_selection/
+    extract_zip from the skin module's globals) AND the FOUNDATION layer's
+    install_with_deps (weather.multi + autocomplete). Repos still go through the
+    REAL engine (extract_zip on the addons module / the fake urlopen builds real
     zips), so the repo installs are genuine, not stubbed."""
 
     def _sel(selected, official_base, disable_ids, dialog, log):
@@ -88,13 +89,15 @@ def _stub_skin_success(boot, monkeypatch):
         boot.state["installed"].add(addon_id)
         return True
 
+    skn = boot.mod._skin
     fnd = boot.mod._foundation
-    monkeypatch.setattr(fnd, "install_selection", _sel)
-    monkeypatch.setattr(fnd, "extract_zip", _extract_skin)
-    monkeypatch.setattr(fnd, "install_with_deps", _install_with_deps)
+    monkeypatch.setattr(skn, "install_selection", _sel)
+    monkeypatch.setattr(skn, "extract_zip", _extract_skin)
+    monkeypatch.setattr(skn, "install_with_deps", _install_with_deps)
     monkeypatch.setattr(
-        fnd, "_latest_zip_url", lambda aid: f"http://local/{aid}-9.9.9.zip"
+        skn, "_latest_zip_url", lambda aid: f"http://local/{aid}-9.9.9.zip"
     )
+    monkeypatch.setattr(fnd, "install_with_deps", _install_with_deps)
     # Don't actually restart.
     monkeypatch.setattr(boot.mod, "restart_kodi", lambda *a, **k: None)
 
@@ -126,6 +129,27 @@ def test_run_foundation_returns_foundation_layerresult(boot, monkeypatch):
     assert res.layer == "foundation"
     assert res.ok is True
     assert boot.mod.SKIN_ID in res.installed
+
+
+def test_merged_foundation_result_preserves_distinct_keys_from_both_layers(
+    boot, monkeypatch
+):
+    """_merged_foundation_result unions the Foundation-config and Skin-closure
+    installed{}/failed{} dicts — proves no key is silently dropped when both
+    layers report distinct ids (weather.multi/autocomplete from Foundation,
+    SKIN_ID from Skin). A future id COLLISION between the two layers would
+    silently favor the second dict's value under plain dict-union; this test
+    exists so a future edit that narrows either layer's id set is caught."""
+    _stub_skin_success(boot, monkeypatch)
+    res = boot.mod.run_foundation({})
+    assert res.installed.get("weather.multi") == "installed"
+    assert res.installed.get("script.module.autocompletion") == "installed"
+    assert res.installed.get(boot.mod.SKIN_ID) == "installed"
+    # sanity: the three ids are genuinely distinct (the union has no collision
+    # to hide today) — if this ever fails, _merged_foundation_result's dict
+    # union needs a real conflict-resolution policy, not silent overwrite.
+    ids = ("weather.multi", "script.module.autocompletion", boot.mod.SKIN_ID)
+    assert len(set(ids)) == len(ids)
 
 
 # --------------------------------------------------------------------------- #
@@ -211,18 +235,13 @@ def test_run_foundation_does_not_call_content_layers(boot, monkeypatch):
     )
 
 
-def test_run_foundation_writes_no_iptv_and_no_rss(boot, monkeypatch):
-    """No IPTV instance-settings and no RSS core setting are written — Foundation
-    does not touch pvr.iptvsimple's instance file and does not enable the RSS ticker
-    (those are IPTV/Add-ons layer work). Weather IS now Foundation's job and is
-    asserted positively elsewhere."""
+def test_run_foundation_writes_no_iptv(boot, monkeypatch):
+    """No IPTV instance-settings are written — Foundation does not touch
+    pvr.iptvsimple's instance file (that is IPTV layer work). Weather + RSS ARE
+    now Foundation's job and are asserted positively elsewhere."""
     _stub_skin_success(boot, monkeypatch)
     boot.mod.run_foundation({})
 
-    settings = _settings_set(boot)
-    assert "lookandfeel.enablerssfeeds" not in settings, (
-        "Foundation must not enable the RSS ticker (Add-ons layer work)"
-    )
     iptv_path = boot.mod.xbmcvfs.translatePath(boot.mod.IPTV_INSTANCE_SETTINGS_SPECIAL)
     import os
 
@@ -311,6 +330,33 @@ def test_run_foundation_writes_env_weather_locations(boot, monkeypatch):
     assert wx.get("loc1_url") == "us/nv/reno", (
         "Foundation must write the env-resolved weather location"
     )
+
+
+# --------------------------------------------------------------------------- #
+# RSS into Foundation: the news ticker is branded-look config (a skin-level
+# toggle), same as weather, so it moved here from the Add-ons layer too.
+# --------------------------------------------------------------------------- #
+def test_run_foundation_enables_rss_ticker(boot, monkeypatch):
+    """Foundation sets the core RSS-enable setting. MUTATION: if Foundation stops
+    calling _apply_rss (the toggle set dropped), this fails."""
+    _stub_skin_success(boot, monkeypatch)
+    boot.mod.run_foundation({})
+    settings = _settings_set(boot)
+    assert settings.get("lookandfeel.enablerssfeeds") is True, (
+        "Foundation must enable the RSS ticker"
+    )
+
+
+def test_run_foundation_writes_env_rss_feeds(boot, monkeypatch):
+    """When the env supplies RSS_FEEDS, Foundation writes userdata/RssFeeds.xml —
+    proves the env-driven RSS writer landed in Foundation (moved from Add-ons)."""
+    from xml.etree import ElementTree as ET
+
+    _stub_skin_success(boot, monkeypatch)
+    boot.mod.run_foundation({"RSS_FEEDS": "http://feeds.example/a.xml"})
+    rss_path = boot.mod.xbmcvfs.translatePath("special://home/userdata/RssFeeds.xml")
+    feeds = [f.text for f in ET.parse(rss_path).getroot().iter("feed")]
+    assert feeds == ["http://feeds.example/a.xml"]
 
 
 # --------------------------------------------------------------------------- #
@@ -679,8 +725,7 @@ def test_run_foundation_setup_multi_provider_env_one_instance_per_provider(
     assert os.path.exists(one), "provider 1 must write instance-settings-1.xml"
     assert not os.path.exists(two), "the xtream provider must be skipped in-Kodi"
     vals = {
-        s.get("id"): (s.text or "")
-        for s in ET.parse(one).getroot().findall("setting")
+        s.get("id"): (s.text or "") for s in ET.parse(one).getroot().findall("setting")
     }
     assert vals["m3uUrl"].endswith("password=p1")
     assert vals["kodi_addon_instance_name"] == "Network 24"

@@ -1,80 +1,34 @@
 """Unit tests for the Foundation layer (Phase 2b).
 
 ``tony7bones.setup.foundation.apply_foundation`` is the Layer 0 entry point: it
-installs the Estuary MOD V2 skin + the MOD V2+ patch closure (direct-extracting the
-two proxy-invisible deps — ``script.module.pvr.artwork`` + our own
-``script.tony7bones.modv2plus`` — BEFORE the closure resolve), then runs the two
-content-free base-config steps (File-Manager sources + the Estuary home-menu trim),
-and returns a ``LayerResult`` REQUESTING skin activation + restart from the
-orchestrator. It deliberately does NOT set ``lookandfeel.skin`` — that stays the
-orchestrator's terminal seam.
+installs the File-Manager sources (incl. the mini's KodiShare/KodiBackup NFS
+shares and our own proxy source), the branded-look weather provider
+(weather.multi) + env-driven locations, the RSS news ticker (core setting +
+env-driven RssFeeds.xml), and the on-screen-keyboard autocomplete QoL utility
+(script.module.autocompletion). It installs NO skin — the Estuary MOD V2 skin
+closure + the home-menu trim live in the Skin layer instead
+(``tony7bones.setup.skin`` — see ``test_setup_skin.py``), split out because the
+skin is curatorial branding, not a Foundation prerequisite.
 
-These tests drive ``apply_foundation`` (and the lifted ``_install_skin`` body)
-DIRECTLY against the shared fake-Kodi ``boot`` fixture (conftest.py) — the same
-real engine the bootstrap suite uses, reached via ``boot.mod._foundation`` (the
-foundation module the bootstrap imports under the fake Kodi). This is the
-behaviour-preserving oracle for the move: the foundation bodies must land the SAME
-state the monolith's inline ``_install_skin`` / ``_add_file_sources`` /
-``_trim_home_menu`` did. The whole-``run()`` ordering is pinned separately by the
-modular_setup characterization snapshot; here we pin the layer in isolation.
+These tests drive ``apply_foundation`` DIRECTLY against the shared fake-Kodi
+``boot`` fixture (conftest.py) — the same real engine the bootstrap suite uses,
+reached via ``boot.mod._foundation`` (the foundation module the bootstrap
+imports under the fake Kodi). This is the behaviour-preserving oracle for the
+move: the foundation bodies must land the SAME state the monolith's inline
+``_add_file_sources`` did. The whole-``run()`` ordering is pinned separately by
+the modular_setup characterization snapshot; here we pin the layer in
+isolation. Because this layer has ZERO skin dependency, none of these tests
+need to stub the skin closure (unlike the Skin layer's own tests).
 """
 
 from __future__ import annotations
 
-from pathlib import Path
 from xml.etree import ElementTree as ET
-
-HERE = Path(__file__).parent
-
-# Camel-case ids the home-trim sets (the part that survives the restart), and the
-# four kept ids it must never set.
-_HIDE_CAMEL = [
-    "HomeMenuNoMovieButton",
-    "HomeMenuNoTVShowButton",
-    "HomeMenuNoMusicButton",
-    "HomeMenuNoMusicVideoButton",
-    "HomeMenuNoRadioButton",
-    "HomeMenuNoPicturesButton",
-    "HomeMenuNoVideosButton",
-    "HomeMenuNoGamesButton",
-]
-_HIDE_LOW = [c.lower() for c in _HIDE_CAMEL]
 
 
 def _foundation(boot):
     """The foundation module bound under the fake Kodi (via the bootstrap)."""
     return boot.mod._foundation
-
-
-def _stub_success(boot, monkeypatch):
-    """Stub the skin closure + extract so the skin reports INSTALLED (the ok=True
-    path the bare fake-Kodi index can't reach — skin.estuary.modv2 isn't in it).
-    Returns (sel_calls, extracted) recording the ordered calls."""
-    fnd = _foundation(boot)
-    sel_calls = []
-    extracted = []
-
-    def _sel(selected, official_base, disable_ids, dialog, log):
-        sel_calls.append(list(selected))
-        for aid in selected:
-            boot.state["installed"].add(aid)
-        return len(selected)
-
-    def _extract(url, dialog, pct, log):
-        extracted.append(url)
-        if "pvr.artwork" in url:
-            boot.state["installed"].add(fnd.PVR_ARTWORK_ID)
-        if "modv2plus" in url:
-            boot.state["installed"].add(fnd.MODV2PLUS_ID)
-        return True
-
-    monkeypatch.setattr(fnd, "install_selection", _sel)
-    monkeypatch.setattr(fnd, "extract_zip", _extract)
-    monkeypatch.setattr(fnd, "install_with_deps", lambda *a, **k: True)
-    monkeypatch.setattr(
-        fnd, "_latest_zip_url", lambda aid: "http://local/{}-9.9.9.zip".format(aid)
-    )
-    return sel_calls, extracted
 
 
 def _settings_set(boot):
@@ -102,140 +56,40 @@ def _files_sources(boot):
 # --------------------------------------------------------------------------- #
 # apply_foundation — the LayerResult contract
 # --------------------------------------------------------------------------- #
-def test_apply_foundation_returns_foundation_layerresult_on_success(boot, monkeypatch):
-    """ok=True (skin installed), needs_skin_activation + needs_restart REQUESTED,
-    SKIN_ID recorded in installed, layer tag is 'foundation'."""
-    _stub_success(boot, monkeypatch)
+def test_apply_foundation_returns_foundation_layerresult_on_success(boot):
+    """ok is always True (content-free, best-effort config with no user-cancelable
+    step), needs_restart REQUESTED, weather.multi + autocomplete recorded
+    installed, layer tag is 'foundation'. No skin dependency at all — the real
+    engine resolves weather.multi/autocomplete from the fake index directly."""
     fnd = _foundation(boot)
     res = fnd.apply_foundation({}, dialog=None, log=boot.mod._log)
 
     assert res.layer == "foundation"
     assert res.ok is True
-    assert res.needs_skin_activation is True
     assert res.needs_restart is True
-    assert fnd.SKIN_ID in res.installed
+    assert res.needs_skin_activation is False, (
+        "Foundation must NOT request skin activation — that is the Skin layer's job"
+    )
+    assert res.installed.get("weather.multi") == "installed"
+    assert res.installed.get("script.module.autocompletion") == "installed"
     assert res.failed == {}
 
 
-def test_apply_foundation_ok_mirrors_install_skin_bool_on_failure(boot):
-    """On the bare fake-Kodi index the skin closure can't resolve, so the lifted
-    _install_skin returns False — apply_foundation.ok must mirror that exactly
-    (the orchestrator only activates the skin when ok), with SKIN_ID in failed.
-    needs_skin_activation/needs_restart are still REQUESTED regardless."""
-    fnd = _foundation(boot)
-    res = fnd.apply_foundation({}, dialog=None, log=boot.mod._log)
-
-    assert res.ok is False, "bare index cannot install the skin -> ok mirrors False"
-    assert fnd.SKIN_ID in res.failed
-    assert fnd.SKIN_ID not in res.installed
-    assert res.needs_skin_activation is True
-    assert res.needs_restart is True
-
-
-def test_apply_foundation_does_not_set_lookandfeel_skin(boot, monkeypatch):
-    """The activate-skin invariant: the Foundation layer NEVER sets
-    lookandfeel.skin (that is the orchestrator's terminal seam). Even on the
-    success path it only REQUESTS activation."""
-    _stub_success(boot, monkeypatch)
+def test_apply_foundation_does_not_touch_skin_at_all(boot):
+    """Foundation never sets lookandfeel.skin and never installs skin.estuary.modv2
+    — the skin closure lives in the Skin layer now."""
     fnd = _foundation(boot)
     fnd.apply_foundation({}, dialog=None, log=boot.mod._log)
-    assert "lookandfeel.skin" not in _settings_set(boot), (
-        "apply_foundation must not set lookandfeel.skin — orchestrator owns it"
-    )
-
-
-# --------------------------------------------------------------------------- #
-# Skin install: direct-extract-before-resolve + enable
-# --------------------------------------------------------------------------- #
-def test_apply_foundation_direct_extracts_both_proxy_invisible_deps(boot, monkeypatch):
-    """pvr.artwork (GitHub-only) AND our modv2plus patch (proxy-only) are both
-    direct-extracted — the closure resolver can't see them."""
-    _sel_calls, extracted = _stub_success(boot, monkeypatch)
-    fnd = _foundation(boot)
-    fnd.apply_foundation({}, dialog=None, log=boot.mod._log)
-    assert any("script.module.pvr.artwork-2.2.10.zip" in u for u in extracted), (
-        "pvr.artwork must be direct-extracted from the hosted mirror"
-    )
-    assert any("script.tony7bones.modv2plus" in u for u in extracted), (
-        "modv2plus must be direct-extracted (resolver can't see our proxy)"
-    )
-
-
-def test_apply_foundation_extracts_deps_before_closure_resolve(boot, monkeypatch):
-    """ORDER invariant: both proxy-invisible deps are direct-extracted BEFORE the
-    skin closure resolves via install_selection. install_selection records into
-    `order`; the extracts must already be present when it fires."""
-    fnd = _foundation(boot)
-    order = []
-
-    def _sel(selected, official_base, disable_ids, dialog, log):
-        order.append(("select", list(selected), list(extracted)))
-        for aid in selected:
-            boot.state["installed"].add(aid)
-        return len(selected)
-
-    extracted = []
-
-    def _extract(url, dialog, pct, log):
-        extracted.append(url)
-        order.append(("extract", url))
-        if "pvr.artwork" in url:
-            boot.state["installed"].add(fnd.PVR_ARTWORK_ID)
-        if "modv2plus" in url:
-            boot.state["installed"].add(fnd.MODV2PLUS_ID)
-        return True
-
-    monkeypatch.setattr(fnd, "install_selection", _sel)
-    monkeypatch.setattr(fnd, "extract_zip", _extract)
-    monkeypatch.setattr(fnd, "install_with_deps", lambda *a, **k: True)
-    monkeypatch.setattr(
-        fnd, "_latest_zip_url", lambda aid: "http://local/{}-9.9.9.zip".format(aid)
-    )
-    fnd.apply_foundation({}, dialog=None, log=boot.mod._log)
-
-    sel_idx = next(i for i, e in enumerate(order) if e[0] == "select")
-    extract_urls_before = [e[1] for e in order[:sel_idx] if e[0] == "extract"]
-    assert any("pvr.artwork" in u for u in extract_urls_before), (
-        "pvr.artwork must be extracted BEFORE install_selection resolves the closure"
-    )
-    assert any("modv2plus" in u for u in extract_urls_before), (
-        "modv2plus must be extracted BEFORE install_selection resolves the closure"
-    )
-    # the select call itself saw both extracts already done
-    _kind, _selected, extracted_at_select = order[sel_idx]
-    assert any("pvr.artwork" in u for u in extracted_at_select)
-    assert any("modv2plus" in u for u in extracted_at_select)
-
-
-def test_apply_foundation_resolves_skin_closure_via_install_selection(
-    boot, monkeypatch
-):
-    """The skin itself (skin.estuary.modv2) resolves via install_selection from the
-    installed repos — exactly the [SKIN_ID] selection the monolith used."""
-    sel_calls, _extracted = _stub_success(boot, monkeypatch)
-    fnd = _foundation(boot)
-    fnd.apply_foundation({}, dialog=None, log=boot.mod._log)
-    assert [fnd.SKIN_ID] in sel_calls
-
-
-def test_apply_foundation_enables_skin_closure_after_extract(boot, monkeypatch):
-    """After the closure + 3s settle, pvr.artwork, modv2plus, and the skin are all
-    ENABLED (registered + enabled is what lets the orchestrator activate the skin
-    without Kodi reverting to stock Estuary)."""
-    _stub_success(boot, monkeypatch)
-    fnd = _foundation(boot)
-    fnd.apply_foundation({}, dialog=None, log=boot.mod._log)
-    for aid in (fnd.PVR_ARTWORK_ID, fnd.MODV2PLUS_ID, fnd.SKIN_ID):
-        assert aid in boot.state["installed"], f"{aid} must be enabled/installed"
+    assert "lookandfeel.skin" not in _settings_set(boot)
+    assert "skin.estuary.modv2" not in boot.state["installed"]
 
 
 # --------------------------------------------------------------------------- #
 # File-Manager sources
 # --------------------------------------------------------------------------- #
-def test_apply_foundation_writes_file_sources(boot, monkeypatch):
+def test_apply_foundation_writes_file_sources(boot):
     """The three File-Manager sources land in sources.xml (the lifted
     _add_file_sources body)."""
-    _stub_success(boot, monkeypatch)
     fnd = _foundation(boot)
     assert not boot.sources_xml.exists()
     fnd.apply_foundation({}, dialog=None, log=boot.mod._log)
@@ -246,88 +100,30 @@ def test_apply_foundation_writes_file_sources(boot, monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
-# Estuary home-menu trim (both mechanisms)
+# Injection: run() forwards the bootstrap's monkeypatchable shim
 # --------------------------------------------------------------------------- #
-def test_apply_foundation_trims_home_menu_setbool(boot, monkeypatch):
-    """The eight Skin.SetBool hide-toggles fire on the active Estuary skin (the
-    live-memory mechanism that survives the restart)."""
-    _stub_success(boot, monkeypatch)
-    fnd = _foundation(boot)
-    fnd.apply_foundation({}, dialog=None, log=boot.mod._log)
-    for camel in _HIDE_CAMEL:
-        assert f"Skin.SetBool({camel})" in boot.state["builtins"], (
-            f"missing home-trim toggle for {camel}"
-        )
-    # the four kept items are never hidden
-    for keep in ("HomeMenuNoProgramsButton", "HomeMenuNoTVButton"):
-        assert f"Skin.SetBool({keep})" not in boot.state["builtins"]
-
-
-def test_apply_foundation_trims_home_menu_writefile(boot, monkeypatch):
-    """The settings.xml belt-and-suspenders fallback writes the eight lowercase
-    hide-bools = true (the lifted _trim_home_menu_writefile body)."""
-    _stub_success(boot, monkeypatch)
-    fnd = _foundation(boot)
-    fnd.apply_foundation({}, dialog=None, log=boot.mod._log)
-    assert boot.estuary_settings.exists(), "estuary settings.xml must be written"
-    vals = {
-        s.get("id"): (s.text or "")
-        for s in ET.parse(boot.estuary_settings).getroot().findall("setting")
-    }
-    for low in _HIDE_LOW:
-        assert vals.get(low) == "true", f"{low} must be set true"
-
-
-def test_apply_foundation_runs_steps_in_skin_sources_trim_order(boot, monkeypatch):
-    """The layer drives its three injected steps in the SAME order the monolith
-    ran them inline in run(): skin install, then file sources, then home trim."""
-    fnd = _foundation(boot)
-    order = []
-    res = fnd.apply_foundation(
-        {},
-        dialog=None,
-        log=boot.mod._log,
-        install_skin=lambda dialog: order.append("skin") or True,
-        add_file_sources=lambda: order.append("sources"),
-        trim_home_menu=lambda: order.append("trim"),
-    )
-    assert order == ["skin", "sources", "trim"]
-    assert res.ok is True  # injected install_skin returned True
-
-
-# --------------------------------------------------------------------------- #
-# Injection: run() forwards the bootstrap's monkeypatchable shims
-# --------------------------------------------------------------------------- #
-def test_apply_foundation_uses_injected_step_functions(boot):
-    """When run() injects its own step shims, apply_foundation uses THOSE (not its
-    module-default bodies) — the behaviour-preservation hook that keeps
+def test_apply_foundation_uses_injected_add_file_sources(boot):
+    """When run() injects its own step shim, apply_foundation uses THAT (not its
+    module-default body) — the behaviour-preservation hook that keeps
     boot.mod-level monkeypatches effective for the run()-driven path."""
     fnd = _foundation(boot)
-    marker = {"skin": False, "sources": False, "trim": False}
-
-    def _skin(dialog):
-        marker["skin"] = True
-        return False  # FAILED -> ok must mirror this
-
+    marker = {"sources": False}
     res = fnd.apply_foundation(
         {},
         dialog=None,
         log=boot.mod._log,
-        install_skin=_skin,
-        add_file_sources=lambda: marker.__setitem__("sources", True),
-        trim_home_menu=lambda: marker.__setitem__("trim", True),
+        add_file_sources=lambda box_env: marker.__setitem__("sources", True),
     )
-    assert marker == {"skin": True, "sources": True, "trim": True}
-    assert res.ok is False  # injected install_skin returned False
-    assert fnd.SKIN_ID in res.failed
+    assert marker == {"sources": True}
+    assert res.ok is True
 
 
 # --------------------------------------------------------------------------- #
 # Weather into Foundation (weather-into-Foundation change). The weather provider
 # install + env-driven location config MOVED out of the Add-ons layer into
 # Foundation — weather is part of the branded look (the MOD V2 skin renders a
-# weather readout + a Weather home-menu item). The unit tests for the lifted
-# weather helpers moved here with them.
+# weather readout + a Weather home-menu item, once the Skin layer's box is
+# active). The unit tests for the lifted weather helpers moved here with it.
 # --------------------------------------------------------------------------- #
 def _weather_settings(boot):
     """Multi Weather settings.xml as {id: text} (or {} if unwritten)."""
@@ -339,18 +135,6 @@ def _weather_settings(boot):
         return {}
     root = ET.parse(path).getroot()
     return {s.get("id"): (s.text or "") for s in root.findall("setting")}
-
-
-def _stub_skin_only(boot, monkeypatch):
-    """Like _stub_success, but install_with_deps RECORDS weather.multi (so the
-    Foundation weather-install assertion can see it lands) instead of a blanket True."""
-    _stub_success(boot, monkeypatch)
-
-    def _iwd(addon_id, dialog, extra_bases, official_base, log):
-        boot.state["installed"].add(addon_id)
-        return True
-
-    monkeypatch.setattr(boot.mod._foundation, "install_with_deps", _iwd)
 
 
 def test_apply_weather_resolves_locations_and_keys(boot, monkeypatch):
@@ -501,15 +285,10 @@ def test_set_weather_location_default_is_sacramento(boot):
     assert "Sacramento" in got["loc1_name"]
 
 
-def test_apply_foundation_installs_and_configures_weather(boot, monkeypatch):
+def test_apply_foundation_installs_and_configures_weather(boot):
     """apply_foundation installs weather.multi + sets the core provider + writes the
-    keyless default location — weather is now part of Foundation's branded box. The
-    skin closure is stubbed (success); weather install records weather.multi via the
-    install_with_deps stub, so weather.multi lands in the installed set."""
-    _stub_skin_only(boot, monkeypatch)
-    monkeypatch.setattr(
-        boot.mod._foundation, "_resolve_weather_location", lambda q, **k: None
-    )
+    keyless default location — weather is part of Foundation's branded-look config.
+    No skin stubbing needed: weather.multi resolves from the fake index directly."""
     res = boot.mod._foundation.apply_foundation({}, dialog=None, log=boot.mod._log)
     assert "weather.multi" in boot.state["installed"], (
         "Foundation must install weather.multi"
@@ -520,12 +299,8 @@ def test_apply_foundation_installs_and_configures_weather(boot, monkeypatch):
 
 
 def test_apply_foundation_weather_install_failure_is_non_fatal(boot, monkeypatch):
-    """A weather install failure does NOT abort Foundation (skin still ok) — it is
-    recorded in failed{} but the layer remains ok based on the SKIN install."""
-    _stub_success(boot, monkeypatch)
-    monkeypatch.setattr(
-        boot.mod._foundation, "_resolve_weather_location", lambda q, **k: None
-    )
+    """A weather install failure does NOT abort Foundation — it is recorded in
+    failed{} but the layer remains ok (Foundation has no cancel concept at all)."""
 
     def _boom(addon_id, *a, **k):
         if addon_id == "weather.multi":
@@ -534,24 +309,103 @@ def test_apply_foundation_weather_install_failure_is_non_fatal(boot, monkeypatch
 
     monkeypatch.setattr(boot.mod._foundation, "install_with_deps", _boom)
     res = boot.mod._foundation.apply_foundation({}, dialog=None, log=boot.mod._log)
-    assert res.ok is True, "a weather failure must not flip the layer (skin drives ok)"
+    assert res.ok is True, "a weather failure must not flip the layer"
     assert res.failed.get("weather.multi") == "weather install failed"
+
+
+# --------------------------------------------------------------------------- #
+# RSS news ticker — env-driven, MOVED here from the Add-ons layer (RSS is
+# branded-look CONFIG, not content, same as weather). _apply_rss_from_env is a
+# direct lift of the old addons.py body; _apply_rss composes the core-setting
+# toggle + the env writer, mirroring _apply_weather's shape.
+# --------------------------------------------------------------------------- #
+def _rss_path(boot):
+    return boot.mod.xbmcvfs.translatePath("special://home/userdata/RssFeeds.xml")
+
+
+def test_apply_rss_writes_feeds_with_interval(boot):
+    """RSS_FEEDS -> userdata/RssFeeds.xml with each feed at the RSS_INTERVAL."""
+    fnd = _foundation(boot)
+    fnd._apply_rss_from_env(
+        {"RSS_FEEDS": "http://a/feed; http://b/feed", "RSS_INTERVAL": "45"}
+    )
+    feeds = ET.parse(_rss_path(boot)).getroot().findall("set/feed")
+    assert [f.text for f in feeds] == ["http://a/feed", "http://b/feed"]
+    assert all(f.get("updateinterval") == "45" for f in feeds)
+
+
+def test_apply_rss_noop_when_absent(boot):
+    """No RSS_FEEDS -> no write (a device-copied file / the Kodi default stands)."""
+    import os
+
+    fnd = _foundation(boot)
+    fnd._apply_rss_from_env({})
+    assert not os.path.exists(_rss_path(boot))
+
+
+def test_apply_rss_default_interval_is_30(boot):
+    """Absent RSS_INTERVAL defaults to 30 (the monolith's default)."""
+    fnd = _foundation(boot)
+    fnd._apply_rss_from_env({"RSS_FEEDS": "http://a/feed"})
+    feeds = ET.parse(_rss_path(boot)).getroot().findall("set/feed")
+    assert feeds[0].get("updateinterval") == "30"
+
+
+def test_apply_rss_never_raises(boot, monkeypatch):
+    """Defensive: a write failure is swallowed (never aborts the rest of setup)."""
+    import os
+
+    fnd = _foundation(boot)
+
+    def _boom(*a, **k):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(fnd.os, "makedirs", _boom)
+    fnd._apply_rss_from_env({"RSS_FEEDS": "http://a/feed"})  # must not raise
+    assert not os.path.exists(_rss_path(boot))
+
+
+def test_set_setting_emits_jsonrpc_and_reports_ok(boot):
+    """_set_setting sends a Settings.SetSettingValue JSON-RPC and returns True on a
+    `"result":true` reply (the fake jsonrpc returns `{}` -> False; patch a true
+    reply to exercise the OK branch)."""
+    fnd = _foundation(boot)
+    # Default fake jsonrpc returns "{}" -> no '"result":true' -> False.
+    assert fnd._set_setting("lookandfeel.enablerssfeeds", True) is False
+    assert _settings_set(boot).get("lookandfeel.enablerssfeeds") is True
+
+
+def test_set_setting_true_reply_is_ok(boot, monkeypatch):
+    """A `"result":true` JSON-RPC reply makes _set_setting return True."""
+    fnd = _foundation(boot)
+    monkeypatch.setattr(fnd.xbmc, "executeJSONRPC", lambda s: '{"result":true}')
+    assert fnd._set_setting("lookandfeel.enablerssfeeds", True) is True
+
+
+def test_apply_foundation_sets_rss_core_setting_and_writes_feeds(boot):
+    """apply_foundation emits the RSS-enable core setting (lookandfeel.enablerssfeeds
+    -> True) and writes the env-driven RSS feeds — RSS moved here from the Add-ons
+    layer alongside weather (both are branded-look config, not content)."""
+    import os
+
+    fnd = _foundation(boot)
+    fnd.apply_foundation({"RSS_FEEDS": "http://a/feed"}, dialog=None, log=boot.mod._log)
+    s = _settings_set(boot)
+    assert s.get(fnd.RSS_ENABLE_SETTING) is True
+    assert fnd.RSS_ENABLE_SETTING == "lookandfeel.enablerssfeeds"
+    assert os.path.exists(_rss_path(boot))
 
 
 # --------------------------------------------------------------------------- #
 # script.module.autocompletion — the on-screen-keyboard autocomplete QoL utility,
 # installed by Foundation from the official repo (NOT content).
 # --------------------------------------------------------------------------- #
-def test_apply_foundation_installs_autocomplete(boot, monkeypatch):
+def test_apply_foundation_installs_autocomplete(boot):
     """Foundation installs script.module.autocompletion — the keyboard autocomplete
     QoL utility (helps search / IPTV portal+login typing). MUTATION: if Foundation
     stops installing it (the _install_autocomplete call dropped), it is absent from
-    installed and this fails. install_with_deps records each addon (via _stub_skin_only)
-    so the autocomplete install lands in the installed set."""
-    _stub_skin_only(boot, monkeypatch)
-    monkeypatch.setattr(
-        boot.mod._foundation, "_resolve_weather_location", lambda q, **k: None
-    )
+    installed and this fails. No skin stubbing needed: it resolves from the fake
+    index directly."""
     res = boot.mod._foundation.apply_foundation({}, dialog=None, log=boot.mod._log)
     assert boot.mod._foundation.AUTOCOMPLETE_ID == "script.module.autocompletion"
     assert "script.module.autocompletion" in boot.state["installed"], (
@@ -566,7 +420,6 @@ def test_apply_foundation_autocomplete_from_official_repo(boot, monkeypatch):
     """The autocomplete install resolves from the OFFICIAL Kodi repo (official base),
     via install_with_deps — proving it is fetched from repository.xbmc.org, not our
     proxy/third-party repos."""
-    _stub_success(boot, monkeypatch)
     calls = []
 
     def _iwd(addon_id, dialog, extra_bases, official_base, log):
@@ -575,9 +428,6 @@ def test_apply_foundation_autocomplete_from_official_repo(boot, monkeypatch):
         return True
 
     monkeypatch.setattr(boot.mod._foundation, "install_with_deps", _iwd)
-    monkeypatch.setattr(
-        boot.mod._foundation, "_resolve_weather_location", lambda q, **k: None
-    )
     boot.mod._foundation.apply_foundation({}, dialog=None, log=boot.mod._log)
     ac = [c for c in calls if c[0] == "script.module.autocompletion"]
     assert ac, "autocomplete must be installed via install_with_deps"
@@ -587,12 +437,8 @@ def test_apply_foundation_autocomplete_from_official_repo(boot, monkeypatch):
 
 
 def test_apply_foundation_autocomplete_failure_is_non_fatal(boot, monkeypatch):
-    """An autocomplete install failure does NOT abort Foundation (skin still drives
-    ok) — it is recorded in failed{} but the layer remains ok."""
-    _stub_success(boot, monkeypatch)
-    monkeypatch.setattr(
-        boot.mod._foundation, "_resolve_weather_location", lambda q, **k: None
-    )
+    """An autocomplete install failure does NOT abort Foundation — it is recorded
+    in failed{} but the layer remains ok."""
 
     def _boom(addon_id, *a, **k):
         if addon_id == "script.module.autocompletion":
@@ -605,3 +451,166 @@ def test_apply_foundation_autocomplete_failure_is_non_fatal(boot, monkeypatch):
     assert res.failed.get("script.module.autocompletion") == (
         "autocomplete install failed"
     )
+
+
+def test_apply_foundation_runs_weather_rss_autocomplete_in_order(boot, monkeypatch):
+    """Pins the internal call order of the three config/install steps: weather,
+    then RSS, then autocomplete — the only thing enforcing this order is
+    otherwise the whole-run golden snapshot, which a future reorder would only
+    break if someone diffs it by eye."""
+    fnd = _foundation(boot)
+    order = []
+    monkeypatch.setattr(
+        fnd, "_apply_weather", lambda *a, **k: order.append("weather") or True
+    )
+    monkeypatch.setattr(fnd, "_apply_rss", lambda *a, **k: order.append("rss") or True)
+    monkeypatch.setattr(
+        fnd, "_install_autocomplete", lambda *a, **k: order.append("autocomplete")
+    )
+    fnd.apply_foundation({}, dialog=None, log=boot.mod._log)
+    assert order == ["weather", "rss", "autocomplete"]
+
+
+# --------------------------------------------------------------------------- #
+# The mini's NFS shares — port-free by construction (plan Part 1, section 3.1).
+# --------------------------------------------------------------------------- #
+def test_nfs_url_builds_port_free(boot):
+    """_nfs_url(host, path) never emits a port, whatever the host looks like."""
+    fnd = _foundation(boot)
+    assert fnd._nfs_url("192.168.7.2", "Users/moquette/Kodi/Share/") == (
+        "nfs://192.168.7.2/Users/moquette/Kodi/Share/"
+    )
+
+
+def test_nfs_url_sanitizes_existing_port(boot):
+    """_nfs_url(url) strips a :<port> from an EXISTING nfs:// URL — the exact
+    :2049 class that broke VfsCopyError writes when hand-typed."""
+    fnd = _foundation(boot)
+    assert fnd._nfs_url("nfs://192.168.7.2:2049/Users/moquette/Kodi/Backup/") == (
+        "nfs://192.168.7.2/Users/moquette/Kodi/Backup/"
+    )
+    # no port present: passthrough, unchanged
+    assert fnd._nfs_url("nfs://192.168.7.2/Users/moquette/Kodi/Backup/") == (
+        "nfs://192.168.7.2/Users/moquette/Kodi/Backup/"
+    )
+
+
+def test_nfs_url_invariant_no_port_anywhere(boot):
+    """Invariant: no NFS URL this module can emit ever contains a :<port>,
+    across every construction path (build, override, sanitize)."""
+    fnd = _foundation(boot)
+    import re
+
+    port_re = re.compile(r"^nfs://[^/]+:\d+")
+    candidates = [
+        fnd.kodi_share_url({}),
+        fnd.kodi_backup_url({}),
+        fnd.kodi_share_url({"MINI_HOST": "10.0.0.5"}),
+        fnd.kodi_backup_url({"KODI_BACKUP_NFS": "nfs://10.0.0.5:2049/Backup/"}),
+    ]
+    for url in candidates:
+        assert not port_re.match(url), f"port leaked into {url!r}"
+
+
+def test_kodi_share_backup_urls_default_to_mini_host(boot):
+    fnd = _foundation(boot)
+    assert fnd.kodi_share_url({}) == "nfs://192.168.7.2/Users/moquette/Kodi/Share/"
+    assert fnd.kodi_backup_url({}) == "nfs://192.168.7.2/Users/moquette/Kodi/Backup/"
+
+
+def test_kodi_share_backup_urls_honor_mini_host_override(boot):
+    fnd = _foundation(boot)
+    env = {"MINI_HOST": "10.0.0.9"}
+    assert fnd.kodi_share_url(env) == "nfs://10.0.0.9/Users/moquette/Kodi/Share/"
+    assert fnd.kodi_backup_url(env) == "nfs://10.0.0.9/Users/moquette/Kodi/Backup/"
+
+
+def test_kodi_share_backup_urls_honor_explicit_overrides(boot):
+    fnd = _foundation(boot)
+    env = {
+        "KODI_SHARE_NFS": "nfs://10.0.0.9/Somewhere/Else/",
+        "KODI_BACKUP_NFS": "nfs://10.0.0.9:2049/Somewhere/Backup/",
+    }
+    assert fnd.kodi_share_url(env) == "nfs://10.0.0.9/Somewhere/Else/"
+    # even an explicit override sheds a stray port — the invariant holds
+    # regardless of where the URL came from.
+    assert fnd.kodi_backup_url(env) == "nfs://10.0.0.9/Somewhere/Backup/"
+
+
+def test_add_file_sources_adds_kodishare_and_kodibackup(boot):
+    boot.mod._add_file_sources({})
+    entries = dict(_files_sources(boot))
+    assert entries["KodiShare"] == "nfs://192.168.7.2/Users/moquette/Kodi/Share/"
+    assert entries["KodiBackup"] == "nfs://192.168.7.2/Users/moquette/Kodi/Backup/"
+
+
+def test_add_file_sources_normalizes_legacy_share_label(boot):
+    """An existing source pointing at the canonical Share path under a DIFFERENT
+    label is renamed to KodiShare, not duplicated."""
+    boot.sources_xml.write_text(
+        "<sources><files><default></default>"
+        "<source><name>KodiShare (old)</name>"
+        "<path>nfs://192.168.7.2/Users/moquette/Kodi/Share/</path>"
+        "<allowsharing>true</allowsharing></source>"
+        "</files></sources>"
+    )
+    boot.mod._add_file_sources({})
+    entries = _files_sources(boot)
+    names = [n for n, _p in entries]
+    paths = [p for _n, p in entries]
+    assert "KodiShare (old)" not in names
+    assert "KodiShare" in names
+    assert paths.count("nfs://192.168.7.2/Users/moquette/Kodi/Share/") == 1
+
+
+def test_add_file_sources_normalizes_legacy_2049_backup_variant(boot):
+    """An existing Backup source carrying the old :2049 port is collapsed onto
+    the canonical port-free KodiBackup entry — the bug this plan exists to kill."""
+    boot.sources_xml.write_text(
+        "<sources><files><default></default>"
+        "<source><name>Backup</name>"
+        "<path>nfs://192.168.7.2:2049/Users/moquette/Kodi/Backup/</path>"
+        "<allowsharing>true</allowsharing></source>"
+        "</files></sources>"
+    )
+    boot.mod._add_file_sources({})
+    entries = _files_sources(boot)
+    names = [n for n, _p in entries]
+    paths = [p for _n, p in entries]
+    assert "Backup" not in names
+    assert "KodiBackup" in names
+    assert "nfs://192.168.7.2:2049/Users/moquette/Kodi/Backup/" not in paths
+    assert paths.count("nfs://192.168.7.2/Users/moquette/Kodi/Backup/") == 1
+
+
+def test_add_file_sources_dedupes_share_backup_on_second_run(boot):
+    boot.mod._add_file_sources({})
+    boot.mod._add_file_sources({})
+    entries = _files_sources(boot)
+    names = [n for n, _p in entries]
+    assert names.count("KodiShare") == 1
+    assert names.count("KodiBackup") == 1
+
+
+def test_add_file_sources_repoints_stale_entry_when_mini_host_changes(boot):
+    """A re-provisioned/host-migrated box: MINI_HOST changes between two runs
+    (e.g. the mini moves from WiFi .2 to a different address). The SAME-named
+    KodiShare/KodiBackup entries must be REPOINTED at the new canonical URL —
+    not left stale forever. Without this, the by-name dedupe in
+    _add_file_sources would see "KodiShare"/"KodiBackup" already present and
+    skip writing the new URL entirely, so foundation_done()'s content-check
+    would correctly read False but nothing would ever converge (the Guided
+    wizard would re-offer Foundation on every launch with no way to fix it)."""
+    boot.mod._add_file_sources({})
+    entries = dict(_files_sources(boot))
+    assert entries["KodiShare"] == "nfs://192.168.7.2/Users/moquette/Kodi/Share/"
+
+    boot.mod._add_file_sources({"MINI_HOST": "10.0.0.9"})
+    entries = _files_sources(boot)
+    names = [n for n, _p in entries]
+    # still exactly one KodiShare/KodiBackup entry each (repointed, not duplicated)
+    assert names.count("KodiShare") == 1
+    assert names.count("KodiBackup") == 1
+    entries = dict(entries)
+    assert entries["KodiShare"] == "nfs://10.0.0.9/Users/moquette/Kodi/Share/"
+    assert entries["KodiBackup"] == "nfs://10.0.0.9/Users/moquette/Kodi/Backup/"

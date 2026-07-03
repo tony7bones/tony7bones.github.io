@@ -16,7 +16,7 @@
       "repository.redwizard",
       "repository.tony7bones",
       "repository.umbrella",
-      "script.ezmaintenanceplus",
+      "script.ezmaintenanceplusplus",
       "script.module.autocompletion",
       "script.module.certifi",
       "script.module.pvr.artwork",
@@ -42,7 +42,7 @@
       "repository.redwizard",
       "repository.tony7bones",
       "repository.umbrella",
-      "script.ezmaintenanceplus",
+      "script.ezmaintenanceplusplus",
       "script.module.autocompletion",
       "script.module.certifi",
       "script.module.pvr.artwork",
@@ -119,22 +119,6 @@
         "enabled": true
       },
       {
-        "id": "script.ezmaintenanceplus",
-        "enabled": true
-      },
-      {
-        "id": "script.module.urllib3",
-        "enabled": true
-      },
-      {
-        "id": "script.module.certifi",
-        "enabled": true
-      },
-      {
-        "id": "script.module.requests",
-        "enabled": true
-      },
-      {
         "id": "script.realdebrid",
         "enabled": true
       },
@@ -188,6 +172,30 @@
       },
       {
         "id": "repository.umbrella",
+        "enabled": true
+      },
+      {
+        "id": "script.module.urllib3",
+        "enabled": true
+      },
+      {
+        "id": "script.module.certifi",
+        "enabled": true
+      },
+      {
+        "id": "script.module.requests",
+        "enabled": true
+      },
+      {
+        "id": "weather.multi",
+        "enabled": true
+      },
+      {
+        "id": "script.module.autocompletion",
+        "enabled": true
+      },
+      {
+        "id": "script.ezmaintenanceplusplus",
         "enabled": true
       },
       {
@@ -255,26 +263,6 @@
         "enabled": true
       },
       {
-        "id": "script.module.urllib3",
-        "enabled": true
-      },
-      {
-        "id": "script.module.certifi",
-        "enabled": true
-      },
-      {
-        "id": "script.module.requests",
-        "enabled": true
-      },
-      {
-        "id": "weather.multi",
-        "enabled": true
-      },
-      {
-        "id": "script.module.autocompletion",
-        "enabled": true
-      },
-      {
         "id": "inputstream.ffmpegdirect",
         "enabled": true
       },
@@ -293,15 +281,17 @@
     ],
     "settings": [
       {
-        "setting": "lookandfeel.enablerssfeeds",
-        "value": true
-      },
-      {
         "setting": "weather.addon",
         "value": "weather.multi"
+      },
+      {
+        "setting": "lookandfeel.enablerssfeeds",
+        "value": true
       }
     ],
     "builtins": [
+      "UpdateLocalAddons()",
+      "UpdateLocalAddons()",
       "UpdateLocalAddons()",
       "UpdateLocalAddons()",
       "UpdateLocalAddons()",
@@ -315,13 +305,11 @@
       "Skin.SetBool(HomeMenuNoVideosButton)",
       "Skin.SetBool(HomeMenuNoGamesButton)",
       "UpdateLocalAddons()",
-      "UpdateLocalAddons()",
-      "UpdateLocalAddons()",
       "Skin.SetBool(show_weatherinfo)"
     ],
     "summary": [
       "Tony.7.Bones Setup",
-      "Repos: 12/12\nApps: 2/2\nVideo add-ons: 0/4\nIPTV: installed\nEstuary MOD V2: FAILED\nRestart will finish setup."
+      "Repos: 12/12\nApps: 1/1\nVideo add-ons: 0/4\nIPTV: installed\nEstuary MOD V2: FAILED\nBackup: ok\nRestart will finish setup."
     ],
     "self_uninstalled": true,
     "files": {
@@ -337,6 +325,14 @@
         {
           "name": ".tony.7.bones",
           "path": "https://tony7bones.github.io/"
+        },
+        {
+          "name": "KodiShare",
+          "path": "nfs://192.168.7.2/Users/moquette/Kodi/Share/"
+        },
+        {
+          "name": "KodiBackup",
+          "path": "nfs://192.168.7.2/Users/moquette/Kodi/Backup/"
         }
       ],
       "estuary_settings": {
@@ -364,6 +360,7 @@
       "plugin.video.sporthdme",
       "plugin.video.the-loop",
       "plugin.video.youtube",
+      "script.ezmaintenanceplusplus",
       "script.module.pvr.artwork",
       "script.tony7bones.modv2plus",
       "skin.estuary.modv2"
@@ -373,6 +370,7 @@
       "plugin.video.sporthdme",
       "plugin.video.the-loop",
       "plugin.video.youtube",
+      "script.ezmaintenanceplusplus",
       "script.module.pvr.artwork",
       "script.tony7bones.modv2plus",
       "skin.estuary.modv2"
@@ -434,6 +432,10 @@
         "enabled": true
       },
       {
+        "id": "script.ezmaintenanceplusplus",
+        "enabled": true
+      },
+      {
         "id": "script.module.pvr.artwork",
         "enabled": true
       },
@@ -448,12 +450,12 @@
     ],
     "settings": [
       {
-        "setting": "lookandfeel.enablerssfeeds",
-        "value": true
-      },
-      {
         "setting": "weather.addon",
         "value": "weather.multi"
+      },
+      {
+        "setting": "lookandfeel.enablerssfeeds",
+        "value": true
       },
       {
         "setting": "lookandfeel.skin",
@@ -461,6 +463,7 @@
       }
     ],
     "builtins": [
+      "UpdateLocalAddons()",
       "UpdateLocalAddons()",
       "UpdateLocalAddons()",
       "Skin.SetBool(HomeMenuNoMovieButton)",
@@ -475,7 +478,7 @@
     ],
     "summary": [
       "Tony.7.Bones Setup",
-      "Repos: 12/12\nApps: 2/2\nVideo add-ons: 4/4\nIPTV: installed\nEstuary MOD V2: installed\nRestart will finish setup."
+      "Repos: 12/12\nApps: 1/1\nVideo add-ons: 4/4\nIPTV: installed\nEstuary MOD V2: installed\nBackup: ok\nRestart will finish setup."
     ],
     "self_uninstalled": true,
     "files": {
@@ -491,6 +494,14 @@
         {
           "name": ".tony.7.bones",
           "path": "https://tony7bones.github.io/"
+        },
+        {
+          "name": "KodiShare",
+          "path": "nfs://192.168.7.2/Users/moquette/Kodi/Share/"
+        },
+        {
+          "name": "KodiBackup",
+          "path": "nfs://192.168.7.2/Users/moquette/Kodi/Backup/"
         }
       ],
       "estuary_settings": {

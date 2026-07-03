@@ -405,6 +405,132 @@ def sanitize_device_name(name):
     return slug or "device"
 
 
+# Kodi's own stock, never-customized services.devicename value (confirmed
+# against guisettings.xml's own shipped default: <devicename default="true">
+# Kodi</devicename> - see https://kodi.wiki/view/Settings/Services). A NEVER-
+# RENAMED box reports this literal string, not an empty one - so checking for
+# blank alone is NOT sufficient to catch "no real device identity here":
+# every unconfigured box of the same build would resolve to the SAME
+# non-empty-but-still-generic name and collide on the shared destination
+# exactly like the blank case would.
+KODI_STOCK_DEVICE_NAME = "Kodi"
+
+
+def resolve_device_name(box_env):
+    """The device name to use for a per-device identifier — the master-env
+    scaffold's filename, or the Backup layer's per-device NFS subfolder.
+
+    Falls back through: the env's ``DEVICE_NAME`` (set by the provisioner or
+    the owner) -> Kodi's own ``services.devicename`` core setting (the SAME
+    fallback the master-env scaffold has always used) -> ``""`` (callers pass
+    this through :func:`sanitize_device_name`, whose own generic ``device``
+    fallback is the last resort). Kodi's own STOCK default value
+    (``KODI_STOCK_DEVICE_NAME`` - literally ``"Kodi"``, confirmed against
+    guisettings.xml's shipped default) is treated the SAME as blank: it
+    carries zero actual distinguishing information despite being non-empty,
+    so trusting it would silently defeat the whole point of this fallback.
+
+    ``DEVICE_NAME`` ships commented-out by default in the env template, so a
+    real box can easily reach here with no env value at all — without the
+    Kodi-setting fallback, EVERY such box would silently collapse to the same
+    generic slug, which is harmless for a LOCAL file (the scaffold's use case)
+    but a real collision risk for a SHARED remote destination (the Backup
+    layer's use case) — two such boxes would overwrite each other's backups.
+    Never raises."""
+    box_env = box_env or {}
+    name = (box_env.get("DEVICE_NAME") or "").strip()
+    if name:
+        return name
+    try:
+        import json as _json
+
+        import xbmc as _xbmc
+
+        resp = _xbmc.executeJSONRPC(
+            _json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "Settings.GetSettingValue",
+                    "params": {"setting": "services.devicename"},
+                }
+            )
+        )
+        kodi_name = str(_json.loads(resp).get("result", {}).get("value") or "")
+    except Exception:  # noqa: BLE001 - any failure = fall back to the generic slug
+        return ""
+    if kodi_name.strip().lower() == KODI_STOCK_DEVICE_NAME.lower():
+        return ""
+    return kodi_name
+
+
+def ensure_device_name(box_env, log=None):
+    """Ensure a REAL device identity exists as early as possible in Setup,
+    closing the collision risk at its source rather than only discovering it
+    deep inside a later phase (e.g. the Backup layer's per-device destination).
+
+    A no-op when :func:`resolve_device_name` already finds a real identity
+    (an env ``DEVICE_NAME``, or a genuinely customized Kodi device name).
+    Otherwise — no env value AND Kodi's device name is blank or its stock
+    default — prompts with a keyboard dialog to name the box, and on a
+    non-empty answer writes it straight to Kodi's own ``services.devicename``
+    core setting, so every later phase (and any future run) resolves a real
+    name from here on.
+
+    INTERACTIVE-MODE ONLY (Guided). Callers must never invoke this from
+    Express, which stays fully unattended — a provisioned box already has a
+    real device name set by the provisioner before Setup ever runs. A
+    cancelled or empty prompt is a safe no-op: Setup proceeds regardless, the
+    box simply keeps whatever generic identity it had. If the user types
+    Kodi's own stock default BACK in (any case) that is treated identically
+    to cancelling — writing it would recreate, via explicit user input, the
+    exact collision this function exists to prevent. The write is VERIFIED
+    with a read-back before returning success (the same "confirm, don't trust
+    the call's own success" discipline the Backup layer's install uses), not
+    a fire-and-forget JSON-RPC call. Never raises."""
+    if resolve_device_name(box_env):
+        return
+    try:
+        import xbmcgui as _xbmcgui
+
+        entered = _xbmcgui.Dialog().input(
+            'Name this device (e.g. "Office", "Bedroom") - optional'
+        )
+        entered = (entered or "").strip()
+        if not entered or entered.lower() == KODI_STOCK_DEVICE_NAME.lower():
+            if log:
+                log("ensure_device_name: prompt cancelled/empty - staying generic")
+            return
+        import json as _json
+
+        import xbmc as _xbmc
+
+        _xbmc.executeJSONRPC(
+            _json.dumps(
+                {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "Settings.SetSettingValue",
+                    "params": {"setting": "services.devicename", "value": entered},
+                }
+            )
+        )
+        # Verify the write actually landed - don't trust the call's own
+        # "success" the way a fire-and-forget write would.
+        if resolve_device_name(box_env) != entered:
+            if log:
+                log(
+                    "ensure_device_name: wrote '{}' but the setting did not "
+                    "verify - staying generic".format(entered)
+                )
+            return
+        if log:
+            log("ensure_device_name: device named '{}'".format(entered))
+    except Exception as e:  # noqa: BLE001 - never abort setup over a naming prompt
+        if log:
+            log("ensure_device_name failed (non-fatal): {}".format(e))
+
+
 # Prepended to the scaffolded master template so the file explains itself on
 # the box. Placeholders only — no secret can appear here by construction.
 _SCAFFOLD_BANNER = """\

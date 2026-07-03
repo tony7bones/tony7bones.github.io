@@ -137,6 +137,14 @@ def boot(tmp_path, monkeypatch):
             # immediately (Phase 6, additive — see getSkinDir above).
             if d["params"].get("setting") == "lookandfeel.skin":
                 state["skin_dir"] = d["params"].get("value")
+            # ensure_device_name's write must round-trip through a SUBSEQUENT
+            # Settings.GetSettingValue the same way real Kodi's core settings
+            # store does — mirrored into settings_values (same mechanism the
+            # scaffold's device-name lookup already reads from below), so a
+            # test proves the actual write-then-read path, not a fabricated one.
+            state.setdefault("settings_values", {})[d["params"].get("setting")] = d[
+                "params"
+            ].get("value")
         elif d.get("method") == "Settings.GetSettingValue":
             # N1.1 (additive): answer core-setting reads from
             # state["settings_values"] (e.g. services.devicename for the
@@ -154,6 +162,19 @@ def boot(tmp_path, monkeypatch):
         def __init__(self, addon_id=""):
             if addon_id not in state["installed"]:
                 raise RuntimeError("not installed")
+            self._addon_id = addon_id
+
+        def getAddonInfo(self, key):
+            if key == "path":
+                # The REAL repo path — the fake Kodi "installs" add-ons
+                # conceptually, but their real source already lives in this
+                # repo, so a probe that dynamically loads an add-on's own
+                # module (e.g. modv2plus's service.py::_is_applied()) exercises
+                # the ACTUAL current source, not a fabricated stand-in.
+                return str(REPO_ROOT / "addons" / self._addon_id)
+            if key == "version":
+                return state.get("addon_versions", {}).get(self._addon_id, "0.0.0")
+            return ""
 
     xbmcaddon.Addon = _Addon
 
@@ -198,6 +219,14 @@ def boot(tmp_path, monkeypatch):
             # N1.1 (additive): the scaffold's one unobtrusive line is a toast;
             # recorded so tests can assert it surfaced (never blocks).
             state.setdefault("notification", []).append((title, msg))
+
+        def input(self, heading, *a, **k):
+            # ensure_device_name's keyboard prompt: recorded so tests can
+            # assert it fired; a test scripts the answer via
+            # state["input_answer"] (default "" = cancelled/empty, the safe
+            # no-op path).
+            state.setdefault("input", []).append(heading)
+            return state.get("input_answer", "")
 
         def multiselect(self, title, options, preselect=None):
             state.setdefault("multiselect", []).append((title, options, preselect))

@@ -1,19 +1,21 @@
 """Unit tests for the Add-ons layer (Phase 2c).
 
 ``tony7bones.setup.addons`` holds the LIFTED bodies of the monolith's
-``_install_base`` (base repos + apps), ``_install_video`` (curated video add-ons,
-incl. the install-then-disable of ``plugin.video.dailymotion_com``), and the RSS
-env-writer (``_apply_rss_from_env``) out of
-``script.tony7bones.bootstrap/default.py`` — behaviour-identical. It also adds the
-composed ``apply_addons`` layer entry point (install + config together), which the
+``_install_base`` (base repos + apps) and ``_install_video`` (curated video
+add-ons, incl. the install-then-disable of ``plugin.video.dailymotion_com``) out
+of ``script.tony7bones.bootstrap/default.py`` — behaviour-identical. It also adds
+the composed ``apply_addons`` layer entry point (install-only content), which the
 Express orchestrator drives.
 
-NOTE (weather-into-Foundation): the WEATHER provider + env-driven location config
-(weather.multi install + ``_apply_weather_from_env`` + the core weather.addon
-setting) MOVED OUT of the Add-ons layer INTO the Foundation layer — weather is part
-of the branded look (the MOD V2 skin renders a weather readout + a Weather menu
-item), not content. The weather unit tests moved with it to test_setup_foundation.py
-/ test_run_foundation.py; the Add-ons layer now owns only RSS config.
+NOTE (weather + RSS -> Foundation): both the WEATHER provider + env-driven
+location config (weather.multi install + ``_apply_weather_from_env`` + the core
+weather.addon setting) AND the RSS news-ticker config (``_apply_rss_from_env`` +
+the core lookandfeel.enablerssfeeds setting) MOVED OUT of the Add-ons layer INTO
+the Foundation layer — both are part of the branded look (the MOD V2 skin
+renders a weather readout + a Weather menu item, and the ticker is a skin-level
+toggle), not content. Their unit tests moved with them to
+test_setup_foundation.py / test_run_foundation.py; the Add-ons layer now installs
+content only (base repos/apps + curated video).
 
 These tests drive the addons module DIRECTLY against the shared fake-Kodi ``boot``
 fixture (conftest.py) — the same real engine the bootstrap suite uses, reached via
@@ -29,7 +31,6 @@ their install primitives from the addons module globals, so the tests patch
 from __future__ import annotations
 
 import os
-from xml.etree import ElementTree as ET
 
 
 def _addons(boot):
@@ -61,22 +62,28 @@ def _rss_path(boot):
 # --------------------------------------------------------------------------- #
 def test_install_base_installs_all_repos_and_apps(boot):
     """The base install extracts + enables all 12 repos PLUS our own proxy repo
-    (repository.tony7bones), and installs the 2 base apps with their closure through
-    the real engine. Returns (repo_ok, fp_ok, app_ok, canceled) = (12, 1, 2, False)
+    (repository.tony7bones), and installs the 1 base app with its closure through
+    the real engine. Returns (repo_ok, fp_ok, app_ok, canceled) = (12, 1, 1, False)
     — fp_ok == 1 is the proxy repo (first-party plumbing).
 
-    The base apps are now 2 (ezmaintenanceplus, realdebrid) — pvr.iptvsimple's
-    install moved OUT of the base ADDONS into apply_iptv (Phase 3a) AND weather.multi
-    moved OUT into apply_foundation (weather-into-Foundation). Both are still installed
-    by a full run (pvr via the IPTV layer, weather via Foundation), pinned by
-    test_modular_setup.py's net-set equivalence invariant."""
+    The base apps are now just realdebrid (Decision C: peno64's PLAIN backup fork
+    script.ezmaintenanceplus was removed — the Setup was installing the WRONG
+    backup tool; the correct `++` fork is installed by the separate Backup layer
+    instead) — pvr.iptvsimple's install moved OUT of the base ADDONS into
+    apply_iptv (Phase 3a) AND weather.multi moved OUT into apply_foundation
+    (weather-into-Foundation). Both are still installed by a full run (pvr via the
+    IPTV layer, weather via Foundation), pinned by test_modular_setup.py's net-set
+    equivalence invariant."""
     add = _addons(boot)
     repo_ok, fp_ok, app_ok, canceled = add._install_base(
         boot.mod.xbmcgui.DialogProgress()
     )
-    assert (repo_ok, fp_ok, app_ok, canceled) == (12, 1, 2, False)
-    assert len(add.ADDONS) == 2 and "pvr.iptvsimple" not in add.ADDONS, (
+    assert (repo_ok, fp_ok, app_ok, canceled) == (12, 1, 1, False)
+    assert len(add.ADDONS) == 1 and "pvr.iptvsimple" not in add.ADDONS, (
         "pvr.iptvsimple must have moved out of the base ADDONS list (Phase 3a)"
+    )
+    assert "script.ezmaintenanceplus" not in add.ADDONS, (
+        "peno64's plain backup fork must be gone from the base ADDONS (Decision C)"
     )
     assert "weather.multi" not in add.ADDONS, (
         "weather.multi must have moved out of the base ADDONS into Foundation"
@@ -187,9 +194,10 @@ def test_install_base_resolves_primitives_from_addons_globals(boot, monkeypatch)
     assert any(add.PROXY_REPO_ID in u for u in extracts), (
         "the proxy repo extract must route through the patched addons.extract_zip"
     )
-    # 2 base apps (pvr.iptvsimple -> IPTV layer; weather.multi -> Foundation); the
+    # 1 base app (realdebrid; pvr.iptvsimple -> IPTV layer; weather.multi ->
+    # Foundation; peno64's plain backup fork removed, Decision C); the
     # install_with_deps patch is driven once per base app, in ADDONS order.
-    assert app_ok == 2 and deps == list(add.ADDONS), (
+    assert app_ok == 1 and deps == list(add.ADDONS), (
         "addons.install_with_deps patch must apply to every base app"
     )
 
@@ -251,7 +259,7 @@ def test_install_repos_proxy_idempotent_when_already_installed(boot, monkeypatch
 def test_install_base_equals_install_repos_plus_apps(boot, monkeypatch):
     """BEHAVIOUR-PRESERVING extraction: _install_base is install_repos() + the
     base-apps install. Spy install_repos to prove _install_base delegates to it for
-    the repo stage (and still installs the 2 base apps after it). MUTATION: if the
+    the repo stage (and still installs the 1 base app after it). MUTATION: if the
     repo loop were inlined again instead of delegating, install_repos would not be
     called and this fails."""
     add = _addons(boot)
@@ -270,8 +278,8 @@ def test_install_base_equals_install_repos_plus_apps(boot, monkeypatch):
         "_install_base must delegate the repo stage to install_repos"
     )
     # The same net (repo_ok, fp_ok, app_ok, canceled) — 12 repos, 1 proxy repo
-    # (fp_ok), 2 base apps now.
-    assert (repo_ok, fp_ok, app_ok, canceled) == (12, 1, 2, False)
+    # (fp_ok), 1 base app now (Decision C).
+    assert (repo_ok, fp_ok, app_ok, canceled) == (12, 1, 1, False)
 
 
 def test_install_base_aborts_when_install_repos_cancels(boot, monkeypatch):
@@ -335,51 +343,12 @@ def test_video_disable_after_is_dailymotion_only(boot):
 
 
 # --------------------------------------------------------------------------- #
-# Weather config MOVED to Foundation (test_run_foundation.py / test_setup_foundation
-# .py). The Add-ons layer no longer has _apply_weather_from_env / _resolve_weather_
-# location / _set_weather_settings — see those files for the weather coverage.
+# Weather + RSS config MOVED to Foundation (test_run_foundation.py /
+# test_setup_foundation.py). The Add-ons layer no longer has
+# _apply_weather_from_env / _resolve_weather_location / _set_weather_settings /
+# _apply_rss_from_env / _set_setting / RSS_ENABLE_SETTING — see those files for
+# the weather + RSS coverage.
 # --------------------------------------------------------------------------- #
-
-
-# --------------------------------------------------------------------------- #
-# _apply_rss_from_env — env-driven RssFeeds.xml.
-# --------------------------------------------------------------------------- #
-def test_apply_rss_writes_feeds_with_interval(boot):
-    """RSS_FEEDS -> userdata/RssFeeds.xml with each feed at the RSS_INTERVAL."""
-    add = _addons(boot)
-    add._apply_rss_from_env(
-        {"RSS_FEEDS": "http://a/feed; http://b/feed", "RSS_INTERVAL": "45"}
-    )
-    feeds = ET.parse(_rss_path(boot)).getroot().findall("set/feed")
-    assert [f.text for f in feeds] == ["http://a/feed", "http://b/feed"]
-    assert all(f.get("updateinterval") == "45" for f in feeds)
-
-
-def test_apply_rss_noop_when_absent(boot):
-    """No RSS_FEEDS -> no write (a device-copied file / the Kodi default stands)."""
-    add = _addons(boot)
-    add._apply_rss_from_env({})
-    assert not os.path.exists(_rss_path(boot))
-
-
-def test_apply_rss_default_interval_is_30(boot):
-    """Absent RSS_INTERVAL defaults to 30 (the monolith's default)."""
-    add = _addons(boot)
-    add._apply_rss_from_env({"RSS_FEEDS": "http://a/feed"})
-    feeds = ET.parse(_rss_path(boot)).getroot().findall("set/feed")
-    assert feeds[0].get("updateinterval") == "30"
-
-
-def test_apply_rss_never_raises(boot, monkeypatch):
-    """Defensive: a write failure is swallowed (never aborts the rest of setup)."""
-    add = _addons(boot)
-
-    def _boom(*a, **k):
-        raise OSError("disk full")
-
-    monkeypatch.setattr(add.os, "makedirs", _boom)
-    add._apply_rss_from_env({"RSS_FEEDS": "http://a/feed"})  # must not raise
-    assert not os.path.exists(_rss_path(boot))
 
 
 # --------------------------------------------------------------------------- #
@@ -408,13 +377,13 @@ def test_latest_zip_url_returns_none_on_error(boot, monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
-# apply_addons — the composed Layer 2 entry point (install + config).
+# apply_addons — the composed Layer 2 entry point (install-only content).
 # --------------------------------------------------------------------------- #
 def test_apply_addons_returns_addons_layerresult_on_success(boot, monkeypatch):
-    """The composed layer installs base + video, writes RSS, and returns a
+    """The composed layer installs base + video and returns a
     LayerResult(layer='addons', ok=True) recording the installed ids + the
-    install-then-disable set, requesting a restart. (Weather is NOT this layer's job
-    — it moved to Foundation.)"""
+    install-then-disable set, requesting a restart. (Weather + RSS are NOT this
+    layer's job — both moved to Foundation.)"""
     add = _addons(boot)
 
     def _sel(selected, official_base, disable_ids, dialog, log):
@@ -423,7 +392,7 @@ def test_apply_addons_returns_addons_layerresult_on_success(boot, monkeypatch):
     monkeypatch.setattr(add, "install_selection", _sel)
 
     res = add.apply_addons(
-        {"RSS_FEEDS": "http://a/feed"},
+        {},
         dialog=boot.mod.xbmcgui.DialogProgress(),
         log=boot.mod._log,
     )
@@ -438,40 +407,47 @@ def test_apply_addons_returns_addons_layerresult_on_success(boot, monkeypatch):
         assert res.installed.get(aid) == "installed"
     # the install-then-disable set is recorded as disabled
     assert res.installed.get("plugin.video.dailymotion_com") == "disabled"
-    # config ran: RSS feed written (weather is Foundation's job, not here)
-    assert os.path.exists(_rss_path(boot))
     # the Add-ons layer must NOT install weather.multi (Foundation does)
     assert "weather.multi" not in res.installed
 
 
-def test_apply_addons_cancel_is_not_ok_and_skips_config(boot, monkeypatch):
-    """A cancelled base install -> ok=False, no restart requested, and the RSS config
-    is SKIPPED (the monolith aborts with no summary on cancel)."""
+def test_apply_addons_never_writes_rss_or_core_settings(boot, monkeypatch):
+    """apply_addons no longer touches RSS at all (moved to Foundation): passing
+    RSS_FEEDS in the env has no effect and no Settings.SetSettingValue call is
+    emitted from this layer."""
     add = _addons(boot)
-    rss_calls = []
+    monkeypatch.setattr(add, "install_selection", lambda s, *a, **k: len(s))
+    add.apply_addons(
+        {"RSS_FEEDS": "http://a/feed"},
+        dialog=boot.mod.xbmcgui.DialogProgress(),
+        log=None,
+    )
+    assert not os.path.exists(_rss_path(boot))
+    assert _settings_set(boot) == {}
+
+
+def test_apply_addons_cancel_is_not_ok(boot, monkeypatch):
+    """A cancelled base install -> ok=False, no restart requested."""
+    add = _addons(boot)
     monkeypatch.setattr(
         add, "_install_base", lambda dialog: (3, 0, 0, True)
     )  # canceled
-    monkeypatch.setattr(add, "_apply_rss_from_env", lambda env: rss_calls.append(env))
-    res = add.apply_addons({"RSS_FEEDS": "http://a/feed"}, dialog=None, log=None)
+    res = add.apply_addons({}, dialog=None, log=None)
     assert res.ok is False
     assert res.needs_restart is False
-    assert rss_calls == [], "config must not run on a cancelled install"
-    assert not os.path.exists(_rss_path(boot))
 
 
 def test_apply_addons_records_failed_apps(boot, monkeypatch):
     """When fewer apps install than requested, the shortfall is recorded in
     failed{} so the orchestrator can decide before restarting (not always-empty)."""
     add = _addons(boot)
-    # base: all repos ok, only 1 of the 2 apps ok; video: 0.
-    monkeypatch.setattr(add, "_install_base", lambda dialog: (12, 0, 1, False))
+    # base: all repos ok, 0 of the 1 base app ok (Decision C: ADDONS has just
+    # realdebrid now); video: 0.
+    monkeypatch.setattr(add, "_install_base", lambda dialog: (12, 0, 0, False))
     monkeypatch.setattr(add, "_install_video", lambda dialog: 0)
-    monkeypatch.setattr(add, "_apply_rss_from_env", lambda env: None)
     res = add.apply_addons({}, dialog=None, log=None)
     assert res.ok is True  # not cancelled -> ok (degraded)
-    assert res.installed.get(add.ADDONS[0]) == "installed"
-    assert res.failed.get(add.ADDONS[1]) == "install failed"
+    assert res.failed.get(add.ADDONS[0]) == "install failed"
     # all four video apps failed (0 installed)
     for aid in add.VIDEO_APPS:
         assert res.failed.get(aid) == "video install failed"
@@ -488,64 +464,15 @@ def test_apply_addons_already_done_when_no_work_configured(boot, monkeypatch):
     monkeypatch.setattr(add, "VIDEO_APPS", [])
     monkeypatch.setattr(add, "_install_base", lambda dialog: (0, 0, 0, False))
     monkeypatch.setattr(add, "_install_video", lambda dialog: 0)
-    monkeypatch.setattr(add, "_apply_rss_from_env", lambda env: None)
     res = add.apply_addons({}, dialog=None, log=None)
     assert res.installed == {} and res.failed == {}
     assert res.already_done is True
 
 
 def test_apply_addons_none_env_is_safe(boot, monkeypatch):
-    """env=None is treated as the empty env: no RSS write — never a crash. (Weather
-    config moved to Foundation, so this layer touches no weather settings.)"""
+    """env=None is treated as the empty env — never a crash. (Weather + RSS config
+    moved to Foundation, so this layer touches no weather/RSS settings.)"""
     add = _addons(boot)
     monkeypatch.setattr(add, "install_selection", lambda s, *a, **k: len(s))
     res = add.apply_addons(None, dialog=boot.mod.xbmcgui.DialogProgress(), log=None)
     assert res.ok is True
-    assert not os.path.exists(_rss_path(boot))  # no RSS_FEEDS -> no write
-
-
-# --------------------------------------------------------------------------- #
-# _set_setting + the CORE setting apply_addons owns (the RSS toggle). The weather
-# provider core setting moved to Foundation (weather-into-Foundation).
-# --------------------------------------------------------------------------- #
-def test_set_setting_emits_jsonrpc_and_reports_ok(boot):
-    """_set_setting sends a Settings.SetSettingValue JSON-RPC and returns True on a
-    `"result":true` reply (the fake jsonrpc returns `{}` -> False; patch a true
-    reply to exercise the OK branch)."""
-    add = _addons(boot)
-    # Default fake jsonrpc returns "{}" -> no '"result":true' -> False.
-    assert add._set_setting("lookandfeel.enablerssfeeds", True) is False
-    assert _settings_set(boot).get("lookandfeel.enablerssfeeds") is True
-
-
-def test_set_setting_true_reply_is_ok(boot, monkeypatch):
-    """A `"result":true` JSON-RPC reply makes _set_setting return True."""
-    add = _addons(boot)
-    monkeypatch.setattr(add.xbmc, "executeJSONRPC", lambda s: '{"result":true}')
-    assert add._set_setting("lookandfeel.enablerssfeeds", True) is True
-
-
-def test_apply_addons_sets_rss_core_setting_not_weather(boot, monkeypatch):
-    """apply_addons emits the RSS-enable core setting (lookandfeel.enablerssfeeds ->
-    True) and does NOT set the weather provider (weather.addon) — the weather provider
-    core setting moved to Foundation (weather-into-Foundation)."""
-    add = _addons(boot)
-    monkeypatch.setattr(add, "install_selection", lambda s, *a, **k: len(s))
-    add.apply_addons({}, dialog=boot.mod.xbmcgui.DialogProgress(), log=None)
-    s = _settings_set(boot)
-    assert s.get(add.RSS_ENABLE_SETTING) is True
-    assert add.RSS_ENABLE_SETTING == "lookandfeel.enablerssfeeds"
-    assert "weather.addon" not in s, (
-        "the Add-ons layer must NOT set the weather provider (moved to Foundation)"
-    )
-
-
-def test_apply_addons_cancel_skips_core_settings(boot, monkeypatch):
-    """On a cancelled base install, apply_addons skips the WHOLE config block — the
-    RSS core setting is NOT emitted either (the monolith aborts with no config)."""
-    add = _addons(boot)
-    monkeypatch.setattr(add, "_install_base", lambda dialog: (3, 0, 0, True))
-    add.apply_addons({}, dialog=None, log=None)
-    s = _settings_set(boot)
-    assert add.RSS_ENABLE_SETTING not in s
-    assert "weather.addon" not in s

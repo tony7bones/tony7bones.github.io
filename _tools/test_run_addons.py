@@ -1,14 +1,13 @@
 """Tests for run_addons — the standalone Add-ons orchestrator (Phase 5c).
 
 ``run_addons`` makes the Add-ons layer INDEPENDENTLY-RUNNABLE: the opinionated
-curated content set (base apps + POV / The Loop / Sports HD / YouTube + RSS) as
-an opt-in layer on top of an existing Foundation. Stop here = the full box.
+curated content set (base apps + POV / The Loop / Sports HD / YouTube) as an
+opt-in layer on top of an existing Foundation. Stop here = the full box.
 
 What it MUST do:
   * drive the SAME ``apply_addons`` the Express one-shot drives (the no-fork
     invariant) — base source repos + base apps + curated video (incl. the
-    install-then-disable of plugin.video.dailymotion_com) + the RSS core toggle
-    + the env-driven RSS feeds;
+    install-then-disable of plugin.video.dailymotion_com);
   * show an HONEST summary (per-stage counts from the LayerResult), then
     self-uninstall, then ONE platform-aware restart — in that order.
 
@@ -357,24 +356,18 @@ def test_run_addons_passes_env_through_verbatim(boot, monkeypatch):
     assert seen[1] == {}, "None must normalize to the empty env"
 
 
-def test_run_addons_applies_rss_from_env(boot, monkeypatch):
-    """The env-driven RSS config lands (via apply_addons): the RSS ticker core
-    setting is enabled and userdata/RssFeeds.xml is written from RSS_FEEDS —
-    the Add-ons layer's remaining env-driven config (weather is Foundation's)."""
-    from xml.etree import ElementTree as ET
-
+def test_run_addons_never_writes_rss(boot, monkeypatch):
+    """RSS moved to the Foundation layer — run_addons must NOT enable the RSS
+    ticker or write RssFeeds.xml, even when the env supplies RSS_FEEDS."""
     _stub_video_success(boot, monkeypatch)
     boot.mod.run_addons(
         {"RSS_FEEDS": "http://feeds.example/a.xml; http://feeds.example/b.xml"}
     )
-    assert _settings_set(boot).get("lookandfeel.enablerssfeeds") is True
+    assert "lookandfeel.enablerssfeeds" not in _settings_set(boot), (
+        "run_addons must not enable the RSS ticker (Foundation's job now)"
+    )
     rss_path = boot.sources_xml.parent / "RssFeeds.xml"
-    assert rss_path.exists(), "RssFeeds.xml must be written from the env"
-    feeds = [f.text for f in ET.parse(rss_path).getroot().iter("feed")]
-    assert feeds == [
-        "http://feeds.example/a.xml",
-        "http://feeds.example/b.xml",
-    ]
+    assert not rss_path.exists(), "run_addons must not write RssFeeds.xml"
 
 
 # --------------------------------------------------------------------------- #

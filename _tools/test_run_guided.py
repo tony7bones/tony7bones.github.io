@@ -43,10 +43,11 @@ import json
 
 def _stub_skin_success(boot, monkeypatch):
     """Make the SKIN closure install succeed (the fixture's bare index cannot
-    resolve it) by stubbing ONLY the foundation module's install primitives —
-    mirrors the snapshot suite's technique, but leaves the addons module REAL
-    so ``install_repos`` (the gate's plumbing step) still drives the real
-    engine and the repos genuinely land in the fake state."""
+    resolve it) by stubbing the skin module's install primitives (where the
+    closure actually resolves now) — mirrors the snapshot suite's technique,
+    but leaves the addons module REAL so ``install_repos`` (the gate's plumbing
+    step) still drives the real engine and the repos genuinely land in the
+    fake state."""
 
     def _sel(selected, official_base, disable_ids, dialog, log):
         # The real install_selection enables the source repos while resolving a
@@ -70,18 +71,18 @@ def _stub_skin_success(boot, monkeypatch):
             boot.state["installed"].add(boot.mod.MODV2PLUS_ID)
         return True
 
-    foundation = boot.mod._foundation
-    monkeypatch.setattr(foundation, "install_selection", _sel, raising=False)
-    monkeypatch.setattr(foundation, "extract_zip", _extract, raising=False)
-    monkeypatch.setattr(
-        foundation, "install_with_deps", lambda *a, **k: True, raising=False
-    )
-    monkeypatch.setattr(
-        foundation,
-        "_latest_zip_url",
-        lambda aid: f"http://local/{aid}-9.9.9.zip",
-        raising=False,
-    )
+    for foundation in (boot.mod._foundation, boot.mod._skin):
+        monkeypatch.setattr(foundation, "install_selection", _sel, raising=False)
+        monkeypatch.setattr(foundation, "extract_zip", _extract, raising=False)
+        monkeypatch.setattr(
+            foundation, "install_with_deps", lambda *a, **k: True, raising=False
+        )
+        monkeypatch.setattr(
+            foundation,
+            "_latest_zip_url",
+            lambda aid: f"http://local/{aid}-9.9.9.zip",
+            raising=False,
+        )
 
 
 def _settings_set(boot):
@@ -111,9 +112,16 @@ def _spy_self_uninstall(boot, monkeypatch, events):
 
 
 def _simulate_foundation_done(boot, monkeypatch):
-    """The post-Foundation-restart world: skin installed AND active."""
-    boot.state["installed"].add(boot.mod.SKIN_ID)
-    monkeypatch.setattr(boot.mod.xbmc, "getSkinDir", lambda: boot.mod.SKIN_ID)
+    """The post-Foundation-gate-restart world: stub the THREE probes the
+    bundled Foundation gate now backs (Foundation config + Backup + Skin — no
+    separate gates/menu entries exist for those yet) to read done. These
+    wizard-routing tests exercise MENU/ORDER behavior, not probe
+    content-checking (that's covered exhaustively in test_setup_probes.py),
+    so a probe-level stub is the right scope — mirrors test_no_fork.py's
+    ``_script_probes`` technique."""
+    monkeypatch.setattr(boot.mod._probes, "foundation_done", lambda env=None: True)
+    monkeypatch.setattr(boot.mod._probes, "backup_done", lambda env=None: True)
+    monkeypatch.setattr(boot.mod._probes, "skin_done", lambda: True)
 
 
 def _simulate_addons_done(boot):
@@ -532,7 +540,7 @@ def test_run_defaults_to_express_without_setup_mode(boot, monkeypatch, tmp_path)
         "run_express",
         lambda env: (
             routed.append(env),
-            (LayerResult(layer="addons", ok=True), None, None),
+            (LayerResult(layer="addons", ok=True), None, None, None, None),
         )[1],
     )
     monkeypatch.setattr(
@@ -556,7 +564,7 @@ def test_run_express_route_on_unknown_mode_value(boot, monkeypatch, tmp_path):
         "run_express",
         lambda env: (
             routed.append(env),
-            (LayerResult(layer="addons", ok=True), None, None),
+            (LayerResult(layer="addons", ok=True), None, None, None, None),
         )[1],
     )
     boot.mod.run()

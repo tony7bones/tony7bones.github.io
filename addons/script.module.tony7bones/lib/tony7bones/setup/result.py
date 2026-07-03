@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-LAYERS = ("foundation", "iptv", "addons")
+LAYERS = ("foundation", "backup", "iptv", "skin", "addons")
 
 
 @dataclass
@@ -23,8 +23,8 @@ class LayerResult:
     Fields
     ------
     layer
-        Which layer produced this result: ``"foundation"``, ``"iptv"`` or
-        ``"addons"``.
+        Which layer produced this result: ``"foundation"``, ``"backup"``,
+        ``"iptv"``, ``"skin"`` or ``"addons"``.
     ok
         Did the layer reach a complete (success or acceptably-degraded) state?
         The orchestrator checks this BEFORE restarting a gate, so a swallowed
@@ -39,7 +39,7 @@ class LayerResult:
     needs_skin_activation
         A REQUEST: the layer staged a skin that the orchestrator must activate
         (set ``lookandfeel.skin`` + accept "Keep this skin?") LAST, right before
-        the restart. Only ``foundation`` sets this.
+        the restart. Only ``skin`` sets this.
     needs_restart
         A REQUEST: the layer's changes need a Kodi restart to take effect. The
         orchestrator owns the actual restart cadence.

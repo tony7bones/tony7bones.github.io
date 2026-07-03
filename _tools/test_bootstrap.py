@@ -139,19 +139,22 @@ def test_addons_are_plain_id_strings_no_labels():
         assert isinstance(item, str), f"FIRST_PARTY entry is not a bare id: {item!r}"
 
 
-def test_addons_includes_peno64_apps_only():
-    """Base ADDONS install set: ONLY the two peno64 apps.
+def test_addons_includes_realdebrid_only():
+    """Base ADDONS install set: ONLY real-debrid.
 
-    pvr.iptvsimple moved into the IPTV layer (apply_iptv / _install_pvr_backend) and
-    weather.multi moved into the Foundation layer (apply_foundation) — so the base
-    list is content-only and carries neither the PVR backend nor the branded-look
-    weather provider. A FULL run STILL installs BOTH (pvr via apply_iptv, weather via
-    apply_foundation), proven by the net-set equivalence invariant in
-    test_modular_setup.py."""
+    peno64's PLAIN backup fork (script.ezmaintenanceplus) is no longer here
+    either (Decision C) — the Setup was installing the WRONG backup tool; the
+    correct `++` fork is installed by the Backup layer instead. pvr.iptvsimple
+    moved into the IPTV layer (apply_iptv / _install_pvr_backend) and
+    weather.multi moved into the Foundation layer (apply_foundation) — so the
+    base list is content-only and carries neither the PVR backend nor the
+    branded-look weather provider. A FULL run STILL installs pvr + weather (via
+    apply_iptv / apply_foundation respectively), proven by the net-set
+    equivalence invariant in test_modular_setup.py."""
     assert _assign("ADDONS", ADDONS_PY) == [
-        "script.ezmaintenanceplus",
         "script.realdebrid",
     ]
+    assert "script.ezmaintenanceplus" not in _assign("ADDONS", ADDONS_PY)
     # The moves precisely: pvr -> IPTV layer, weather -> Foundation layer.
     assert "pvr.iptvsimple" not in _assign("ADDONS", ADDONS_PY)
     assert "weather.multi" not in _assign("ADDONS", ADDONS_PY)
@@ -464,7 +467,7 @@ def test_add_file_sources_helper_exists():
 def test_add_file_sources_creates_file_when_missing(boot):
     """No sources.xml → it creates the structure and adds both sources."""
     assert not boot.sources_xml.exists()
-    boot.mod._add_file_sources()
+    boot.mod._add_file_sources({})
     entries = _files_sources(boot)
     assert _HOME in entries
     assert _SRC in entries
@@ -479,7 +482,7 @@ def test_add_file_sources_creates_file_when_missing(boot):
 
 
 def test_add_file_sources_both_present_with_names_and_paths(boot):
-    boot.mod._add_file_sources()
+    boot.mod._add_file_sources({})
     entries = dict(_files_sources(boot))
     assert entries["special://home"] == "special://home"
     assert entries["special://kodi"] == "/storage/emulated/0/kodi/"
@@ -505,7 +508,7 @@ def test_add_file_sources_preserves_others_and_normalizes_repo(boot):
         "  </files>\n"
         "</sources>\n"
     )
-    boot.mod._add_file_sources()
+    boot.mod._add_file_sources({})
     root = ET.parse(boot.sources_xml).getroot()
     # the unrelated video/Movies source is preserved untouched
     movies = [s.findtext("name") for s in root.find("video").findall("source")]
@@ -532,7 +535,7 @@ def test_add_file_sources_normalizes_repo_url_without_slash(boot):
         "<allowsharing>true</allowsharing></source>"
         "</files></sources>"
     )
-    boot.mod._add_file_sources()
+    boot.mod._add_file_sources({})
     entries = dict(_files_sources(boot))
     assert ".xyz" not in entries
     assert entries[".tony.7.bones"] == "https://tony7bones.github.io/"
@@ -551,7 +554,7 @@ def test_add_file_sources_collapses_repo_slash_variants(boot):
         "<allowsharing>true</allowsharing></source>"
         "</files></sources>"
     )
-    boot.mod._add_file_sources()
+    boot.mod._add_file_sources({})
     entries = _files_sources(boot)
     names = [n for n, _p in entries]
     paths = [p for _n, p in entries]
@@ -561,8 +564,8 @@ def test_add_file_sources_collapses_repo_slash_variants(boot):
 
 def test_add_file_sources_dedupes_on_second_run(boot):
     """Running twice must not duplicate (dedupe on name OR path)."""
-    boot.mod._add_file_sources()
-    boot.mod._add_file_sources()
+    boot.mod._add_file_sources({})
+    boot.mod._add_file_sources({})
     entries = _files_sources(boot)
     assert entries.count(_HOME) == 1
     assert entries.count(_SRC) == 1
@@ -578,7 +581,7 @@ def test_add_file_sources_dedupes_on_path_with_different_name(boot):
         "<allowsharing>true</allowsharing></source>"
         "</files></sources>"
     )
-    boot.mod._add_file_sources()
+    boot.mod._add_file_sources({})
     paths = [p for _n, p in _files_sources(boot)]
     # special://home appears exactly once (the pre-existing one), not duplicated
     assert paths.count("special://home") == 1
@@ -589,7 +592,7 @@ def test_add_file_sources_dedupes_on_path_with_different_name(boot):
 def test_add_file_sources_handles_malformed_xml(boot):
     """A corrupt sources.xml must be recreated, not crash the run."""
     boot.sources_xml.write_text("<sources><files><not closed")
-    boot.mod._add_file_sources()  # must not raise
+    boot.mod._add_file_sources({})  # must not raise
     entries = _files_sources(boot)
     assert _HOME in entries
     assert _SRC in entries
@@ -599,7 +602,7 @@ def test_add_file_sources_handles_malformed_xml(boot):
 def test_add_file_sources_attempts_guarded_mkdirs(boot):
     """mkdirs must be ATTEMPTED for the Android path and guarded so a failure
     off Android is harmless — the source entry lands regardless."""
-    boot.mod._add_file_sources()
+    boot.mod._add_file_sources({})
     # the directory-create was attempted on the Android internal-storage path
     assert "/storage/emulated/0/kodi/" in boot.state["mkdirs"], (
         "mkdirs must be attempted for the Android storage path"
@@ -621,7 +624,7 @@ def test_add_file_sources_never_raises_on_write_error(boot, monkeypatch):
         return real_open(path, *a, **k)
 
     monkeypatch.setattr("builtins.open", boom)
-    boot.mod._add_file_sources()  # must not raise
+    boot.mod._add_file_sources({})  # must not raise
 
 
 def test_run_adds_file_sources(boot):
@@ -666,21 +669,22 @@ def _estuary_bools(boot):
 
 
 def test_trim_home_menu_helper_exists_and_wired_before_restart():
-    """The helper must still be reachable (a re-export shim over the Foundation
-    layer's lifted body) and the Foundation layer it now lives in must be invoked
-    in run() BEFORE the restart (the restart is what makes Estuary re-read
-    settings.xml). The exact home-trim slot/order is pinned at RUNTIME by the
-    modular_setup snapshot; this guards the shim + apply_foundation wiring."""
+    """The helper must still be reachable (a re-export shim over the Skin
+    layer's lifted body — moved OUT of Foundation, see section 3.3) and the
+    Skin layer it now lives in must be invoked in run() BEFORE the restart
+    (the restart is what makes Estuary re-read settings.xml). The exact
+    home-trim slot/order is pinned at RUNTIME by the modular_setup snapshot;
+    this guards the shim + apply_skin wiring."""
     src = DEFAULT_PY.read_text()
     assert "_trim_home_menu" in src, "shim must exist"
-    assert "_trim_home_menu = _foundation._trim_home_menu" in src, (
-        "_trim_home_menu must be a re-export shim over the Foundation layer"
+    assert "_trim_home_menu = _skin._trim_home_menu" in src, (
+        "_trim_home_menu must be a re-export shim over the Skin layer"
     )
-    assert "apply_foundation(" in src, "apply_foundation must be invoked in run()"
-    trim_pos = src.rfind("apply_foundation(")
+    assert "apply_skin(" in src, "apply_skin must be invoked in run()"
+    trim_pos = src.rfind("apply_skin(")
     restart_pos = src.rfind("restart_kodi(")
     assert trim_pos != -1 and restart_pos != -1
-    assert trim_pos < restart_pos, "apply_foundation() must come before the restart"
+    assert trim_pos < restart_pos, "apply_skin() must come before the restart"
 
 
 # The eight camel-case ids the skin XML / Skin.SetBool use (the part that
@@ -1007,13 +1011,14 @@ def test_skin_install_resolves_closure_and_sets_skin(boot, monkeypatch):
             boot.state["installed"].add(boot.mod.MODV2PLUS_ID)
         return True
 
-    # Phase 3a: run_express calls apply_foundation via the BARE form (the deps-
+    # Phase 3a: run_express calls apply_skin via the BARE form (the deps-
     # injection seam is killed — Tech-debt ledger), so the skin closure resolves its
-    # primitives from the FOUNDATION module's globals, not boot.mod's. Patch the
-    # stubs onto _foundation (where the skin closure now lives) as well as boot.mod.
-    # _addons gets them too for the base/video install. (Same repointing pattern
-    # Phase 2c/2d used; the stub objects are identical, so behaviour is unchanged.)
-    for tgt in (boot.mod, boot.mod._foundation, boot.mod._addons):
+    # primitives from the SKIN module's globals, not boot.mod's. Patch the
+    # stubs onto _skin (where the skin closure now lives — split out of Foundation,
+    # see section 3.3) as well as boot.mod. _addons gets them too for the base/video
+    # install. (Same repointing pattern Phase 2c/2d used; the stub objects are
+    # identical, so behaviour is unchanged.)
+    for tgt in (boot.mod, boot.mod._skin, boot.mod._addons):
         monkeypatch.setattr(tgt, "install_selection", _sel, raising=False)
         monkeypatch.setattr(tgt, "extract_zip", _extract, raising=False)
         monkeypatch.setattr(
@@ -1083,9 +1088,17 @@ def test_video_runs_before_self_uninstall_and_restart(boot, monkeypatch):
             boot.state["installed"].add(boot.mod.PVR_ARTWORK_ID)
         if "modv2plus" in url:
             boot.state["installed"].add(boot.mod.MODV2PLUS_ID)
+        if "ezmaintenanceplusplus" in url:
+            boot.state["installed"].add(boot.mod._backup.EZM_ID)
         return True
 
-    for tgt in (boot.mod, boot.mod._addons, boot.mod._foundation):
+    for tgt in (
+        boot.mod,
+        boot.mod._addons,
+        boot.mod._foundation,
+        boot.mod._skin,
+        boot.mod._backup,
+    ):
         monkeypatch.setattr(tgt, "install_selection", _sel, raising=False)
         monkeypatch.setattr(tgt, "extract_zip", _extract, raising=False)
         monkeypatch.setattr(
@@ -1139,9 +1152,9 @@ def test_box_configuration_runs_before_restart(boot, monkeypatch):
     re-reads it on the single end-of-setup restart.
 
     Phase 3a: run() no longer calls a monolithic `_configure_box(box_env)` — the
-    config moved INTO the composed layers (apply_addons writes the weather/RSS core
-    settings; run_express sets the top-bar weather bool) and run_express owns the
-    terminal restart. The ordering INTENT survives the decomposition and is pinned
+    config moved INTO the composed layers (apply_foundation writes the weather/RSS
+    core settings; run_express sets the top-bar weather bool) and run_express owns
+    the terminal restart. The ordering INTENT survives the decomposition and is pinned
     at RUNTIME: the weather.addon + lookandfeel.enablerssfeeds settings and the
     show_weatherinfo Skin.SetBool are all emitted before restart_kodi is invoked."""
     restart_at = {"settings": None, "builtins": None}
@@ -1974,9 +1987,17 @@ def _stub_layers_success(boot, monkeypatch):
             boot.state["installed"].add(boot.mod.PVR_ARTWORK_ID)
         if "modv2plus" in url:
             boot.state["installed"].add(boot.mod.MODV2PLUS_ID)
+        if "ezmaintenanceplusplus" in url:
+            boot.state["installed"].add(boot.mod._backup.EZM_ID)
         return True
 
-    for tgt in (boot.mod, boot.mod._addons, boot.mod._foundation):
+    for tgt in (
+        boot.mod,
+        boot.mod._addons,
+        boot.mod._foundation,
+        boot.mod._skin,
+        boot.mod._backup,
+    ):
         monkeypatch.setattr(tgt, "install_selection", _sel, raising=False)
         monkeypatch.setattr(tgt, "extract_zip", _extract, raising=False)
         monkeypatch.setattr(
@@ -1991,15 +2012,19 @@ def _stub_layers_success(boot, monkeypatch):
     monkeypatch.setattr(boot.mod._iptv, "install_with_deps", lambda *a, **k: True)
 
 
-def test_run_express_returns_three_layerresults(boot, monkeypatch):
-    """run_express returns (addons, foundation, iptv) LayerResults on a full run, in
-    that order, each a real LayerResult for the matching layer."""
+def test_run_express_returns_five_layerresults(boot, monkeypatch):
+    """run_express returns (addons, foundation, backup, skin, iptv) LayerResults on
+    a full run, in that order, each a real LayerResult for the matching layer."""
     _stub_layers_success(boot, monkeypatch)
     # Don't actually restart: decline / no-op restart_kodi.
     monkeypatch.setattr(boot.mod, "restart_kodi", lambda *a, **k: None)
-    addons_res, foundation_res, iptv_res = boot.mod.run_express({})
+    addons_res, foundation_res, backup_res, skin_res, iptv_res = boot.mod.run_express(
+        {}
+    )
     assert addons_res.layer == "addons" and addons_res.ok is True
     assert foundation_res.layer == "foundation"
+    assert backup_res.layer == "backup"
+    assert skin_res.layer == "skin"
     assert iptv_res.layer == "iptv" and iptv_res.ok is True
     # The IPTV layer owns + installed the PVR backend.
     assert iptv_res.installed.get("pvr.iptvsimple") in ("installed", "configured")
@@ -2007,12 +2032,14 @@ def test_run_express_returns_three_layerresults(boot, monkeypatch):
 
 def test_run_express_orchestration_order_addons_foundation_iptv(boot, monkeypatch):
     """The composed layers run in dependency order: apply_addons (source repos the
-    skin closure needs) -> apply_foundation (skin closure) -> apply_iptv. Pinned by
-    spying the three layer entry points run_express calls."""
+    skin closure needs) -> apply_foundation -> apply_backup -> apply_skin ->
+    apply_iptv. Pinned by spying the five layer entry points run_express calls."""
     order = []
     real = {
         "apply_addons": boot.mod.apply_addons,
         "apply_foundation": boot.mod.apply_foundation,
+        "apply_backup": boot.mod.apply_backup,
+        "apply_skin": boot.mod.apply_skin,
         "apply_iptv": boot.mod.apply_iptv,
     }
 
@@ -2028,9 +2055,13 @@ def test_run_express_orchestration_order_addons_foundation_iptv(boot, monkeypatc
     for name in real:
         monkeypatch.setattr(boot.mod, name, _wrap(name))
     boot.mod.run_express({})
-    assert order == ["apply_addons", "apply_foundation", "apply_iptv"], (
-        f"layers must run addons -> foundation -> iptv, got {order}"
-    )
+    assert order == [
+        "apply_addons",
+        "apply_foundation",
+        "apply_backup",
+        "apply_skin",
+        "apply_iptv",
+    ], f"layers must run addons -> foundation -> backup -> skin -> iptv, got {order}"
 
 
 def test_run_express_activates_skin_last_then_restarts(boot, monkeypatch):
@@ -2066,6 +2097,80 @@ def test_run_express_activates_skin_last_then_restarts(boot, monkeypatch):
     assert last[1] == boot.mod.SKIN_ID
 
 
+def test_run_express_installs_and_configures_backup(boot, monkeypatch):
+    """run_express drives apply_backup for real: EZ Maintenance++ lands in the
+    installed set and its settings.xml gets a real per-device NFS destination.
+    MUTATION: dropping the apply_backup call from run_express leaves the addon
+    absent here (this is the QA-confirmed gap the wiring closes)."""
+    _stub_layers_success(boot, monkeypatch)
+    monkeypatch.setattr(boot.mod, "restart_kodi", lambda *a, **k: None)
+    boot.mod.run_express({})
+    assert boot.mod._backup.EZM_ID in boot.state["installed"], (
+        "run_express must install EZ Maintenance++ (the QA-confirmed backup gap)"
+    )
+    xml_path = boot.mod._backup._ezm_settings_path()
+    assert os.path.exists(xml_path), "run_express must write EZM++ settings.xml"
+
+
+def test_run_express_shows_backup_ok_summary_no_alert(boot, monkeypatch):
+    """A successful Backup install shows 'Backup: ok' in the honest summary and
+    fires NO extra alert (the attention-grabbing yesno is failure-only)."""
+    _stub_layers_success(boot, monkeypatch)
+    monkeypatch.setattr(boot.mod, "restart_kodi", lambda *a, **k: None)
+    boot.mod.run_express({})
+    _title, msg = boot.state["ok"][-1]
+    assert "Backup: ok" in msg
+    assert not any(
+        "Backup setup FAILED" in m for _t, m in boot.state.get("yesno", [])
+    ), "no Backup alert must fire on success"
+
+
+def test_run_express_backup_failure_shows_alert_and_summary_but_does_not_abort(
+    boot, monkeypatch
+):
+    """Decision I: a failed Backup does NOT gate the rest of the run (self-
+    uninstall/restart/skin-activation all still happen), but fires a bounded
+    yesno(autoclose=...) alert BEFORE the summary, AND the summary itself gets
+    an unconditional 'Backup: failed' line — neither signal can be missed even
+    if the other is."""
+    _stub_layers_success(boot, monkeypatch)
+    monkeypatch.setattr(boot.mod, "restart_kodi", lambda *a, **k: None)
+    from tony7bones.setup.result import LayerResult
+
+    monkeypatch.setattr(
+        boot.mod,
+        "apply_backup",
+        lambda *a, **k: LayerResult(layer="backup", ok=False, needs_restart=True),
+    )
+
+    events = []
+    monkeypatch.setattr(
+        boot.mod, "self_uninstall", lambda *a, **k: events.append("uninstall")
+    )
+    real_yesno = boot.mod.xbmcgui.Dialog.yesno
+    real_ok = boot.mod.xbmcgui.Dialog.ok
+
+    def _yesno(self, title, msg, **kwargs):
+        if "Backup setup FAILED" in msg:
+            events.append("backup_alert")
+        return real_yesno(self, title, msg, **kwargs)
+
+    def _ok(self, title, msg):
+        events.append("summary")
+        return real_ok(self, title, msg)
+
+    monkeypatch.setattr(boot.mod.xbmcgui.Dialog, "yesno", _yesno)
+    monkeypatch.setattr(boot.mod.xbmcgui.Dialog, "ok", _ok)
+    boot.mod.run_express({})
+
+    assert events == ["backup_alert", "summary", "uninstall"], (
+        f"the Backup alert must fire BEFORE the summary, which must fire BEFORE "
+        f"self-uninstall, got {events}"
+    )
+    _title, msg = boot.state["ok"][-1]
+    assert "Backup: failed" in msg
+
+
 def test_run_express_self_uninstalls_after_summary_before_restart(boot, monkeypatch):
     """run_express self-uninstalls exactly once, AFTER the summary Dialog().ok and
     BEFORE the restart (the restart finalises the removal)."""
@@ -2094,8 +2199,9 @@ def test_run_express_self_uninstalls_after_summary_before_restart(boot, monkeypa
 
 def test_run_express_cancel_returns_early_no_terminal(boot, monkeypatch):
     """A cancelled base install (apply_addons ok=False) makes run_express abort
-    cleanly: it returns (addons_res, None, None) — no foundation/iptv results — and
-    fires NO summary / self-uninstall / restart (the monolith's early-return)."""
+    cleanly: it returns (addons_res, None, None, None, None) — no foundation/
+    backup/skin/iptv results — and fires NO summary / self-uninstall / restart
+    (the monolith's early-return)."""
     _stub_layers_success(boot, monkeypatch)
     monkeypatch.setattr(
         boot.mod.xbmcgui.DialogProgress, "iscanceled", lambda self: True
@@ -2104,9 +2210,16 @@ def test_run_express_cancel_returns_early_no_terminal(boot, monkeypatch):
     rs = []
     monkeypatch.setattr(boot.mod, "self_uninstall", lambda *a, **k: un.append(1))
     monkeypatch.setattr(boot.mod, "restart_kodi", lambda *a, **k: rs.append(1))
-    addons_res, foundation_res, iptv_res = boot.mod.run_express({})
+    addons_res, foundation_res, backup_res, skin_res, iptv_res = boot.mod.run_express(
+        {}
+    )
     assert addons_res.ok is False
-    assert foundation_res is None and iptv_res is None
+    assert (
+        foundation_res is None
+        and backup_res is None
+        and skin_res is None
+        and iptv_res is None
+    )
     assert un == [] and rs == [], "cancelled run must not self-uninstall or restart"
     assert boot.state["ok"] == [], "cancelled run must show no success summary"
 
@@ -2121,7 +2234,7 @@ def test_run_delegates_to_run_express(boot, monkeypatch):
         # Return a non-cancelled addons_res so run()'s delete guard is exercised.
         from tony7bones.setup.result import LayerResult
 
-        return LayerResult(layer="addons", ok=True), None, None
+        return LayerResult(layer="addons", ok=True), None, None, None, None
 
     monkeypatch.setattr(boot.mod, "run_express", _express)
     # No env file on this host -> read yields {} -> delete is a guarded no-op.
@@ -2153,17 +2266,18 @@ def test_boot_skin_deps_late_binds_module_globals(boot, monkeypatch):
 
 
 def test_install_skin_shim_forwards_bootstrap_deps(boot, monkeypatch):
-    """The _install_skin shim forwards a _BootSkinDeps into foundation._install_skin,
-    so a run driven through patched boot.mod.* primitives routes through them — the
+    """The _install_skin shim forwards a _BootSkinDeps into skin._install_skin
+    (the body moved OUT of Foundation into the Skin layer, section 3.3), so a
+    run driven through patched boot.mod.* primitives routes through them — the
     transitional behaviour-preservation contract. Pin that the shim reaches the
-    foundation body with the bootstrap's deps object."""
+    skin body with the bootstrap's deps object."""
     seen = {}
 
     def _fake_body(dialog, *, deps=None):
         seen["deps"] = deps
         return True
 
-    monkeypatch.setattr(boot.mod._foundation, "_install_skin", _fake_body)
+    monkeypatch.setattr(boot.mod._skin, "_install_skin", _fake_body)
     assert boot.mod._install_skin(boot.mod.xbmcgui.DialogProgress()) is True
     assert isinstance(seen["deps"], boot.mod._BootSkinDeps), (
         "the shim must forward a _BootSkinDeps so boot.mod.* patches take effect"

@@ -77,7 +77,7 @@ def _stub_express_ok(boot, monkeypatch, calls):
 
     def _express(env=None):
         calls.append(env)
-        return LayerResult(layer="addons", ok=True), None, None
+        return LayerResult(layer="addons", ok=True), None, None, None, None
 
     monkeypatch.setattr(boot.mod, "run_express", _express)
 
@@ -103,7 +103,14 @@ def _forbid_guided(boot, monkeypatch):
 
 
 def _script_probes(boot, monkeypatch, foundation=False, iptv=True, addons=False):
-    monkeypatch.setattr(boot.mod._probes, "foundation_done", lambda: foundation)
+    """`foundation` drives ALL THREE probes the bundled Foundation gate backs
+    (Foundation config + Backup + Skin — no separate gates/menu entries exist
+    for those yet)."""
+    monkeypatch.setattr(
+        boot.mod._probes, "foundation_done", lambda env=None: foundation
+    )
+    monkeypatch.setattr(boot.mod._probes, "backup_done", lambda env=None: foundation)
+    monkeypatch.setattr(boot.mod._probes, "skin_done", lambda: foundation)
     monkeypatch.setattr(boot.mod._probes, "iptv_done", lambda env: iptv)
     monkeypatch.setattr(boot.mod._probes, "addons_done", lambda: addons)
 
@@ -295,7 +302,13 @@ def test_cancelled_express_leaves_both_envs_intact(boot, monkeypatch):
     monkeypatch.setattr(
         boot.mod,
         "run_express",
-        lambda env=None: (LayerResult(layer="addons", ok=False), None, None),
+        lambda env=None: (
+            LayerResult(layer="addons", ok=False),
+            None,
+            None,
+            None,
+            None,
+        ),
     )
 
     boot.mod.run()
@@ -411,7 +424,13 @@ def test_defaults_entry_cancel_returns_to_menu(boot, monkeypatch):
     monkeypatch.setattr(
         boot.mod,
         "run_express",
-        lambda env=None: (LayerResult(layer="addons", ok=False), None, None),
+        lambda env=None: (
+            LayerResult(layer="addons", ok=False),
+            None,
+            None,
+            None,
+            None,
+        ),
     )
     monkeypatch.setattr(
         boot.mod, "self_uninstall", lambda *a, **k: events.append("uninstall")
@@ -976,6 +995,176 @@ def test_device_name_unreadable_falls_back_generic(boot, monkeypatch):
         lambda s: (_ for _ in ()).throw(RuntimeError("rpc down")),
     )
     assert boot.mod._device_name() == ""
+
+
+def test_device_name_treats_kodi_stock_default_as_generic(boot):
+    """_device_name() is a thin shim over env.resolve_device_name - the SAME
+    fix that protects the Backup layer's collision risk also protects the
+    scaffold: Kodi's stock, never-customized device name ("Kodi") resolves the
+    same as unreadable, not as a real, distinguishing name."""
+    boot.state["settings_values"] = {"services.devicename": "Kodi"}
+    assert boot.mod._device_name() == ""
+
+
+# --------------------------------------------------------------------------- #
+# ensure_device_name - the early, interactive collision-prevention prompt.
+# Fires as soon as possible in Guided (never Express, which stays unattended).
+# --------------------------------------------------------------------------- #
+def test_ensure_device_name_noop_when_env_has_real_name(boot):
+    """A real DEVICE_NAME in the env -> no-op, no prompt shown."""
+    from tony7bones.setup import env as env_mod
+
+    env_mod.ensure_device_name({"DEVICE_NAME": "Office"})
+    assert boot.state.get("input", []) == []
+
+
+def test_ensure_device_name_noop_when_kodi_name_already_real(boot):
+    """A genuinely customized Kodi device name -> no-op, no prompt shown."""
+    from tony7bones.setup import env as env_mod
+
+    boot.state["settings_values"] = {"services.devicename": "Bedroom Fire TV"}
+    env_mod.ensure_device_name({})
+    assert boot.state.get("input", []) == []
+
+
+def test_ensure_device_name_prompts_when_no_real_identity(boot):
+    """No env value AND Kodi's device name is blank/stock -> the prompt fires."""
+    from tony7bones.setup import env as env_mod
+
+    env_mod.ensure_device_name({})
+    assert len(boot.state.get("input", [])) == 1
+
+
+def test_ensure_device_name_prompts_when_kodi_name_is_stock_default(boot):
+    """Kodi's stock "Kodi" is treated as no identity -> the prompt fires too,
+    not just the truly-blank case."""
+    from tony7bones.setup import env as env_mod
+
+    boot.state["settings_values"] = {"services.devicename": "Kodi"}
+    env_mod.ensure_device_name({})
+    assert len(boot.state.get("input", [])) == 1
+
+
+def test_ensure_device_name_writes_entered_name_to_kodi_setting(boot):
+    """A non-empty answer is written straight to services.devicename - so
+    every later phase (and any future run) resolves a real identity. Proves
+    the ACTUAL write-then-read round trip through the fake JSON-RPC (the fake
+    mirrors Settings.SetSettingValue into settings_values, exactly like real
+    Kodi's core settings store) - not a manually fabricated read."""
+    from tony7bones.setup import env as env_mod
+
+    boot.state["input_answer"] = "Living Room"
+    env_mod.ensure_device_name({})
+    written = [
+        j
+        for j in boot.state["jsonrpc"]
+        if '"setting": "services.devicename"' in j and "SetSettingValue" in j
+    ]
+    assert written, "the entered name must be written via Settings.SetSettingValue"
+    assert '"value": "Living Room"' in written[0]
+    # A subsequent resolve genuinely finds it, through the fake's own mirrored
+    # state — no manual seeding of settings_values.
+    assert env_mod.resolve_device_name({}) == "Living Room"
+
+
+def test_ensure_device_name_cancelled_prompt_is_safe_noop(boot):
+    """An empty/cancelled answer (the fake's default) never raises and never
+    writes anything - Setup proceeds regardless, keeping the generic identity."""
+    from tony7bones.setup import env as env_mod
+
+    env_mod.ensure_device_name({})  # boot.state["input_answer"] defaults to ""
+    written = [j for j in boot.state["jsonrpc"] if "SetSettingValue" in j]
+    assert not any('"setting": "services.devicename"' in j for j in written)
+
+
+def test_ensure_device_name_rejects_user_typed_stock_default(boot):
+    """A user who types Kodi's own stock name ("Kodi", any case) into the
+    prompt must NOT have it written - that would recreate the exact collision
+    this function exists to prevent, now via explicit user input instead of
+    an unset default. Treated identically to cancelling."""
+    from tony7bones.setup import env as env_mod
+
+    for typed in ("Kodi", "kodi", "  KODI  "):
+        boot.state["input_answer"] = typed
+        boot.state["jsonrpc"] = []
+        env_mod.ensure_device_name({})
+        written = [j for j in boot.state["jsonrpc"] if "SetSettingValue" in j]
+        assert not any('"setting": "services.devicename"' in j for j in written), (
+            "typed value {!r} must not be written".format(typed)
+        )
+
+
+def test_ensure_device_name_verifies_write_before_claiming_success(boot, monkeypatch):
+    """The write is VERIFIED with a read-back, not trusted fire-and-forget -
+    the same discipline the Backup layer's install uses. If the setting
+    somehow does not verify after the write, this must be non-fatal (log and
+    move on), not silently claim success."""
+    from tony7bones.setup import env as env_mod
+
+    boot.state["input_answer"] = "Living Room"
+    # Simulate a write that reports success but never actually lands: the
+    # fake's own SetSettingValue mirroring is bypassed here so the read-back
+    # genuinely fails, proving ensure_device_name checks it rather than
+    # trusting the call.
+    monkeypatch.setattr(
+        boot.mod.xbmc,
+        "executeJSONRPC",
+        lambda s: "{}" if "SetSettingValue" in s else "{}",
+    )
+    logged = []
+    env_mod.ensure_device_name({}, log=logged.append)
+    assert env_mod.resolve_device_name({}) == "", (
+        "an unverified write must not be trusted as a real identity"
+    )
+    assert any("did not verify" in m for m in logged)
+
+
+def test_run_guided_calls_ensure_device_name_early(boot, monkeypatch):
+    """Wired into the ACTUAL Guided entry point, before any gate runs — calls
+    the REAL run_guided directly (not the routing stub, which replaces
+    run_guided wholesale and would never reach the line under test)."""
+    calls = []
+    monkeypatch.setattr(
+        boot.mod._env_mod, "ensure_device_name", lambda env, log=None: calls.append(env)
+    )
+    monkeypatch.setattr(boot.mod, "restart_kodi", lambda *a, **k: None)
+    outcome = boot.mod.run_guided({})
+    assert outcome == "exit"  # declines the fresh-box offer, same as other tests
+    assert len(calls) == 1
+
+
+def test_run_guided_calls_ensure_device_name_once_across_multiple_gate_iterations(
+    boot, monkeypatch
+):
+    """Fires ONCE at the top of run_guided, not once per gate-loop iteration -
+    a future refactor moving the call inside the while loop must be caught.
+    Drives TWO loop iterations via the same select_queue pattern
+    test_run_guided.py's own multi-iteration tests use (Remove Setup ->
+    declined -> Exit)."""
+    calls = []
+    monkeypatch.setattr(
+        boot.mod._env_mod, "ensure_device_name", lambda env, log=None: calls.append(env)
+    )
+    monkeypatch.setattr(boot.mod, "restart_kodi", lambda *a, **k: None)
+    boot.state["select_queue"] = [1, 2]  # Remove Setup -> declined -> Exit
+    boot.state["yesno_queue"] = [False]
+
+    outcome = boot.mod.run_guided({"SETUP_MODE": "guided"})
+
+    assert outcome == "exit"
+    assert len(boot.state["select"]) == 2, "the menu must have looped twice"
+    assert len(calls) == 1, "ensure_device_name must fire once, not per iteration"
+
+
+def test_run_express_never_calls_ensure_device_name(boot, monkeypatch):
+    """Express stays fully unattended - a provisioned box already has a real
+    device name from the provisioner, so this must never fire there."""
+    calls = []
+    monkeypatch.setattr(
+        boot.mod._env_mod, "ensure_device_name", lambda env, log=None: calls.append(env)
+    )
+    boot.mod.run()  # the fixture's seeded env is SETUP_MODE=express by default
+    assert calls == []
 
 
 def test_scaffold_skips_when_bundled_template_unreadable(boot, monkeypatch):

@@ -76,11 +76,20 @@ def _settings_map(boot):
 def _script_probes(boot, monkeypatch):
     """Scripted done-flags standing in for the between-gate restarts (a unit
     test cannot reboot the fake Kodi; probe correctness is proven in
-    test_setup_probes.py). Returns the flags dict the test flips per gate."""
+    test_setup_probes.py). Returns the flags dict the test flips per gate.
+
+    The "foundation" flag drives ALL THREE probes the bundled Foundation gate
+    backs (Foundation config + Backup + Skin — no separate gates/menu entries
+    exist for those yet), so flipping just ``flags["foundation"]`` advances
+    the whole bundle in lockstep, matching what one real gate restart does."""
     flags = {"foundation": False, "iptv": False, "addons": False}
     monkeypatch.setattr(
-        boot.mod._probes, "foundation_done", lambda: flags["foundation"]
+        boot.mod._probes, "foundation_done", lambda env=None: flags["foundation"]
     )
+    monkeypatch.setattr(
+        boot.mod._probes, "backup_done", lambda env=None: flags["foundation"]
+    )
+    monkeypatch.setattr(boot.mod._probes, "skin_done", lambda: flags["foundation"])
     monkeypatch.setattr(boot.mod._probes, "iptv_done", lambda env: flags["iptv"])
     monkeypatch.setattr(boot.mod._probes, "addons_done", lambda: flags["addons"])
     return flags
@@ -90,10 +99,11 @@ def _script_probes(boot, monkeypatch):
 # 1. The no-fork + cadence invariant (module spies).
 # --------------------------------------------------------------------------- #
 def test_no_fork_identical_layers_and_restart_cadence(boot, monkeypatch):
-    """Guided and Express drive the SAME three apply_* functions, each EXACTLY
+    """Guided and Express drive the SAME four apply_* functions, each EXACTLY
     once, with the SAME env object — and the cadences are: Express ONE restart
     (after self-uninstall, activation immediately before it), Guided one
-    restart PER GATE (activation immediately before the Foundation gate's) and
+    restart PER GATE (activation immediately before the Foundation gate's,
+    which internally drives both apply_foundation and apply_skin) and
     ZERO self-uninstalls until terminal Finish.
 
     MUTATIONS KILLED: forking a layer call (a gate calling anything but its
@@ -111,13 +121,13 @@ def test_no_fork_identical_layers_and_restart_cadence(boot, monkeypatch):
                 layer=layer,
                 ok=True,
                 installed={"pvr.iptvsimple": "installed"} if layer == "iptv" else {},
-                needs_skin_activation=(layer == "foundation"),
+                needs_skin_activation=(layer == "skin"),
                 needs_restart=True,
             )
 
         return _spy
 
-    for layer in ("foundation", "iptv", "addons"):
+    for layer in ("foundation", "skin", "iptv", "addons"):
         monkeypatch.setattr(boot.mod, f"apply_{layer}", _mk(layer))
     # Plumbing stub: the Guided Foundation gate's install_repos (the SAME
     # addons.install_repos Express runs inside apply_addons — see the module
@@ -163,11 +173,13 @@ def test_no_fork_identical_layers_and_restart_cadence(boot, monkeypatch):
         "addons",
         "foundation",
         "iptv",
+        "skin",
     ]
     assert sorted(layer for layer, _ in guided_calls) == [
         "addons",
         "foundation",
         "iptv",
+        "skin",
     ]
     assert {e for _, e in express_calls} == {e for _, e in guided_calls} == {id(env)}, (
         "both cadences must hand the layers the SAME env object"

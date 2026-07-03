@@ -232,8 +232,9 @@ def _stub_skin_and_video_success(boot, monkeypatch):
     # VALUES are unchanged; only WHERE the stub is patched moves.
     addons = boot.mod._addons
     foundation = boot.mod._foundation
+    skin = boot.mod._skin
     iptv = boot.mod._iptv
-    for tgt in (boot.mod, addons, foundation):
+    for tgt in (boot.mod, addons, foundation, skin):
         monkeypatch.setattr(tgt, "install_selection", _sel, raising=False)
         monkeypatch.setattr(tgt, "extract_zip", _extract, raising=False)
         monkeypatch.setattr(
@@ -509,6 +510,20 @@ def test_cancel_path_does_nothing_terminal(boot, monkeypatch):
 #     INTENTIONAL installs that GROW the net set by exactly two ids. This is feature
 #     growth, NOT a regression — the proven delta before regenerating was EXACTLY
 #     {repository.tony7bones, script.module.autocompletion} added, nothing else.
+#   * Decision C (docs/plans/automate-share-and-backup-config.md): peno64's PLAIN
+#     backup fork (script.ezmaintenanceplus) is REMOVED from the base ADDONS list —
+#     the Setup was installing the WRONG backup tool. This SHRINKS the net set by
+#     one id, deliberately (the correct `++` fork is a SEPARATE Backup-layer
+#     install, wired into run_express/run_guided next — see the following entry).
+#   * Backup layer wired in (docs/plans/automate-share-and-backup-config.md,
+#     section 3.1a): ``apply_backup`` (EZ Maintenance++, ``script.
+#     ezmaintenanceplusplus`` — the repo's own fork with NFS/SMB retry hardening)
+#     now runs in ``run_express`` (right after Foundation) AND is bundled into the
+#     Guided Foundation gate (no separate Backup gate/probe exists yet, mirroring
+#     how the Skin closure is bundled there too) — this GROWS the net set by
+#     exactly one id, closing the gap Decision C's removal opened. Direct-extract,
+#     no dependency closure (mirrors pvr.artwork/modv2plus), so no other id joins
+#     with it.
 #
 # If a future phase legitimately adds/removes an add-on, update this constant
 # DELIBERATELY (and explain why in the commit) — it is meant to make any net-set
@@ -533,7 +548,6 @@ EXPECTED_NET_INSTALLED = frozenset(
         # the proxy, future opt-ins). INTENTIONAL Foundation addition (feature growth).
         "repository.tony7bones",
         # base apps + their python closure
-        "script.ezmaintenanceplus",
         "script.realdebrid",
         "weather.multi",
         "script.module.requests",
@@ -545,6 +559,10 @@ EXPECTED_NET_INSTALLED = frozenset(
         # the skin closure direct-extracted before resolve (proxy-invisible)
         "script.module.pvr.artwork",
         "script.tony7bones.modv2plus",
+        # EZ Maintenance++ — the repo's OWN backup fork (NFS/SMB retry hardening),
+        # the ONLY backup tool this Setup ever installs (Decision C). Direct-extract
+        # via apply_backup, wired into run_express + the Guided Foundation gate.
+        "script.ezmaintenanceplusplus",
         # the IPTV backend — moved from base ADDONS to apply_iptv in Phase 3a; it
         # MUST still be in the net set (+ its binary inputstream closure).
         "pvr.iptvsimple",
@@ -585,14 +603,20 @@ def test_full_run_net_installed_set_equals_expected(boot):
 def test_foundation_additions_are_exactly_two(boot):
     """The net-set GREW by EXACTLY the two intended Foundation additions over the
     pre-additions monolith — proves the growth is the deliberate feature additions,
-    nothing leaked in. Reconstructs the pre-additions set by removing the two ids and
-    asserts that equals the historical 22-id monolith set."""
+    nothing leaked in. Reconstructs the pre-additions set by removing the two ids
+    and asserts that equals the historical monolith set, adjusted for Decision C's
+    later, independent -1 (peno64's plain backup fork removed from ADDONS — the
+    Setup was installing the wrong backup tool) and the Backup layer's later,
+    independent +1 (script.ezmaintenanceplusplus wired into run_express/
+    run_guided, closing the gap Decision C's removal opened): 22 - 1 + 1 = 22."""
     additions = {"repository.tony7bones", "script.module.autocompletion"}
     assert additions <= EXPECTED_NET_INSTALLED, "both additions must be in the net set"
     pre_additions = EXPECTED_NET_INSTALLED - additions
     assert len(pre_additions) == 22, (
         "removing the two Foundation additions must leave the 22-id monolith set "
-        f"(got {len(pre_additions)}): the growth must be EXACTLY two ids"
+        "minus Decision C's -1 plus the Backup layer's +1 (got {}): the growth "
+        "must be EXACTLY two ids, net of those two separate, deliberate "
+        "changes".format(len(pre_additions))
     )
     boot.mod.run()
     # The live full run installs the full expected set; the two additions are present.

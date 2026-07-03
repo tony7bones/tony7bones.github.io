@@ -1,29 +1,28 @@
 """apply_addons — Layer 2 (Add-ons) of the modular setup.
 
 The Add-ons layer is the curated content gate: the base source repos + base apps
-(install_base), the curated video add-ons (install_video, incl. the install-then-
-disable of ``plugin.video.dailymotion_com``), and the env-driven weather + RSS
-writers (apply_weather_from_env / apply_rss_from_env). Stop here = the full box.
+(install_base) and the curated video add-ons (install_video, incl. the install-
+then-disable of ``plugin.video.dailymotion_com``). Weather + RSS (both branded-
+look CONFIG, not content) live in the Foundation layer instead — see
+``tony7bones.setup.foundation``. Stop here = the full box.
 
 This module holds the bodies LIFTED VERBATIM out of
 ``script.tony7bones.bootstrap/default.py`` (Phase 2c) — ``_install_base`` /
-``_install_video`` / ``_apply_weather_from_env`` / ``_apply_rss_from_env`` (+ their
-helpers/constants), behaviour-identical. ``default.py`` now keeps thin re-export
-shims that delegate here so every existing reference and test
-(``boot.mod._install_base`` / ``_install_video`` / ``_apply_weather_from_env`` /
-``_apply_rss_from_env`` + ``VIDEO_APPS`` / ``ADDONS`` / ``_weather_multi_settings_path``
-…) keeps working unchanged.
+``_install_video`` (+ their helpers/constants), behaviour-identical.
+``default.py`` now keeps thin re-export shims that delegate here so every
+existing reference and test (``boot.mod._install_base`` / ``_install_video`` +
+``VIDEO_APPS`` / ``ADDONS``) keeps working unchanged.
 
 THE INTERLEAVING CONSTRAINT (the hard part — read before touching ``run()``).
 In the monolith ``run()`` the order is: base install -> video install ->
 ``apply_foundation`` -> summary/self-uninstall -> ``_configure_box`` (weather/IPTV/
 RSS) -> activate-skin -> restart. So the base/video INSTALL runs EARLY and the
 weather/RSS CONFIG runs LATE, interleaved with the Foundation layer and the
-terminal seam. ``run()`` MUST keep calling the individual install/config bodies in
-those EXACT slots (via the ``default.py`` shims) so the characterization snapshot
-stays byte-identical. The composed ``apply_addons`` below runs install+config
-TOGETHER and is provided for the Phase-4 orchestrator (which will reorder with a
-deliberate snapshot update); it is NOT called from ``run()`` yet.
+terminal seam. The modular orchestrator (``run_express`` / the Guided gates) has
+since replaced that monolith sequence with the composed layer functions
+(``apply_addons`` -> ``apply_foundation`` -> ``apply_iptv``), so weather/RSS now
+run as part of ``apply_foundation`` — the layer they conceptually belong to,
+not the layer that happened to run last in the old monolith.
 
 NO deps-injection seam (Tech-debt ledger, Phase 2b). The moved bodies resolve their
 install primitives from THIS module's globals (``extract_zip`` / ``install_with_deps``
@@ -34,12 +33,7 @@ legacy ``boot.mod.*`` patches were repointed here. (The Foundation layer's
 ``_BootSkinDeps`` seam stays transitional and is killed at the Phase-4 orchestrator.)
 """
 
-import json
-import os
-from xml.etree import ElementTree as ET
-
 import xbmc
-import xbmcvfs
 
 from tony7bones import (
     extract_zip,
@@ -50,7 +44,6 @@ from tony7bones import (
 )
 from tony7bones import enable as _enable
 
-from .env import split_list
 from .result import LayerResult
 
 MY_ID = "script.tony7bones.bootstrap"
@@ -97,7 +90,17 @@ FIRST_PARTY = []
 PROXY_REPO_ID = "repository.tony7bones"
 
 # Apps installed (with dependency closure) by direct extract, in order.
-#   * script.ezmaintenanceplus / script.realdebrid — peno64 (python).
+#   * script.realdebrid — peno64 (python).
+#
+# NOTE (Decision C, docs/plans/automate-share-and-backup-config.md): peno64's
+# PLAIN backup fork ``script.ezmaintenanceplus`` is NO LONGER in this base list.
+# The Setup was installing the WRONG backup tool — real boxes actually run this
+# repo's OWN `++` fork (``script.ezmaintenanceplusplus``), which has the NFS/SMB
+# retry hardening this plain fork lacks. The `++` fork is installed + configured
+# by the Backup layer (``tony7bones.setup.backup``) instead, which runs
+# immediately after Foundation. In a FULL Express run the NET installed set
+# CHANGES here (deliberately): the plain fork is no longer installed at all —
+# only the correct `++` fork is.
 #
 # NOTE (Phase 3a — the first deliberate behaviour change): ``pvr.iptvsimple`` is
 # NO LONGER in this base list. Its INSTALL moved into the IPTV layer
@@ -114,7 +117,6 @@ PROXY_REPO_ID = "repository.tony7bones"
 # FULL Express run the NET installed set is UNCHANGED — weather.multi (+ its python
 # module closure) is still installed, just via ``apply_foundation`` now.
 ADDONS = [
-    "script.ezmaintenanceplus",
     "script.realdebrid",
 ]
 
@@ -131,40 +133,15 @@ VIDEO_APPS = [
 # re-patching.
 VIDEO_DISABLE_AFTER = {"plugin.video.dailymotion_com"}
 
-# The CORE Kodi setting the Add-ons layer owns (the RSS news-ticker toggle). In the
-# monolith this was set inline in ``_configure_box`` via JSON-RPC; the composed
-# ``apply_addons`` sets it in its config block so the net core-settings end-state is
-# unchanged. It is conceptually RSS config, so it belongs to this layer (not the
-# orchestrator seam).
-#
-# NOTE (weather-into-Foundation): the weather provider core setting (weather.addon)
-# moved to the Foundation layer alongside the weather.multi install + the env-driven
-# location config — weather is part of the branded look, not content.
-RSS_ENABLE_SETTING = "lookandfeel.enablerssfeeds"  # -> True (ticker on)
+# NOTE (weather + RSS -> Foundation): both the weather provider core setting
+# (weather.addon) and the RSS-enable core setting (lookandfeel.enablerssfeeds) +
+# its env-driven writer moved to the Foundation layer — both are part of the
+# branded look, not content. See ``tony7bones.setup.foundation`` (RSS_ENABLE_SETTING
+# / _apply_rss_from_env / _apply_rss).
 
 
 def _log(msg, level=xbmc.LOGINFO):
     xbmc.log(f"[{MY_ID}] {msg}", level)
-
-
-def _set_setting(setting_id, value):
-    """Set a CORE Kodi setting via JSON-RPC. Returns True on a clean OK.
-
-    Reaches only CORE settings (system/weather/lookandfeel/...), exactly like the
-    monolith's bootstrap ``_set_setting`` — add-on INSTANCE settings (e.g.
-    pvr.iptvsimple's) are NOT reachable this way (the IPTV layer writes those to
-    file directly)."""
-    resp = xbmc.executeJSONRPC(
-        json.dumps(
-            {
-                "jsonrpc": "2.0",
-                "method": "Settings.SetSettingValue",
-                "params": {"setting": setting_id, "value": value},
-                "id": 1,
-            }
-        )
-    )
-    return '"result":true' in (resp or "")
 
 
 def _latest_zip_url(addon_id):
@@ -361,73 +338,35 @@ def _install_video(dialog):
 
 
 # --------------------------------------------------------------------------- #
-# Weather — MOVED to the Foundation layer (tony7bones.setup.foundation).
+# Weather + RSS — MOVED to the Foundation layer (tony7bones.setup.foundation).
 # --------------------------------------------------------------------------- #
-# Multi Weather (weather.multi) is part of the BRANDED LOOK, not content (the MOD V2
-# skin renders a weather readout + a Weather home-menu item), so its INSTALL +
-# CONFIG (WEATHER_ADDON / WEATHER_LOCATION / _weather_multi_settings_path /
-# _set_weather_settings / _set_weather_location / _resolve_weather_location /
-# _apply_weather_from_env + the core weather.addon provider setting) moved to
-# ``tony7bones.setup.foundation``. The Add-ons layer no longer installs or configures
-# weather — only RSS (below) remains as the Add-ons layer's env-driven config.
+# Multi Weather (weather.multi) and the RSS news ticker are both part of the
+# BRANDED LOOK, not content (the MOD V2 skin renders a weather readout + a
+# Weather home-menu item, and the ticker is a skin-level toggle) — their
+# INSTALL + CONFIG (WEATHER_ADDON / WEATHER_LOCATION / RSS_ENABLE_SETTING /
+# _apply_weather_from_env / _apply_rss_from_env + the core provider settings)
+# moved to ``tony7bones.setup.foundation``. The Add-ons layer installs content
+# only: base repos/apps + the curated video add-ons.
 
 
 # --------------------------------------------------------------------------- #
-# RSS news ticker — env-driven.
-# --------------------------------------------------------------------------- #
-def _apply_rss_from_env(box_env):
-    """Generate userdata/RssFeeds.xml from the env's RSS_FEEDS (+ RSS_INTERVAL).
-    No-op when RSS_FEEDS is absent (a device-copied file / the Kodi default stands).
-    Feed URLs are not secret. Defensive: logged, never raises."""
-    feeds = split_list(box_env.get("RSS_FEEDS", ""))
-    if not feeds:
-        return
-    try:
-        interval = (box_env.get("RSS_INTERVAL") or "30").strip() or "30"
-        path = xbmcvfs.translatePath("special://home/userdata/RssFeeds.xml")
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        root = ET.Element("rssfeeds")
-        rset = ET.SubElement(root, "set")
-        rset.set("id", "1")
-        for url in feeds:
-            feed = ET.SubElement(rset, "feed")
-            feed.set("updateinterval", interval)
-            feed.text = url
-        with open(path, "w", encoding="utf-8") as f:
-            f.write(ET.tostring(root, encoding="unicode"))
-        _log("_apply_rss: wrote %d RSS feed(s) (interval %s)" % (len(feeds), interval))
-    except Exception as e:  # noqa: BLE001 - never abort the rest of setup
-        _log(f"_apply_rss failed (non-fatal): {e}", xbmc.LOGERROR)
-
-
-# --------------------------------------------------------------------------- #
-# The Add-ons layer entry point (composed install + config).
+# The Add-ons layer entry point (composed install).
 # --------------------------------------------------------------------------- #
 def apply_addons(env, *, dialog=None, log=None):
-    """Apply Layer 2 (Add-ons): the base source repos + base apps, the curated
-    video add-ons (incl. the install-then-disable of plugin.video.dailymotion_com),
-    and the env-driven weather + RSS writers — returning a LayerResult.
+    """Apply Layer 2 (Add-ons): the base source repos + base apps and the
+    curated video add-ons (incl. the install-then-disable of
+    plugin.video.dailymotion_com) — returning a LayerResult.
 
     Behaviour-preserving COMPOSITION of the monolith's ``_install_base`` /
-    ``_install_video`` + the weather/RSS halves of ``_configure_box``. This runs
-    install AND config together (install first, then config), which is the SHAPE
-    the Phase-4 orchestrator wants. It is deliberately NOT called from ``run()``
-    yet — ``run()`` keeps calling the individual bodies (via the bootstrap shims)
-    in their EXISTING interleaved slots (base/video EARLY, weather/RSS LATE inside
-    ``_configure_box``) so the characterization snapshot stays byte-identical.
-    The orchestrator will adopt ``apply_addons`` with a deliberate snapshot update.
-
-    The IPTV + device-copy parts of ``_configure_box`` are NOT here — they go to
-    ``apply_iptv`` (Phase 2d). This layer touches only repos/apps/video + weather +
-    RSS.
+    ``_install_video``. Weather + RSS config (formerly composed here too) moved
+    to ``apply_foundation`` — this layer is install-only content now.
 
     Parameters
     ----------
     env
-        The already-parsed per-device env dict (passed in by the orchestrator; the
-        weather/RSS writers read WEATHER_LOCATIONS / WEATHERBIT_API_KEY /
-        OWM_API_KEY / RSS_FEEDS / RSS_INTERVAL from it). ``None`` is treated as the
-        empty env (the keyless Sacramento weather fallback, no RSS write).
+        The already-parsed per-device env dict (passed in by the orchestrator
+        for a uniform per-layer contract; this layer does not read it today).
+        ``None`` is treated as the empty env.
     dialog
         The shared progress dialog (or ``None``); forwarded to the base + video
         install so the user sees one continuous progress bar.
@@ -481,17 +420,8 @@ def apply_addons(env, *, dialog=None, log=None):
             for aid in VIDEO_DISABLE_AFTER:
                 installed[aid] = "disabled"
 
-    # --- config (the RSS core toggle + env-driven RSS) ---
-    # Set the RSS-enable core setting, then write the env-driven RSS feeds.
-    # (Weather — the provider core setting + the env-driven location writer — moved
-    # to the Foundation layer; weather is branded look, not content. The IPTV +
-    # device-copy halves moved to apply_iptv.)
-    if not canceled:
-        _set_setting(RSS_ENABLE_SETTING, True)
-        _apply_rss_from_env(env)
-
     # A cancelled base install is the only not-ok path (it aborts with no summary
-    # in the monolith). NOTE: already_done here means "no work was CONFIGURED"
+    # in the monolith). NOTE: already_done here means "no work was INSTALLED"
     # (empty install lists) — NOT "the box is already provisioned". The install
     # primitives don't distinguish already-present from freshly-installed, so on a
     # real re-entry against a set-up box `installed` is full and already_done is

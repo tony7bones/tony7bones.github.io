@@ -146,15 +146,25 @@ from tony7bones import enable as _enable  # noqa: E402
 from tony7bones.setup import env as _env_mod  # noqa: E402
 from tony7bones.setup.env import parse_env, read_box_env, split_list  # noqa: E402
 
-# The Foundation layer (skin closure + file-sources + home-trim) moved into the
-# shared sublibrary (Phase 2b). The lifted bodies + the layer entry point live in
-# tony7bones.setup.foundation; this module keeps thin shims (below) that delegate
-# to them so every existing reference and test (boot.mod._install_skin /
-# _add_file_sources / _trim_home_menu / _latest_zip_url + the SKIN_ID/PVR_ARTWORK
-# constants) keeps working unchanged, and run() calls apply_foundation in the
-# EXACT slot those three functions occupied.
+# The Foundation layer (File-Manager sources + weather + RSS + autocomplete —
+# content-free, ZERO skin) moved into the shared sublibrary (Phase 2b; the skin
+# closure + home-trim later split OUT to the Skin layer below, section 3.3).
+# The lifted bodies + the layer entry point live in tony7bones.setup.foundation;
+# this module keeps a thin shim (below) that delegates to them so every existing
+# reference and test (boot.mod._add_file_sources) keeps working unchanged, and
+# run() calls apply_foundation in the slot it occupies.
 from tony7bones.setup import foundation as _foundation  # noqa: E402
 from tony7bones.setup.foundation import apply_foundation  # noqa: E402
+
+# The BACKUP layer (EZ Maintenance++ direct-extract install + configure — the
+# repo's own `++` fork, invisible to the normal closure resolver) lives in
+# tony7bones.setup.backup. Runs immediately after Foundation in the phased
+# design (docs/plans/automate-share-and-backup-config.md, section 3.1a). NOT
+# yet wired into run_express/run_guided (a later step, tracked in that plan) —
+# imported here (noqa: F401, genuinely unused until that wiring lands) so its
+# tests share the same fake-Kodi environment as every other layer.
+from tony7bones.setup import backup as _backup  # noqa: E402,F401
+from tony7bones.setup.backup import apply_backup  # noqa: E402,F401
 
 # The ADD-ONS layer (base repos + apps install, curated video install, env-driven
 # weather + RSS writers) moved into the shared sublibrary (Phase 2c). The lifted
@@ -182,6 +192,20 @@ from tony7bones.setup.addons import apply_addons  # noqa: E402
 from tony7bones.setup import iptv as _iptv  # noqa: E402
 from tony7bones.setup.iptv import apply_iptv  # noqa: E402
 
+# The SKIN layer (the Estuary MOD V2 closure install + the stock-Estuary
+# home-menu trim — split OUT of Foundation, see docs/plans/automate-share-and-
+# backup-config.md section 3.3: the skin is curatorial branding, not a
+# Foundation prerequisite) lives in tony7bones.setup.skin. Wired into
+# _foundation_core (run_foundation / run_foundation_setup) in the SAME combined
+# slot Foundation's old bundled skin-install occupied, preserving net behaviour.
+# NOT yet reordered into run_express/run_guided's own sequence (the plan's
+# stated Express order moves skin activation-adjacent install to run AFTER
+# IPTV/Apps — a separate, deliberate reorder tracked in that plan).
+from tony7bones.setup import skin as _skin  # noqa: E402
+from tony7bones.setup.result import LayerResult  # noqa: E402
+from tony7bones.setup.skin import apply_skin  # noqa: E402
+
+
 # Installed-state done-probes for the Guided wizard (Phase 5d). The wizard
 # resumes via the box's ACTUAL state (skin active / instance file present /
 # per-id is_installed) — never marker files — so a crash, a declined restart,
@@ -193,8 +217,10 @@ from tony7bones.setup import probes as _probes  # noqa: E402
 # tony7bones.setup.addons).
 __all__ = [
     "apply_addons",
+    "apply_backup",
     "apply_foundation",
     "apply_iptv",
+    "apply_skin",
     "parse_env",
     "read_box_env",
     "run_addons",
@@ -255,18 +281,24 @@ def _latest_zip_url(addon_id):
 
 
 # --------------------------------------------------------------------------- #
-# File-Manager sources + Estuary home-menu trim — MOVED to the Foundation layer
-# (tony7bones.setup.foundation, Phase 2b). The bodies + their constants/helpers
-# (REPO_SOURCE_*, FILE_SOURCES, _sources_xml_path, _make_files_source,
-# ESTUARY_HIDE_SETTINGS, _estuary_settings_path, _trim_home_menu_setbool/writefile)
-# now live there VERBATIM; these are thin re-export shims so every existing
-# reference and test (boot.mod._add_file_sources / _trim_home_menu) keeps working,
-# and apply_foundation runs them in the same slot they occupied in run(). Both
-# touch only xbmc/xbmcvfs (no monkeypatched install primitives), so a plain
-# re-export is behaviour-identical.
+# File-Manager sources — lives in the Foundation layer (tony7bones.setup.
+# foundation, Phase 2b). The body + its constants/helpers (REPO_SOURCE_*,
+# FILE_SOURCES, _sources_xml_path, _make_files_source) live there VERBATIM;
+# this is a thin re-export shim so every existing reference and test
+# (boot.mod._add_file_sources) keeps working, and apply_foundation runs it in
+# the same slot it occupied in run(). Touches only xbmc/xbmcvfs (no
+# monkeypatched install primitives), so a plain re-export is behaviour-identical.
+#
+# The Estuary home-menu trim MOVED OUT of Foundation to the Skin layer
+# (tony7bones.setup.skin, section 3.3 — tightly coupled to the skin: it only
+# makes sense to trim stock Estuary's menu, and MOD V2's own menu is handled by
+# modv2plus's boot service). The body + its constants/helpers
+# (ESTUARY_HIDE_SETTINGS, _estuary_settings_path, _trim_home_menu_setbool/
+# writefile) live there VERBATIM; this shim is repointed so every existing
+# reference and test (boot.mod._trim_home_menu) keeps working unchanged.
 # --------------------------------------------------------------------------- #
 _add_file_sources = _foundation._add_file_sources
-_trim_home_menu = _foundation._trim_home_menu
+_trim_home_menu = _skin._trim_home_menu
 
 # Still referenced by _configure_box's top-bar-weather guard (it only sets the
 # Estuary skin bool on the stock Estuary skin) — kept here, mirrored in foundation.
@@ -284,7 +316,8 @@ ESTUARY_SKIN_ID = "skin.estuary"
 # _apply_weather_from_env / _apply_rss_from_env / _resolve_weather_location /
 # _set_weather_settings / _set_weather_location / _weather_multi_settings_path)
 # keeps working unchanged. The IPTV + device-copy halves of _configure_box stay
-# here (they go to apply_iptv in Phase 2d).
+# here (they go to apply_iptv in Phase 2d). RSS moved here too (Foundation, not
+# Add-ons) — both weather and RSS are branded-look config, not content.
 WEATHER_ADDON = _foundation.WEATHER_ADDON  # Multi Weather (installed by Foundation)
 WEATHER_LOCATION = _foundation.WEATHER_LOCATION
 _weather_multi_settings_path = _foundation._weather_multi_settings_path
@@ -292,7 +325,8 @@ _set_weather_settings = _foundation._set_weather_settings
 _set_weather_location = _foundation._set_weather_location
 _resolve_weather_location = _foundation._resolve_weather_location
 _apply_weather_from_env = _foundation._apply_weather_from_env
-_apply_rss_from_env = _addons._apply_rss_from_env
+_apply_rss_from_env = _foundation._apply_rss_from_env
+RSS_ENABLE_SETTING = _foundation.RSS_ENABLE_SETTING
 SHOW_WEATHERINFO = "show_weatherinfo"  # Estuary skin bool: weather in the top bar
 
 # Device → userdata file copies — MOVED to the IPTV layer (tony7bones.setup.iptv,
@@ -549,16 +583,17 @@ class _BootSkinDeps:
 
 
 def _install_skin(dialog):
-    """Install Estuary MOD V2 + the MOD V2+ patch — thin shim over the Foundation
-    layer's lifted body (tony7bones.setup.foundation._install_skin).
+    """Install Estuary MOD V2 + the MOD V2+ patch — thin shim over the Skin
+    layer's lifted body (tony7bones.setup.skin._install_skin).
 
-    The body MOVED into the shared sublibrary (Phase 2b); this shim forwards THIS
-    module's (monkeypatchable) install primitives via _BootSkinDeps so behaviour —
+    The body MOVED into the shared sublibrary (Phase 2b, then OUT of Foundation
+    into the Skin layer at section 3.3); this shim forwards THIS module's
+    (monkeypatchable) install primitives via _BootSkinDeps so behaviour —
     including every test that patches boot.mod.install_selection / extract_zip /
     _latest_zip_url and drives run() — is identical to the monolith. Returns True
     if the skin installed; never raises. lookandfeel.skin is still set LAST in
     run() (the activate-skin invariant), not here."""
-    return _foundation._install_skin(dialog, deps=_BootSkinDeps())
+    return _skin._install_skin(dialog, deps=_BootSkinDeps())
 
 
 # The base install (repos + first-party + apps) MOVED to the Add-ons layer
@@ -595,37 +630,54 @@ def run_express(box_env=None):
     equivalence test in test_modular_setup.py); only the order/timing differs.
 
     Order rationale (dependency-correct):
-      1. ``apply_addons`` — base source repos + base apps + curated video + the
-         env-driven weather/RSS. Must run FIRST: the Foundation skin closure resolves
-         the Estuary MOD V2 skin from the installed source repos (Kodinerds etc.), so
-         the repos must exist before the skin install. A user cancel here aborts the
-         whole run cleanly (no summary/uninstall/restart) — exactly the monolith's
-         early-return contract.
-      2. ``apply_foundation`` — the Estuary MOD V2 skin + MOD V2+ patch closure (it
+      1. ``apply_addons`` — base source repos + base apps + curated video (install
+         only; content-only, no config). Must run FIRST: the Skin layer's closure
+         resolves the Estuary MOD V2 skin from the installed source repos (Kodinerds
+         etc.), so the repos must exist before the skin install. A user cancel here
+         aborts the whole run cleanly (no summary/uninstall/restart) — exactly the
+         monolith's early-return contract.
+      2. ``apply_foundation`` — weather.multi + the RSS ticker + autocomplete +
+         File-Manager sources. ZERO skin.
+      3. ``apply_backup`` — EZ Maintenance++ direct-extract install + configure (the
+         repo's own `++` fork; the ONLY backup tool this Setup ever installs — see
+         Decision C). A failure here is non-fatal to the rest of the run but gets
+         its own strengthened failure signal below (Decision I).
+      4. ``apply_skin`` — the Estuary MOD V2 skin + MOD V2+ patch closure (it
          direct-extracts the proxy-invisible pvr.artwork + modv2plus first, then
-         resolves the rest from the repos addons installed in step 1), then the two
-         content-free base-config steps (File-Manager sources + Estuary home-trim).
-         It does NOT set ``lookandfeel.skin`` — that is the orchestrator's terminal
-         seam below (set LAST).
-      3. ``apply_iptv`` — install pvr.iptvsimple (its INSTALL moved here from the
+         resolves the rest from the repos addons installed in step 1) + the Estuary
+         home-trim. It does NOT set ``lookandfeel.skin`` — that is the orchestrator's
+         terminal seam below (set LAST).
+      5. ``apply_iptv`` — install pvr.iptvsimple (its INSTALL moved here from the
          base ADDONS in Phase 3a; install-or-fail-loud) + the device-file copy +
          the instance-settings enforce.
 
     The per-device env is read ONCE by ``run()`` and passed in here; this
     orchestrator deletes it (in ``run()``) only AFTER the last layer, so a future
-    multi-gate Guided flow can share it. The skin is activated LAST (only if
-    Foundation reached ``ok``) immediately before the single restart, so Kodi's
+    multi-gate Guided flow can share it. The skin is activated LAST (only if the
+    skin closure reached ``ok``) immediately before the single restart, so Kodi's
     "Keep this skin?" timeout cannot silently revert it.
 
-    Returns the three LayerResults (addons, foundation, iptv) for inspection /
-    testing; ``None`` for the layers skipped on a mid-install cancel.
+    Backup failure signal (Decision I, plan section 3.1a): unlike every other
+    layer, a silently-failed Backup is invisible until a restore is actually
+    needed, so it gets TWO complementary strengthenings, both landing at/
+    immediately before the terminal seam (neither gates activation/restart/
+    self-uninstall): an unconditional ``Backup: <ok|failed>`` line in the
+    existing summary, PLUS — on failure specifically — a bounded
+    ``yesno(autoclose=...)`` alert fired immediately before that summary
+    (mirroring ``restart_kodi``'s own desktop-path use of the same mechanism).
+    Fires identically on Android and desktop: the hazard that forces
+    ``restart_kodi``'s Android carve-out (a skinshortcuts-reload race) is a
+    LATER hazard than this signal's position in the flow.
+
+    Returns the five LayerResults (addons, foundation, backup, skin, iptv) for
+    inspection / testing; ``None`` for the layers skipped on a mid-install cancel.
     """
     box_env = box_env or {}
     dialog = xbmcgui.DialogProgress()
     dialog.create("Tony.7.Bones Setup", "Starting setup...")
 
-    # --- Layer 2 (Add-ons): base repos + apps + curated video + weather/RSS ---
-    # FIRST, because the Foundation skin closure resolves from the source repos this
+    # --- Layer 2 (Add-ons): base repos + apps + curated video (install only) ---
+    # FIRST, because the Skin layer's closure resolves from the source repos this
     # layer installs. A cancelled base install is the only abort path (ok=False).
     addons_res = apply_addons(box_env, dialog=dialog, log=_log)
     if not addons_res.ok:
@@ -633,14 +685,29 @@ def run_express(box_env=None):
         # self-uninstall, NO restart. The partial install is harmless and
         # re-running Setup completes it (the monolith's early-return contract).
         dialog.close()
-        return addons_res, None, None
+        return addons_res, None, None, None, None
 
-    # --- Layer 0 (Foundation): Estuary MOD V2 skin closure + sources + home-trim ---
+    # --- Layer 0 (Foundation): weather/RSS/autocomplete/sources — ZERO skin ---
+    foundation_res = apply_foundation(box_env, dialog=dialog, log=_log)
+
+    # --- Layer 5 (Backup): EZ Maintenance++ direct-extract install + configure ---
+    # Immediately after Foundation (plan section 3.1a) — a fresh box has a working
+    # backup/restore path as early as possible, second only to the shares
+    # themselves. A failure here does NOT abort the rest of the run (see the
+    # strengthened failure signal at the terminal seam below).
+    backup_res = apply_backup(box_env, dialog=dialog, log=_log)
+
+    # --- Layer 4 (Skin): Estuary MOD V2 skin closure + home-trim ---
     # AFTER add-ons so the source repos the skin closure resolves from exist. The
     # seam is killed here (Tech-debt ledger): the orchestrator calls the BARE form —
-    # no install_skin=/add_file_sources=/trim_home_menu= injection — so the layer
-    # uses its own _SkinDeps (resolved from foundation's globals).
-    foundation_res = apply_foundation(box_env, dialog=dialog, log=_log)
+    # no install_skin=/trim_home_menu= injection — so the layer uses its own
+    # _SkinDeps (resolved from the skin module's globals). Runs in the SAME combined
+    # slot the pre-split apply_foundation's bundled skin-install occupied — this is
+    # a MOVE, not yet the plan's full Express reorder (content install running
+    # LAST, right before the dead-last skin activation) — that is a separate,
+    # deliberate next step (it changes what a mid-install Apps cancel means for
+    # the already-completed layers before it, which needs its own review).
+    skin_res = apply_skin(box_env, dialog=dialog, log=_log)
 
     # --- Layer 1 (IPTV): install pvr.iptvsimple (or fail loud) + config ---
     # Its pvr.iptvsimple INSTALL moved here from the base ADDONS in Phase 3a — so in
@@ -661,7 +728,26 @@ def run_express(box_env=None):
 
     dialog.close()
 
-    skin_ok = foundation_res.ok
+    skin_ok = skin_res.ok
+
+    # Backup failure signal, part 1 (Decision I): a bounded, attention-grabbing
+    # alert fires BEFORE the summary, on failure only — mirrors restart_kodi's
+    # own desktop yesno(autoclose=...) pattern (both labels are the same
+    # acknowledgment; there is no real second choice). Fires identically on
+    # Android and desktop: this is strictly before self_uninstall/activate_skin,
+    # before the LATER skinshortcuts-reload race that forces restart_kodi's own
+    # Android carve-out.
+    if not backup_res.ok:
+        xbmcgui.Dialog().yesno(
+            "Tony.7.Bones Setup",
+            "Backup setup FAILED — EZ Maintenance++ did not install/configure "
+            "correctly.\n\nThe rest of the box is unaffected, but you will NOT "
+            "have a working backup/restore path until this is fixed (re-run "
+            "Setup to retry).",
+            yeslabel="OK",
+            nolabel="OK",
+            autoclose=20000,
+        )
 
     # --- one combined summary (same Repos/Apps/Video/skin contract; + IPTV) ---
     repo_ok = _count_installed(addons_res, [rid for _z, rid in REPO_ZIPS])
@@ -677,6 +763,10 @@ def run_express(box_env=None):
                 f"Video add-ons: {video_ok}/{len(VIDEO_APPS)}",
                 "IPTV: {}".format("installed" if iptv_ok else "skipped"),
                 "Estuary MOD V2: {}".format("installed" if skin_ok else "FAILED"),
+                # Backup failure signal, part 2 (Decision I): unconditional, every
+                # run — the part that cannot be missed/dismissed/timed out past,
+                # even if the alert above went unseen.
+                "Backup: {}".format("ok" if backup_res.ok else "failed"),
                 "Restart will finish setup.",
             ]
         ),
@@ -696,7 +786,7 @@ def run_express(box_env=None):
         activate_skin(SKIN_ID, _log)
     # ONE restart finalises every freshly extracted add-on AND the self-removal.
     restart_kodi("Tony.7.Bones Setup", _log)
-    return addons_res, foundation_res, iptv_res
+    return addons_res, foundation_res, backup_res, skin_res, iptv_res
 
 
 # IPTV env detection — MOVED to the shared sublibrary (tony7bones.setup.env,
@@ -713,17 +803,18 @@ _env_has_iptv = _env_mod.env_has_iptv
 
 
 def _foundation_core(box_env, dialog):
-    """The shared Foundation install body both Foundation runners call.
+    """The shared Foundation+Skin install body both Foundation runners call.
 
     Installs ALL our source repos (incl. our own ``repository.tony7bones`` proxy repo)
-    via ``install_repos``, then runs ``apply_foundation`` (the Estuary MOD V2 skin
-    closure + the proxy-invisible pvr.artwork/modv2plus direct-extracts + Outline-HD +
-    weather.multi + the keyboard autocomplete utility + File-Manager sources + the
-    home-menu trim), then sets the top-bar weather skin bool. It does NOT set
-    ``lookandfeel.skin`` and does NOT restart — the terminal seam belongs to the
+    via ``install_repos``, then runs ``apply_foundation`` (weather.multi + the RSS
+    news ticker + the keyboard autocomplete utility + File-Manager sources — ZERO
+    skin, content-free config), then ``apply_skin`` (the Estuary MOD V2 skin closure
+    + the proxy-invisible pvr.artwork/modv2plus direct-extracts + Outline-HD + the
+    home-menu trim), then sets the top-bar weather skin bool. Neither layer sets
+    ``lookandfeel.skin`` and neither restarts — the terminal seam belongs to the
     caller (``run_foundation`` / ``run_foundation_setup``), which sets the skin LAST
     and restarts ONCE so the env can be shared across an IPTV chain without a premature
-    restart. Returns the Foundation ``LayerResult``.
+    restart. Returns ``(foundation_res, skin_res)``.
 
     Factored out so ``run_foundation`` (pure skin-only) and ``run_foundation_setup``
     (skin + optional IPTV chain) share ONE install seam and can never drift apart.
@@ -733,11 +824,16 @@ def _foundation_core(box_env, dialog):
     #    resolves from them, and the proxy repo is the lifeline (updates/opt-ins).
     install_repos(dialog)
 
-    # 2. the Foundation layer: skin closure + modv2plus/pvr.artwork direct-extract +
-    #    Outline-HD + weather.multi + autocomplete + File-Manager sources (incl. the
-    #    .tony.7.bones proxy source) + home-trim. ZERO content. Does NOT set
-    #    lookandfeel.skin (the caller's seam owns that).
+    # 2. the Foundation layer: weather.multi + RSS + autocomplete + File-Manager
+    #    sources (incl. the .tony.7.bones proxy source). ZERO content, ZERO skin.
     foundation_res = apply_foundation(box_env, dialog=dialog, log=_log)
+
+    # 3. the Skin layer: skin closure (direct-extracts modv2plus/pvr.artwork first)
+    #    + the stock-Estuary home-menu trim. Does NOT set lookandfeel.skin (the
+    #    caller's seam owns that) — this call preserves the EXACT net behaviour
+    #    ``run_foundation``/``run_foundation_setup`` had before the Foundation/Skin
+    #    split (skin closure + trim still run in the same combined slot).
+    skin_res = apply_skin(box_env, dialog=dialog, log=_log)
 
     # The top-bar weather toggle is an Estuary skin bool (persists on the restart);
     # only meaningful on the stock Estuary skin — keep it as an orchestrator step.
@@ -749,7 +845,27 @@ def _foundation_core(box_env, dialog):
     if not skin or skin == ESTUARY_SKIN_ID:
         xbmc.executebuiltin(f"Skin.SetBool({SHOW_WEATHERINFO})")
 
-    return foundation_res
+    return foundation_res, skin_res
+
+
+def _merged_foundation_result(foundation_res, skin_res):
+    """Merge the Foundation-config and Skin-closure ``LayerResult``s into ONE
+    combined result tagged ``layer="foundation"``, preserving ``run_foundation``/
+    ``run_foundation_setup``'s pre-split public contract — callers (and the many
+    tests pinning it) still see a single result whose ``ok``/``installed`` reflect
+    the SKIN outcome specifically (the summary + activation gate were always
+    skin-focused, even before the split), while ``installed``/``failed`` are the
+    union of both layers so weather/autocomplete outcomes still show up too.
+    """
+    return LayerResult(
+        layer="foundation",
+        ok=skin_res.ok,
+        installed={**foundation_res.installed, **skin_res.installed},
+        failed={**foundation_res.failed, **skin_res.failed},
+        needs_skin_activation=skin_res.needs_skin_activation,
+        needs_restart=foundation_res.needs_restart or skin_res.needs_restart,
+        detail=skin_res.detail,
+    )
 
 
 def run_foundation(box_env=None):
@@ -761,12 +877,14 @@ def run_foundation(box_env=None):
     content), the File-Manager sources, and a trimmed home menu — and NOTHING else.
 
     Foundation is content-free BY CONSTRUCTION: it does NOT call ``apply_addons``
-    (no base apps ezmaintenanceplus / realdebrid / weather.multi, no curated video
-    POV / Loop / Sports HD / YouTube, no weather/RSS) and does NOT call ``apply_iptv``
-    (no pvr.iptvsimple, no IPTV). The ONLY add-ons it installs are the skin closure
-    (skin.estuary.modv2 + skinshortcuts + image.resource.select + the proxy-invisible
-    script.module.pvr.artwork + our script.tony7bones.modv2plus + the Outline-HD
-    weather icons) on top of the source repos.
+    (no base apps realdebrid, no curated video POV / Loop / Sports HD / YouTube)
+    and does NOT call ``apply_iptv`` (no pvr.iptvsimple, no IPTV). It DOES install
+    + configure weather.multi and the RSS news ticker itself (via
+    ``apply_foundation``) — both are branded-look config, not content. The ONLY
+    add-ons it installs are the skin closure (skin.estuary.modv2 + skinshortcuts
+    + image.resource.select + the proxy-invisible script.module.pvr.artwork + our
+    script.tony7bones.modv2plus + the Outline-HD weather icons) + weather.multi +
+    the keyboard autocomplete utility, on top of the source repos.
 
     Order rationale (dependency-correct):
       1. ``install_repos`` — extract + register + enable ALL our source repos (the 12
@@ -777,34 +895,41 @@ def run_foundation(box_env=None):
          and is additionally registered as the ``.tony.7.bones`` File-Manager SOURCE
          by ``apply_foundation``'s ``_add_file_sources`` below, so the proxy repo is
          fully established without re-installing the host.
-      2. ``apply_foundation`` — the skin closure (it direct-extracts the proxy-invisible
+      2. ``apply_foundation`` — weather.multi + the RSS ticker + autocomplete +
+         File-Manager sources. ZERO skin.
+      3. ``apply_skin`` — the skin closure (it direct-extracts the proxy-invisible
          pvr.artwork + modv2plus FIRST, then resolves the rest from the repos installed
-         in step 1) + the two content-free base-config steps (File-Manager sources +
-         the Estuary home-trim). It does NOT set ``lookandfeel.skin`` — that is the
-         terminal seam below (set LAST).
-      3. set ``lookandfeel.skin`` LAST (only if Foundation reached ``ok``), then ONE
-         restart, then self-uninstall (skin-only = done).
+         in step 1) + the Estuary home-trim. It does NOT set ``lookandfeel.skin`` —
+         that is the terminal seam below (set LAST).
+      4. set ``lookandfeel.skin`` LAST (only if the skin closure reached ``ok``),
+         then ONE restart, then self-uninstall (skin-only = done).
 
     The skin is activated LAST, immediately before the single restart, so Kodi's
     "Keep this skin?" timeout cannot silently revert it. After the restart MOD V2 is
     active and modv2plus's boot service auto-applies the patch (the Setup is gone by
-    then). Returns the Foundation ``LayerResult``.
+    then). Returns a single merged ``LayerResult`` (``layer="foundation"``,
+    ``ok``/``needs_skin_activation`` reflecting the skin outcome — the summary and
+    activation gate were always skin-focused even before the Foundation/Skin split;
+    ``installed``/``failed`` are the union of both layers, so weather/autocomplete
+    outcomes still show up too).
     """
     box_env = box_env or {}
     dialog = xbmcgui.DialogProgress()
     dialog.create("Tony.7.Bones Setup", "Installing Foundation...")
 
-    # Repos (incl. our proxy repo) + the Foundation layer (skin/weather/menu/
-    # autocomplete) — the shared install seam. PURE skin-only: this runner NEVER
-    # touches IPTV (apply_iptv is reserved for run_foundation_setup).
-    foundation_res = _foundation_core(box_env, dialog)
+    # Repos (incl. our proxy repo) + the Foundation layer (weather/RSS/autocomplete/
+    # sources) + the Skin layer (skin closure + home-trim) — the shared install seam.
+    # PURE skin-only: this runner NEVER touches IPTV (apply_iptv is reserved for
+    # run_foundation_setup).
+    foundation_res, skin_res = _foundation_core(box_env, dialog)
+    merged_res = _merged_foundation_result(foundation_res, skin_res)
 
     dialog.close()
 
-    skin_ok = foundation_res.ok
+    skin_ok = skin_res.ok
     # Repos are plumbing (install_repos installs them; they are not recorded in
-    # foundation_res.installed, which holds the skin id). The summary reports the
-    # branded-box result — skin install + "repositories + sources installed".
+    # either layer's installed{}). The summary reports the branded-box result —
+    # skin install + "repositories + sources installed".
     xbmcgui.Dialog().ok(
         "Tony.7.Bones Setup",
         "\n".join(
@@ -822,19 +947,19 @@ def run_foundation(box_env=None):
     self_uninstall(MY_ID, _log)
 
     # Activate MOD V2 LAST — immediately before the restart (the activate-skin
-    # invariant). Only when Foundation reached ok.
+    # invariant). Only when the skin closure reached ok.
     if skin_ok:
         activate_skin(SKIN_ID, _log)
     # ONE restart finalises every freshly extracted add-on AND the self-removal.
     restart_kodi("Tony.7.Bones Setup", _log)
-    return foundation_res
+    return merged_res
 
 
 def run_foundation_setup(box_env=None):
     """Foundation + an env-gated IPTV chain — the skin-with-optional-live-TV runner.
 
     Composes the SAME Foundation install seam as ``run_foundation`` (``_foundation_core``
-    → repos incl. our proxy repo + the skin/weather/menu/autocomplete layer) and THEN,
+    → repos incl. our proxy repo + the skin/weather/RSS/menu/autocomplete layer) and THEN,
     **iff the per-device env carries IPTV provider values** (``_env_has_iptv`` — any
     ``IPTV_<N>_M3U`` / ``IPTV_<N>_PORTAL`` or the single-instance ``IPTV_M3U`` /
     ``IPTV_PORTAL`` / ``IPTV_EPG``), chains the IPTV layer: ``apply_iptv`` installs
@@ -851,15 +976,19 @@ def run_foundation_setup(box_env=None):
     layers here before any restart, so the IPTV chain is never starved.
 
     NOT wired into the shipped ``run()`` yet (still ``run_express``); this is a new
-    entry point for the modular flow. Returns ``(foundation_res, iptv_res)`` —
-    ``iptv_res`` is ``None`` when the env has no IPTV provider (the skin-only path).
+    entry point for the modular flow. Returns ``(foundation_res, iptv_res)`` — the
+    merged Foundation+Skin result (see ``_merged_foundation_result``) and
+    ``iptv_res``, which is ``None`` when the env has no IPTV provider (the
+    skin-only path).
     """
     box_env = box_env or {}
     dialog = xbmcgui.DialogProgress()
     dialog.create("Tony.7.Bones Setup", "Installing Foundation...")
 
-    # Foundation install seam (repos incl. proxy + skin/weather/menu/autocomplete).
-    foundation_res = _foundation_core(box_env, dialog)
+    # Foundation install seam (repos incl. proxy + weather/RSS/autocomplete/sources
+    # + the skin closure/home-trim).
+    foundation_res, skin_res = _foundation_core(box_env, dialog)
+    merged_res = _merged_foundation_result(foundation_res, skin_res)
 
     # IPTV auto-chain — ONLY when the env actually carries a provider playlist source.
     # With none, this stays a pure skin-only box (identical to run_foundation).
@@ -869,7 +998,7 @@ def run_foundation_setup(box_env=None):
 
     dialog.close()
 
-    skin_ok = foundation_res.ok
+    skin_ok = skin_res.ok
     iptv_ok = bool(iptv_res and iptv_res.ok and iptv_res.installed)
     lines = [
         "Foundation:",
@@ -885,12 +1014,12 @@ def run_foundation_setup(box_env=None):
     self_uninstall(MY_ID, _log)
 
     # Activate MOD V2 LAST — immediately before the restart (the activate-skin
-    # invariant). Only when Foundation reached ok.
+    # invariant). Only when the skin closure reached ok.
     if skin_ok:
         activate_skin(SKIN_ID, _log)
     # ONE restart finalises every freshly extracted add-on AND the self-removal.
     restart_kodi("Tony.7.Bones Setup", _log)
-    return foundation_res, iptv_res
+    return merged_res, iptv_res
 
 
 def run_addons(box_env=None):
@@ -904,10 +1033,10 @@ def run_addons(box_env=None):
 
     Body (mirrors ``run_foundation``'s proven shape):
       1. progress dialog → ``apply_addons(box_env)`` — the base source repos + base
-         apps (script.ezmaintenanceplus / script.realdebrid), the curated video
-         add-ons (POV, The Loop, Sports HD, YouTube; ``plugin.video.dailymotion_com``
-         install-then-DISABLED) with full dependency closures + origin stamps, the
-         RSS core toggle + the env-driven RSS feeds.
+         apps (script.realdebrid), the curated video add-ons (POV, The Loop, Sports
+         HD, YouTube; ``plugin.video.dailymotion_com`` install-then-DISABLED) with
+         full dependency closures + origin stamps. (Weather + RSS are Foundation's
+         job now, not this layer's.)
       2. summary dialog — honest per-stage counts straight from the LayerResult
          (a partial failure shows as e.g. "Video add-ons: 2/4", never "success").
       3. ``self_uninstall`` then ONE ``restart_kodi`` (platform-aware: desktop
@@ -959,8 +1088,8 @@ def run_addons(box_env=None):
     dialog.create("Tony.7.Bones Setup", "Installing Add-ons...")
 
     # Layer 2 ONLY — the same apply_addons Express drives (no forked install
-    # logic). It owns repos+apps+video install, origin stamps, the
-    # install-then-disable set, the RSS core toggle + env-driven RSS feeds.
+    # logic). It owns repos+apps+video install, origin stamps, and the
+    # install-then-disable set. (Weather + RSS are Foundation's job now.)
     addons_res = apply_addons(box_env, dialog=dialog, log=_log)
     if not addons_res.ok:
         # User cancelled mid-install: abort cleanly with NO summary, NO
@@ -1184,9 +1313,19 @@ def _next_gate(box_env):
     source — ``_env_has_iptv``) -> Add-ons -> "finish". Each probe reads the
     box's actual state (tony7bones.setup.probes), never a marker file, so a
     crash / declined restart / reverted skin self-heals: the incomplete gate is
-    simply re-offered and every layer is idempotent on re-entry."""
+    simply re-offered and every layer is idempotent on re-entry.
+
+    The "Foundation" gate BUNDLES three probes (Foundation config + Backup +
+    Skin — no separate gates/menu entries exist for those yet, mirroring how
+    ``_guided_gate_foundation`` installs all three together): it is done only
+    when ALL THREE read done, so a partial bundle (e.g. weather configured but
+    the skin closure still unresolved) correctly re-offers the whole gate."""
     box_env = box_env or {}
-    if not _probes.foundation_done():
+    if not (
+        _probes.foundation_done(box_env)
+        and _probes.backup_done(box_env)
+        and _probes.skin_done()
+    ):
         return "foundation"
     if _env_has_iptv(box_env) and not _probes.iptv_done(box_env):
         return "iptv"
@@ -1197,15 +1336,22 @@ def _next_gate(box_env):
 
 def _guided_gate_foundation(box_env):
     """The Foundation GATE: the same install seam as ``run_foundation``
-    (``_foundation_core`` — repos incl. our proxy repo + the skin closure +
-    weather/menu/autocomplete) but with the MODEL A lifecycle: NO
+    (``_foundation_core`` — repos incl. our proxy repo + weather/RSS/autocomplete/
+    sources + the skin closure/home-trim) PLUS ``apply_backup`` (EZ Maintenance++
+    — bundled into this gate the same way the Skin closure is, since neither has
+    its own Guided gate/probe yet; keeps this cadence equivalent to Express's
+    installed set — the no-fork invariant), with the MODEL A lifecycle: NO
     self-uninstall (the Setup tile IS the "continue setup" affordance), and the
-    activate-skin-then-restart TERMINAL OP fires only on ``ok`` (never restart
-    into a failed gate). The restart is the gate seam: the box it lands on is a
-    complete, branded, zero-content Kodi."""
+    activate-skin-then-restart TERMINAL OP fires only on Foundation/Skin ``ok``
+    (never restart into a failed gate; a Backup failure is non-fatal to this gate,
+    mirroring Express — it gets its own summary line, not a gate abort). The
+    restart is the gate seam: the box it lands on is a complete, branded,
+    zero-content Kodi."""
     dialog = xbmcgui.DialogProgress()
     dialog.create("Tony.7.Bones Setup", "Installing Foundation...")
-    res = _foundation_core(box_env, dialog)
+    foundation_res, skin_res = _foundation_core(box_env, dialog)
+    res = _merged_foundation_result(foundation_res, skin_res)
+    backup_res = apply_backup(box_env, dialog=dialog, log=_log)
     dialog.close()
 
     xbmcgui.Dialog().ok(
@@ -1215,6 +1361,7 @@ def _guided_gate_foundation(box_env):
                 "Foundation:",
                 "Estuary MOD V2: {}".format("installed" if res.ok else "FAILED"),
                 "Repositories + sources installed.",
+                "Backup: {}".format("ok" if backup_res.ok else "failed"),
                 (
                     "Kodi will restart — reopen Setup to continue."
                     if res.ok
@@ -1389,8 +1536,18 @@ def run_guided(box_env=None):
     Returns an outcome string for tests/logs: ``"gate:<name>"`` (a gate ran —
     the restart seam follows on success), ``"finished"``, ``"removed"``,
     ``"defaults"`` (the no-env one-tap escape completed) or ``"exit"``.
+
+    As EARLY as possible in this wizard (before any gate) — but ONLY here, in
+    Guided, never in Express (a provisioned box already has a real device name
+    from the provisioner) — ``_env_mod.ensure_device_name`` closes the Backup
+    layer's collision risk at its source: if neither the env nor Kodi's own
+    device name is real (blank, or Kodi's stock default), it prompts once to
+    name the box and writes the answer to ``services.devicename`` so every
+    later phase resolves a real identity from here on. A cancelled/empty
+    prompt is a safe no-op — the wizard proceeds regardless.
     """
     box_env = box_env or {}
+    _env_mod.ensure_device_name(box_env, log=_log)
     no_env = not box_env
     while True:
         gate = _next_gate(box_env)
@@ -1422,10 +1579,12 @@ def run_guided(box_env=None):
             continue
         if defaults_pick is not None and pick == defaults_pick:
             # The no-env one-tap escape (D1): the EXACT old no-env Express —
-            # run_express({}) drives the three layers unattended, shows the
+            # run_express({}) drives the four layers unattended, shows the
             # one summary, self-uninstalls, activates the skin, restarts ONCE.
             _log("guided: 'Install everything with defaults' — Express({})")
-            addons_res, _foundation_res, _iptv_res = run_express({})
+            addons_res, _foundation_res, _backup_res, _skin_res, _iptv_res = (
+                run_express({})
+            )
             if addons_res.ok:
                 # Terminal op: consume any env that appeared since launch
                 # (guarded no-op in the normal no-env case — Model A).
@@ -1461,21 +1620,14 @@ _ENV_TEMPLATE_RESOURCE = os.path.join(
 def _device_name():
     """Kodi's device name (``services.devicename`` — the same core setting the
     provisioner seeds), or ``""`` when unreadable (the scaffold's sanitizer
-    falls back to the generic ``device``). Never raises."""
-    try:
-        resp = xbmc.executeJSONRPC(
-            json.dumps(
-                {
-                    "jsonrpc": "2.0",
-                    "id": 1,
-                    "method": "Settings.GetSettingValue",
-                    "params": {"setting": "services.devicename"},
-                }
-            )
-        )
-        return str(json.loads(resp).get("result", {}).get("value") or "")
-    except Exception:  # noqa: BLE001 - any failure = fall back to generic
-        return ""
+    falls back to the generic ``device``). Never raises.
+
+    Thin shim over ``env.resolve_device_name`` (moved there so the Backup layer
+    shares the SAME fallback chain, not a weaker one — see that function's
+    docstring for why the Kodi-setting fallback matters for a shared remote
+    destination, not just a local scaffold file). Called with an empty env
+    here since the scaffold only ever runs when there is no env at all."""
+    return _env_mod.resolve_device_name({})
 
 
 def _scaffold_master_env():
@@ -1560,7 +1712,9 @@ def run():
     if (box_env.get(SETUP_MODE_KEY) or "").strip().lower() == "guided":
         run_guided(box_env)
         return
-    addons_res, _foundation_res, _iptv_res = run_express(box_env)
+    addons_res, _foundation_res, _backup_res, _skin_res, _iptv_res = run_express(
+        box_env
+    )
     # Delete only after a non-cancelled run consumed the env (addons_res.ok is False
     # ONLY on a mid-install cancel — the abort path leaves the env for a re-run).
     # Covers the DELETABLE candidates (derived + profile-local) — the master

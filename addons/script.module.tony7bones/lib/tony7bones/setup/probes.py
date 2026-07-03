@@ -1,4 +1,6 @@
-"""Installed-state done-probes for the Guided wizard (Phase 5d).
+"""Installed-state done-probes for the Guided wizard (Phase 5d, redefined per
+``docs/plans/automate-share-and-backup-config.md`` section 2/3.6 for the
+Foundation/Skin/Backup split).
 
 The Guided wizard resumes via the box's ACTUAL state, never marker files (the
 core re-entrancy principle): each probe answers "is this layer's target state
@@ -8,14 +10,25 @@ offer the NEXT undone gate — so a crash, a declined restart, or a silently
 reverted skin all self-heal: the wizard simply re-offers the incomplete gate,
 and every layer is idempotent on re-entry.
 
-Probe semantics (the panel's plan, with two documented deviations):
+Probe semantics (plan section 3.6, with documented deviations):
 
-* ``foundation_done`` — the skin is installed AND is the ACTIVE skin
-  (``getSkinDir() == SKIN_ID``). Activation is part of the done-state because
-  Kodi's "Keep this skin?" timeout can silently revert a set skin (a real race
-  recorded in the 5b·3 leg-1 finding); probing activation makes the wizard
-  re-offer Foundation after a revert, which re-activates — a self-heal, not a
-  redo (the closure install short-circuits).
+* ``foundation_done`` — install_repos succeeded (every REPO_ZIPS + our own
+  proxy repo installed) AND autocomplete installed AND the KodiShare/
+  KodiBackup File-Manager sources are present at their EXPECTED (env-resolved)
+  URLs (content-checked, not just present under any label) AND weather.multi
+  is installed with a non-empty ``loc1_url`` (content-checked — the
+  load-bearing fetch field). Does NOT check skin state anymore (that moved to
+  ``skin_done``) and does NOT check RSS (env-optional; its absence-of-write on
+  a box with no ``RSS_FEEDS`` is not a failure, so there is nothing honest to
+  probe there).
+* ``backup_done`` — ``script.ezmaintenanceplusplus`` is ACTUALLY INSTALLED
+  (not just settings.xml present — the install-invisibility trap: the closure
+  resolver can't see this add-on, so a probe that only checked settings.xml
+  could read "done" for an add-on that never actually landed) AND its
+  settings.xml has non-empty ``download.path``/``restore.path`` rooted at the
+  expected backup share (content-checked; the full per-device slug isn't
+  independently recomputable here since it may include an interactively-typed
+  device name, so "rooted at the expected share" is the honest bound).
 * ``iptv_done`` — the PVR backend is installed AND at least ONE env provider's
   ``instance-settings-<N>.xml`` exists on disk. A FILE check, deliberately NOT
   a populated channel list (channel sync is async; an empty list right after
@@ -24,6 +37,16 @@ Probe semantics (the panel's plan, with two documented deviations):
   honest 5b·1 skip); requiring ALL files would re-offer the gate forever on
   such an env. Only consulted when the env actually carries a provider
   (``_env_has_iptv`` gates the offer upstream).
+* ``skin_done`` — MOD V2 is installed AND is the ACTIVE skin (activation is
+  part of the done-state because Kodi's "Keep this skin?" timeout can silently
+  revert a set skin — a real race recorded in the 5b·3 leg-1 finding; probing
+  activation makes the wizard re-offer Skin after a revert, which
+  re-activates — a self-heal, not a redo, since the closure install
+  short-circuits) AND the MOD V2+ patch is applied — reusing modv2plus's own
+  ``service.py::_is_applied()`` directly (dynamically loaded from the add-on's
+  own resolved install path, since modv2plus does not ``<requires>`` this
+  shared library and so cannot be imported normally) rather than re-deriving
+  the check.
 * ``addons_done`` — every base app + curated video add-on is installed
   (per-id ``is_installed``). Origin is deliberately NOT probed: the two peno64
   base apps ship blank origins by design (``install_with_deps`` "No origins" —
@@ -42,21 +65,123 @@ import xbmcvfs
 
 from tony7bones import is_installed
 
-from .addons import ADDONS, VIDEO_APPS
+from .addons import ADDONS, PROXY_REPO_ID, REPO_ZIPS, VIDEO_APPS
+from .backup import EZM_ID, _ezm_settings_path
 from .env import env_has_iptv
-from .foundation import SKIN_ID
+from .foundation import (
+    AUTOCOMPLETE_ID,
+    KODI_BACKUP_SOURCE_NAME,
+    KODI_SHARE_SOURCE_NAME,
+    WEATHER_ADDON,
+    _sources_xml_path,
+    _weather_multi_settings_path,
+    kodi_backup_url,
+    kodi_share_url,
+)
 from .iptv import PVR_BACKEND_ID, _instance_settings_special, _iptv_providers
+from .skin import MODV2PLUS_ID, SKIN_ID
 
 
-def foundation_done():
-    """True when the Foundation gate's target state is on the box: the Estuary
-    MOD V2 skin is installed AND currently the active skin. Never raises."""
+def _source_url(name):
+    """The ``<path>`` text for a File-Manager source named ``name`` in
+    sources.xml, or ``None`` if sources.xml is missing/unreadable or has no
+    such entry. Never raises."""
     try:
-        if not is_installed(SKIN_ID):
+        path = _sources_xml_path()
+        if not path or not os.path.exists(path):
+            return None
+        root = ET.parse(path).getroot()
+        files = root.find("files")
+        if files is None:
+            return None
+        for s in files.findall("source"):
+            if s.findtext("name") == name:
+                return s.findtext("path")
+        return None
+    except Exception:  # noqa: BLE001 - a broken probe must read as "not done"
+        return None
+
+
+def _foundation_sources_present(box_env):
+    """KodiShare + KodiBackup are registered at their EXPECTED (env-resolved)
+    URLs — content-checked, not just present under any label."""
+    return _source_url(KODI_SHARE_SOURCE_NAME) == kodi_share_url(
+        box_env
+    ) and _source_url(KODI_BACKUP_SOURCE_NAME) == kodi_backup_url(box_env)
+
+
+def _foundation_weather_configured():
+    """weather.multi is installed AND its settings.xml has a non-empty
+    loc1_url (the load-bearing fetch field) — content-checked."""
+    try:
+        if not is_installed(WEATHER_ADDON):
             return False
-        return (xbmc.getSkinDir() or "") == SKIN_ID
+        path = _weather_multi_settings_path()
+        if not os.path.exists(path):
+            return False
+        root = ET.parse(path).getroot()
+        for s in root.findall("setting"):
+            if s.get("id") == "loc1_url":
+                return bool((s.text or "").strip())
+        return False
     except Exception:  # noqa: BLE001 - a broken probe must read as "not done"
         return False
+
+
+def foundation_done(box_env=None):
+    """True when the Foundation gate's target state is on the box: all source
+    repos + our proxy repo installed, autocomplete installed, KodiShare/
+    KodiBackup sources present at their expected URLs, and weather.multi
+    configured with a real loc1_url. Does NOT check skin state (that's
+    ``skin_done``'s job) or RSS (env-optional). Never raises."""
+    box_env = box_env or {}
+    try:
+        for _zip_name, rid in REPO_ZIPS:
+            if rid and not is_installed(rid):
+                return False
+        if not is_installed(PROXY_REPO_ID):
+            return False
+        if not is_installed(AUTOCOMPLETE_ID):
+            return False
+        if not _foundation_sources_present(box_env):
+            return False
+        return _foundation_weather_configured()
+    except Exception:  # noqa: BLE001 - a broken probe must read as "not done"
+        return False
+
+
+def _backup_configured(box_env):
+    """script.ezmaintenanceplusplus is installed AND its settings.xml has
+    non-empty download.path/restore.path rooted at the expected backup share
+    (content-checked; the per-device slug isn't independently recomputable
+    here — see the module docstring)."""
+    try:
+        if not is_installed(EZM_ID):
+            return False
+        path = _ezm_settings_path()
+        if not os.path.exists(path):
+            return False
+        root = ET.parse(path).getroot()
+        vals = {s.get("id"): (s.text or "") for s in root.findall("setting")}
+        expected = kodi_backup_url(box_env).rstrip("/") + "/"
+        dl = vals.get("download.path", "")
+        rs = vals.get("restore.path", "")
+        return (
+            bool(dl)
+            and bool(rs)
+            and dl.startswith(expected)
+            and rs.startswith(expected)
+        )
+    except Exception:  # noqa: BLE001 - a broken probe must read as "not done"
+        return False
+
+
+def backup_done(box_env=None):
+    """True when the Backup gate's target state is on the box: EZ
+    Maintenance++ ACTUALLY installed (not just settings present — the
+    install-invisibility trap) AND its settings.xml has the expected
+    destination path. Never raises."""
+    return _backup_configured(box_env or {})
 
 
 def iptv_done(box_env):
@@ -75,6 +200,72 @@ def iptv_done(box_env):
             if os.path.exists(path):
                 return True
         return False
+    except Exception:  # noqa: BLE001 - a broken probe must read as "not done"
+        return False
+
+
+def _modv2plus_fully_applied():
+    """Reuses modv2plus's own ``service.py`` checks (the plan's proven reuse
+    target for the patch-applied check) rather than re-deriving the logic.
+    modv2plus does NOT ``<requires>`` this shared library, so a normal Python
+    import isn't available — this loads its ``service.py`` by the add-on's OWN
+    resolved install path instead (the same file Kodi itself runs as
+    modv2plus's boot service). Defensive: any failure (not installed, no
+    xbmcaddon, import error) reads as "not applied" — never raises.
+
+    Checks ALL THREE of ``_is_applied()`` (the Home.xml file patch) AND
+    ``_menu_is_ours()`` (the built skinshortcuts menu — a live race can leave
+    the file patch present while skinshortcuts still serves a cached STOCK
+    menu) AND ``_settings_applied()`` (the look settings — an unclean first
+    boot can lose these even though the file patch persisted immediately) —
+    exactly the three conditions modv2plus's own ``service.py::run()`` checks
+    before deciding "nothing to do". Checking only ``_is_applied()`` would let
+    this probe read done while the service itself still considers the box
+    unpatched and would still auto-correct on the next boot — a real fidelity
+    gap between "Setup says done" and "the service says done"."""
+    try:
+        import importlib.util
+
+        import xbmcaddon
+
+        # translatePath: mirrors modv2plus's OWN default.py, which wraps this
+        # exact getAddonInfo("path") call the same way — belt-and-suspenders
+        # in case a platform ever returns a non-final path (e.g. a special://
+        # form) rather than a plain filesystem path.
+        addon_path = xbmcvfs.translatePath(
+            xbmcaddon.Addon(MODV2PLUS_ID).getAddonInfo("path")
+        )
+        if not addon_path:
+            return False
+        service_path = os.path.join(addon_path, "service.py")
+        spec = importlib.util.spec_from_file_location(
+            "_modv2plus_service_probe", service_path
+        )
+        if spec is None or spec.loader is None:
+            return False
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        return bool(
+            module._is_applied()
+            and module._menu_is_ours()
+            and module._settings_applied()
+        )
+    except Exception:  # noqa: BLE001 - a broken probe must read as "not done"
+        return False
+
+
+def skin_done():
+    """True when the Skin gate's target state is on the box: MOD V2 is
+    installed AND is the ACTIVE skin AND the MOD V2+ patch is FULLY applied
+    (reusing modv2plus's own three patch-applied checks directly, matching
+    exactly what its own boot service considers "nothing to do"). Never
+    raises."""
+    try:
+        if not is_installed(SKIN_ID):
+            return False
+        if (xbmc.getSkinDir() or "") != SKIN_ID:
+            return False
+        return _modv2plus_fully_applied()
     except Exception:  # noqa: BLE001 - a broken probe must read as "not done"
         return False
 
@@ -108,7 +299,8 @@ def addons_done():
 def box_state(box_env):
     """The box's layer done-ness, in one honest dict (probes only, never lies):
 
-        {"foundation": bool, "iptv": bool | None, "addons": bool}
+        {"foundation": bool, "backup": bool, "iptv": bool | None,
+         "skin": bool, "addons": bool}
 
     ``iptv`` is ``None`` when the env carries NO provider playlist source
     (``env_has_iptv``) — IPTV is not expected on that box, which is different
@@ -116,8 +308,10 @@ def box_state(box_env):
     defensive)."""
     box_env = box_env or {}
     return {
-        "foundation": foundation_done(),
+        "foundation": foundation_done(box_env),
+        "backup": backup_done(box_env),
         "iptv": iptv_done(box_env) if env_has_iptv(box_env) else None,
+        "skin": skin_done(),
         "addons": addons_done(),
     }
 
@@ -199,9 +393,9 @@ def assert_box_complete(box_env, *, layers=None):
     verification primitive, honest by construction: it raises AssertionError
     NAMING exactly what is missing, or returns the verified ``box_state``.
 
-    ``layers`` defaults to every layer the env expects (foundation + addons
-    always; iptv only when ``env_has_iptv``). On top of the per-layer
-    done-probes it runs the dependency-closure walk
+    ``layers`` defaults to every layer the env expects (foundation + backup +
+    skin + addons always; iptv only when ``env_has_iptv``). On top of the
+    per-layer done-probes it runs the dependency-closure walk
     (``missing_required_imports``) — a complete box has no dangling required
     import. Usable by tests, the wizard's Finish, and any post-setup
     verification. This is the ONE probe that is allowed to raise — that is its
@@ -209,17 +403,25 @@ def assert_box_complete(box_env, *, layers=None):
     box_env = box_env or {}
     state = box_state(box_env)
     if layers is None:
-        layers = ["foundation", "addons"] + (["iptv"] if env_has_iptv(box_env) else [])
+        layers = ["foundation", "backup", "skin", "addons"] + (
+            ["iptv"] if env_has_iptv(box_env) else []
+        )
     problems = []
     if "foundation" in layers and not state["foundation"]:
         problems.append(
-            "foundation: {} not installed or not the active skin".format(SKIN_ID)
+            "foundation: repos/autocomplete/sources/weather not fully configured"
         )
+    if "backup" in layers and not state["backup"]:
+        problems.append("backup: {} not installed or not configured".format(EZM_ID))
     if "iptv" in layers and not state["iptv"]:
         problems.append(
             "iptv: {} not installed or no provider instance-settings on disk".format(
                 PVR_BACKEND_ID
             )
+        )
+    if "skin" in layers and not state["skin"]:
+        problems.append(
+            "skin: {} not installed, not active, or patch not applied".format(SKIN_ID)
         )
     if "addons" in layers:
         missing = _addons_missing()
