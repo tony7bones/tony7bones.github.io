@@ -449,6 +449,39 @@ def test_repository_get_asset_unknown_raises(proxy, tmp_path):
         repo.get_asset("nope", "addon.xml")
 
 
+def test_repository_missing_file_does_not_raise(proxy, tmp_path):
+    # entries.json (the user's optional imported-entries store) can be absent
+    # if its first-run creation failed on a restrictive filesystem (tvOS). The
+    # whole service imports Repository(...) synchronously at add-on-enable
+    # time, so this must degrade, not crash.
+    missing = tmp_path / "does-not-exist.json"
+    repo = proxy.repository.Repository(
+        files=(str(missing),), platform=_platform(proxy), max_threads=1
+    )
+    assert repo._addons == {}
+
+
+def test_repository_malformed_file_does_not_raise(proxy, tmp_path):
+    path = tmp_path / "repository.json"
+    path.write_text("not valid json")
+    repo = proxy.repository.Repository(
+        files=(str(path),), platform=_platform(proxy), max_threads=1
+    )
+    assert repo._addons == {}
+
+
+def test_repository_one_bad_file_does_not_block_a_good_one(proxy, tmp_path):
+    good = tmp_path / "repository.json"
+    good.write_text(json.dumps([{"id": "plugin.video.foo", "username": "bar"}]))
+    bad = tmp_path / "entries.json"
+    bad.write_text("{not json")
+
+    repo = proxy.repository.Repository(
+        files=(str(good), str(bad)), platform=_platform(proxy), max_threads=1
+    )
+    assert "plugin.video.foo" in repo._addons
+
+
 def test_repository_addons_xml_and_md5(proxy, tmp_path):
     from xml.etree import ElementTree as ET
     from hashlib import md5
@@ -687,3 +720,165 @@ def test_kodi_platform_macos_x64(proxy, monkeypatch, tmp_path):
     )
     p = kodi_platform.get_platform()
     assert p.system == "darwin" and p.arch == "x64"
+
+
+# =========================================================================== #
+# lib/entries.py — the module-level entries.json bootstrap that runs the
+# instant service.py (the xbmc.service extension) imports it, i.e. the instant
+# Kodi enables the add-on. Needs a minimal fake xbmcaddon/xbmcvfs/xbmcgui/xbmc
+# since lib.kodi (which this imports) touches all four at import time.
+# =========================================================================== #
+def _import_lib_entries(monkeypatch, tmp_path, *, makedirs=None, builtin_open=None):
+    fake_addon = types.SimpleNamespace(
+        getAddonInfo=lambda key: {
+            "id": "repository.tony7bones",
+            "name": "Tony.7.Bones repository",
+            "path": str(tmp_path),
+            "icon": "icon.png",
+            "profile": "special://profile/addon_data/repository.tony7bones/",
+        }[key],
+        getLocalizedString=lambda i: str(i),
+        getSetting=lambda key: "61234",
+    )
+    fake_xbmcaddon = types.SimpleNamespace(Addon=lambda: fake_addon)
+    fake_xbmcvfs = types.SimpleNamespace(translatePath=lambda p: str(tmp_path) + os.sep)
+    fake_xbmc = types.SimpleNamespace(
+        log=lambda *a, **k: None,
+        LOGFATAL=0,
+        LOGERROR=1,
+        LOGWARNING=2,
+        LOGINFO=3,
+        LOGDEBUG=4,
+        LOGNONE=5,
+    )
+    fake_xbmcgui = types.SimpleNamespace(Dialog=lambda: None)
+
+    monkeypatch.setitem(sys.modules, "xbmcaddon", fake_xbmcaddon)
+    monkeypatch.setitem(sys.modules, "xbmcvfs", fake_xbmcvfs)
+    monkeypatch.setitem(sys.modules, "xbmc", fake_xbmc)
+    monkeypatch.setitem(sys.modules, "xbmcgui", fake_xbmcgui)
+    for mod in (
+        "lib.kodi",
+        "lib.entries",
+        "lib.platform.core",
+        "lib.platform.kodi_platform",
+    ):
+        monkeypatch.delitem(sys.modules, mod, raising=False)
+
+    if makedirs is not None:
+        monkeypatch.setattr(os, "makedirs", makedirs)
+    if builtin_open is not None:
+        import builtins
+
+        monkeypatch.setattr(builtins, "open", builtin_open)
+
+    return importlib.import_module("lib.entries")
+
+
+def test_entries_module_creates_storage_on_happy_path(proxy, monkeypatch, tmp_path):
+    entries = _import_lib_entries(monkeypatch, tmp_path)
+    assert os.path.exists(entries.ENTRIES_PATH)
+    with open(entries.ENTRIES_PATH) as f:
+        assert f.read() == "[]"
+
+
+def test_entries_module_survives_sandboxed_write_failure(proxy, monkeypatch, tmp_path):
+    # This is the leading hypothesis for the Apple TV (tvOS) "Install from
+    # zip" -> "ERROR CHECK THE LOGS" failure: a sandboxed filesystem denies
+    # this module-level write, and before this fix that exception propagated
+    # out of the import, crashing the whole service (service.py imports
+    # lib.entries at module scope). Importing must now survive it.
+    def _denied_makedirs(path, *a, **k):
+        raise PermissionError("Operation not permitted: {}".format(path))
+
+    # Force the "directory missing" branch so makedirs is actually attempted.
+    missing_dir = tmp_path / "does-not-exist-yet"
+    entries = _import_lib_entries(monkeypatch, missing_dir, makedirs=_denied_makedirs)
+    assert not os.path.exists(entries.ENTRIES_PATH)  # degraded, not crashed
+    # And the rest of the module is still usable — Entries() just sees no file.
+    e = entries.Entries()
+    assert e.length() == 0
+
+
+# =========================================================================== #
+# lib/service.py — the actual `xbmc.service` entry point Kodi imports the
+# instant it enables the add-on (line 25-26 there runs Repository(...) at
+# module scope). This is the end-to-end proof: the real thing Kodi runs must
+# survive a sandboxed filesystem denying entries.json's first-run write.
+# =========================================================================== #
+def test_service_module_survives_sandboxed_write_failure(proxy, monkeypatch, tmp_path):
+    resources = tmp_path / "resources"
+    resources.mkdir()
+    (resources / "repository.json").write_text(
+        json.dumps([{"id": "plugin.video.foo", "username": "bar"}])
+    )
+
+    fake_addon = types.SimpleNamespace(
+        getAddonInfo=lambda key: {
+            "id": "repository.tony7bones",
+            "name": "Tony.7.Bones repository",
+            "path": str(tmp_path),
+            "icon": "icon.png",
+            "profile": "special://profile/addon_data/repository.tony7bones/",
+        }[key],
+        getLocalizedString=lambda i: str(i),
+        getSetting=lambda key: "61234",
+    )
+    fake_xbmc = types.SimpleNamespace(
+        log=lambda *a, **k: None,
+        LOGFATAL=0,
+        LOGERROR=1,
+        LOGWARNING=2,
+        LOGINFO=3,
+        LOGDEBUG=4,
+        LOGNONE=5,
+        Monitor=type("Monitor", (), {}),
+    )
+    monkeypatch.setitem(
+        sys.modules, "xbmcaddon", types.SimpleNamespace(Addon=lambda: fake_addon)
+    )
+    # ADDON_PATH (used to locate resources/repository.json) comes straight
+    # from getAddonInfo("path") = tmp_path, which exists. ADDON_DATA (where
+    # entries.json is created) is a DIFFERENT, not-yet-existing directory
+    # under translatePath("special://profile/...") — must not already exist,
+    # or the module-level `if not os.path.exists(ADDON_DATA): os.makedirs(...)`
+    # guard short-circuits and the write-denial path never even runs.
+    profile_dir = tmp_path / "profile_data"
+    assert not profile_dir.exists()
+    monkeypatch.setitem(
+        sys.modules,
+        "xbmcvfs",
+        types.SimpleNamespace(translatePath=lambda p: str(profile_dir) + os.sep),
+    )
+    monkeypatch.setitem(sys.modules, "xbmc", fake_xbmc)
+    monkeypatch.setitem(
+        sys.modules, "xbmcgui", types.SimpleNamespace(Dialog=lambda: None)
+    )
+    for mod in (
+        "lib.kodi",
+        "lib.entries",
+        "lib.service",
+        "lib.routes",
+        "lib.httpserver",
+        "lib.platform.core",
+        "lib.platform.kodi_platform",
+    ):
+        monkeypatch.delitem(sys.modules, mod, raising=False)
+
+    # The Apple TV (tvOS) sandbox condition: entries.json's first-run write
+    # is denied — but this must not stop service.py itself from importing.
+    def _denied_makedirs(path, *a, **k):
+        raise PermissionError("Operation not permitted: {}".format(path))
+
+    monkeypatch.setattr(os, "makedirs", _denied_makedirs)
+
+    importlib.import_module("lib.service")  # must not raise
+
+    # And it wasn't a no-op degrade: add_repository_routes() ran to
+    # completion against a real Repository built from the bundled
+    # repository.json, registering all four HTTP routes (proving the
+    # module-level `Repository(...)` construction — including its `.update()`
+    # file reads — completed despite ENTRIES_PATH being unwritable).
+    from lib.httpserver import HTTPRequestHandler
+
+    assert len(HTTPRequestHandler.get_routes) == 4

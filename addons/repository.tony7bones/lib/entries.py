@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import sys
 from collections import OrderedDict
@@ -6,18 +7,41 @@ from zipfile import ZipFile
 
 import xbmcgui
 
-from lib.kodi import ADDON_DATA, ADDON_NAME, translate, notification, get_repository_port, translatePath
+from lib.kodi import (
+    ADDON_DATA,
+    ADDON_NAME,
+    translate,
+    notification,
+    get_repository_port,
+    translatePath,
+)
 from lib.platform.core import PLATFORM, dump_platform
 from lib.repository import validate_schema
 from lib.utils import str_to_unicode, request
 
-if not os.path.exists(ADDON_DATA):
-    os.makedirs(ADDON_DATA)
-
 ENTRIES_PATH = os.path.join(ADDON_DATA, "entries.json")
-if not os.path.exists(ENTRIES_PATH):
-    with open(ENTRIES_PATH, "w") as _f:
-        _f.write("[]")
+
+
+def _ensure_entries_storage():
+    # Runs at import time (this module is pulled in by service.py, which Kodi
+    # imports synchronously the moment the add-on is enabled/installed) — a
+    # sandboxed filesystem (tvOS's per-app container) denying this write must
+    # not crash the whole service import. Repository._load_file already
+    # tolerates ENTRIES_PATH not existing, so skipping on failure is safe: the
+    # add-on just starts with no user-imported entries instead of not starting.
+    try:
+        if not os.path.exists(ADDON_DATA):
+            os.makedirs(ADDON_DATA)
+        if not os.path.exists(ENTRIES_PATH):
+            with open(ENTRIES_PATH, "w") as _f:
+                _f.write("[]")
+    except OSError as e:
+        logging.warning(
+            "Failed to initialize entries storage at %s: %s", ENTRIES_PATH, e
+        )
+
+
+_ensure_entries_storage()
 
 
 class Entries(object):
@@ -58,7 +82,9 @@ class Entries(object):
             with open(path) as f:
                 self.add_entries_from_data(json.load(f))
         else:
-            raise ValueError("Unknown file extension. Supported extensions are .json and .zip")
+            raise ValueError(
+                "Unknown file extension. Supported extensions are .json and .zip"
+            )
 
     def add_entries_from_data(self, data):
         validate_schema(data)
@@ -67,13 +93,19 @@ class Entries(object):
 
 
 def update_repository(notify=False):
-    with request("http://127.0.0.1:{}/update".format(get_repository_port()), timeout=2) as r:
+    with request(
+        "http://127.0.0.1:{}/update".format(get_repository_port()), timeout=2
+    ) as r:
         if notify:
             notification(translate(30013 if r.status_code == 200 else 30014))
 
 
 def import_entries():
-    path = str_to_unicode(translatePath(xbmcgui.Dialog().browse(1, translate(30002), "files", ".json|.zip")))
+    path = str_to_unicode(
+        translatePath(
+            xbmcgui.Dialog().browse(1, translate(30002), "files", ".json|.zip")
+        )
+    )
     if path:
         entries = Entries()
         entries.add_entries_from_file(path)
@@ -108,14 +140,26 @@ def clear_entries():
 
 
 def about():
-    xbmcgui.Dialog().textviewer(translate(30006), "[B]{}[/B]\n\nDetected platform: {}\n\n{}".format(
-        ADDON_NAME, PLATFORM.name(), dump_platform()))
+    xbmcgui.Dialog().textviewer(
+        translate(30006),
+        "[B]{}[/B]\n\nDetected platform: {}\n\n{}".format(
+            ADDON_NAME, PLATFORM.name(), dump_platform()
+        ),
+    )
 
 
 def run():
-    methods = ("import_entries", "delete_entries", "clear_entries", "update_repository", "about")
+    methods = (
+        "import_entries",
+        "delete_entries",
+        "clear_entries",
+        "update_repository",
+        "about",
+    )
     if len(sys.argv) == 1:
-        selected = xbmcgui.Dialog().select(ADDON_NAME, [translate(30002 + i) for i in range(len(methods))])
+        selected = xbmcgui.Dialog().select(
+            ADDON_NAME, [translate(30002 + i) for i in range(len(methods))]
+        )
     elif len(sys.argv) == 2:
         method = sys.argv[1]
         try:
