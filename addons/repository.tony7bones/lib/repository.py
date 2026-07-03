@@ -176,17 +176,20 @@ class Repository(object):
 
     def _load_file(self, path):
         # A local file (the bundled repository.json, or the user's optional
-        # entries.json) can legitimately be missing or unreadable — e.g. a
-        # sandboxed filesystem (tvOS) that denied the entries.json first-run
-        # write. Log and skip rather than letting Repository.__init__ (called
-        # synchronously at add-on import time) crash the whole service.
+        # entries.json) can legitimately be missing, unreadable, or valid JSON
+        # in the wrong shape — e.g. a sandboxed filesystem (tvOS) that denied
+        # the entries.json first-run write, a hand-edited entries.json with a
+        # missing required key (InvalidSchemaError from _load_data), or a bad
+        # tag_pattern regex (re.error, also raised inside _load_data). Log and
+        # skip rather than letting Repository.__init__ (called synchronously
+        # at add-on import time) crash the whole service.
         try:
             with open(path) as f:
                 data = json.load(f)
-        except (OSError, ValueError) as e:
+            self._load_data(data)
+        except (OSError, ValueError, InvalidSchemaError, re.error) as e:
             logging.warning("Failed to load repository file %s: %s", path, e)
             return
-        self._load_data(data)
 
     def _load_url(self, url):
         with request(url) as r:

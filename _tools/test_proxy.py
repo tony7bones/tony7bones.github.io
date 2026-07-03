@@ -482,6 +482,44 @@ def test_repository_one_bad_file_does_not_block_a_good_one(proxy, tmp_path):
     assert "plugin.video.foo" in repo._addons
 
 
+def test_repository_invalid_schema_file_does_not_raise(proxy, tmp_path):
+    # Syntactically valid JSON, but the wrong shape (missing the required
+    # "username" key) — validate_schema (called from _load_data, which used
+    # to run OUTSIDE _load_file's try/except) raises InvalidSchemaError. This
+    # file is loaded at add-on import time, so it must degrade, not crash.
+    path = tmp_path / "entries.json"
+    path.write_text(json.dumps([{"id": "plugin.video.foo"}]))
+    repo = proxy.repository.Repository(
+        files=(str(path),), platform=_platform(proxy), max_threads=1
+    )
+    assert repo._addons == {}
+
+
+def test_repository_bad_tag_pattern_file_does_not_raise(proxy, tmp_path):
+    # A hand-edited entries.json can carry a syntactically invalid regex in
+    # "tag_pattern" — re.compile() (called from _load_data) raises re.error.
+    # Same import-time crash risk as InvalidSchemaError above.
+    path = tmp_path / "entries.json"
+    path.write_text(json.dumps([{"id": "a", "username": "u", "tag_pattern": "("}]))
+    repo = proxy.repository.Repository(
+        files=(str(path),), platform=_platform(proxy), max_threads=1
+    )
+    assert repo._addons == {}
+
+
+def test_repository_one_schema_invalid_file_does_not_block_a_good_one(proxy, tmp_path):
+    good = tmp_path / "repository.json"
+    good.write_text(json.dumps([{"id": "plugin.video.foo", "username": "bar"}]))
+    bad = tmp_path / "entries.json"
+    bad.write_text(json.dumps([{"id": "no-username"}]))
+
+    repo = proxy.repository.Repository(
+        files=(str(good), str(bad)), platform=_platform(proxy), max_threads=1
+    )
+    assert "plugin.video.foo" in repo._addons
+    assert "no-username" not in repo._addons
+
+
 def test_repository_addons_xml_and_md5(proxy, tmp_path):
     from xml.etree import ElementTree as ET
     from hashlib import md5
@@ -720,6 +758,74 @@ def test_kodi_platform_macos_x64(proxy, monkeypatch, tmp_path):
     )
     p = kodi_platform.get_platform()
     assert p.system == "darwin" and p.arch == "x64"
+
+
+# =========================================================================== #
+# lib/kodi.py — get_repository_port() is the first statement lib/service.py's
+# run() executes right after import. Needs the same minimal fake
+# xbmcaddon/xbmcvfs/xbmcgui/xbmc set as lib.entries below, since lib.kodi
+# touches all four at import time.
+# =========================================================================== #
+def _import_lib_kodi(monkeypatch, tmp_path, *, get_setting):
+    fake_addon = types.SimpleNamespace(
+        getAddonInfo=lambda key: {
+            "id": "repository.tony7bones",
+            "name": "Tony.7.Bones repository",
+            "path": str(tmp_path),
+            "icon": "icon.png",
+            "profile": "special://profile/addon_data/repository.tony7bones/",
+        }[key],
+        getLocalizedString=lambda i: str(i),
+        getSetting=get_setting,
+    )
+    fake_xbmcaddon = types.SimpleNamespace(Addon=lambda: fake_addon)
+    fake_xbmcvfs = types.SimpleNamespace(translatePath=lambda p: str(tmp_path) + os.sep)
+    fake_xbmc = types.SimpleNamespace(
+        log=lambda *a, **k: None,
+        LOGFATAL=0,
+        LOGERROR=1,
+        LOGWARNING=2,
+        LOGINFO=3,
+        LOGDEBUG=4,
+        LOGNONE=5,
+    )
+    fake_xbmcgui = types.SimpleNamespace(Dialog=lambda: None)
+
+    monkeypatch.setitem(sys.modules, "xbmcaddon", fake_xbmcaddon)
+    monkeypatch.setitem(sys.modules, "xbmcvfs", fake_xbmcvfs)
+    monkeypatch.setitem(sys.modules, "xbmc", fake_xbmc)
+    monkeypatch.setitem(sys.modules, "xbmcgui", fake_xbmcgui)
+    monkeypatch.delitem(sys.modules, "lib.kodi", raising=False)
+
+    return importlib.import_module("lib.kodi")
+
+
+def test_get_repository_port_parses_valid_setting(proxy, monkeypatch, tmp_path):
+    kodi = _import_lib_kodi(monkeypatch, tmp_path, get_setting=lambda key: "61234")
+    assert kodi.get_repository_port() == 61234
+
+
+def test_get_repository_port_falls_back_on_empty_setting(proxy, monkeypatch, tmp_path):
+    # getSetting() can legitimately return "" (never set / cleared profile).
+    # int("") raises ValueError — this used to propagate straight out of
+    # get_repository_port(), which lib/service.py's run() calls as its very
+    # first statement, crashing the whole service.
+    kodi = _import_lib_kodi(monkeypatch, tmp_path, get_setting=lambda key: "")
+    assert kodi.get_repository_port() == kodi.DEFAULT_REPOSITORY_PORT == 61234
+
+
+def test_get_repository_port_falls_back_on_non_numeric_setting(
+    proxy, monkeypatch, tmp_path
+):
+    kodi = _import_lib_kodi(monkeypatch, tmp_path, get_setting=lambda key: "abc")
+    assert kodi.get_repository_port() == kodi.DEFAULT_REPOSITORY_PORT
+
+
+def test_get_repository_port_falls_back_on_none_setting(proxy, monkeypatch, tmp_path):
+    # A misbehaving Kodi build returning None rather than "" is the TypeError
+    # branch of the same guard (int(None) raises TypeError, not ValueError).
+    kodi = _import_lib_kodi(monkeypatch, tmp_path, get_setting=lambda key: None)
+    assert kodi.get_repository_port() == kodi.DEFAULT_REPOSITORY_PORT
 
 
 # =========================================================================== #
