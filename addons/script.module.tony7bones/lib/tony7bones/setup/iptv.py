@@ -377,7 +377,20 @@ def _apply_staged_provider(provider, staging_dir):
     falls back to the Phase 5b·1 direct-env behaviour. Always applies when
     complete (the host artifacts are authoritative; re-copying identical bytes
     on re-entry is harmless inside the PVR-disabled window). Secret values
-    (playlist/EPG URLs with creds) are never logged."""
+    (playlist/EPG URLs with creds) are never logged.
+
+    A side-file value that is NOT a portable ``special://`` reference (e.g. a
+    live ``nfs://``/``smb://`` URL a device reads straight off a network share,
+    with no local staging at all — the shape this repo's own IPTV populator
+    emits when a box has no local staging step to receive a copy) needs no
+    local copy: it is already an absolute, directly-usable location, so it is
+    carried through UNCHANGED, exactly like ``epgPath`` (never touched here
+    either way). This is not just an optimization — when the staged value's
+    resolved destination happens to equal its own source (this IS the shape
+    the populator emits: the referenced file lives in the SAME staging dir
+    this function reads from), copying it onto itself is undefined at best and
+    a data-destroying same-file copy at worst, so a non-special:// value must
+    always skip the copy branch entirely."""
     n = provider["n"]
     src = staging_dir.rstrip("/") + "/instance-settings-%d.xml" % n
     if not xbmcvfs.exists(src):
@@ -399,14 +412,39 @@ def _apply_staged_provider(provider, staging_dir):
         )
         return False
     vals = {s.get("id"): (s.text or "") for s in root.findall("setting")}
-    # The side-files this instance references; each MUST be staged alongside.
-    needed = []  # (staged-src, dest special://, kind)
+    # The side-files this instance references. Only a portable special://
+    # value needs staging + a local copy; a direct absolute reference (a live
+    # network URL) is already final and passes through untouched (see the
+    # docstring above for why this is a correctness requirement, not a nicety).
+    needed = []  # (staged-src, dest special://, kind) — special:// values only
     m3u_special = (vals.get("m3uPath") or "").strip()
-    if vals.get("m3uPathType") == "0" and m3u_special:
+    m3u_gated = vals.get("m3uPathType") == "0" and m3u_special
+    if m3u_gated and m3u_special.startswith("special://"):
         needed.append((m3u_special, "playlist"))
     groups_special = (vals.get("customTvGroupsFile") or "").strip()
-    if vals.get("tvGroupMode") == IPTV_TV_GROUP_MODE_CUSTOM and groups_special:
+    groups_gated = (
+        vals.get("tvGroupMode") == IPTV_TV_GROUP_MODE_CUSTOM and groups_special
+    )
+    if groups_gated and groups_special.startswith("special://"):
         needed.append((groups_special, "groups"))
+    # A gated-but-direct (non-special://) reference still must exist, or a
+    # staged config would silently point pvr at a dead network location.
+    for special, gated in (
+        (m3u_special, m3u_gated),
+        (groups_special, groups_gated),
+    ):
+        if (
+            gated
+            and not special.startswith("special://")
+            and not xbmcvfs.exists(special)
+        ):
+            _log(
+                "_apply_staged_provider: instance %d: staged direct reference "
+                "%s is unreachable — falling back to direct env config"
+                % (n, special.rsplit("/", 1)[-1]),
+                xbmc.LOGERROR,
+            )
+            return False
     staged = []
     for special, kind in needed:
         fname = special.rstrip("/").rsplit("/", 1)[-1]

@@ -1343,6 +1343,82 @@ def test_staged_copy_failure_falls_back(boot, tmp_path, monkeypatch):
     assert got["m3uUrl"].endswith("password=REMOTESECRET")
 
 
+def test_staged_direct_network_reference_passes_through_unchanged(boot, tmp_path):
+    """A staged m3uPath/customTvGroupsFile that is NOT a special:// reference
+    (a live network URL a device reads straight off a share, with no local
+    staging step at all — the shape a box with no computer-provisioned local
+    copy needs) must be applied VERBATIM, not copied/rewritten. The referenced
+    path resolves to the SAME staging dir this function reads
+    instance-settings-2.xml from — the exact self-referential shape that would
+    make a naive copy target a file onto itself."""
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    tok = "Streamvision"
+    m3u_path = str(staging / (tok + ".m3u"))
+    groups_path = str(staging / ("customTVGroups-" + tok + ".xml"))
+    epg_path = str(staging / (tok + "-epg.xml.gz"))
+    body = (
+        '<settings version="2">\n'
+        '  <setting id="kodi_addon_instance_name">%s</setting>\n'
+        '  <setting id="kodi_addon_instance_enabled">true</setting>\n'
+        '  <setting id="m3uPathType">0</setting>\n'
+        '  <setting id="m3uPath">%s</setting>\n'
+        '  <setting id="tvGroupMode">2</setting>\n'
+        '  <setting id="customTvGroupsFile">%s</setting>\n'
+        '  <setting id="tvChannelGroupsOnly">true</setting>\n'
+        '  <setting id="epgPathType">0</setting>\n'
+        '  <setting id="epgPath">%s</setting>\n'
+        "</settings>"
+    ) % (tok, m3u_path, groups_path, epg_path)
+    (staging / ("instance-settings-2.xml")).write_text(body)
+    (staging / (tok + ".m3u")).write_text("#EXTM3U\n#EXTINF:-1,C\nhttp://x\n")
+    (staging / ("customTVGroups-" + tok + ".xml")).write_text(
+        "<customChannelGroups><channelGroupName>X</channelGroupName></customChannelGroups>"
+    )
+    (staging / (tok + "-epg.xml.gz")).write_bytes(b"\x1f\x8b\x00")
+
+    wrote = _iptv(boot)._ensure_iptv_custom_tv_groups(
+        {
+            "IPTV_2_NAME": "Streamvision",
+            "IPTV_2_MODE": "xtream",
+            "IPTV_2_PORTAL": "http://portal.example/PORTALSECRET",
+            "IPTV_2_USER": "USERSECRET",
+            "IPTV_2_PASS": "PASSSECRET",
+            "IPTV_STAGING_DIR": str(staging),
+        }
+    )
+    assert wrote is True
+    got = _read_instance_n(boot, 2)
+    # Every reference passes through byte-for-byte — no copy, no translatePath
+    # rewrite, and critically no self-copy against the same staging dir.
+    assert got["m3uPath"] == m3u_path
+    assert got["customTvGroupsFile"] == groups_path
+    assert got["epgPath"] == epg_path
+
+
+def test_staged_direct_reference_missing_file_falls_back(boot, tmp_path):
+    """A direct (non-special://) staged reference that does NOT actually exist
+    must still fall back rather than silently pointing pvr at nothing."""
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    m3u_path = str(staging / "Gone.m3u")  # never created
+    body = (
+        '<settings version="2">\n'
+        '  <setting id="m3uPathType">0</setting>\n'
+        '  <setting id="m3uPath">%s</setting>\n'
+        '  <setting id="tvGroupMode">0</setting>\n'
+        "</settings>"
+    ) % m3u_path
+    (staging / "instance-settings-1.xml").write_text(body)
+
+    env = _staged_env(staging)
+    env["IPTV_1_GROUPS"] = "A"
+    wrote = _iptv(boot)._ensure_iptv_custom_tv_groups(env)
+    assert wrote is True  # the direct-env fallback still configured it
+    got = _read_instance_n(boot, 1)
+    assert got["m3uUrl"].endswith("password=REMOTESECRET"), "direct-env fallback"
+
+
 def test_apply_iptv_staged_two_providers_reports_configured(boot, tmp_path):
     """apply_iptv end-to-end on the REAL env shape (m3u provider 1 + xtream
     provider 2) with full staging: BOTH instances land, the layer reports
@@ -1371,3 +1447,66 @@ def test_apply_iptv_staged_two_providers_reports_configured(boot, tmp_path):
     )
     assert "pvr.iptvsimple" not in boot.state["disabled"]
     assert _pvr_enable_calls(boot) == [True, False, True]
+
+
+def test_apply_iptv_staged_two_providers_direct_network_no_local_copy(boot, tmp_path):
+    """apply_iptv end-to-end for the REAL household shape: a box with no local
+    computer-provisioned staging step at all, where BOTH providers' staged
+    instance-settings reference a live network share directly (no special://
+    form) and the referenced files live in that SAME network dir the env's
+    IPTV_STAGING_DIR points at — the exact self-referential shape that used to
+    make the copy step fail (a same-file copy) and silently drop the xtream
+    provider (Streamvision) entirely. Both instances must land, verbatim."""
+    share = tmp_path / "share"
+    share.mkdir()
+
+    def _write_provider(n, tok):
+        m3u = str(share / (tok + ".m3u"))
+        groups = str(share / ("customTVGroups-" + tok + ".xml"))
+        epg = str(share / (tok + "-epg.xml.gz"))
+        body = (
+            '<settings version="2">\n'
+            '  <setting id="kodi_addon_instance_name">%s</setting>\n'
+            '  <setting id="kodi_addon_instance_enabled">true</setting>\n'
+            '  <setting id="m3uPathType">0</setting>\n'
+            '  <setting id="m3uPath">%s</setting>\n'
+            '  <setting id="tvGroupMode">2</setting>\n'
+            '  <setting id="customTvGroupsFile">%s</setting>\n'
+            '  <setting id="tvChannelGroupsOnly">true</setting>\n'
+            '  <setting id="epgPathType">0</setting>\n'
+            '  <setting id="epgPath">%s</setting>\n'
+            "</settings>"
+        ) % (tok, m3u, groups, epg)
+        (share / ("instance-settings-%d.xml" % n)).write_text(body)
+        (share / (tok + ".m3u")).write_text("#EXTM3U\n#EXTINF:-1,C\nhttp://x\n")
+        (share / ("customTVGroups-" + tok + ".xml")).write_text(
+            "<customChannelGroups><channelGroupName>X</channelGroupName></customChannelGroups>"
+        )
+        (share / (tok + "-epg.xml.gz")).write_bytes(b"\x1f\x8b\x00")
+        return m3u, groups, epg
+
+    n24_m3u, n24_groups, n24_epg = _write_provider(1, "Network24")
+    sv_m3u, sv_groups, sv_epg = _write_provider(2, "Streamvision")
+
+    res = _iptv(boot).apply_iptv(
+        {
+            "IPTV_1_NAME": "Network 24",
+            "IPTV_1_MODE": "m3u",
+            "IPTV_2_NAME": "Streamvision",
+            "IPTV_2_MODE": "xtream",
+            "IPTV_2_PORTAL": "http://portal.example",
+            "IPTV_2_USER": "u",
+            "IPTV_2_PASS": "p",
+            "IPTV_STAGING_DIR": str(share),
+        }
+    )
+    assert res.ok is True
+    assert res.installed.get("pvr.iptvsimple") == "configured"
+    got1 = _read_instance_n(boot, 1)
+    got2 = _read_instance_n(boot, 2)
+    assert got1["m3uPath"] == n24_m3u
+    assert got1["customTvGroupsFile"] == n24_groups
+    assert got1["epgPath"] == n24_epg
+    assert got2["m3uPath"] == sv_m3u
+    assert got2["customTvGroupsFile"] == sv_groups
+    assert got2["epgPath"] == sv_epg
