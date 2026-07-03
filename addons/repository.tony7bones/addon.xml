@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<addon id="repository.tony7bones" name="Tony.7.Bones repository" provider-name="Tony.7.Bones" version="2.2.4">
+<addon id="repository.tony7bones" name="Tony.7.Bones repository" provider-name="Tony.7.Bones" version="2.2.5">
     <requires>
         <import addon="xbmc.python" version="3.0.0"/>
     </requires>
@@ -18,7 +18,7 @@
         <summary lang="en">Welcome to Tony.7.Bones repository. Enjoy!</summary>
         <description lang="en">Welcome to Tony.7.Bones repository. Enjoy!</description>
         <news>
-v2.2.4: Fix: the proxy's background service could crash entirely at add-on-enable time if it could not create its optional entries.json storage file (e.g. a restrictive filesystem) - this and a missing/malformed local file are now logged and skipped instead of crashing the whole service.
+v2.2.5: Fix: the proxy's platform detection could still crash the whole service on an environment where both detection paths fail - now falls back to an explicit unknown platform (hides only platform-gated binary add-ons) instead of crashing.
         </news>
         <assets>
             <icon>icon.png</icon>
