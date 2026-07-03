@@ -245,7 +245,7 @@ v2.2.6: Fix: two more import-time crash gaps closed (a malformed local entries.j
     </news>
         </extension>
     </addon>
-    <addon id="script.module.tony7bones" name="Tony.7.Bones Shared Library" version="1.6.0" provider-name="tony7bones">
+    <addon id="script.module.tony7bones" name="Tony.7.Bones Shared Library" version="1.7.0" provider-name="tony7bones">
         <requires>
             <import addon="xbmc.python" version="3.0.0" />
         </requires>
@@ -260,16 +260,17 @@ v2.2.6: Fix: two more import-time crash gaps closed (a malformed local entries.j
             <summary lang="en_GB">Shared install library for the Tony.7.Bones Setup add-ons</summary>
             <description lang="en_GB">Internal Python library used by the Tony.7.Bones Setup add-ons. It is not runnable on its own and does not appear on the home screen; it provides the shared add-on install, dependency-resolution and Kodi-integration machinery the Setup add-ons depend on.</description>
             <news>
+        v1.7.0: Fix: apply_iptv's staged-provider consumption assumed every m3uPath/customTvGroupsFile was a portable special:// reference needing a local copy; a live network reference (no local staging at all) hit a same-file copy that silently failed, dropping an Xtream-mode provider entirely. Now carried through unchanged when it is already a direct, absolute location.
         v1.6.0: Fix: EZ Maintenance++ backup now actually installs (previously wired but never called). Fix: Guided wizard re-checks real Foundation config, not just skin state.
         v1.5.0: Onboarding self-creates the _T7B/kodi/{backups,iptv,media,repositories,rss} device tree (ensure_device_dirs / DEVICE_STAGING_SUBDIRS); IPTV staging is injected only when the iptv/ dir actually holds artifacts. (v1.4.0: Device-resident master env at the _T7B/ brand root (dot-optional env.&lt;device&gt;), ordered env-source search (brand root -&gt; staging _T7B/kodi/ -&gt; legacy kodi/tony.7.bones/ -&gt; profile-local), persistent master never deleted, self-scaffolding placeholder template when no env exists. (v1.3.0: Ordered env-source layer — BOX_ENV_PATH (pushed env wins) then the profile-local env, with read_first_env/box_env_paths/delete_box_envs helpers and terminal deletes covering every candidate; SETUP_API 2. (v1.2.0: Modular Setup layers — re-entrant apply_foundation/apply_iptv/apply_addons (each leaves a complete working box), installed-state probes + assert_box_complete (dependency-closure walk), the PVR-disabled config window for pvr.iptvsimple instance-settings writes, staged-IPTV artifact consumption (host-built m3u/groups/instance files), keep-skin activation hardening (verify-then-re-assert with skinshortcuts quiescence), and the SETUP_API version guard.)
         </news>
         </extension>
     </addon>
-    <addon id="script.tony7bones.bootstrap" name="Tony.7.Bones Setup" version="2.0.0" provider-name="tony7bones">
+    <addon id="script.tony7bones.bootstrap" name="Tony.7.Bones Setup" version="2.1.0" provider-name="tony7bones">
         <requires>
             <import addon="xbmc.python" version="3.0.0" />
             <import addon="xbmc.addon" version="12.0.0" />
-            <import addon="script.module.tony7bones" version="1.6.0" />
+            <import addon="script.module.tony7bones" version="1.7.0" />
         </requires>
         <extension point="xbmc.python.script" library="default.py">
             <provides>executable</provides>
@@ -284,6 +285,7 @@ v2.2.6: Fix: two more import-time crash gaps closed (a malformed local entries.j
                 <icon>icon.png</icon>
             </assets>
             <news>
+        v2.1.0: Lockstep bump for script.module.tony7bones 1.7.0 (the IPTV staged-provider live-network-reference fix).
         v2.0.0: Add a custom Setup icon (gear + checkmark) so Kodi's add-on browser no longer shows a blank placeholder.
         v1.9.0: Fix: EZ Maintenance++ backup now actually installs (previously wired but never called). Fix: Guided wizard re-checks real Foundation config, not just skin state.
         v1.8.0: Setup creates the device folder structure (_T7B/kodi/{backups,iptv,media,repositories,rss}) on every run if missing — Express, Guided, and the no-env wizard all scaffold it. (v1.7.0: Setup reads each box's own env.&lt;device&gt; from /storage/emulated/0/_T7B/ (created as a disabled placeholder if missing) so a box self-configures with no computer; the device-resident master env is persistent and never deleted; unattended Express + Guided wizard unchanged. (v1.6.0: Launching Setup with no device env now opens the Guided wizard — choose Foundation / IPTV / Add-ons, or "Install everything with defaults" — so a manual launch installs nothing until chosen; the unattended Express one-tap still runs whenever a device env is present. (v1.5.0: Modular Setup — Express one-tap unchanged; three standalone layers (run_foundation, run_iptv, run_addons), each leaving a complete working box; Guided wizard via SETUP_MODE=guided with per-gate restarts and the Model A lifecycle (Setup persists across gates, env consumed at Finish, then self-uninstalls); shared-library SETUP_API compatibility guard. (v1.4.0: Per-device config from one .env — the provisioner derives a per-device tony7bones.env and the Setup reads it to set weather (up to 5 locations + optional Weatherbit/OpenWeatherMap keys), IPTV (custom groups + m3u/EPG), and RSS feeds, then removes it; built-in defaults when absent. (v1.3.3: Live TV now loads only the custom channel groups — the Setup enforces pvr.iptvsimple's "Only load TV channels in groups" (tvChannelGroupsOnly) alongside the custom-groups mode + file. (v1.3.2: Reliable skin activation — Setup now ACCEPTS Kodi's "Keep this skin?" confirmation when it switches to Estuary MOD V2, so the choice persists across the end-of-setup restart instead of reverting to stock Estuary. (v1.3.1: Adds three File-Manager sources — "special://home" (special://home), "special://kodi" (/storage/emulated/0/kodi/), and ".tony.7.bones" (https://tony7bones.github.io/). New sources de-dupe by name and path; and ANY existing source pointing at the repo URL — with or without a trailing slash, under any label — is renamed to ".tony.7.bones". (v1.3.0: one-shot also installs + activates the Estuary MOD V2 skin and the MOD V2+ patch auto-applies via its service.)

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <addon id="script.module.tony7bones"
        name="Tony.7.Bones Shared Library"
-       version="1.6.0"
+       version="1.7.0"
        provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0"/>
@@ -27,6 +27,7 @@
     <summary lang="en_GB">Shared install library for the Tony.7.Bones Setup add-ons</summary>
     <description lang="en_GB">Internal Python library used by the Tony.7.Bones Setup add-ons. It is not runnable on its own and does not appear on the home screen; it provides the shared add-on install, dependency-resolution and Kodi-integration machinery the Setup add-ons depend on.</description>
     <news>
+        v1.7.0: Fix: apply_iptv's staged-provider consumption assumed every m3uPath/customTvGroupsFile was a portable special:// reference needing a local copy; a live network reference (no local staging at all) hit a same-file copy that silently failed, dropping an Xtream-mode provider entirely. Now carried through unchanged when it is already a direct, absolute location.
         v1.6.0: Fix: EZ Maintenance++ backup now actually installs (previously wired but never called). Fix: Guided wizard re-checks real Foundation config, not just skin state.
         v1.5.0: Onboarding self-creates the _T7B/kodi/{backups,iptv,media,repositories,rss} device tree (ensure_device_dirs / DEVICE_STAGING_SUBDIRS); IPTV staging is injected only when the iptv/ dir actually holds artifacts. (v1.4.0: Device-resident master env at the _T7B/ brand root (dot-optional env.&lt;device&gt;), ordered env-source search (brand root -&gt; staging _T7B/kodi/ -&gt; legacy kodi/tony.7.bones/ -&gt; profile-local), persistent master never deleted, self-scaffolding placeholder template when no env exists. (v1.3.0: Ordered env-source layer — BOX_ENV_PATH (pushed env wins) then the profile-local env, with read_first_env/box_env_paths/delete_box_envs helpers and terminal deletes covering every candidate; SETUP_API 2. (v1.2.0: Modular Setup layers — re-entrant apply_foundation/apply_iptv/apply_addons (each leaves a complete working box), installed-state probes + assert_box_complete (dependency-closure walk), the PVR-disabled config window for pvr.iptvsimple instance-settings writes, staged-IPTV artifact consumption (host-built m3u/groups/instance files), keep-skin activation hardening (verify-then-re-assert with skinshortcuts quiescence), and the SETUP_API version guard.)
         </news>
