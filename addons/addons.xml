@@ -1,6 +1,6 @@
 <?xml version='1.0' encoding='UTF-8'?>
 <addons>
-    <addon id="repository.tony7bones" name="Tony.7.Bones repository" provider-name="Tony.7.Bones" version="2.2.2">
+    <addon id="repository.tony7bones" name="Tony.7.Bones repository" provider-name="Tony.7.Bones" version="2.2.3">
         <requires>
             <import addon="xbmc.python" version="3.0.0" />
         </requires>
@@ -19,7 +19,7 @@
             <summary lang="en">Welcome to Tony.7.Bones repository. Enjoy!</summary>
             <description lang="en">Welcome to Tony.7.Bones repository. Enjoy!</description>
             <news>
-v2.2.2: Add EZ Maintenance++: Dropbox + network-share backup and restore
+v2.2.3: Fix: platform detection failed on Apple TV / tvOS / Apple Silicon (any ARM Darwin device) - only ARM on Android and Linux was handled, so tvOS raised an internal error that the fallback then silently mislabeled as x64 instead of arm64. Both paths now correctly resolve arm64.
         </news>
             <assets>
                 <icon>icon.png</icon>
