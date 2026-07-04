@@ -95,17 +95,44 @@ class _FakeFile:
 
     `broken_read_paths` simulates the live tvOS bug: File(path, "r").readBytes()
     returns empty on every call for a path, even though the store (and
-    therefore Stat()) holds the real, correctly-sized data.
+    therefore Stat()) holds the real, correctly-sized data. `raise_read_paths`
+    simulates a genuinely raised read/stream exception on EVERY attempt (a
+    distinct code path from an empty-but-non-raising read).
+    `raise_read_once_paths` raises only on the first File() constructed for
+    that path (a one-time transient error, e.g. a stale NFS connection) - a
+    later attempt (the fallback's fresh File()) reads normally, proving
+    recovery. `write_fails_paths` simulates a refused write (share full or
+    dropped) - a definitive failure with no retry.
     """
 
-    def __init__(self, data_store, path, mode, broken_read_paths=frozenset()):
+    def __init__(
+        self,
+        data_store,
+        path,
+        mode,
+        broken_read_paths=frozenset(),
+        raise_read_paths=frozenset(),
+        raise_read_once_paths=None,
+        write_fails_paths=frozenset(),
+    ):
         self._store = data_store
         self._path = path
         self._mode = mode
         self._pos = 0
         self._broken = path in broken_read_paths
+        self._raises = path in raise_read_paths
+        self._write_fails = path in write_fails_paths
+        self._raise_once_counts = raise_read_once_paths
+        self._raises_this_open = False
+        if self._raise_once_counts is not None and path in self._raise_once_counts:
+            n = self._raise_once_counts[path]
+            if n > 0:
+                self._raise_once_counts[path] = n - 1
+                self._raises_this_open = True
 
     def readBytes(self, n):
+        if self._raises or self._raises_this_open:
+            raise OSError("simulated read error on %s" % self._path)
         if self._broken:
             return b""
         data = self._store.get(self._path, b"")
@@ -114,6 +141,8 @@ class _FakeFile:
         return chunk
 
     def write(self, chunk):
+        if self._write_fails:
+            return False
         self._store[self._path] = self._store.get(self._path, b"") + bytes(chunk)
         return True
 
@@ -122,7 +151,15 @@ class _FakeFile:
 
 
 def _install_fake_vfs(
-    monkeypatch, ui_mod, *, store, settled_sizes_by_path=None, broken_read_paths=None
+    monkeypatch,
+    ui_mod,
+    *,
+    store,
+    settled_sizes_by_path=None,
+    broken_read_paths=None,
+    raise_read_paths=None,
+    raise_read_once_paths=None,
+    write_fails_paths=None,
 ):
     """A fake xbmcvfs where Stat().st_size() can return a caller-controlled,
     per-call sequence of values (to simulate a settle race or a permanently
@@ -130,6 +167,9 @@ def _install_fake_vfs(
     in-memory store."""
     settled_sizes_by_path = settled_sizes_by_path or {}
     broken_read_paths = broken_read_paths or frozenset()
+    raise_read_paths = raise_read_paths or frozenset()
+    raise_read_once_paths = dict(raise_read_once_paths or {})
+    write_fails_paths = write_fails_paths or frozenset()
     call_counts = {}
 
     class _FakeStat:
@@ -146,7 +186,13 @@ def _install_fake_vfs(
 
     fake_xbmcvfs = types.SimpleNamespace(
         File=lambda path, mode="r": _FakeFile(
-            store, path, mode, broken_read_paths=broken_read_paths
+            store,
+            path,
+            mode,
+            broken_read_paths=broken_read_paths,
+            raise_read_paths=raise_read_paths,
+            raise_read_once_paths=raise_read_once_paths,
+            write_fails_paths=write_fails_paths,
         ),
         Stat=_FakeStat,
         exists=lambda p: p in store,
@@ -288,3 +334,85 @@ def test_copy_once_size_mismatch_logs_diagnostic_with_copied_count(ui, monkeypat
     assert "copied=1000" in msg  # the full 1000 bytes WERE read+written here
     assert "total=1000" in msg
     assert "actual=0" in msg
+
+
+def test_copy_once_cancel_returns_cancelled_without_fallback(ui, monkeypatch):
+    """A user cancel mid-copy must return COPY_CANCELLED and clean up the
+    partial - never fall back (that would defeat the cancel), never raise."""
+    store = {"nfs://src": b"x" * 1000}
+    _install_fake_vfs(monkeypatch, ui, store=store)
+    progress = types.SimpleNamespace(cancelled=lambda: True, bytes=lambda *a, **k: None)
+    result = ui._copy_once("nfs://src", "nfs://dst", progress=progress)
+    assert result == ui.COPY_CANCELLED
+    assert "nfs://dst" not in store
+    assert "nfs://dst.ezmpart" not in store
+
+
+def test_copy_once_write_refused_raises_without_fallback(ui, monkeypatch):
+    """A refused write (share full/dropped) is a DEFINITIVE failure - it must
+    raise immediately and clean up, never attempt the fallback (retrying a
+    refused write against the same destination is pointless, per the
+    _copy_once docstring's "do NOT fall back" rule)."""
+    store = {"nfs://src": b"x" * 1000}
+    _install_fake_vfs(
+        monkeypatch,
+        ui,
+        store=store,
+        write_fails_paths=frozenset({"nfs://dst.ezmpart"}),
+    )
+    with pytest.raises(ui.VfsCopyError, match="write refused"):
+        ui._copy_once("nfs://src", "nfs://dst")
+    assert "nfs://dst" not in store
+    assert "nfs://dst.ezmpart" not in store
+
+
+def test_copy_once_raised_read_exception_falls_back_and_succeeds(ui, monkeypatch):
+    """A genuinely raised read/stream exception (as opposed to an empty,
+    non-raising read) is a distinct code path from the size-mismatch branch -
+    it skips straight to _fallback_copy via the generic exception handler, per
+    the _copy_once docstring's "transient failure (a raised read/stream
+    error)" guarantee. Here the primary attempt's read raises ONCE (a
+    one-time transient error, e.g. the documented stale-NFS-connection case),
+    but the fallback's own fresh File() open reads normally and must recover -
+    proving this is a genuine retry path, not just a relabeled failure."""
+    store = {"nfs://src": b"x" * 1000}
+    _install_fake_vfs(
+        monkeypatch,
+        ui,
+        store=store,
+        raise_read_once_paths={"nfs://src": 1},
+    )
+    result = ui._copy_once("nfs://src", "nfs://dst")
+    assert result == ui.COPY_OK
+    assert store["nfs://dst"] == b"x" * 1000
+
+
+def test_copy_with_progress_raised_read_exception_raises_after_fallback_fails(
+    ui, monkeypatch
+):
+    """When the source's read raises an exception (not just returns empty) on
+    EVERY attempt - both the primary chunked copy and the fallback's own
+    _stream_copy retry - the whole thing must still raise VfsCopyError, not
+    silently report success. This is the exception-raising counterpart to
+    test_copy_with_progress_raises_when_both_attempts_fail (which uses an
+    empty, non-raising read); the two exercise different code paths in
+    _copy_once (the generic `except Exception:` handler vs. the size-mismatch
+    branch) that both route to the same _fallback_copy recovery attempt."""
+    store = {"nfs://src": b"x" * 1000}
+    _install_fake_vfs(
+        monkeypatch, ui, store=store, raise_read_paths=frozenset({"nfs://src"})
+    )
+    with pytest.raises(ui.VfsCopyError):
+        ui.copy_with_progress("nfs://src", "nfs://dst")
+    assert "nfs://dst" not in store
+
+
+def test_fallback_copy_skips_size_check_when_total_unknown(ui, monkeypatch):
+    """If the source's own size couldn't be determined (_vfs_size returned -1,
+    e.g. a Stat() failure), the fallback has nothing to verify against and
+    must still report success rather than block on an unknowable check."""
+    store = {"nfs://src": b"x" * 1000}
+    _install_fake_vfs(monkeypatch, ui, store=store)
+    result = ui._fallback_copy("nfs://src", "nfs://dst", total=-1)
+    assert result == ui.COPY_OK
+    assert store["nfs://dst"] == b"x" * 1000
