@@ -205,6 +205,13 @@ def test_set_addon_version():
     assert '<?xml version="1.0"' in out  # xml decl untouched
 
 
+def test_set_addon_version_allows_legacy_date_stamped_scheme():
+    # EZ Maintenance++'s real shipped scheme: four components, not X.Y.Z -
+    # the strict parser used to run unconditionally here and reject this.
+    out = rl.set_addon_version(ADDON_XML, "2026.07.04.0")
+    assert rl.read_addon_version(out) == "2026.07.04.0"
+
+
 def test_set_addon_news():
     out = rl.set_addon_news(ADDON_XML, "v1.0.8: brand new")
     assert "v1.0.8: brand new" in out

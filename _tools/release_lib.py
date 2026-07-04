@@ -188,7 +188,14 @@ def read_addon_version(xml_text: str) -> str:
 
 
 def set_addon_version(xml_text: str, version: str) -> str:
-    parse_version(version)
+    # A basic numeric-dotted sanity check only — single-digit-per-component
+    # enforcement belongs at the gate (preflight/script_consistency), which
+    # already ran before this is ever called. Using the strict parser here
+    # unconditionally would make it impossible to write back a legacy,
+    # non-single-digit version (EZ Maintenance++'s real date-stamped
+    # 2026.07.02.0 has four components, not three) even when the gate has
+    # already and correctly allowed it through.
+    parse_version_loose(version)
     new, n = _ADDON_VERSION_RE.subn(
         lambda m: m.group(1) + version + m.group(3), xml_text, count=1
     )

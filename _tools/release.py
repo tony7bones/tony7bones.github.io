@@ -429,11 +429,24 @@ def preflight(bumps: list[AddonBump], base_ref: str) -> list[str]:
     problems: list[str] = []
     problems.extend(_behind_origin(base_ref))
     for b in bumps:
-        if not rl.is_single_digit(b.nxt):
+        # An add-on already on a legacy, non-single-digit scheme (EZ
+        # Maintenance++'s real date-stamped 2026.07.02.0) must be compared
+        # within that same scheme - see _next_for's identical exemption.
+        legacy = not rl.is_single_digit(b.cur)
+        if not legacy and not rl.is_single_digit(b.nxt):
             problems.append(
                 f"{b.addon_id}: next version {b.nxt} is not single-digit (0-9)"
             )
-        if not rl.is_greater(b.nxt, b.cur):
+        try:
+            bumped = (
+                rl.is_greater_loose(b.nxt, b.cur)
+                if legacy
+                else rl.is_greater(b.nxt, b.cur)
+            )
+        except ValueError as exc:
+            problems.append(f"{b.addon_id}: {exc}")
+            continue
+        if not bumped:
             problems.append(
                 f"{b.addon_id}: next version {b.nxt} is not greater than current "
                 f"{b.cur} (every release MUST bump)"
