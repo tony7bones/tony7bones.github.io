@@ -84,6 +84,7 @@ The proxy serves add-ons from its **baked** `resources/repository.json` (read lo
 > - `docs/playbooks/firetv-adb-dev.md` — command-level runbook for driving the Office Fire TV over ADB + JSON-RPC (`_tools/firetv.sh`).
 > - `docs/playbooks/firetv-stick-scoped-storage-provisioning.md` — **provision a non-rooted Fire OS 11 Stick over adb** via the Jocala/adbLink data-relocation trick (`xbmc_env.properties` → `/sdcard/kodi_data`) and the provisioner's auto-detected Fire-OS mode (`KODI_DATA_PATH`).
 > - `.claude/skills/ezm-backup-doctor/SKILL.md` - triage guide for script.ezmaintenanceplusplus backup/restore copy failures (size mismatch, VfsCopyError, the local-read VFS bug, the NFS port-baking bug, the settle race).
+> - `docs/playbooks/quick-backup-test-provisioning.md` - get a freshly wiped Kodi box ready to install and run an add-on (e.g. EZ Maintenance++) without the full curated Setup or any manual permission/rename friction; a documented plan (not yet a script) built on `provision-kodi.sh`'s proven guisettings-seed mechanism.
 > - `.claude/skills/kodi-super-agent/SKILL.md` — distilled agent operating guide.
 > - `docs/plans/modular-setup.md` — the design + phase log of the modular "0-1-2" Setup rewrite (**MERGED to `main` 2026-06-10 — this is the shipped Setup**). Historical record + the contract; the no-computer-setup track continues in `docs/plans/no-computer-setup.md`.
 > - `docs/plans/` (the rest) — historical design docs (implemented).
