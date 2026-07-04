@@ -1,18 +1,29 @@
-"""Coverage for script.ezmaintenanceplusplus's ui.py copy-size-settle fix.
+"""Coverage for script.ezmaintenanceplusplus's ui.py copy fallback/local-read fix.
 
-A large NFS write can complete (every fdst.write() returns True, close()
-raises nothing) before the server has actually committed the bytes - an
-immediate xbmcvfs.Stat right after close() can still read a stale, pre-write
-size. Live-observed: a real 142 MB backup copy reported "size mismatch
-(0 != 142380074)" on all 3 attempts, each completing in ~130ms (far too fast
-to be a genuine failed 142 MB transfer), with no write ever refused and no
-exception raised - the write succeeded, the immediate size check just read
-stale server-side metadata.
+Two real device logs on the same tvOS Apple TV both showed a 142 MB backup
+copy failing with "size mismatch (0 != total)": copied=0, total=<the correct
+size>, actual=0, on every retry. The first log proved this was a read-side
+failure, not a destination-write-timing race. A second log - taken AFTER
+shipping a fix that fell back to the opaque xbmcvfs.copy() on a broken chunked
+read - showed the SAME failure: xbmcvfs.copy() ALSO could not read the source.
+That is decisive: reading this local, just-built temp zip fails through EVERY
+Kodi VFS mechanism (File.readBytes() and the native xbmcvfs.copy()), even
+though xbmcvfs.Stat() on it always correctly reports the real size. This
+add-on's own CreateZip() writes that file with plain zipfile/open(), and
+wiz.py's own staged-zip validation already reads it back with plain
+os.path.getsize()/zipfile.is_zipfile() - so plain Python I/O is proven to work
+for this exact class of path on this exact device; only Kodi's VFS read of it
+is broken. The fix: a local source path (no "://") is now read with plain
+Python open(), never xbmcvfs, for both the primary chunked copy and its
+fallback retry.
 
 This file builds a minimal fake xbmc/xbmcaddon/xbmcgui/xbmcvfs (ui.py's own
 docstring: "Imports ONLY xbmc / xbmcaddon / xbmcgui / xbmcvfs, so it is fully
 unit-testable off-device") to exercise the real _copy_once/copy_with_progress
-code, not a reimplementation of it.
+code, not a reimplementation of it. Fake VFS paths use an "nfs://" prefix so
+`_open_reader` routes them through the fake xbmcvfs.File instead of a real
+local `open()` - only the dedicated local-read test uses a real file (via
+tmp_path), since that is the one behavior that must NOT go through the fake.
 """
 
 from __future__ import annotations
@@ -83,8 +94,8 @@ class _FakeFile:
     """A minimal xbmcvfs.File stand-in backed by an in-memory byte buffer.
 
     `broken_read_paths` simulates the live tvOS bug: File(path, "r").readBytes()
-    returns empty on every call for a path, even though the store (and therefore
-    Stat() and the native copy() fallback) hold the real, correctly-sized data.
+    returns empty on every call for a path, even though the store (and
+    therefore Stat()) holds the real, correctly-sized data.
     """
 
     def __init__(self, data_store, path, mode, broken_read_paths=frozenset()):
@@ -110,36 +121,15 @@ class _FakeFile:
         pass
 
 
-def _fake_copy(store, src, dst, copy_fails_paths, copy_truncate_to):
-    if dst in copy_fails_paths:
-        return False
-    data = store.get(src, b"")
-    if dst in copy_truncate_to:
-        data = data[: copy_truncate_to[dst]]
-    store[dst] = data
-    return True
-
-
 def _install_fake_vfs(
-    monkeypatch,
-    ui_mod,
-    *,
-    store,
-    settled_sizes_by_path=None,
-    broken_read_paths=None,
-    copy_fails_paths=None,
-    copy_truncate_to=None,
+    monkeypatch, ui_mod, *, store, settled_sizes_by_path=None, broken_read_paths=None
 ):
     """A fake xbmcvfs where Stat().st_size() can return a caller-controlled,
-    per-call sequence of values (to simulate the settle race), independent of
-    what was ACTUALLY written to the in-memory store. `copy_fails_paths` makes
-    xbmcvfs.copy() return False for that destination; `copy_truncate_to` makes
-    it "succeed" but write fewer bytes than the source has (a truncated native
-    copy) - both simulate the fallback path itself failing."""
+    per-call sequence of values (to simulate a settle race or a permanently
+    unreliable stat), independent of what was ACTUALLY written to the
+    in-memory store."""
     settled_sizes_by_path = settled_sizes_by_path or {}
     broken_read_paths = broken_read_paths or frozenset()
-    copy_fails_paths = copy_fails_paths or frozenset()
-    copy_truncate_to = copy_truncate_to or {}
     call_counts = {}
 
     class _FakeStat:
@@ -164,7 +154,7 @@ def _install_fake_vfs(
         rename=lambda a, b: (
             (store.__setitem__(b, store.pop(a)), True)[1] if a in store else False
         ),
-        copy=lambda a, b: _fake_copy(store, a, b, copy_fails_paths, copy_truncate_to),
+        copy=lambda a, b: (store.__setitem__(b, store.get(a, b"")), True)[1],
     )
     monkeypatch.setitem(sys.modules, "xbmcvfs", fake_xbmcvfs)
     monkeypatch.setattr(ui_mod, "xbmcvfs", fake_xbmcvfs)
@@ -172,117 +162,126 @@ def _install_fake_vfs(
 
 
 def test_copy_once_settles_after_transient_zero_size(ui, monkeypatch):
-    """The live-observed shape: the write completes fully (no refused write,
-    no exception), but the FIRST size check reads stale 0 - it must settle to
-    the correct size on a later poll instead of declaring a hard failure."""
-    store = {"src": b"x" * 1000}
+    """The live-observed shape (the FIRST real device log, before the read-side
+    root cause was found): the write completes fully (no refused write, no
+    exception), but the FIRST size check reads stale 0 - it must settle to the
+    correct size on a later poll instead of declaring a hard failure."""
+    store = {"nfs://src": b"x" * 1000}
     # First Stat call after the write reads stale 0; the second reads correct.
     _install_fake_vfs(
-        monkeypatch, ui, store=store, settled_sizes_by_path={"dst.ezmpart": [0, 1000]}
+        monkeypatch,
+        ui,
+        store=store,
+        settled_sizes_by_path={"nfs://dst.ezmpart": [0, 1000]},
     )
-    result = ui.copy_with_progress("src", "dst")
+    result = ui.copy_with_progress("nfs://src", "nfs://dst")
     assert result == ui.COPY_OK
-    assert store["dst"] == b"x" * 1000
+    assert store["nfs://dst"] == b"x" * 1000
     # Settled via the cheap poll, NOT the expensive whole-copy retry.
     assert len(ui._TEST_SLEEPS) == 1
     assert ui._TEST_SLEEPS[0] == ui.SIZE_SETTLE_DELAY_MS
 
 
-def test_copy_once_falls_back_to_native_copy_after_settle_attempts_exhausted(
-    ui, monkeypatch
-):
-    """A size that never settles must not spin forever, and must not just raise
-    either - it must fall back to the opaque xbmcvfs.copy() (the pre-2026.07.01.0
-    mechanism) and succeed, since the destination store DOES hold the right bytes
-    (only the Stat() reads in this scenario are wrong, not the underlying data)."""
-    store = {"src": b"x" * 1000}
+def test_copy_once_falls_back_after_settle_attempts_exhausted(ui, monkeypatch):
+    """A destination size that never settles must not spin forever, and must
+    not just raise either - it must fall back to a second, clean copy attempt
+    and succeed, since the destination store DOES hold the right bytes (only
+    the Stat() reads in this scenario are wrong, not the underlying data)."""
+    store = {"nfs://src": b"x" * 1000}
     _install_fake_vfs(
-        monkeypatch, ui, store=store, settled_sizes_by_path={"dst.ezmpart": [0]}
+        monkeypatch, ui, store=store, settled_sizes_by_path={"nfs://dst.ezmpart": [0]}
     )
-    result = ui._copy_once("src", "dst")
+    result = ui._copy_once("nfs://src", "nfs://dst")
     assert result == ui.COPY_OK
     assert len(ui._TEST_SLEEPS) == ui.SIZE_SETTLE_ATTEMPTS - 1
-    assert store["dst"] == b"x" * 1000  # shipped via the native copy() fallback
-    assert "dst.ezmpart" not in store  # partial cleaned up
+    assert store["nfs://dst"] == b"x" * 1000  # shipped via the fallback retry
+    assert "nfs://dst.ezmpart" not in store  # partial cleaned up
 
 
-def test_copy_once_falls_back_to_native_copy_when_chunked_read_is_broken(
-    ui, monkeypatch
+def test_copy_once_reads_a_local_source_without_going_through_vfs(
+    ui, monkeypatch, tmp_path
 ):
-    """The live-observed shape from a real Apple TV backup: File(src, "r").readBytes()
-    returns empty on the very first call despite Stat(src) correctly reporting the
-    full size (copied=0 total=142444751 actual=0 in the real log) - the chunked
-    reader can never succeed no matter how many times it is retried, because Kodi's
-    Python-level File/readBytes binding is what's broken, not the underlying file.
-    The native xbmcvfs.copy() fallback bypasses that binding entirely and must
-    still ship the correct bytes."""
-    store = {"src": b"x" * 1000}
+    """The actual, live-confirmed root cause and its fix: reading a just-built
+    LOCAL temp zip via Kodi's VFS (File.readBytes() OR the opaque
+    xbmcvfs.copy()) came back completely empty on a real Apple TV on every
+    attempt, despite xbmcvfs.Stat() correctly reporting its size - confirmed
+    twice, once for each recovery mechanism tried. A local source (no "://")
+    must now be read with plain Python open(), never xbmcvfs, so this uses a
+    REAL file (not the fake store) for src. To prove the VFS read is never
+    even attempted, xbmcvfs.File is deliberately broken for this exact path
+    too - if the code regressed to using it, this test would fail with a size
+    mismatch instead of succeeding on the first try."""
+    data = b"x" * 1000
+    src = tmp_path / "kodi_backup_202607041122.zip"
+    src.write_bytes(data)
+    src_path = str(src)
+    # Stat() still goes through xbmcvfs (the real Stat() has always correctly
+    # reported the size in every live log) - only the store copy for the size
+    # check; the real read bypasses this store entirely via plain open().
+    store = {src_path: data}
     _install_fake_vfs(
-        monkeypatch, ui, store=store, broken_read_paths=frozenset({"src"})
+        monkeypatch, ui, store=store, broken_read_paths=frozenset({src_path})
     )
-    result = ui.copy_with_progress("src", "dst")
+    result = ui.copy_with_progress(src_path, "nfs://dst")
     assert result == ui.COPY_OK
-    assert store["dst"] == b"x" * 1000
+    assert store["nfs://dst"] == data
+    # Succeeded on the very first attempt - no settle poll, no fallback needed.
+    assert ui._TEST_SLEEPS == []
 
 
-def test_copy_with_progress_raises_when_fallback_copy_also_fails(ui, monkeypatch):
-    """A double failure - the chunked read is broken (as on tvOS) AND the native
-    xbmcvfs.copy() fallback also fails (share genuinely gone) - must still raise
-    VfsCopyError, not silently report success. Exercises copy_with_progress (not
-    just _copy_once) so the outer COPY_RETRY_ATTEMPTS exhaustion path is proven
-    too, not just the first attempt."""
-    store = {"src": b"x" * 1000}
+def test_copy_with_progress_raises_when_both_attempts_fail(ui, monkeypatch):
+    """A source whose VFS read is broken on BOTH the primary chunked attempt
+    and the fallback's retry (a remote share that genuinely can't be read)
+    must still raise VfsCopyError, not silently report success. Exercises
+    copy_with_progress (not just _copy_once) so the outer COPY_RETRY_ATTEMPTS
+    exhaustion path is proven too, not just one attempt."""
+    store = {"nfs://src": b"x" * 1000}
     _install_fake_vfs(
-        monkeypatch,
-        ui,
-        store=store,
-        broken_read_paths=frozenset({"src"}),
-        copy_fails_paths=frozenset({"dst"}),
+        monkeypatch, ui, store=store, broken_read_paths=frozenset({"nfs://src"})
     )
     with pytest.raises(ui.VfsCopyError):
-        ui.copy_with_progress("src", "dst")
-    assert "dst" not in store
+        ui.copy_with_progress("nfs://src", "nfs://dst")
+    assert "nfs://dst" not in store
 
 
-def test_fallback_copy_rejects_a_truncated_native_copy(ui, monkeypatch):
-    """xbmcvfs.copy() returning True is not proof the bytes actually landed - the
-    same server-side commit-delay race the chunked path settles for could affect
-    the native copy too. A fallback that "succeeds" but ships fewer bytes than
-    the source must still raise VfsCopyError and clean up the short file, not
-    let backup() rotate out a good backup for a truncated one."""
-    store = {"src": b"x" * 1000}
+def test_fallback_copy_rejects_a_destination_that_never_settles(ui, monkeypatch):
+    """A successful fallback copy is not proof the bytes actually landed - the
+    same destination-stat unreliability the primary chunked path settles for
+    could affect the fallback's own destination check too. A destination whose
+    Stat() never matches must still raise VfsCopyError and clean up, not let
+    backup() rotate out a good backup for a file whose true size is unknown."""
+    store = {"nfs://src": b"x" * 1000}
     _install_fake_vfs(
         monkeypatch,
         ui,
         store=store,
-        broken_read_paths=frozenset({"src"}),
-        copy_truncate_to={"dst": 500},
+        settled_sizes_by_path={"nfs://dst.ezmpart": [0], "nfs://dst": [0]},
     )
     with pytest.raises(ui.VfsCopyError, match="fallback copy size mismatch"):
-        ui._copy_once("src", "dst")
-    assert "dst" not in store  # the short file was cleaned up, not left behind
+        ui._copy_once("nfs://src", "nfs://dst")
+    assert "nfs://dst" not in store  # the unverified file was cleaned up
 
 
 def test_copy_once_no_settle_needed_is_fast(ui, monkeypatch):
     """The common case (size correct immediately) must not sleep at all."""
-    store = {"src": b"x" * 1000}
+    store = {"nfs://src": b"x" * 1000}
     _install_fake_vfs(monkeypatch, ui, store=store)
-    result = ui.copy_with_progress("src", "dst")
+    result = ui.copy_with_progress("nfs://src", "nfs://dst")
     assert result == ui.COPY_OK
     assert ui._TEST_SLEEPS == []
 
 
 def test_copy_once_size_mismatch_logs_diagnostic_with_copied_count(ui, monkeypatch):
-    """A never-settling mismatch must log `copied` (bytes actually read from src
-    and written to tmp) alongside total/actual before falling back - the one fact
-    that distinguishes a read-side failure (copied==0) from a destination-stat
-    failure (copied==total but actual!=total), per the live investigation that
-    found the prior settle-only fix insufficient."""
-    store = {"src": b"x" * 1000}
+    """A never-settling mismatch must log `copied` (bytes actually read from
+    src and written to tmp) alongside total/actual before falling back - the
+    one fact that distinguished a read-side failure (copied==0) from a
+    destination-stat failure (copied==total but actual!=total) during the live
+    investigation, before a second real device log settled it decisively."""
+    store = {"nfs://src": b"x" * 1000}
     _install_fake_vfs(
-        monkeypatch, ui, store=store, settled_sizes_by_path={"dst.ezmpart": [0]}
+        monkeypatch, ui, store=store, settled_sizes_by_path={"nfs://dst.ezmpart": [0]}
     )
-    result = ui._copy_once("src", "dst")
+    result = ui._copy_once("nfs://src", "nfs://dst")
     assert result == ui.COPY_OK
     assert len(ui._TEST_LOGS) == 1
     msg = ui._TEST_LOGS[0]

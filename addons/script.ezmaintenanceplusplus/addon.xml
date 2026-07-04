@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.04.4" provider-name="tony7bones">
+<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.04.5" provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0" />
     <import addon="script.module.requests" version="1.0.0" />
@@ -21,6 +21,15 @@
 	    <fanart>fanart.jpg</fanart>
     </assets>
     <news>
+2026.07.04.5
+ - IMPORTANT reliability fix: the 2026.07.04.4 fix wasn't enough - a second real
+   device log showed the fallback copy ALSO failing to read the same local file,
+   proving Kodi's own VFS layer cannot read this backup's freshly-built local zip
+   through any entry point, even though it always correctly reports that file's
+   size. The local file is now read with plain Python file I/O instead of Kodi's
+   VFS for both the copy and its retry, matching how this add-on already builds
+   and validates that same file elsewhere. A remote source (nfs://, smb://) is
+   unaffected and still goes through Kodi's VFS as before.
 2026.07.04.4
  - IMPORTANT reliability fix: large backup/restore copies to a network share could
    fail every time with "size mismatch (0 != total)". Root cause found via a real
