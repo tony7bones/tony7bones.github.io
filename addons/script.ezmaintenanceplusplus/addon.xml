@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.04.1" provider-name="tony7bones">
+<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.04.2" provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0" />
     <import addon="script.module.requests" version="1.0.0" />
@@ -21,6 +21,13 @@
 	    <fanart>fanart.jpg</fanart>
     </assets>
     <news>
+2026.07.04.2
+ - IMPORTANT reliability fix: a large backup/restore copy over NFS could report
+   "size mismatch" and fail even though the write fully succeeded - Kodi's NFS
+   client can take a moment to commit a big write server-side, and checking the
+   size the instant the write closes could catch it too early. The size check now
+   waits briefly for it to settle before giving up, instead of discarding a
+   completed copy and retrying the whole transfer from scratch.
 2026.07.04.1
  - Fix: backup/restore destination now strips an explicit :2049 port that Kodi's own
    NFS browse dialog bakes into the path - that form breaks Kodi's NFS write path
