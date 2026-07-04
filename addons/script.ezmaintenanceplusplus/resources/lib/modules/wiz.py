@@ -52,6 +52,27 @@ AddonID = "script.ezmaintenanceplusplus"
 VfsCopyError = ui.VfsCopyError
 
 
+# Kodi's own network-browse dialog (used to pick download.path/restore.path -
+# both "type=folder" settings, browse-only, no manual text entry) bakes an
+# explicit port into the nfs:// URL it hands back, e.g.
+# nfs://192.168.7.2:2049/export/path. That explicit-port form breaks Kodi's
+# own NFS client write path - proven live, independently, on two different
+# boxes (a VfsCopyError / 0-byte copy every time) - while the port-free form
+# (nfs://host/export/path) works. Since the destination setting can only ever
+# be set via that same browse dialog, this can recur on every future box;
+# strip the port defensively wherever the setting is read rather than relying
+# on a one-off manual edit each time.
+_NFS_PORT_RE = re.compile(r"^(nfs://[^/]+?):\d+(/|$)")
+
+
+def _strip_nfs_port(path):
+    """Strip an explicit port from an nfs:// VFS path; anything else (smb://,
+    a local path, empty/None) passes through unchanged."""
+    if not path:
+        return path
+    return _NFS_PORT_RE.sub(r"\1\2", path)
+
+
 # Backup filenames carry a trailing _YYYYMMDDHHMM stamp before ".zip".
 _STAMP_RE = re.compile(r"_(\d{12})\.zip$", re.IGNORECASE)
 
@@ -242,7 +263,7 @@ def backup(mode="full"):
         return
 
     # Local / Network (SMB/NFS): path-based CreateZip (VFS copy seam handles nfs://, smb://).
-    backupdir = control.setting("download.path")
+    backupdir = _strip_nfs_port(control.setting("download.path"))
     if backupdir == "" or backupdir == None:
         control.infoDialog("Please Setup a Path for Downloads first")
         control.openSettings(query="1.3")
@@ -450,7 +471,7 @@ def restoreFolder():
 
     names = []
     links = []
-    zipFolder = control.setting("restore.path")
+    zipFolder = _strip_nfs_port(control.setting("restore.path"))
     if zipFolder == "" or zipFolder == None:
         control.infoDialog("Please Setup a Zip Files Location first")
         control.openSettings(query="2.0")

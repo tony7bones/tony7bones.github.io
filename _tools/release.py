@@ -295,7 +295,20 @@ def _already_released(addon_id: str, base_ref: str) -> bool:
     if base_v is None:
         return False  # new add-on — not already released
     cur_v = current_version(addon_id)
-    if not rl.is_greater(cur_v, base_v):
+    # An add-on whose BASELINE predates the single-digit scheme (EZ
+    # Maintenance++'s date-stamped 2026.07.02.0, modv2plus's 1.4.10) must be
+    # compared within that same scheme - rl.is_greater's strict parser raises
+    # ValueError on anything else, which used to crash this check outright
+    # the first time a change to one of those add-ons ever reached it.
+    try:
+        is_bumped = (
+            rl.is_greater_loose(cur_v, base_v)
+            if not rl.is_single_digit(base_v)
+            else rl.is_greater(cur_v, base_v)
+        )
+    except ValueError:
+        return False  # not a valid version either way — a real pending change
+    if not is_bumped:
         return False  # not yet bumped — a real pending change
     bump_commit = _last_version_change_commit(addon_id)
     if bump_commit is None:

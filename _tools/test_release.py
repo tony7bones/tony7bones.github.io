@@ -691,6 +691,27 @@ def test_inproc_already_released_false_with_new_edit(inproc):
     assert rel._already_released(MODV2_ID, "origin/main") is False
 
 
+def test_inproc_already_released_handles_legacy_baseline_version(inproc):
+    """A baseline in EZ Maintenance++'s REAL date-stamped shape (2026.07.02.0
+    - four dot-separated components, not X.Y.Z) must not crash
+    _already_released. rl.is_greater's strict parser (parse_version) requires
+    EXACTLY three components and raises ValueError on anything else - this
+    used to propagate straight out of this check the first time a change to
+    an add-on with this real, currently-shipped version shape ever reached
+    it (a 3-part-but-double-digit version like modv2plus's 1.4.10 does NOT
+    trigger this - parse_version only checks component COUNT, not magnitude;
+    only a genuinely wrong-shaped version like the date-stamped one does)."""
+    rel, repo, _ = inproc
+    # Establish a legacy-scheme version as the ORIGIN/MAIN baseline itself.
+    (repo / "addons" / MODV2_ID / "addon.xml").write_text(_modv2_xml("2026.07.02.0"))
+    _commit(repo, "chore: legacy version baseline")
+    _git(repo, "push", "-q", "-f", "origin", "feature:main")
+    # A genuine new source change on top of that legacy baseline.
+    (repo / "addons" / MODV2_ID / "service.py").write_text("# change\n")
+    _commit(repo, "feat: change")
+    assert rel._already_released(MODV2_ID, "origin/main") is False
+
+
 def test_inproc_next_for_explicit_version_requires_single_digit(inproc):
     rel, _, _ = inproc
     with pytest.raises(SystemExit, match="single-digit"):
