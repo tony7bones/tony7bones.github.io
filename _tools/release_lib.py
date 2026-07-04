@@ -131,6 +131,26 @@ def parse_version_loose(s: str) -> tuple[int, ...]:
     return tuple(int(x) for x in s.strip().split("."))
 
 
+def validate_version_for_write(version: str) -> None:
+    """Accept anything a write-only helper (set_addon_version,
+    prepend_addon_news) may legitimately be asked to write: a proper 3
+    component X.Y.Z (parse_version - any magnitude, e.g. modv2plus's real
+    1.4.10) OR a legacy 4+-component scheme (EZ Maintenance++'s real
+    date-stamped 2026.07.02.0). Rejects anything with FEWER than 3
+    components either way - an incomplete version like "1.9" is never a
+    valid write target, single-digit scheme or not. The strict single-digit
+    RULE itself is a gate concern (preflight/script_consistency, already run
+    before any of these write helpers), not this check's job."""
+    try:
+        parse_version(version)
+        return
+    except ValueError:
+        pass
+    parts = parse_version_loose(version)  # raises ValueError on real garbage
+    if len(parts) < 3:
+        raise ValueError(f"invalid version: {version!r}")
+
+
 def is_greater_loose(new: str, old: str) -> bool:
     """True iff `new` is strictly greater than `old`, comparing dotted numeric
     versions of ANY length component-wise (this is how Kodi's own AddonVersion
@@ -188,14 +208,10 @@ def read_addon_version(xml_text: str) -> str:
 
 
 def set_addon_version(xml_text: str, version: str) -> str:
-    # A basic numeric-dotted sanity check only — single-digit-per-component
-    # enforcement belongs at the gate (preflight/script_consistency), which
-    # already ran before this is ever called. Using the strict parser here
-    # unconditionally would make it impossible to write back a legacy,
-    # non-single-digit version (EZ Maintenance++'s real date-stamped
-    # 2026.07.02.0 has four components, not three) even when the gate has
-    # already and correctly allowed it through.
-    parse_version_loose(version)
+    # Single-digit-per-component enforcement belongs at the gate
+    # (preflight/script_consistency), which already ran before this is ever
+    # called - this just guards against a structurally malformed value.
+    validate_version_for_write(version)
     new, n = _ADDON_VERSION_RE.subn(
         lambda m: m.group(1) + version + m.group(3), xml_text, count=1
     )
@@ -234,7 +250,10 @@ def prepend_addon_news(
     historical entry); the indentation of the manifests in this repo (8 spaces) is
     preserved.
     """
-    parse_version(version)
+    # Single-digit-per-component enforcement belongs at the gate, same
+    # reasoning as set_addon_version - this just guards against a
+    # structurally malformed value.
+    validate_version_for_write(version)
     m = _NEWS_RE.search(xml_text)
     if not m:
         raise ValueError("no <news> block found")

@@ -361,6 +361,32 @@ def test_prepend_addon_news_rejects_bad_version():
         rl.prepend_addon_news(BOOTSTRAP_XML, "x", version="1.9")
 
 
+def test_prepend_addon_news_allows_legacy_date_stamped_scheme():
+    # EZ Maintenance++'s real shipped scheme: four components, not X.Y.Z -
+    # the strict parser used to run unconditionally here and reject this,
+    # discovered while actually releasing the NFS-port fix through this
+    # add-on for the first time.
+    out = rl.prepend_addon_news(BOOTSTRAP_XML, "the fix", version="2026.07.04.0")
+    lines = [
+        ln.strip() for ln in rl._NEWS_RE.search(out).group(2).splitlines() if ln.strip()
+    ]
+    assert lines[0] == "v2026.07.04.0: the fix"
+
+
+def test_validate_version_for_write_rejects_incomplete_version():
+    # A 2-component version is never a valid write target, single-digit
+    # scheme or not - it must be rejected even though it parses fine under
+    # the loose (any-length) parser used for the legacy 4-component case.
+    with pytest.raises(ValueError):
+        rl.validate_version_for_write("1.9")
+
+
+def test_validate_version_for_write_accepts_legacy_and_normal():
+    rl.validate_version_for_write("1.9.0")  # normal, 3-component
+    rl.validate_version_for_write("1.4.10")  # normal, double-digit component
+    rl.validate_version_for_write("2026.07.04.0")  # legacy, 4-component
+
+
 def test_prepend_addon_news_into_empty_body():
     xml = "<addon><extension><news>\n        </news></extension></addon>"
     out = rl.prepend_addon_news(xml, "first ever", version="1.0.0")
