@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.04.3" provider-name="tony7bones">
+<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.04.4" provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0" />
     <import addon="script.module.requests" version="1.0.0" />
@@ -21,6 +21,17 @@
 	    <fanart>fanart.jpg</fanart>
     </assets>
     <news>
+2026.07.04.4
+ - IMPORTANT reliability fix: large backup/restore copies to a network share could
+   fail every time with "size mismatch (0 != total)". Root cause found via a real
+   device log: this is a regression from the 2026.07.01.0 progress-bar rewrite,
+   which replaced a plain whole-file copy with a chunked read/write loop so it could
+   show a gauge and support cancel - on some devices (confirmed: tvOS/Apple TV) that
+   chunked reader can come back completely empty on a freshly-built local file even
+   though its size is reported correctly, so no amount of retrying the same chunked
+   copy could ever succeed. The copy now falls back to the original, reliable
+   whole-file copy (itself now also size-verified) whenever the chunked path can't
+   ship the correct number of bytes, instead of giving up.
 2026.07.04.3
  - Diagnostic only (not a fix): if a backup/restore copy still reports "size
    mismatch" after the previous release's settle wait, the log now also

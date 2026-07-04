@@ -16,7 +16,14 @@ Design rules (enforced by test_ui.py):
     empty-folder ZeroDivisionError. `cancelled()` is memoised + idempotent.
   * `copy_with_progress` is atomic (temp + rename), checks `write()`'s bool return,
     validates size after close, cleans its partial on ANY non-success exit, and falls
-    back to the opaque `xbmcvfs.copy` ONLY on a transient failure, NEVER on cancel.
+    back to the opaque `xbmcvfs.copy` (itself size-verified, same settle-poll as the
+    chunked path) on a transient failure OR a chunked copy whose size never settles,
+    NEVER on cancel. The fallback is also what recovers a source file whose chunked
+    `File.readBytes()` comes back empty on every call despite `Stat()` reporting the
+    correct size (observed on tvOS reading a just-written local temp zip: this
+    add-on's chunked copy replaced a plain `xbmcvfs.copy()` on 2026.07.01.0 to add a
+    gauge/cancel, and that Python-level `File`/`readBytes` binding is what hits the
+    bug - the native, C++-internal `xbmcvfs.copy()` never goes through it).
   * `copy_with_progress` retries a definitive `VfsCopyError` up to `COPY_RETRY_ATTEMPTS`
     times with a `COPY_RETRY_DELAY_SECS` pause between tries (never on cancel). Kodi's
     NFS/SMB client can leave a connection stale after its own idle-close reaper fires
@@ -239,6 +246,42 @@ def _vfs_finalize(tmp, dst):
     _vfs_delete(tmp)
 
 
+def _fallback_copy(src, dst, total=-1):
+    """Opaque, whole-file xbmcvfs.copy() - the mechanism this add-on used before
+    the 2026.07.01.0 progress-bar rewrite. No chunking and no Python-level
+    File.readBytes, so it is immune to the chunked reader coming back with an
+    empty first read on a freshly-written local source (Stat() reports the
+    correct size but File(src, "r").readBytes() returns nothing, so the chunked
+    path can never succeed no matter how many times it is retried).
+
+    A True return from xbmcvfs.copy() is not proof the bytes actually landed -
+    the same server-side commit-delay race SIZE_SETTLE_ATTEMPTS exists for could
+    affect this native copy too, and backup() (unlike restore/onetap, which both
+    validate the zip before acting on it) rotates out the previous good backup
+    with no other check. So verify `dst` against `total` (when known) the same
+    way the chunked path does before treating this as a real success.
+    """
+    try:
+        ok = xbmcvfs.copy(src, dst)
+    except Exception:
+        ok = False
+    if not ok:
+        raise VfsCopyError("copy failed for %s -> %s" % (src, dst))
+    if total >= 0:
+        actual = _vfs_size(dst)
+        for _ in range(SIZE_SETTLE_ATTEMPTS - 1):
+            if actual == total:
+                break
+            xbmc.sleep(SIZE_SETTLE_DELAY_MS)
+            actual = _vfs_size(dst)
+        if actual != total:
+            _vfs_delete(dst)
+            raise VfsCopyError(
+                "fallback copy size mismatch on %s (%s != %s)" % (dst, actual, total)
+            )
+    return COPY_OK
+
+
 def copy_with_progress(src, dst, progress=None):
     """Copy `src` -> `dst` over Kodi VFS, retrying a definitive `VfsCopyError` up to
     `COPY_RETRY_ATTEMPTS` times (paused `COPY_RETRY_DELAY_SECS` apart) before giving
@@ -273,8 +316,10 @@ def _copy_once(src, dst, progress=None):
         full, size-verified copy, so `dst` is never a truncated file.
       * Cancel: the partial sidecar is deleted and COPY_CANCELLED returned; the opaque
         xbmcvfs.copy fallback is NEVER used for a cancel (that would defeat it).
-      * Transient failure (a raised read/stream error): the partial is deleted and the
-        opaque xbmcvfs.copy is tried once against a clean `dst`; if that also fails,
+      * Transient failure (a raised read/stream error) OR a chunked copy whose size
+        never settles: the partial is deleted and the opaque xbmcvfs.copy is tried
+        once against a clean `dst`, itself size-verified against `total` the same
+        way the chunked path is; if that also fails (or its size never settles),
         VfsCopyError is raised.
     """
     tmp = dst + COPY_TMP_SUFFIX
@@ -313,12 +358,7 @@ def _copy_once(src, dst, progress=None):
         # Transient/stream error: clean the partial, then try the opaque VFS copy once
         # against a now-clean destination.
         _vfs_delete(tmp)
-        try:
-            if xbmcvfs.copy(src, dst):
-                return COPY_OK
-        except Exception:
-            pass
-        raise VfsCopyError("copy failed for %s -> %s" % (src, dst))
+        return _fallback_copy(src, dst, total)
 
     if cancelled:
         _vfs_delete(tmp)
@@ -336,24 +376,19 @@ def _copy_once(src, dst, progress=None):
             xbmc.sleep(SIZE_SETTLE_DELAY_MS)
             actual = _vfs_size(tmp)
         if actual != total:
-            # DIAGNOSTIC (not yet a fix): the settle-retry above did not
-            # resolve two live size-mismatch failures, and two independent
-            # analyses disagree on whether the read side (fsrc) or the
-            # destination stat (xbmcvfs.Stat on tmp) is actually at fault -
-            # neither is provable from static code alone. `copied` (bytes
-            # this loop actually read from src and wrote to tmp, tracked
-            # independently of both `total` and the stat-based `actual`) is
-            # the one fact that settles it: copied==0 points at the read
-            # side (src/CreateZip); copied==total with actual!=total points
-            # at the destination stat being unreliable. Remove once the
-            # real fix lands.
+            # Live-confirmed (copied=0, total=142444751, actual=0 on every one of
+            # 3 attempts): this is the chunked reader coming back empty on the
+            # very first File.readBytes(), not a settling write - retrying the
+            # same chunked path can never succeed. Fall back to the opaque,
+            # pre-2026.07.01.0 xbmcvfs.copy() instead of raising here.
             xbmc.log(
-                "%s : size mismatch diagnostic - src=%s tmp=%s copied=%s "
-                "total=%s actual=%s" % (HEADING, src, tmp, copied, total, actual),
-                level=xbmc.LOGERROR,
+                "%s : chunked copy size mismatch (copied=%s total=%s actual=%s) "
+                "on %s - falling back to a direct VFS copy"
+                % (HEADING, copied, total, actual, dst),
+                level=xbmc.LOGWARNING,
             )
             _vfs_delete(tmp)
-            raise VfsCopyError("size mismatch on %s (%s != %s)" % (dst, actual, total))
+            return _fallback_copy(src, dst, total)
 
     _vfs_finalize(tmp, dst)
     return COPY_OK
