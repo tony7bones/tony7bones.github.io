@@ -211,6 +211,20 @@ def _level(args) -> str:
 
 def _next_for(addon_id: str, cur: str, args) -> str:
     if args.version and (args.addon is None or args.addon == addon_id):
+        # An add-on whose CURRENT version already predates the single-digit
+        # scheme (EZ Maintenance++'s date-stamped 2026.07.02.0 - four
+        # components, not X.Y.Z) must be allowed to stay in that same scheme;
+        # enforcing single-digit X.Y.Z here would make it impossible to ever
+        # explicitly version-bump one of these add-ons at all.
+        if not rl.is_single_digit(cur):
+            try:
+                rl.parse_version_loose(args.version)
+            except ValueError as exc:
+                raise SystemExit(
+                    f"PRE-FLIGHT FAILED:\n  - version {args.version!r} is not "
+                    f"a valid dotted numeric version ({exc})"
+                ) from exc
+            return args.version
         rl.parse_version(args.version)
         if not rl.is_single_digit(args.version):
             raise SystemExit(

@@ -718,6 +718,34 @@ def test_inproc_next_for_explicit_version_requires_single_digit(inproc):
         rel._next_for(MODV2_ID, "1.0.0", _Args(version="1.0.10"))
 
 
+def test_inproc_next_for_explicit_version_allows_legacy_scheme(inproc):
+    """An add-on already on a legacy, non-single-digit scheme (EZ
+    Maintenance++'s real date-stamped 2026.07.02.0 - four components, not
+    X.Y.Z) must be explicitly re-versionable within that same scheme.
+    rl.parse_version's strict 3-component parser used to run unconditionally
+    here and crash outright the first time anyone tried to bump one of these
+    add-ons by explicit --version at all."""
+    rel, _, _ = inproc
+    assert (
+        rel._next_for(
+            "script.ezmaintenanceplusplus",
+            "2026.07.02.0",
+            _Args(version="2026.07.04.0"),
+        )
+        == "2026.07.04.0"
+    )
+
+
+def test_inproc_next_for_explicit_version_legacy_scheme_rejects_garbage(inproc):
+    rel, _, _ = inproc
+    with pytest.raises(SystemExit, match="not a valid"):
+        rel._next_for(
+            "script.ezmaintenanceplusplus",
+            "2026.07.02.0",
+            _Args(version="not-a-version"),
+        )
+
+
 def test_inproc_ceiling_raises_systemexit(inproc):
     rel, repo, _ = inproc
     (repo / "addons" / MODV2_ID / "addon.xml").write_text(_modv2_xml("9.9.9"))
