@@ -37,8 +37,9 @@ def ui(monkeypatch, tmp_path):
             monkeypatch.delitem(sys.modules, name, raising=False)
 
     sleeps = []
+    logs = []
     fake_xbmc = types.SimpleNamespace(
-        log=lambda *a, **k: None,
+        log=lambda msg, level=None: logs.append(msg),
         sleep=lambda ms: sleeps.append(ms),
         LOGERROR=1,
         LOGWARNING=2,
@@ -74,6 +75,7 @@ def ui(monkeypatch, tmp_path):
 
     mod = importlib.import_module("resources.lib.modules.ui")
     mod._TEST_SLEEPS = sleeps
+    mod._TEST_LOGS = logs
     return mod
 
 
@@ -172,3 +174,22 @@ def test_copy_once_no_settle_needed_is_fast(ui, monkeypatch):
     result = ui.copy_with_progress("src", "dst")
     assert result == ui.COPY_OK
     assert ui._TEST_SLEEPS == []
+
+
+def test_copy_once_size_mismatch_logs_diagnostic_with_copied_count(ui, monkeypatch):
+    """A genuine, never-settling mismatch must log `copied` (bytes actually
+    read from src and written to tmp) alongside total/actual - the one fact
+    that distinguishes a read-side failure (copied==0) from a destination-stat
+    failure (copied==total but actual!=total), per the live investigation
+    that found the prior settle-only fix insufficient."""
+    store = {"src": b"x" * 1000}
+    _install_fake_vfs(
+        monkeypatch, ui, store=store, settled_sizes_by_path={"dst.ezmpart": [0]}
+    )
+    with pytest.raises(ui.VfsCopyError, match="size mismatch"):
+        ui._copy_once("src", "dst")
+    assert len(ui._TEST_LOGS) == 1
+    msg = ui._TEST_LOGS[0]
+    assert "copied=1000" in msg  # the full 1000 bytes WERE read+written here
+    assert "total=1000" in msg
+    assert "actual=0" in msg

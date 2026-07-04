@@ -336,6 +336,22 @@ def _copy_once(src, dst, progress=None):
             xbmc.sleep(SIZE_SETTLE_DELAY_MS)
             actual = _vfs_size(tmp)
         if actual != total:
+            # DIAGNOSTIC (not yet a fix): the settle-retry above did not
+            # resolve two live size-mismatch failures, and two independent
+            # analyses disagree on whether the read side (fsrc) or the
+            # destination stat (xbmcvfs.Stat on tmp) is actually at fault -
+            # neither is provable from static code alone. `copied` (bytes
+            # this loop actually read from src and wrote to tmp, tracked
+            # independently of both `total` and the stat-based `actual`) is
+            # the one fact that settles it: copied==0 points at the read
+            # side (src/CreateZip); copied==total with actual!=total points
+            # at the destination stat being unreliable. Remove once the
+            # real fix lands.
+            xbmc.log(
+                "%s : size mismatch diagnostic - src=%s tmp=%s copied=%s "
+                "total=%s actual=%s" % (HEADING, src, tmp, copied, total, actual),
+                level=xbmc.LOGERROR,
+            )
             _vfs_delete(tmp)
             raise VfsCopyError("size mismatch on %s (%s != %s)" % (dst, actual, total))
 
