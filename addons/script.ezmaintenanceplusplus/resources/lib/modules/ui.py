@@ -64,6 +64,16 @@ COPY_CHUNK = 1024 * 1024
 # Sidecar name for the in-progress copy so the final path only ever appears complete.
 COPY_TMP_SUFFIX = ".ezmpart"
 
+# A large NFS write can complete (every fdst.write() returns True, close() raises
+# nothing) before the server has actually committed the bytes - an immediate stat
+# right after close() can still read a stale, pre-write size (observed: a 142 MB
+# copy reporting "0 != 142380074" instantly on every attempt, with no write ever
+# refused). Poll the size a few times, briefly, before treating it as a genuine
+# short write - cheap, and unlike COPY_RETRY_ATTEMPTS this does not re-read and
+# re-send the whole file (which hits the exact same race again every time).
+SIZE_SETTLE_ATTEMPTS = 4
+SIZE_SETTLE_DELAY_MS = 500
+
 # A VfsCopyError can mean the share is genuinely gone, OR that Kodi's own NFS/SMB
 # idle-close reaper just tore down the connection a moment ago and the next open
 # hit that stale state. 1 initial attempt + 2 retries, paused so Kodi's VFS layer
@@ -315,9 +325,16 @@ def _copy_once(src, dst, progress=None):
         return COPY_CANCELLED
 
     # Full read completed: verify the sidecar is the expected size before it becomes
-    # the real file (a short copy that never raised must still be caught).
+    # the real file (a short copy that never raised must still be caught). Poll
+    # briefly first - see SIZE_SETTLE_ATTEMPTS - a big NFS write can still be
+    # settling server-side the instant close() returns.
     if total >= 0:
         actual = _vfs_size(tmp)
+        for _ in range(SIZE_SETTLE_ATTEMPTS - 1):
+            if actual == total:
+                break
+            xbmc.sleep(SIZE_SETTLE_DELAY_MS)
+            actual = _vfs_size(tmp)
         if actual != total:
             _vfs_delete(tmp)
             raise VfsCopyError("size mismatch on %s (%s != %s)" % (dst, actual, total))
