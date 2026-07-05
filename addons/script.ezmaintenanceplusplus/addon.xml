@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.04.6" provider-name="tony7bones">
+<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.05.0" provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0" />
     <import addon="script.module.requests" version="1.0.0" />
@@ -21,6 +21,22 @@
 	    <fanart>fanart.jpg</fanart>
     </assets>
     <news>
+2026.07.05.0
+ - IMPORTANT reliability fix: Kodi's own Settings dialog for this add-on could
+   render completely blank (no categories, no controls, sometimes even the
+   wrong add-on's name in the header) - live-confirmed as a Kodi engine bug,
+   not something fixable in this add-on's settings.xml, reproducing even on
+   a fresh install and on unrelated Kodi-team add-ons. Settings now opens a
+   custom in-app screen instead, covering Backup Location, Restore Location,
+   Destination (Local/Network/Dropbox), keep-count, Dropbox sign-in/keys, and
+   all Maintenance options - reading and writing the exact same settings
+   storage as before, just displayed through a screen that actually works.
+   Backup/Restore also no longer falls back to the broken dialog when the
+   backup location isn't set yet; it opens the same working screen.
+ - The settings.xml schema itself was also migrated to Kodi's modern
+   versioned format (a real, separate defect from the dialog rendering bug
+   above) so the underlying setting values load correctly regardless of
+   which screen displays them.
 2026.07.04.6
  - The in-app "What's New" display was showing the ENTIRE changelog going back
    to 2020 (250+ lines) in Kodi's small Add-on Information popup - trimmed to
