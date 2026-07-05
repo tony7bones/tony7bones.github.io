@@ -518,6 +518,34 @@ def ask(prompt, default="", heading=None):
     return xbmcgui.Dialog().input(prompt, default, type=input_type)
 
 
+def ask_int(prompt, current, minimum, maximum, heading=None):
+    """A bounded-integer input, pre-filled with `current`. Returns the entered int,
+    or None if the user cancelled or entered something non-numeric/out of range (a
+    toast explains why; the caller re-prompts with the same `current` unchanged)."""
+    try:
+        input_type = xbmcgui.INPUT_NUMERIC
+    except Exception:
+        input_type = 0
+    entered = xbmcgui.Dialog().input(prompt, str(current), type=input_type)
+    if entered == "":
+        return None
+    try:
+        value = int(entered)
+    except (TypeError, ValueError):
+        notify("Enter a whole number from %d to %d" % (minimum, maximum))
+        return None
+    if value < minimum or value > maximum:
+        notify("Enter a whole number from %d to %d" % (minimum, maximum))
+        return None
+    return value
+
+
+def browse_folder(heading, current=""):
+    """A folder-browse dialog (local/SMB/NFS - Kodi's normal source picker). Returns
+    the chosen VFS path, or '' if cancelled."""
+    return xbmcgui.Dialog().browse(0, heading, "files", "", False, False, current)
+
+
 # --------------------------------------------------------------------------- #
 # Restart - the ONE mechanism (Quit lets Kodi restart cleanly; LoadProfile lied)
 # --------------------------------------------------------------------------- #

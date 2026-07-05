@@ -247,3 +247,40 @@ def test_backup_uses_stripped_port_path(wiz, monkeypatch, tmp_path):
     assert captured["dst"].startswith(
         "nfs://192.168.7.2/Users/moquette/Kodi/Backup/atv-2/"
     )
+
+
+def test_backup_opens_custom_settings_menu_when_path_unset(wiz, monkeypatch, tmp_path):
+    """backup() used to call the BROKEN native control.openSettings(query="1.3")
+    when download.path was empty. It must now route to the working custom
+    settings_menu screen instead (the same one action=='settings' opens)."""
+    backupdata = tmp_path / "home"
+    backupdata.mkdir()
+    monkeypatch.setattr(wiz.control, "HOME", str(backupdata))
+    monkeypatch.setattr(wiz.control, "setting", lambda key: "")
+
+    calls = []
+    monkeypatch.setattr(
+        wiz,
+        "settings_menu",
+        types.SimpleNamespace(open_backup_restore_menu=lambda: calls.append(True)),
+    )
+
+    wiz.backup(mode="full")
+    assert calls == [True]
+
+
+def test_restore_opens_custom_settings_menu_when_path_unset(wiz, monkeypatch):
+    """restoreFolder() used to call the BROKEN native
+    control.openSettings(query="2.0") when restore.path was empty. It must now
+    route to the working custom settings_menu screen instead."""
+    monkeypatch.setattr(wiz.control, "setting", lambda key: "")
+
+    calls = []
+    monkeypatch.setattr(
+        wiz,
+        "settings_menu",
+        types.SimpleNamespace(open_backup_restore_menu=lambda: calls.append(True)),
+    )
+
+    wiz.restoreFolder()
+    assert calls == [True]

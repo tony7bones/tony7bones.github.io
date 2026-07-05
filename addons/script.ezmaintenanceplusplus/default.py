@@ -498,7 +498,9 @@ content = params.get("content")
 if action == None:
     CATEGORIES()
 elif action == "settings":
-    control.openSettings()
+    from resources.lib.modules import settings_menu
+
+    settings_menu.open_settings_menu()
 
 elif action == "onetap_menu":
     from resources.lib.modules import onetap

@@ -23,7 +23,7 @@ import urllib
 import re
 import time
 import zipfile
-from resources.lib.modules import control, maintenance, tools, ui
+from resources.lib.modules import control, maintenance, settings_menu, tools, ui
 from datetime import datetime
 from resources.lib.modules.backtothefuture import unicode, PY2
 
@@ -266,7 +266,7 @@ def backup(mode="full"):
     backupdir = _strip_nfs_port(control.setting("download.path"))
     if backupdir == "" or backupdir == None:
         control.infoDialog("Please Setup a Path for Downloads first")
-        control.openSettings(query="1.3")
+        settings_menu.open_backup_restore_menu()
         return
 
     name = tools._get_keyboard(
@@ -474,7 +474,7 @@ def restoreFolder():
     zipFolder = _strip_nfs_port(control.setting("restore.path"))
     if zipFolder == "" or zipFolder == None:
         control.infoDialog("Please Setup a Zip Files Location first")
-        control.openSettings(query="2.0")
+        settings_menu.open_backup_restore_menu()
         return
     try:
         _dirs, _files = xbmcvfs.listdir(

@@ -64,9 +64,18 @@ def ui(monkeypatch, tmp_path):
             getAddonInfo=lambda key: "EZ Maintenance++" if key == "name" else ""
         )
     )
+    input_queue = []
+    browse_queue = []
+    notifications = []
     fake_xbmcgui = types.SimpleNamespace(
         Dialog=lambda: types.SimpleNamespace(
-            yesno=lambda *a, **k: False, ok=lambda *a, **k: None
+            yesno=lambda *a, **k: False,
+            ok=lambda *a, **k: None,
+            input=lambda prompt, default="", type=0: input_queue.pop(0),
+            browse=lambda *a, **k: browse_queue.pop(0),
+            notification=lambda heading, message, *a, **k: notifications.append(
+                message
+            ),
         ),
         DialogProgress=lambda: types.SimpleNamespace(
             create=lambda *a, **k: None,
@@ -74,6 +83,8 @@ def ui(monkeypatch, tmp_path):
             close=lambda: None,
             iscanceled=lambda: False,
         ),
+        INPUT_ALPHANUM=0,
+        INPUT_NUMERIC=1,
     )
 
     monkeypatch.setitem(sys.modules, "xbmc", fake_xbmc)
@@ -87,6 +98,9 @@ def ui(monkeypatch, tmp_path):
     mod = importlib.import_module("resources.lib.modules.ui")
     mod._TEST_SLEEPS = sleeps
     mod._TEST_LOGS = logs
+    mod._TEST_INPUT_QUEUE = input_queue
+    mod._TEST_BROWSE_QUEUE = browse_queue
+    mod._TEST_NOTIFICATIONS = notifications
     return mod
 
 
@@ -416,3 +430,56 @@ def test_fallback_copy_skips_size_check_when_total_unknown(ui, monkeypatch):
     result = ui._fallback_copy("nfs://src", "nfs://dst", total=-1)
     assert result == ui.COPY_OK
     assert store["nfs://dst"] == b"x" * 1000
+
+
+# --------------------------------------------------------------------------- #
+# ask_int / browse_folder - the custom settings screen's bounded-integer and
+# folder-picker helpers (settings_menu.py is the only caller; these tests hit
+# the real functions directly so their boundary behavior is verified in
+# isolation, not just indirectly through settings_menu's own tests).
+# --------------------------------------------------------------------------- #
+def test_ask_int_accepts_inclusive_minimum(ui):
+    ui._TEST_INPUT_QUEUE.append("25")
+    assert ui.ask_int("Max Total Files Size (MB)", 200, 25, 500) == 25
+
+
+def test_ask_int_accepts_inclusive_maximum(ui):
+    ui._TEST_INPUT_QUEUE.append("500")
+    assert ui.ask_int("Max Total Files Size (MB)", 200, 25, 500) == 500
+
+
+def test_ask_int_rejects_just_below_minimum(ui):
+    ui._TEST_INPUT_QUEUE.append("24")
+    assert ui.ask_int("Max Total Files Size (MB)", 200, 25, 500) is None
+    assert ui._TEST_NOTIFICATIONS == ["Enter a whole number from 25 to 500"]
+
+
+def test_ask_int_rejects_just_above_maximum(ui):
+    ui._TEST_INPUT_QUEUE.append("501")
+    assert ui.ask_int("Max Total Files Size (MB)", 200, 25, 500) is None
+    assert ui._TEST_NOTIFICATIONS == ["Enter a whole number from 25 to 500"]
+
+
+def test_ask_int_rejects_non_numeric_input(ui):
+    ui._TEST_INPUT_QUEUE.append("not a number")
+    assert ui.ask_int("Max Total Files Size (MB)", 200, 25, 500) is None
+    assert ui._TEST_NOTIFICATIONS == ["Enter a whole number from 25 to 500"]
+
+
+def test_ask_int_cancel_returns_none_without_notifying(ui):
+    # Kodi's numeric input dialog returns "" on cancel - silent, no rejection
+    # toast (a cancel is not a mistake the user needs explained to them).
+    ui._TEST_INPUT_QUEUE.append("")
+    assert ui.ask_int("Max Total Files Size (MB)", 200, 25, 500) is None
+    assert ui._TEST_NOTIFICATIONS == []
+
+
+def test_browse_folder_returns_the_chosen_path(ui):
+    ui._TEST_BROWSE_QUEUE.append("nfs://192.168.7.2/Users/moquette/Kodi/Backup/office/")
+    result = ui.browse_folder("Backup Location", "")
+    assert result == "nfs://192.168.7.2/Users/moquette/Kodi/Backup/office/"
+
+
+def test_browse_folder_returns_empty_string_on_cancel(ui):
+    ui._TEST_BROWSE_QUEUE.append("")
+    assert ui.browse_folder("Backup Location", "/previous/path") == ""
