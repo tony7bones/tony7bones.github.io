@@ -20,8 +20,11 @@ land here.
 | Admin access  | passwordless `sudo` for `moquette` (`/etc/sudoers.d/moquette`) |
 | FileVault     | **Off** (so it boots + mounts + serves with no login)          |
 
-> Confirm `192.168.7.2` is a DHCP reservation. Kodi boxes point at that IP; if the
-> lease moves, every box loses its shares.
+> `192.168.7.2` is a **confirmed DHCP reservation** on the Eero (MAC
+> `d0:11:e5:7a:05:ec` -> `192.168.7.2`), verified by forcing a lease renewal. Kodi
+> stores paths literally (`nfs://192.168.7.2/...`) and its scraped library keys off
+> that IP, so the pinned address is what keeps every box and Mac mount valid. Do
+> not remove the reservation.
 
 ---
 
