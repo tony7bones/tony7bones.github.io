@@ -65,14 +65,13 @@ def ui(monkeypatch, tmp_path):
         )
     )
     input_queue = []
-    browse_queue = []
     notifications = []
+
     fake_xbmcgui = types.SimpleNamespace(
         Dialog=lambda: types.SimpleNamespace(
             yesno=lambda *a, **k: False,
             ok=lambda *a, **k: None,
             input=lambda prompt, default="", type=0: input_queue.pop(0),
-            browse=lambda *a, **k: browse_queue.pop(0),
             notification=lambda heading, message, *a, **k: notifications.append(
                 message
             ),
@@ -99,7 +98,6 @@ def ui(monkeypatch, tmp_path):
     mod._TEST_SLEEPS = sleeps
     mod._TEST_LOGS = logs
     mod._TEST_INPUT_QUEUE = input_queue
-    mod._TEST_BROWSE_QUEUE = browse_queue
     mod._TEST_NOTIFICATIONS = notifications
     return mod
 
@@ -433,10 +431,8 @@ def test_fallback_copy_skips_size_check_when_total_unknown(ui, monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
-# ask_int / browse_folder - the custom settings screen's bounded-integer and
-# folder-picker helpers (settings_menu.py is the only caller; these tests hit
-# the real functions directly so their boundary behavior is verified in
-# isolation, not just indirectly through settings_menu's own tests).
+# ask_int - the bounded-integer input helper (boundary behavior verified in
+# isolation).
 # --------------------------------------------------------------------------- #
 def test_ask_int_accepts_inclusive_minimum(ui):
     ui._TEST_INPUT_QUEUE.append("25")
@@ -472,14 +468,3 @@ def test_ask_int_cancel_returns_none_without_notifying(ui):
     ui._TEST_INPUT_QUEUE.append("")
     assert ui.ask_int("Max Total Files Size (MB)", 200, 25, 500) is None
     assert ui._TEST_NOTIFICATIONS == []
-
-
-def test_browse_folder_returns_the_chosen_path(ui):
-    ui._TEST_BROWSE_QUEUE.append("nfs://192.168.7.2/Users/moquette/Kodi/Backup/office/")
-    result = ui.browse_folder("Backup Location", "")
-    assert result == "nfs://192.168.7.2/Users/moquette/Kodi/Backup/office/"
-
-
-def test_browse_folder_returns_empty_string_on_cancel(ui):
-    ui._TEST_BROWSE_QUEUE.append("")
-    assert ui.browse_folder("Backup Location", "/previous/path") == ""

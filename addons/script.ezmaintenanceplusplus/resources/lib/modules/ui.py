@@ -540,12 +540,6 @@ def ask_int(prompt, current, minimum, maximum, heading=None):
     return value
 
 
-def browse_folder(heading, current=""):
-    """A folder-browse dialog (local/SMB/NFS - Kodi's normal source picker). Returns
-    the chosen VFS path, or '' if cancelled."""
-    return xbmcgui.Dialog().browse(0, heading, "files", "", False, False, current)
-
-
 # --------------------------------------------------------------------------- #
 # Restart - the ONE mechanism (Quit lets Kodi restart cleanly; LoadProfile lied)
 # --------------------------------------------------------------------------- #

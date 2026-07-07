@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.05.0" provider-name="tony7bones">
+<addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.07.0" provider-name="tony7bones">
   <requires>
     <import addon="xbmc.python" version="3.0.0" />
     <import addon="script.module.requests" version="1.0.0" />
@@ -11,7 +11,7 @@
   <extension point="xbmc.addon.metadata">
 	<summary>A Streamlined Utility Tool for Kodi</summary>
 	<description>No Bloatware, no Nonsense! Just Keep your Kodi sharp and clean with this utility tool... Now with a Custom Wizard. The "++" fork backs up and restores over Kodi's VFS, so Backup Location / Restore can point straight at a network share (nfs://, smb://) or any VFS path, not just local storage.</description>
-    <language></language>
+    <language>en</language>
     <platform>all</platform>
     <license>The MIT License</license>
     <forum>-</forum>
@@ -21,6 +21,18 @@
 	    <fanart>fanart.jpg</fanart>
     </assets>
     <news>
+2026.07.07.0
+ - IMPORTANT fix (real root cause of the blank Settings screen): Kodi's own
+   Settings dialog for this add-on rendered every label blank because this
+   add-on's settings.xml used plain-text labels and shipped no language file -
+   Kodi resolves settings labels as numeric string ids, so plain text came back
+   empty. This was NOT a Kodi engine bug (a prior release misdiagnosed it as
+   one); a control add-on's Settings dialog renders fine on the same box. Every
+   label now has a proper string id backed by a resources/language strings.po,
+   so the native Settings dialog renders correctly - the standard, supported
+   way. The empty "One-Tap Restore" settings tab is gone (its hidden pin storage
+   moved into Backup/Restore); your stored settings, One-Tap pins, and Dropbox
+   sign-in are unchanged.
 2026.07.05.0
  - IMPORTANT reliability fix: Kodi's own Settings dialog for this add-on could
    render completely blank (no categories, no controls, sometimes even the

@@ -148,10 +148,6 @@ def advancedSettings():
         ui.error("Could not change the cache setting. Nothing was changed.")
 
 
-def open_Settings():
-    open_Settings = xbmcaddon.Addon(id=AddonID).openSettings()
-
-
 def _get_keyboard(default="", heading="", hidden=False, cancel=""):
     """shows a keyboard and returns a value"""
     if cancel == "":

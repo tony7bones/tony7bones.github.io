@@ -64,10 +64,6 @@ EXCLUDES = [
 EXCLUDES_ADDONS = ["notification", "packages"]
 
 
-def SETTINGS():
-    xbmcaddon.Addon(id=AddonID).openSettings()
-
-
 def ENABLE_WIZARD():
     try:
         query = (
@@ -498,9 +494,10 @@ content = params.get("content")
 if action == None:
     CATEGORIES()
 elif action == "settings":
-    from resources.lib.modules import settings_menu
-
-    settings_menu.open_settings_menu()
+    # Open Kodi's native add-on settings dialog. Every label now resolves through
+    # resources/language/.../strings.po, so it renders correctly (the old custom
+    # in-app screen was a workaround for a mis-labelled settings.xml, now removed).
+    control.openSettings()
 
 elif action == "onetap_menu":
     from resources.lib.modules import onetap

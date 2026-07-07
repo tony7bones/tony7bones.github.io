@@ -249,38 +249,77 @@ def test_backup_uses_stripped_port_path(wiz, monkeypatch, tmp_path):
     )
 
 
-def test_backup_opens_custom_settings_menu_when_path_unset(wiz, monkeypatch, tmp_path):
-    """backup() used to call the BROKEN native control.openSettings(query="1.3")
-    when download.path was empty. It must now route to the working custom
-    settings_menu screen instead (the same one action=='settings' opens)."""
+def test_backup_opens_native_settings_when_path_unset(wiz, monkeypatch, tmp_path):
+    """backup() with an empty download.path must open the (now-working) NATIVE
+    settings dialog via control.openSettings, not the retired custom screen."""
     backupdata = tmp_path / "home"
     backupdata.mkdir()
     monkeypatch.setattr(wiz.control, "HOME", str(backupdata))
     monkeypatch.setattr(wiz.control, "setting", lambda key: "")
 
     calls = []
-    monkeypatch.setattr(
-        wiz,
-        "settings_menu",
-        types.SimpleNamespace(open_backup_restore_menu=lambda: calls.append(True)),
-    )
+    monkeypatch.setattr(wiz.control, "openSettings", lambda *a, **k: calls.append(True))
 
     wiz.backup(mode="full")
     assert calls == [True]
 
 
-def test_restore_opens_custom_settings_menu_when_path_unset(wiz, monkeypatch):
-    """restoreFolder() used to call the BROKEN native
-    control.openSettings(query="2.0") when restore.path was empty. It must now
-    route to the working custom settings_menu screen instead."""
+def test_restore_opens_native_settings_when_path_unset(wiz, monkeypatch):
+    """restoreFolder() with an empty restore.path must open the NATIVE settings
+    dialog via control.openSettings, not the retired custom screen."""
     monkeypatch.setattr(wiz.control, "setting", lambda key: "")
 
     calls = []
-    monkeypatch.setattr(
-        wiz,
-        "settings_menu",
-        types.SimpleNamespace(open_backup_restore_menu=lambda: calls.append(True)),
-    )
+    monkeypatch.setattr(wiz.control, "openSettings", lambda *a, **k: calls.append(True))
 
     wiz.restoreFolder()
     assert calls == [True]
+
+
+def test_restore_reasserts_box_local_settings_not_imported(wiz, monkeypatch, tmp_path):
+    """A backup taken on another box carries THAT box's download.path/restore.path/
+    destination inside settings.xml. restore() must not let them be imported: it
+    snapshots this box's own values before the extract and re-stamps them after, so a
+    Bedroom box that restores an Office backup keeps its OWN paths (here empty -> stays
+    empty, which then routes to the settings menu on the next backup) rather than
+    silently inheriting Office's path. Portable settings (pins, token, prefs) are left
+    untouched by the reassert."""
+    import zipfile as _zip
+
+    # This box's live settings BEFORE the restore: Bedroom, its own (empty) local paths.
+    store = {
+        "download.path": "",
+        "restore.path": "",
+        "destination": "0",
+        "notify_mode": "true",  # a portable pref - must NOT be touched by the reassert
+    }
+    writes = []
+
+    monkeypatch.setattr(wiz.control, "setting", lambda key: store.get(key, ""))
+
+    def _set_setting(key, value):
+        store[key] = value
+        writes.append((key, value))
+
+    monkeypatch.setattr(wiz.control, "setSetting", _set_setting)
+    monkeypatch.setattr(wiz.ui, "ask_restart", lambda *a, **k: None)
+
+    # Build a backup zip as if taken on Office: it carries Office's settings.xml.
+    src = tmp_path / "office_backup.zip"
+    with _zip.ZipFile(src, "w") as z:
+        z.writestr(
+            "userdata/addon_data/script.ezmaintenanceplusplus/settings.xml",
+            "<settings><setting id='download.path'>"
+            "nfs://192.168.7.2/Kodi/Backup/office/</setting></settings>",
+        )
+        z.writestr("userdata/guisettings.xml", "<settings />")
+
+    wiz.restore(str(src), confirm=False)
+
+    # The three box-local keys were re-stamped to THIS box's own values, never Office's.
+    assert store["download.path"] == ""
+    assert store["restore.path"] == ""
+    assert store["destination"] == "0"
+    # Exactly the three box-local keys were re-asserted - the portable pref was not.
+    assert {k for k, _ in writes} == {"download.path", "restore.path", "destination"}
+    assert all(k != "notify_mode" for k, _ in writes)
