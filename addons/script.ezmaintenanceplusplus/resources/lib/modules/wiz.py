@@ -44,14 +44,6 @@ USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.11 (KHTML, like Ge
 AddonTitle = "EZ Maintenance++"
 AddonID = "script.ezmaintenanceplusplus"
 
-# Settings that are inherently BOX-LOCAL and must never be imported from another box's
-# backup: the backup/restore paths and the destination they belong to. On restore these
-# are snapshotted before the extract and re-stamped after, so a Bedroom box that restores
-# an Office backup keeps its OWN download.path (or stays unconfigured) instead of silently
-# inheriting Office's. Everything else in settings.xml (One-Tap pins, dropbox_refresh_token,
-# maintenance prefs) is portable and restores normally.
-BOX_LOCAL_SETTINGS = ("download.path", "restore.path", "destination")
-
 
 # VfsCopyError now lives in ui.py (one definition for the whole add-on); alias it here so
 # `wiz.VfsCopyError` and `except VfsCopyError` keep working. A FAILED ship raises this so
@@ -614,20 +606,6 @@ def restore(zipFile, confirm=True, post_wipe=False):
     except Exception:
         items = 0
 
-    # Box-local settings must NOT be imported from another box's backup. The three
-    # location keys are inherently per-box (Bedroom must never inherit Office's
-    # download.path just because it restored Office's backup). Snapshot THIS box's own
-    # values BEFORE the extract overwrites settings.xml with the source box's copy; they
-    # are re-stamped after the extract (see below). Everything else in settings.xml
-    # (One-Tap pins, dropbox_refresh_token, maintenance prefs) is portable and restores
-    # normally - so we snapshot only these three keys, never the whole file.
-    box_local = {}
-    for _k in BOX_LOCAL_SETTINGS:
-        try:
-            box_local[_k] = control.setting(_k)
-        except Exception:
-            box_local[_k] = ""
-
     # Skip the temp/ subtree on extract: the restore zip is staged in special://temp
     # (== special://home/temp), and a full backup contains a partial copy of itself
     # there - extracting it would clobber the source mid-read.
@@ -663,19 +641,6 @@ def restore(zipFile, confirm=True, post_wipe=False):
     if canceled and not post_wipe:
         dialog.ok(AddonTitle, "Restore Canceled")
         return
-
-    # Re-stamp this box's own location settings so a restore never imports another box's
-    # download.path / restore.path / destination. The extract already wrote the source
-    # box's settings.xml; setSetting persists memory+disk atomically, so these three
-    # writes overwrite the imported values. Empty snapshots are re-written as-is: an
-    # unconfigured box stays unconfigured (its empty-path fallback then opens the
-    # settings menu on the next backup) rather than silently inheriting the source's
-    # path. Same-box self-restore captures == restored, so this is a harmless no-op there.
-    for _k, _v in box_local.items():
-        try:
-            control.setSetting(_k, _v)
-        except Exception:
-            pass
 
     # Make the restore actually take effect on every platform - critically on tvOS,
     # where Kodi mirrors guisettings.xml in NSUserDefaults and would otherwise revert a

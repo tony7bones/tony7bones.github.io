@@ -27,7 +27,7 @@ v2.2.6: Fix: two more import-time crash gaps closed (a malformed local entries.j
             </assets>
         </extension>
     </addon>
-    <addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.07.1" provider-name="tony7bones">
+    <addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.07.2" provider-name="tony7bones">
         <requires>
             <import addon="xbmc.python" version="3.0.0" />
             <import addon="script.module.requests" version="1.0.0" />
@@ -49,6 +49,10 @@ v2.2.6: Fix: two more import-time crash gaps closed (a malformed local entries.j
                 <fanart>fanart.jpg</fanart>
             </assets>
             <news>
+2026.07.07.2
+ - Restore now restores your backup EXACTLY as taken. The previous release
+   re-stamped the backup/restore paths after a restore; that is removed. A restore
+   is a plain extract, and you set the backup location yourself in Settings.
 2026.07.07.1
  - The add-on's main menu now shows the installed version as a plain line at the
    bottom (below Settings), e.g. "EZ Maintenance++ 2026.07.07.1". It is read live
