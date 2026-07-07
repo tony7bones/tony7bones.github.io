@@ -1340,8 +1340,9 @@ plugin.video.dailymotion_com`, `_apply_rss: wrote 7 RSS feed(s) (interval 30)`; 
   - The Express end state archived as `Kodi.phase6-*` profiles; the owner's box restored from
     `Kodi.backup-6-pre-20260610-020420` (see TASKS).
 - **Fire TV (queue item 3) — reachability CHECKED, matrix DEFERRED pending owner go-ahead:**
-  a real Stick IS adb-reachable right now (192.168.7.84:5555, AFTHA001 "hailey", device name
-  "Bedroom TV") — but it is a provisioned LIVING-ROOM box, and the wipe-and-run matrix
+  a real Fire TV smart TV IS adb-reachable right now (192.168.7.84:5555, AFTHA001 "hailey" -
+  a 4K UHD Fire TV smart TV, NOT a stick - device name "Bedroom TV") - but it is a provisioned
+  LIVING-ROOM box, and the wipe-and-run matrix
   (`_tools/provision-kodi.sh <device>` wipe → Express one-tap; then wipe → `SETUP_MODE=guided`
   → the manual-reopen UX per gate) is destructive. Commands are ready in the provisioner +
   `firetv.sh`; run it on an owner-designated stick (travelstick) at the milestone.

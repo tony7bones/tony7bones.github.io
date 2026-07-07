@@ -1,7 +1,8 @@
 # Fire TV ADB Dev Pipeline — `script.tony7bones.modv2plus`
 
 Live development and verification of `script.tony7bones.modv2plus` against
-the real Amazon Fire TV Stick 4K Max ("hazel") running Kodi 21.3 Omega.
+the real Office Fire TV (a Toshiba 4K UHD Fire TV smart TV, model AFTHA004 /
+"hazel") running Kodi 21.3 Omega.
 
 ---
 
@@ -9,7 +10,7 @@ the real Amazon Fire TV Stick 4K Max ("hazel") running Kodi 21.3 Omega.
 
 | Field          | Value                                                            |
 | -------------- | ---------------------------------------------------------------- |
-| Device         | Amazon Fire TV Stick 4K Max (AFTHA004, hazel)                    |
+| Device         | Toshiba 4K UHD Fire TV smart TV (AFTHA004, hazel)                |
 | Android        | 9                                                                |
 | LAN IP         | **192.168.7.162**                                                |
 | ADB port       | 5555                                                             |
@@ -20,6 +21,18 @@ the real Amazon Fire TV Stick 4K Max ("hazel") running Kodi 21.3 Omega.
 | Add-on path    | `.kodi/addons/script.tony7bones.modv2plus/`                      |
 
 The Mac's LAN IP is `192.168.7.214`; the subnet is `192.168.7.0/24`.
+
+> **Fleet device identities (measured 2026-07-07; don't relabel these as sticks).**
+> The always-on Kodi devices are Fire TV Edition **smart TVs**, not sticks or boxes:
+> Office = `AFTHA004`/"hazel" (Toshiba 4K UHD Fire TV smart TV) and Bedroom =
+> `AFTHA001`/"hailey" (a 4K UHD Fire TV smart TV). Both are `armeabi-v7a` (32-bit)
+> on Fire OS 7 / Android 9, Kodi 21.3. The only actual **Fire TV Stick 4K Max** units
+> are the travel sticks (`AFTKRT`, 2nd gen 2023, Fire OS 8 / Android 11), also
+> `armeabi-v7a` (64-bit-capable SoC but Amazon ships a 32-bit userspace, so the arm64
+> Kodi APK will not install). All four therefore share one ABI, so EZ Maintenance++
+> **full** backups (with compiled add-ons) are interchangeable across them; confirm a
+> given unit with `adb shell pm dump org.xbmc.kodi | grep primaryCpuAbi`. The Shield is
+> the exception (likely `arm64-v8a`, unmeasured).
 
 > **The shipped Setup on the device.** This is still the device runbook for iterating
 > on `script.tony7bones.modv2plus`. The shipped flow is now the **modular Setup**
