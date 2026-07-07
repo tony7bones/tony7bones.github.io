@@ -147,6 +147,20 @@ def CATEGORIES():
         "",
     )
 
+    # Plain informational version line at the very bottom (non-clickable: the
+    # "xxx" action matches no route, so selecting it just returns to the menu).
+    # Version is read live from addon.xml so it stays correct on every release.
+    CreateDir(
+        "%s %s" % (AddonTitle, control.addonInfo("version")),
+        "xxx",
+        "xxx",
+        None,
+        ADDON_FANART,
+        "",
+        isFolder=False,
+        iconImage="DefaultIconInfo.png",
+    )
+
 
 def CAT_TOOLS():
     print("NONE YET")
