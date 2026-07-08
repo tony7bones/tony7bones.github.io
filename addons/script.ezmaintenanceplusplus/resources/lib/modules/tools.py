@@ -17,6 +17,7 @@ import xbmc
 import xbmcaddon
 import xbmcgui
 import xbmcvfs
+import os
 import re
 from resources.lib.modules.backtothefuture import unicode, PY2
 from resources.lib.modules import ui
@@ -146,6 +147,96 @@ def advancedSettings():
         )
     else:
         ui.error("Could not change the cache setting. Nothing was changed.")
+
+
+# --------------------------------------------------------------------------- #
+# Post-restore, per-device video-cache-buffer retune.
+#
+# A restore (especially a cross-device clone from a golden image) brings the SOURCE box's
+# guisettings, so `filecache.memorysize` (the video cache buffer) is now sized for the
+# WRONG device. The buffer is the one performance-critical setting that must differ per
+# device (per its RAM), so on the FIRST boot after a restore we prompt to retune it for
+# THIS device. wiz.restore() drops a persistent MARKER FILE (not a setSetting flag: a full
+# restore's extracted settings.xml + Kodi's in-memory-settings clobber make setSetting
+# unreliable here) that survives the restart; the boot service (service.py) checks it once
+# Kodi is ready and calls prompt_buffer_after_restore(). The file lives in this add-on's
+# own data dir, which the restore wipe preserves and the extract writes AFTER (see wiz.py).
+# --------------------------------------------------------------------------- #
+BUFFER_PROMPT_MARKER = translatePath(
+    "special://home/userdata/addon_data/script.ezmaintenanceplusplus/.ezm_buffer_prompt"
+)
+
+
+def mark_buffer_prompt_pending():
+    """Drop the post-restore buffer-prompt marker. Best-effort; never raises."""
+    try:
+        d = os.path.dirname(BUFFER_PROMPT_MARKER)
+        if not os.path.isdir(d):
+            os.makedirs(d)
+        with open(BUFFER_PROMPT_MARKER, "w") as f:
+            f.write("1")
+        return True
+    except Exception:
+        return False
+
+
+def buffer_prompt_pending():
+    """True iff a restore asked for a post-restart buffer prompt. Never raises."""
+    try:
+        return os.path.exists(BUFFER_PROMPT_MARKER)
+    except Exception:
+        return False
+
+
+def clear_buffer_prompt_marker():
+    """Remove the marker so the prompt fires exactly once. Never raises."""
+    try:
+        if os.path.exists(BUFFER_PROMPT_MARKER):
+            os.remove(BUFFER_PROMPT_MARKER)
+    except Exception:
+        pass
+
+
+def prompt_buffer_after_restore():
+    """If a restore dropped the marker, offer to retune the video cache buffer for THIS
+    device (the restore cloned the source box's buffer size). Three choices: set the
+    recommended size, choose manually (the existing Buffer Size screen), or keep current.
+    The marker is deleted regardless of choice so it fires EXACTLY once. Fully defensive:
+    any failure is swallowed so the boot service can never be broken by it. Returns True
+    iff a prompt was shown (no marker => False, no prompt)."""
+    try:
+        if not buffer_prompt_pending():
+            return False
+    except Exception:
+        return False
+    try:
+        rec = _recommended_mb()
+        idx = dialog.select(
+            "Restore Complete",
+            [
+                "Set the video cache buffer to %d MB (recommended for this device)"
+                % rec,
+                "Let me choose...",
+                "Keep current",
+            ],
+        )
+        if idx == 0:
+            if _set_cache_mb(rec):
+                try:
+                    dialog.notification(
+                        AddonTitle,
+                        "Video cache buffer set to %d MB for this device." % rec,
+                    )
+                except Exception:
+                    pass
+        elif idx == 1:
+            advancedSettings()
+        # idx == 2 (Keep current) or -1 (cancel/back): do nothing.
+    except Exception:
+        pass
+    finally:
+        clear_buffer_prompt_marker()
+    return True
 
 
 def _get_keyboard(default="", heading="", hidden=False, cancel=""):

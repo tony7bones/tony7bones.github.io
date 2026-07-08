@@ -27,7 +27,7 @@ v2.2.6: Fix: two more import-time crash gaps closed (a malformed local entries.j
             </assets>
         </extension>
     </addon>
-    <addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.07.5" provider-name="tony7bones">
+    <addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.07.6" provider-name="tony7bones">
         <requires>
             <import addon="xbmc.python" version="3.0.0" />
             <import addon="script.module.requests" version="1.0.0" />
@@ -49,6 +49,12 @@ v2.2.6: Fix: two more import-time crash gaps closed (a malformed local entries.j
                 <fanart>fanart.jpg</fanart>
             </assets>
             <news>
+2026.07.07.6
+ - New: after a restore + restart, EZ Maintenance++ offers to set the video cache
+   buffer to the size recommended for THIS device. A restore clones the other box's
+   settings, so the buffer can end up sized for the wrong device (it should match this
+   device's RAM). On the first boot after a restore you get a "Restore Complete" prompt:
+   set the recommended size, choose your own, or keep what you have. It asks only once.
 2026.07.07.5
  - Honest restart prompt: on Fire TV / Android, Kodi cannot restart itself (only
    desktop Kodi can), so after a restore the prompt now says "Kodi needs to close to

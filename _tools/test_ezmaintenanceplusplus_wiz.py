@@ -441,6 +441,119 @@ def test_order_userdata_first_puts_settings_before_addons(wiz):
     assert last_userdata < first_addon, names
 
 
+# --------------------------------------------------------------------------- #
+# Post-restore, per-device video-cache-buffer retune.
+# --------------------------------------------------------------------------- #
+def test_restore_writes_buffer_prompt_marker(wiz, monkeypatch, tmp_path):
+    """(a) a successful restore drops the persistent buffer-prompt marker (AFTER the
+    extract, before the restart) so the boot service knows to retune the buffer."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(wiz.control, "HOME", str(home))
+    monkeypatch.setattr(wiz, "ExtractWithProgress", lambda *a, **k: False)
+    monkeypatch.setattr(wiz.ui, "ask_restart", lambda *a, **k: None)
+
+    tools = wiz.tools
+    # Ensure a clean slate.
+    tools.clear_buffer_prompt_marker()
+    assert not tools.buffer_prompt_pending()
+
+    src = tmp_path / "backup.zip"
+    _make_valid_zip(src, [("userdata/guisettings.xml", "<settings />")])
+
+    wiz.restore(str(src), confirm=False, wipe=False)
+
+    assert tools.buffer_prompt_pending(), "restore must drop the buffer-prompt marker"
+
+
+def test_prompt_buffer_sets_recommended_and_clears(wiz, monkeypatch):
+    """(b) with the marker present, choosing 'Set' calls _set_cache_mb(_recommended_mb())
+    and deletes the marker (so it fires exactly once)."""
+    tools = wiz.tools
+    tools.mark_buffer_prompt_pending()
+    assert tools.buffer_prompt_pending()
+
+    monkeypatch.setattr(tools, "_recommended_mb", lambda: 128)
+    sets = []
+    monkeypatch.setattr(tools, "_set_cache_mb", lambda mb: sets.append(mb) or True)
+    monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: 0)
+
+    shown = tools.prompt_buffer_after_restore()
+
+    assert shown is True
+    assert sets == [128], "must set the device-recommended size"
+    assert not tools.buffer_prompt_pending(), "marker must be cleared after prompting"
+
+
+def test_prompt_buffer_no_marker_no_prompt(wiz, monkeypatch):
+    """(c) no marker => no prompt: the dialog is never shown and nothing is set."""
+    tools = wiz.tools
+    tools.clear_buffer_prompt_marker()
+    assert not tools.buffer_prompt_pending()
+
+    calls = []
+    monkeypatch.setattr(
+        tools.dialog, "select", lambda *a, **k: calls.append("select") or -1
+    )
+    monkeypatch.setattr(tools, "_set_cache_mb", lambda mb: calls.append("set") or True)
+
+    shown = tools.prompt_buffer_after_restore()
+
+    assert shown is False
+    assert calls == [], "no marker must mean no dialog and no cache change"
+
+
+def test_prompt_buffer_let_me_choose_opens_screen_and_clears(wiz, monkeypatch):
+    """'Let me choose' routes to the existing Buffer Size screen and still clears the
+    marker (so a manual choice also disarms the one-time prompt)."""
+    tools = wiz.tools
+    tools.mark_buffer_prompt_pending()
+
+    opened = []
+    monkeypatch.setattr(tools, "advancedSettings", lambda: opened.append(True))
+    monkeypatch.setattr(
+        tools,
+        "_set_cache_mb",
+        lambda mb: (_ for _ in ()).throw(
+            AssertionError("must not auto-set on 'Let me choose'")
+        ),
+    )
+    monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: 1)
+
+    shown = tools.prompt_buffer_after_restore()
+
+    assert shown is True
+    assert opened == [True]
+    assert not tools.buffer_prompt_pending()
+
+
+def test_prompt_buffer_keep_current_changes_nothing_but_clears(wiz, monkeypatch):
+    """'Keep current' (or cancel) changes nothing yet still clears the marker."""
+    tools = wiz.tools
+    tools.mark_buffer_prompt_pending()
+
+    monkeypatch.setattr(
+        tools,
+        "_set_cache_mb",
+        lambda mb: (_ for _ in ()).throw(
+            AssertionError("must not set the cache on 'Keep current'")
+        ),
+    )
+    monkeypatch.setattr(
+        tools,
+        "advancedSettings",
+        lambda: (_ for _ in ()).throw(
+            AssertionError("must not open the screen on 'Keep current'")
+        ),
+    )
+    monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: 2)
+
+    shown = tools.prompt_buffer_after_restore()
+
+    assert shown is True
+    assert not tools.buffer_prompt_pending()
+
+
 def test_restore_no_wipe_still_overlays(wiz, monkeypatch, tmp_path):
     """(f) the normal (wipe=False) path is unchanged: it never wipes, it extracts, and it
     reaches the restart prompt."""

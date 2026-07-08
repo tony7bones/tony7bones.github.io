@@ -733,6 +733,19 @@ def restore(zipFile, confirm=True, post_wipe=False, wipe=False):
     except Exception:
         pass
 
+    # A restore clones the SOURCE box's guisettings, so filecache.memorysize (the video
+    # cache buffer) is now sized for the WRONG device. Drop a persistent marker so the boot
+    # service offers a per-device buffer retune on the next boot. Written HERE - AFTER the
+    # extract completes and right before the restart prompt - deliberately: the pre-extract
+    # wipe (wipe/One-Tap paths) runs earlier and would remove it, and the extract itself
+    # would overwrite it. Covers BOTH the normal restore and One-Tap (onetap calls
+    # restore(post_wipe=True), which reaches this same point). Guarded: a marker-write
+    # failure must never break the restore.
+    try:
+        tools.mark_buffer_prompt_pending()
+    except Exception:
+        pass
+
     ui.ask_restart(
         "Restore Complete: %d items, %d settings applied." % (items, applied)
     )
