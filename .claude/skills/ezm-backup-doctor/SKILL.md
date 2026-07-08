@@ -29,7 +29,7 @@ made things worse. The `copied=`/`total=`/`actual=` diagnostic line in
 that distinguishes the failure classes below - do not skip straight to a code
 change without it.
 
-## What is actually failing (3 known modes, in the order to suspect them)
+## What is actually failing (4 known modes, in the order to suspect them)
 
 1. **The local-read VFS bug** (the one that took two real-device round-trips
    and two fix attempts to actually nail). Signature: `copied=0 total=<real
@@ -62,6 +62,21 @@ size> actual=0` on EVERY attempt, `xbmcvfs.Stat()` on the source has always
    user re-browsed and picked a folder again after the port was already
    stripped once (it will always come back baked-in from Kodi's UI - the fix
    must re-strip it every read of the setting, not just once).
+4. **The restore-crash / text-renderer SIGSEGV** (fixed 2026.07.07.3). Signature:
+   a RESTORE of a large backup crashes Kodi partway through the extract at a
+   NON-deterministic file count, Kodi dies, and `kodi.log` has NO Python traceback
+   and no `extract to ... ok` summary. The proof is in Android's crash buffer, not
+   kodi.log: `adb logcat -b crash -d | grep libkodi` shows a native SIGSEGV in
+   `CGUIFont::GetTextWidth` <- `CGUITextLayout::WrapText` <- `CGUITextBox::UpdateInfo`
+   <- `CGUIDialogBoxBase::Process`. Cause: the progress dialog was updated with the
+   changing per-file NAME on every one of thousands of files, hammering Kodi's native
+   text renderer until it corrupts (seen on Fire OS 8 sticks; not on Fire OS 7 TVs).
+   Fixed by throttling to a STATIC "Extracting file X of Y". Related symptom to watch:
+   because `userdata/` is the LAST ~70 files of the zip, this crash also presents as
+   "views/skin settings did not restore" (the extract died before reaching them).
+   Full mechanism + all the restore-flow features (opt-in clean wipe, wipe progress
+   bar, userdata-first extract, honest restart prompt, post-restore buffer retune):
+   `docs/playbooks/ezm-restore-hardening.md`.
 
 ## Triage order
 
