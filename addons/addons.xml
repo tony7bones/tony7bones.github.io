@@ -27,7 +27,7 @@ v2.2.6: Fix: two more import-time crash gaps closed (a malformed local entries.j
             </assets>
         </extension>
     </addon>
-    <addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.07.4" provider-name="tony7bones">
+    <addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.07.5" provider-name="tony7bones">
         <requires>
             <import addon="xbmc.python" version="3.0.0" />
             <import addon="script.module.requests" version="1.0.0" />
@@ -49,6 +49,11 @@ v2.2.6: Fix: two more import-time crash gaps closed (a malformed local entries.j
                 <fanart>fanart.jpg</fanart>
             </assets>
             <news>
+2026.07.07.5
+ - Honest restart prompt: on Fire TV / Android, Kodi cannot restart itself (only
+   desktop Kodi can), so after a restore the prompt now says "Kodi needs to close to
+   finish. Close Kodi now, then reopen it" instead of the misleading "Restart now?".
+   On desktop it still says "Restart".
 2026.07.07.4
  - Fix: the "wipe clean before restore" step now shows a progress bar ("Wiping the
    device clean...") instead of a blank, hung-looking gap. On a device with lots of

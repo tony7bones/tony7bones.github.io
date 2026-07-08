@@ -548,14 +548,25 @@ def restart():
     xbmc.executebuiltin("Quit")
 
 
-def ask_restart(
-    message="Kodi needs to restart to finish. Restart now?",
-    heading=None,
-    yeslabel="Restart",
-    nolabel="Later",
-):
-    """Offer a restart. Returns True (and quits) if the user accepts. Callers on the
-    post-wipe path MUST always reach this, even after a partial restore."""
+def ask_restart(status="", heading=None):
+    """Offer to finish the restore/wipe. The wording is HONEST per platform:
+
+    On Fire TV / Android, Kodi CANNOT restart itself - `RestartApp` is desktop-only, so
+    `restart()` can only `Quit`. Promising "Restart now?" there is misleading (it just
+    closes). So on Android we say "close now, then reopen Kodi"; on desktop, where Quit
+    does relaunch cleanly, we say "restart".
+
+    `status` is an optional line shown above the prompt (e.g. "Restore Complete: ...").
+    Returns True and acts (Quit) if the user accepts. Callers on the post-wipe path MUST
+    always reach this, even after a partial restore.
+    """
+    if xbmc.getCondVisibility("System.Platform.Android"):
+        prompt = "Kodi needs to close to finish.\nClose Kodi now, then reopen it."
+        yeslabel, nolabel = "Close now", "Later"
+    else:
+        prompt = "Kodi needs to restart to finish. Restart now?"
+        yeslabel, nolabel = "Restart", "Later"
+    message = (status + "\n" + prompt) if status else prompt
     if xbmcgui.Dialog().yesno(
         heading if heading is not None else HEADING,
         message,

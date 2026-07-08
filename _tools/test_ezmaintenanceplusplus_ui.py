@@ -52,6 +52,7 @@ def ui(monkeypatch, tmp_path):
     fake_xbmc = types.SimpleNamespace(
         log=lambda msg, level=None: logs.append(msg),
         sleep=lambda ms: sleeps.append(ms),
+        getCondVisibility=lambda cond: False,  # default: not-Android (desktop)
         LOGERROR=1,
         LOGWARNING=2,
         LOGINFO=3,
@@ -468,3 +469,39 @@ def test_ask_int_cancel_returns_none_without_notifying(ui):
     ui._TEST_INPUT_QUEUE.append("")
     assert ui.ask_int("Max Total Files Size (MB)", 200, 25, 500) is None
     assert ui._TEST_NOTIFICATIONS == []
+
+
+# --------------------------------------------------------------------------- #
+# ask_restart - HONEST per platform. On Fire TV / Android Kodi cannot restart
+# itself (RestartApp is desktop-only; restart() only Quits), so the prompt must
+# say "close and reopen", not "restart".
+# --------------------------------------------------------------------------- #
+def _capture_yesno(ui):
+    captured = {}
+
+    def _yesno(heading, message, yeslabel="", nolabel="", **k):
+        captured["heading"] = heading
+        captured["message"] = message
+        captured["yes"] = yeslabel
+        return False  # user declines, so restart() is never called
+
+    ui.xbmcgui.Dialog = lambda: types.SimpleNamespace(yesno=_yesno)
+    return captured
+
+
+def test_ask_restart_android_says_close_not_restart(ui):
+    ui.xbmc.getCondVisibility = lambda cond: True  # Fire TV / Android
+    cap = _capture_yesno(ui)
+    assert ui.ask_restart("Restore Complete: 5 items, 3 settings applied.") is False
+    assert "close" in cap["message"].lower()
+    assert "restart now" not in cap["message"].lower()
+    assert cap["yes"] == "Close now"
+    assert "Restore Complete: 5 items" in cap["message"]  # status line preserved
+
+
+def test_ask_restart_desktop_still_says_restart(ui):
+    ui.xbmc.getCondVisibility = lambda cond: False  # desktop
+    cap = _capture_yesno(ui)
+    assert ui.ask_restart("Restore Complete: 5 items, 3 settings applied.") is False
+    assert "restart now" in cap["message"].lower()
+    assert cap["yes"] == "Restart"

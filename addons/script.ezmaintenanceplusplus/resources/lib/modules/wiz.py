@@ -734,8 +734,7 @@ def restore(zipFile, confirm=True, post_wipe=False, wipe=False):
         pass
 
     ui.ask_restart(
-        "Restore Complete: %d items, %d settings applied.\n"
-        "Kodi must restart to finish. Restart now?" % (items, applied)
+        "Restore Complete: %d items, %d settings applied." % (items, applied)
     )
 
 
