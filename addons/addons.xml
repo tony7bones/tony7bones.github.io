@@ -27,7 +27,7 @@ v2.2.6: Fix: two more import-time crash gaps closed (a malformed local entries.j
             </assets>
         </extension>
     </addon>
-    <addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.07.2" provider-name="tony7bones">
+    <addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.07.4" provider-name="tony7bones">
         <requires>
             <import addon="xbmc.python" version="3.0.0" />
             <import addon="script.module.requests" version="1.0.0" />
@@ -49,6 +49,26 @@ v2.2.6: Fix: two more import-time crash gaps closed (a malformed local entries.j
                 <fanart>fanart.jpg</fanart>
             </assets>
             <news>
+2026.07.07.4
+ - Fix: the "wipe clean before restore" step now shows a progress bar ("Wiping the
+   device clean...") instead of a blank, hung-looking gap. On a device with lots of
+   files the wipe can take a while; before, the screen sat empty for up to ~90 seconds
+   between the download finishing and the restore window appearing. It now shows a
+   moving bar the whole time.
+2026.07.07.3
+ - New: Restore now asks "Wipe this device clean before restoring?" - "Yes" makes a
+   clean clone (it removes the current add-ons and settings first, then restores);
+   "No" merges the backup over what is already there. The wipe is SAFE: the chosen
+   backup is staged and validated first, and the box is only wiped once the zip is
+   confirmed good, so a missing or corrupt backup never wipes anything.
+ - IMPORTANT crash fix: restoring a large backup could crash Kodi partway through on
+   Fire TV sticks (the progress screen redrew a changing filename thousands of times
+   and overran the on-screen text renderer). The restore progress no longer shows the
+   per-file name; it shows "Extracting file X of Y" and updates less often, so it no
+   longer crashes, while the bar still moves and always finishes.
+ - Restore now writes your settings (userdata) before add-ons, so if an extract is ever
+   interrupted your irreplaceable settings are already in place and only re-downloadable
+   add-ons would be missing.
 2026.07.07.2
  - Restore now restores your backup EXACTLY as taken. The previous release
    re-stamped the backup/restore paths after a restore; that is removed. A restore

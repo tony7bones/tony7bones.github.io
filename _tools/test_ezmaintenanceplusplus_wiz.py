@@ -303,3 +303,168 @@ def test_restore_does_not_rewrite_settings_verbatim_restore(wiz, monkeypatch, tm
     assert not any(
         k in ("download.path", "restore.path", "destination") for k, _ in writes
     ), f"restore should not re-stamp box-local settings, but wrote: {writes}"
+
+
+# --------------------------------------------------------------------------- #
+# "Wipe clean before restore" (clean-clone) path + the extract crash fix.
+# --------------------------------------------------------------------------- #
+class _RecordingProgress:
+    """A fake ui.Progress that records every items() note and never cancels, so the
+    extract's dialog-update throttle can be asserted off-device."""
+
+    def __init__(self):
+        self.notes = []
+
+    def cancelled(self):
+        return False
+
+    def items(self, done, total, note=""):
+        self.notes.append(note)
+
+
+def _make_valid_zip(path, files):
+    import zipfile as _zip
+
+    with _zip.ZipFile(path, "w") as z:
+        for name, body in files:
+            z.writestr(name, body)
+    return path
+
+
+def _load_onetap():
+    return importlib.import_module("resources.lib.modules.onetap")
+
+
+def test_restore_wipe_does_not_wipe_on_bad_zip(wiz, monkeypatch, tmp_path):
+    """(a) restore(wipe=True) with a corrupt/short zip must ABORT with the box UNTOUCHED
+    - validation fails, so the wipe is never reached."""
+    onetap = _load_onetap()
+
+    wiped = []
+    restarted = []
+    monkeypatch.setattr(onetap, "_wipe", lambda *a, **k: wiped.append(a))
+    monkeypatch.setattr(wiz.ui, "ask_restart", lambda *a, **k: restarted.append(True))
+    monkeypatch.setattr(wiz.control, "HOME", str(tmp_path / "home"))
+
+    bad = tmp_path / "corrupt.zip"
+    bad.write_bytes(b"this is not a zip file at all")  # size > 0 but not a real zip
+
+    wiz.restore(str(bad), confirm=False, wipe=True)
+
+    assert wiped == [], "the box must NOT be wiped when the zip is invalid"
+    assert restarted == [], "a bad zip must not reach the restart prompt"
+
+
+def test_restore_wipe_validates_then_wipes_then_extracts(wiz, monkeypatch, tmp_path):
+    """(b) restore(wipe=True) with a valid zip must wipe ONLY after validation, then run
+    the (uninterruptible) extract, then reach the restart prompt - in that order."""
+    onetap = _load_onetap()
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(wiz.control, "HOME", str(home))
+
+    events = []
+    monkeypatch.setattr(onetap, "_wipe", lambda *a, **k: events.append("wipe"))
+
+    captured = {}
+
+    def _fake_extract(_in, _out, progress, **kw):
+        events.append("extract")
+        captured["cancelable"] = kw.get("cancelable", True)
+        return False
+
+    monkeypatch.setattr(wiz, "ExtractWithProgress", _fake_extract)
+    monkeypatch.setattr(wiz.ui, "ask_restart", lambda *a, **k: events.append("restart"))
+
+    src = tmp_path / "backup.zip"
+    _make_valid_zip(
+        src,
+        [
+            ("userdata/guisettings.xml", "<settings />"),
+            ("addons/foo/addon.xml", "<a/>"),
+        ],
+    )
+
+    wiz.restore(str(src), confirm=False, wipe=True)
+
+    assert events == ["wipe", "extract", "restart"], events
+    # A wiped box must be driven by an UNINTERRUPTIBLE extract (post_wipe semantics).
+    assert captured["cancelable"] is False
+
+
+def test_wipe_excludes_preserves_addon_deps_and_temp(wiz):
+    """(c) the reused One-Tap wipe excludes must preserve this add-on, its runtime deps,
+    and special://temp (where the validated zip is staged)."""
+    onetap = _load_onetap()
+    ex = onetap._wipe_excludes()
+    assert "temp" in ex
+    assert "script.module.requests" in ex
+    assert "script.ezmaintenanceplusplus" in ex
+
+
+def test_extract_progress_note_is_throttled(wiz, tmp_path):
+    """(d) the extract must NOT redraw the progress dialog with a new filename every file
+    (the Fire OS 8 SIGSEGV). The note is refreshed at most every N files and never carries
+    a per-file basename."""
+    src = tmp_path / "many.zip"
+    files = [("data/file%03d.txt" % i, "x") for i in range(200)]
+    _make_valid_zip(src, files)
+
+    out = tmp_path / "out"
+    out.mkdir()
+    p = _RecordingProgress()
+    wiz.ExtractWithProgress(str(src), str(out), p)
+
+    # Far fewer dialog updates than files (throttled), but still moving.
+    assert 0 < len(p.notes) <= 200 // 10
+    # No note carries a source basename - only the short static "Extracting file X of Y".
+    assert all(n.startswith("Extracting file ") for n in p.notes)
+    assert not any(".txt" in n for n in p.notes)
+    # Every file was still actually extracted.
+    assert len(list(out.rglob("*.txt"))) == 200
+
+
+def test_order_userdata_first_puts_settings_before_addons(wiz):
+    """(e) userdata/ entries must be ordered before addons/ so an interrupted extract
+    keeps the irreplaceable settings."""
+    infos = [
+        types.SimpleNamespace(filename="addons/a/x.py"),
+        types.SimpleNamespace(filename="userdata/guisettings.xml"),
+        types.SimpleNamespace(filename="media/logo.png"),
+        types.SimpleNamespace(filename="addons/b/y.py"),
+        types.SimpleNamespace(filename="userdata/sources.xml"),
+    ]
+    names = [i.filename for i in wiz._order_userdata_first(infos)]
+    last_userdata = max(i for i, n in enumerate(names) if n.startswith("userdata/"))
+    first_addon = min(i for i, n in enumerate(names) if n.startswith("addons/"))
+    assert last_userdata < first_addon, names
+
+
+def test_restore_no_wipe_still_overlays(wiz, monkeypatch, tmp_path):
+    """(f) the normal (wipe=False) path is unchanged: it never wipes, it extracts, and it
+    reaches the restart prompt."""
+    onetap = _load_onetap()
+
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setattr(wiz.control, "HOME", str(home))
+
+    wiped = []
+    monkeypatch.setattr(onetap, "_wipe", lambda *a, **k: wiped.append(a))
+
+    extracted = []
+    monkeypatch.setattr(
+        wiz, "ExtractWithProgress", lambda *a, **k: extracted.append(True) or False
+    )
+    restarted = []
+    monkeypatch.setattr(wiz.ui, "ask_restart", lambda *a, **k: restarted.append(True))
+
+    src = tmp_path / "backup.zip"
+    _make_valid_zip(src, [("userdata/guisettings.xml", "<settings />")])
+
+    wiz.restore(str(src), confirm=False, wipe=False)
+
+    assert wiped == [], "the no-wipe path must never wipe"
+    assert extracted == [True], "the no-wipe path must still extract"
+    assert restarted == [True], "the no-wipe path must still offer a restart"

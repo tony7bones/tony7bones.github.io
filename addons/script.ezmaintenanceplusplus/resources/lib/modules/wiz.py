@@ -485,7 +485,20 @@ def restoreFolder():
             links.append(url)
     select = control.selectDialog(names)
     if select != -1:
-        restore(links[select])
+        # Offer a clean-clone restore. "Yes" wipes the box first (removes the current
+        # add-ons and settings) so the restore is an exact clone of the backup; "No"
+        # merges the backup over whatever is already here. The wipe itself is deferred
+        # to restore(), which ONLY wipes after the chosen zip is staged and validated -
+        # a bad/short zip never wipes the box (see restore()).
+        wipe = ui.confirm(
+            "Wipe this device clean before restoring?\n"
+            "Yes = clean clone (removes current add-ons and settings first).\n"
+            "No = merge the backup over what is already here.",
+            heading=AddonTitle,
+            yeslabel="Wipe first",
+            nolabel="Merge",
+        )
+        restore(links[select], wipe=wipe)
 
 
 def _restore_dropbox():
@@ -542,13 +555,21 @@ def _restore_dropbox():
             pass
 
 
-def restore(zipFile, confirm=True, post_wipe=False):
+def restore(zipFile, confirm=True, post_wipe=False, wipe=False):
     """Extract a backup zip over special://home and offer a restart.
 
     post_wipe=True is the One-Tap path: the box has ALREADY been wiped and the snapshot
     ALREADY fully validated by the caller before the wipe. In that mode the extract is a
     single UNINTERRUPTIBLE unit (no cancel) and we NEVER early-return - a wiped box must
     always be driven to the restart prompt, never left silent on a partial/empty extract.
+
+    wipe=True is the normal-restore "clean clone" path (chosen in restoreFolder()): this
+    function does the wipe ITSELF, but ONLY under the mandatory safe ordering - the zip is
+    staged locally AND validated (size>0 + a real zip) FIRST; only THEN is the box wiped;
+    then the extract runs as the same UNINTERRUPTIBLE unit as post_wipe. If the zip is
+    missing/short/corrupt the function ABORTS with the box UNTOUCHED (it never wipes on a
+    bad zip). The wipe reuses the PROVEN One-Tap wipe (onetap._wipe / _wipe_excludes),
+    which preserves this add-on, its runtime deps, and special://temp (the staged zip).
     """
     if confirm and not post_wipe:
         if not ui.confirm(
@@ -584,6 +605,8 @@ def restore(zipFile, confirm=True, post_wipe=False):
     # Validate BEFORE extracting so we never report success on a missing / empty / bad
     # zip. After a wipe the snapshot was already validated by the caller BEFORE the box was
     # touched, so post_wipe does NOT early-return here (that would strand a wiped box).
+    # NOTE: wipe=True still validates here (it is NOT yet post_wipe), because on the
+    # clean-clone path THIS is the validation that MUST pass before we are allowed to wipe.
     try:
         size = os.path.getsize(local)
     except OSError:
@@ -600,6 +623,56 @@ def restore(zipFile, confirm=True, post_wipe=False):
             "Nothing was changed." % size,
         )
         return
+
+    # Clean-clone path: the zip is now staged + validated, so it is finally safe to wipe.
+    # Ensure the validated zip lives in special://temp (which the wipe preserves) so the
+    # source survives the wipe, wipe with the PROVEN One-Tap wipe, then flip to post_wipe
+    # semantics (uninterruptible extract that always reaches the restart prompt).
+    if wipe and not post_wipe:
+        try:
+            temp_dir = translatePath("special://temp")
+            os.makedirs(temp_dir, exist_ok=True)
+            if os.path.dirname(os.path.abspath(local)) != os.path.abspath(temp_dir):
+                import shutil
+
+                staged_local = os.path.join(temp_dir, os.path.basename(local))
+                if os.path.abspath(staged_local) != os.path.abspath(local):
+                    shutil.copyfile(local, staged_local)
+                local = staged_local
+                staged = True
+        except Exception:
+            # Could not park the validated zip somewhere the wipe preserves; ABORT
+            # rather than risk wiping the box out from under its own restore source.
+            if staged:
+                try:
+                    os.remove(local)
+                except OSError:
+                    pass
+            dialog.ok(
+                AddonTitle,
+                "Restore failed: could not stage the backup for a clean-clone restore. "
+                "Nothing was changed.",
+            )
+            return
+        # Lazy import breaks the onetap<->wiz cycle: onetap imports wiz lazily (inside
+        # apply()), so importing onetap here at call time - not at module top - is the
+        # lowest-risk way to reuse its proven wipe without an import loop.
+        from resources.lib.modules import onetap
+
+        # Show the SAME progress bar the extract uses so the wipe is not a dead screen for
+        # ~90s. Counts only (note is static) - a per-file name would re-trigger the text
+        # renderer crash ExtractWithProgress was fixed to avoid. Not cancelable: a cancel
+        # mid-wipe would strand a half-wiped box, so we never check p.cancelled() here.
+        with ui.Progress("Wiping the device clean...", heading="Restoring") as wp:
+            onetap._wipe(
+                translatePath("special://home/"),
+                onetap._wipe_excludes(),
+                progress=lambda done, total: wp.items(
+                    done, total, note="Removing old files"
+                ),
+            )
+        # From here on this IS a post-wipe restore: uninterruptible, never early-returns.
+        post_wipe = True
 
     try:
         items = len(zipfile.ZipFile(local).infolist())
@@ -764,6 +837,32 @@ def ExtractNOProgress(_in, _out):
     return canceled
 
 
+# How often the extract refreshes the progress dialog. See the CRASH FIX note in
+# ExtractWithProgress: redrawing it for every one of thousands of files SIGSEGVs Kodi's
+# native text renderer on Fire OS 8, so we refresh at most every _UPDATE_EVERY files.
+_UPDATE_EVERY = 50
+
+
+def _order_userdata_first(infos):
+    """Defense-in-depth ordering for a restore extract: write userdata/ (irreplaceable
+    settings) FIRST, then everything else, then addons/ LAST (add-ons re-download).
+
+    A backup zip lists userdata/ as its LAST ~70 entries, so a mid-extract failure with
+    the archive's own order would lose ALL settings while the (recoverable) add-ons were
+    already written. Reordering makes settings the first thing on disk. Order within each
+    bucket is preserved (stable)."""
+    userdata, addons, other = [], [], []
+    for it in infos:
+        fn = (getattr(it, "filename", "") or "").lstrip("/")
+        if fn.startswith("userdata/"):
+            userdata.append(it)
+        elif fn.startswith("addons/"):
+            addons.append(it)
+        else:
+            other.append(it)
+    return userdata + other + addons
+
+
 def ExtractWithProgress(_in, _out, progress, skip_prefix=None, cancelable=True):
     count = 0
     extracted = 0
@@ -773,30 +872,41 @@ def ExtractWithProgress(_in, _out, progress, skip_prefix=None, cancelable=True):
     last_error = ""
     try:
         zin = zipfile.ZipFile(_in, "r")
-        infos = zin.infolist()
-        n_files = len(infos)
-        for item in infos:
+        # Defense-in-depth: extract userdata/ before addons/ so an interrupted extract
+        # keeps the irreplaceable settings and only loses re-downloadable add-ons.
+        ordered = _order_userdata_first(zin.infolist())
+        # Never restore the transient temp tree: a full backup includes a partial copy of
+        # itself at temp/<backup>.zip, and the restore zip is staged in temp - extracting
+        # it would overwrite the source mid-read (Truncated file header). Filter it out up
+        # front so the count/percent below is over the files we actually write.
+        to_extract = [
+            it
+            for it in ordered
+            if not (skip_prefix and it.filename.startswith(skip_prefix))
+        ]
+        skipped = len(ordered) - len(to_extract)
+        n_files = len(to_extract)
+        for item in to_extract:
             # Post-wipe this is off (cancelable=False): the box is already wiped, so a
             # cancel here would strand it - the extract must run to completion.
             if cancelable and progress.cancelled():
                 canceled = True
                 break
-            # Never restore the transient temp tree: a full backup includes a partial
-            # copy of itself at temp/<backup>.zip, and the restore zip is staged in temp
-            # - extracting it would overwrite the source mid-read (Truncated file header).
-            if skip_prefix and item.filename.startswith(skip_prefix):
-                skipped += 1
-                continue
             count += 1
-            try:
-                name = os.path.basename(item.filename)
-            except Exception:
-                name = item.filename
-            # The divide-by-zero guard lives inside ui.Progress.items() (n_files is never
-            # 0 in the loop body - an empty archive has no items to iterate).
-            progress.items(
-                count, n_files, note="[COLOR skyblue][B]%s[/B][/COLOR]" % str(name)
-            )
+            # CRASH FIX (Fire OS 8 sticks): the old code called progress.items() with a
+            # changing per-file basename for EVERY file. Thousands of rapid filename
+            # text-layout redraws SIGSEGV Kodi's native text renderer (CGUIFont::
+            # GetTextWidth <- CGUITextLayout::WrapText <- CGUITextBox::UpdateInfo), which
+            # killed a restore around file ~5600 of 6130 - and a wipe-then-restore is
+            # unsafe with that crash. Refresh the dialog at most every _UPDATE_EVERY files
+            # (plus the first and last), with a SHORT static note - never the per-file
+            # basename. The bar still advances in visible steps and always reaches 100%.
+            if count == 1 or count % _UPDATE_EVERY == 0 or count == n_files:
+                progress.items(
+                    count,
+                    n_files,
+                    note="Extracting file %d of %d" % (count, n_files),
+                )
             try:
                 zin.extract(item, _out)
                 extracted += 1
