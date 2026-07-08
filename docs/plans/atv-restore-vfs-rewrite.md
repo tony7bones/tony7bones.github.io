@@ -1,8 +1,12 @@
 # Design: durable Apple TV restore via post-extract `xbmcvfs` re-write
 
-**Status: DESIGN / to be adversarially reviewed. No code written.** Supersedes the REJECTED
-every-boot re-assert (`atv-every-boot-settings-reassert.md`). This doc exists to be attacked —
-QA + architecture are tasked to *prove it cannot work* before anything ships.
+**Status: SURVIVES ADVERSARIAL REVIEW #2 — WITH REQUIRED CHANGES (2026-07-08). No code
+written; not yet shippable.** Supersedes the REJECTED every-boot re-assert
+(`atv-every-boot-settings-reassert.md`). Three reviewers (QA + two architects) attacked it.
+The core `xbmcvfs` re-write (F1) is **sound and verified in Kodi's tvOS source** and could
+not be killed — but it needs the fixes in "REVIEW #2 VERDICT" at the bottom, and the IPTV
+"simple path" (I1/I2) is **rejected**: the disable-window (I3) is mandatory, not a fallback.
+The proposal below is the ORIGINAL; read the verdict at the end for the corrected spec.
 
 ## Root cause (established, source-grounded)
 
@@ -118,3 +122,78 @@ that boot — forcing a re-read. Kept as a safety net, not the primary path.
    add-on/`instance-settings` values are IN it (B1), the plist size is under budget (B2), and
    they survive a swipe-quit reopen with iptv configured (B3).
 3. Only then ship, version/news hand-edited per this add-on's `YYYY.MM.DD.N` convention.
+
+---
+
+# ADVERSARIAL REVIEW #2 VERDICT (2026-07-08): SURVIVES WITH REQUIRED CHANGES
+
+Three reviewers attacked it. Consolidated result: the general `.xml` re-write is a sound,
+source-verified fix; it ships only with the changes below. The IPTV "simple path" is dead.
+
+## What was VERIFIED (in Kodi's actual tvOS source)
+- **B1 holds.** `CFileFactory` routes a tvOS local `.xml` write to `CTVOSFile`;
+  `CTVOSFile::Write` → `CTVOSNSUserDefaults::SetKeyDataFromPath(..., synchronize=true)` →
+  `[NSUserDefaults synchronize]` — persisted before the call returns, no clean shutdown
+  needed. `WantsFile()` matches `guisettings.xml`, `RssFeeds.xml`, `keymaps/*.xml` (except
+  the carve-out below), nested `addon_data/<id>/settings.xml`, `instance-settings-*.xml`,
+  `customTVGroups-*.xml` — no depth limit. Read-back is safe: the one-time
+  `MigrateUserdataXMLToNSUserDefaults` is gated on `UserdataMigrated`, so it never re-runs
+  and never fights F1; at boot Kodi reads F1's NSUserDefaults key and the shadow dissolves.
+- **B2 (500 KB) is NOT Kodi-enforced** — there is no cap constant/overflow branch in Kodi's
+  tvOS source; any ceiling is Apple's platform plist limit. F1 writes the same data class
+  Kodi already stores there normally, so it is not materially worse. Measure on device;
+  don't block on it.
+
+## REQUIRED CHANGES before shippable (these are mandatory, not optional)
+1. **Single write per file — NEVER chunk (critical, prevents NEW data loss).** `CTVOSFile::Write`
+   is REPLACE-per-call, not append: each `Write()` overwrites the whole NSUserDefaults key
+   with just that chunk. If F1 reuses the repo's chunked copy idiom (`ui.py`
+   `_stream_copy`/`_LocalReader`), only the LAST chunk survives → a truncated XML fragment →
+   `CSettings` parse fails → settings reset to defaults, with the valid POSIX file shadowed and
+   unrecoverable — WORSE than the shadow bug. F1 must read the whole file with plain `open()`
+   and write it in exactly ONE `xbmcvfs.File.write(data)` call. Check the boolean return;
+   on failure log and leave the POSIX file untouched (do not delete/alter it).
+2. **Exclusion list (prevents self-clobber, a SECRET LEAK, and boot-service death).** F1's walk
+   must NOT re-write `addon_data/script.ezmaintenanceplusplus/settings.xml` — it carries the
+   SOURCE box's `download.path`/`restore.path` AND its `dropbox_refresh_token` (a secret), and
+   `service.py` reads several of these at IMPORT time with `int(...)`, so a blank/foreign value
+   crashes the boot service (which then never runs the tune-up prompt). Also evaluate excluding
+   `profiles.xml`, `sources.xml`/`mediasources.xml`, `favourites.xml`.
+3. **IPTV out of the blind walk; disable-window is PRIMARY (I3), not a fallback.** Writing
+   `instance-settings-*.xml` via F1 under a LIVE `pvr.iptvsimple` is the documented clobber
+   (`kodi-settings-clobber.md` #3): the client flushes its stale in-memory defaults over
+   F1's key on the restart shutdown (last-writer-wins). Kodi reads instance-settings ONCE at
+   client instantiation and never watches the file, so "place early on boot and hope" has no
+   re-read trigger and loses the race against the async PVR manager. The ONLY in-Kodi fix is
+   the proven `disable → settle → write → enable` window (`_pause_pvr_for_config`/
+   `_resume_pvr_after_config`, reimplemented locally). **Drop I1 (pre-established bare
+   instances):** the clean-clone wipe removes `pvr.iptvsimple` anyway, the restore overwrites
+   the identity keys, and a fixed 1+2 count leaves a phantom instance on a 1-provider box.
+   Instead, enumerate the restore's ACTUAL `instance-settings-N.xml` set and force a re-read
+   of exactly those.
+4. **Order F1 LAST** — after `apply_guisettings` and `UpdateLocalAddons`, immediately before
+   `mark_buffer_prompt_pending`/`ask_restart` — so no in-session add-on re-init re-saves its
+   defaults over F1's keys.
+5. **Correct the "remote fully covered" claim.** `keymaps/customcontroller.SiriRemote.xml` (the
+   Siri Remote customization) is explicitly carved out of `WantsFile()` → it will NOT vector,
+   and F1's write of it fails silently. Document it as a manual step alongside the hidden
+   channel-group DB flag. (Ordinary `keyboard.xml`/`remote.xml` still vector.)
+
+## Still-open / unchanged limits
+- **Non-`.xml` userdata** never vectors: `Database/*.db` (incl. the PVR `TV<N>.db`
+  hidden-channel-group flag), `Thumbnails/`, view DBs — the hidden "All channels" group stays
+  a documented manual step.
+- **On-device gate is mandatory.** The decisive check (per `atv-kodi-xcode-cli-troubleshooting.md`):
+  after restore → swipe-quit → reopen, `devicectl copy from` the plist and
+  `PlistBuddy -c 'Print :"/userdata/guisettings.xml"' post.plist | xxd -r -p | gunzip` —
+  **full well-formed `<settings>` = fix works; a tail fragment = change #1 (chunking) fired;
+  key absent = B2 overflow.** Also decode an `instance-settings` key to confirm IPTV vectored.
+
+## Bottom line
+Adopt F1 (single-write, excluded, ordered-last) for the non-PVR `.xml` + keep `apply_guisettings`;
+handle IPTV via the mandatory disable-window over the restore's actual instances; ship only
+after the on-device plist decode confirms B1 and rules out the chunking/overflow failures.
+
+Sources: Kodi tvOS source `FileFactory.cpp`, `TVOSFile.cpp`, `TVOSDirectory.cpp`,
+`TVOSNSUserDefaults.mm`, `PreflightHandler.mm`; repo `kodi-settings-clobber.md`,
+`kodi-vfs-cannot-read-foreign-local-files.md`, `iptv.py`, `wiz.py`, `service.py`.
