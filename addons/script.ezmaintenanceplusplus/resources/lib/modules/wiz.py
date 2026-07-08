@@ -733,6 +733,25 @@ def restore(zipFile, confirm=True, post_wipe=False, wipe=False):
     except Exception:
         pass
 
+    # tvOS durability: the extract wrote userdata/*.xml with plain POSIX I/O, which on Apple
+    # TV BYPASSES Kodi's CTVOSFile VFS - so the restored settings never reach NSUserDefaults
+    # (tvOS's only persistent store) and are shadowed by the stale mirror at boot. Re-write
+    # each restored userdata/*.xml THROUGH xbmcvfs so tvOS vectors it into NSUserDefaults
+    # (durable on the first reopen, no clean shutdown needed); handle pvr.iptvsimple instance
+    # settings in a PVR-disabled window so a live client can't clobber them. Runs AFTER
+    # apply_guisettings/UpdateLocalAddons (so nothing re-saves defaults over it) and BEFORE
+    # the restart prompt. Fully guarded - never breaks a restore. See docs/plans/atv-restore-*.
+    try:
+        from resources.lib.modules import nsud
+
+        def _nlog(m):
+            xbmc.log("%s : %s" % (AddonTitle, m), xbmc.LOGINFO)
+
+        nsud.rewrite_userdata_xml(control.USERDATA, log=_nlog)
+        nsud.reassert_iptv_instances(control.USERDATA, log=_nlog)
+    except Exception:
+        pass
+
     # A restore clones the SOURCE box's guisettings, so this box now carries the wrong
     # device name (services.devicename) AND a buffer (filecache.memorysize) sized for the
     # wrong RAM. Drop a persistent marker so the boot service runs the post-restore tune-up
