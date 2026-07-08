@@ -53,21 +53,32 @@ Establishes the baseline so a later PASS is meaningful.
 
 ## Phase 2 — get the FIXED add-on onto atv-1
 The fix is on this branch but not in a released zip. Choose the lowest-risk deploy you can
-verify on the actual device (you can SEE the container; decide from what's real):
-- **Option A (preferred if the add-on dir is writable in the container):** build the add-on
-  zip from this branch and install/replace it so `resources/lib/modules/nsud.py` and the
-  patched `wiz.py` are present on atv-1. You can build the tree with the repo tooling
-  (`python3 _tools/generate_repo.py` produces the per-add-on zip) and push the two changed
-  files into the installed add-on dir in the container via `devicectl device copy to`
-  (`--domain-type appDataContainer`), then rescan/enable. Verify the files landed by pulling
-  them back.
-- **Option B (a controlled release):** only if a container-side install isn't viable. Bump
+verify on the actual device (you can SEE the container; decide from what's real). atv-1 is
+paired and reachable via `devicectl`, so Option A is the preferred pre-proof path.
+
+- **Option A (PREFERRED — container-side file copy via devicectl):** only TWO files changed
+  from the shipped add-on, so you do not need to build/install a whole zip. Push exactly:
+  - `addons/script.ezmaintenanceplusplus/resources/lib/modules/nsud.py` (NEW)
+  - `addons/script.ezmaintenanceplusplus/resources/lib/modules/wiz.py` (MODIFIED)
+
+  into the INSTALLED add-on inside Kodi's container, at
+  `.../userdata/addon_data`? NO — the add-on CODE lives under Kodi's home addons dir, i.e.
+  `special://home/addons/script.ezmaintenanceplusplus/resources/lib/modules/`. First
+  enumerate the container to find that real path
+  (`xcrun devicectl device info files --device <UDID> --domain-type appDataContainer
+  --domain-identifier <bundle>` → locate `addons/script.ezmaintenanceplusplus/`), then
+  `xcrun devicectl device copy to … --domain-type appDataContainer --domain-identifier
+  <bundle> --source <local file> --destination <container path>` for each of the two files.
+  **MANDATORY verification before testing:** `copy from` BOTH files back off the device and
+  `diff` them against this branch's copies — confirm byte-identical. Then restart Kodi (or
+  force a Python reload) so the new `wiz.py`/`nsud.py` are actually imported; a running Kodi
+  will not pick up a swapped-in .py without a restart. Never pass `--remove-existing-content
+  true` on `copy to` (wipes the whole container).
+- **Option B (a controlled release):** only if the container copy isn't viable. Bump
   `addon.xml` to the next `YYYY.MM.DD.N`, hand-edit `<news>`/`changelog.txt`, `generate_repo`,
   push `main`, let Kodi update atv-1, then verify. (This ships to ALL boxes — prefer A for a
   pre-proof test; if you must use B, treat this run's version as the candidate and be ready to
   bump again on failure.)
-Whichever you pick, confirm on-device that the new `nsud.py` is actually in Kodi's add-on
-before testing (pull it back and diff against this branch's copy).
 
 ## Phase 3 — run the proof
 1. Owner triggers a restore in Kodi (the physical action), then **swipe-quit + reopen**.
