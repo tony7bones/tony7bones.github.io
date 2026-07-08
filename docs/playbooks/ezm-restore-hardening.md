@@ -97,30 +97,71 @@ to close to finish. Close Kodi now, then reopen it" with a "Close now" button; o
 desktop it still says "Restart". The one caller passes only the status line and
 `ask_restart` builds the platform-correct sentence.
 
-## Post-restore per-device video-cache-buffer retune (2026.07.07.6)
+## Post-restore per-device tune-up: device name + video-cache buffer (2026.07.08.1)
 
-A restore clones the SOURCE box's `guisettings.xml`, so `filecache.memorysize`
-(the video cache buffer) is now sized for the wrong device. The buffer is the one
-performance-critical setting that MUST differ per device (by its RAM). The retune
-prompt closes that gap and completes the clone-a-golden-image workflow:
+A restore clones the SOURCE box's `guisettings.xml`, so this box comes up with the
+wrong per-device identity/performance settings: the wrong **device name**
+(`services.devicename`) and a **video cache buffer** (`filecache.memorysize`) sized
+for the wrong RAM. Both are things the user fixes by hand after cloning a "base"
+backup. One combined one-shot prompt closes both gaps and completes the
+clone-a-golden-image workflow:
 
-- `wiz.restore()` drops a one-shot marker via `tools.mark_buffer_prompt_pending()`
-  AFTER the extract (so the pre-extract wipe and the extract itself cannot remove
-  it) and before `ask_restart`. The marker lives in EZM's own `addon_data`
-  (`.ezm_buffer_prompt`), which `_wipe_excludes()` preserves, so it survives a
-  wipe restore and the restart. Reached by normal, wipe, and One-Tap restores.
+- `wiz.restore()` drops a single one-shot marker via
+  `tools.mark_buffer_prompt_pending()` AFTER the extract (so the pre-extract wipe
+  and the extract itself cannot remove it) and before `ask_restart`. The marker
+  lives in EZM's own `addon_data` (`.ezm_buffer_prompt` - kept that historical name
+  even though it now gates the whole combined flow), which `_wipe_excludes()`
+  preserves, so it survives a wipe restore and the restart. Reached by normal,
+  wipe, and One-Tap restores.
 - The boot service (`service.py`, `xbmc.service`, already runs at startup) calls
-  `_maybe_prompt_buffer_after_restore()`: returns immediately on a normal boot (no
-  marker, no wait); when a marker is pending it waits for `Window.IsVisible(home)`
-  (interruptible, bounded) then shows a "Restore Complete" dialog offering **Set
-  to X MB** (X = `tools._recommended_mb()`), **Let me choose** (opens the Buffer
-  Size screen), or **Keep current**. Deletes the marker in a `finally` so it asks
-  exactly once, and is fully guarded so it can never block boot.
-- The recommendation already existed: `tools._recommended_mb()` = `max(50,
-min(200, int(System.Memory(total) * 0.10)))` - device-aware (this box's total
-  RAM, a stable constant, deliberately not the drifting FreeMemory), clamped
-  50-200 MB. `tools._set_cache_mb()` applies it live via JSON-RPC (no restart
-  needed). Verified on-device: a 1669 MB stick recommends 166 MB.
+  `_maybe_prompt_after_restore()`: the marker check is BEFORE `_wait_kodi_ready`, so
+  a normal boot (no marker) returns immediately and never delays the maintenance
+  loop; only a genuinely pending restore waits for `Window.IsVisible(home)`
+  (interruptible, bounded) then calls `tools.prompt_after_restore()`.
+- `prompt_after_restore()` runs the **device-name step first, then the buffer
+  step**, under one "Restore Complete" banner. ONLY the buffer step clears the
+  marker (in its `finally`), and it always runs after the wrapped device-name step,
+  so the flow is exactly-once even if the device-name step raises. Fully guarded so
+  it can never block boot.
+  - **Device name** (`prompt_devicename_after_restore`): text-entry, since there is
+    no derivable "right" value (unlike the buffer's RAM-based recommendation). The
+    keyboard is prefilled with the current (inherited) name to edit; Keep / cancel /
+    empty / whitespace / unchanged all no-op. A rejected name surfaces `ui.error`
+    (no silent no-op) and logs to kodi.log.
+  - **Buffer** (`prompt_buffer_after_restore`, unchanged): **Set to X MB** (X =
+    `tools._recommended_mb()` = `max(50, min(200, int(System.Memory(total) *
+0.10)))`, device-aware off total RAM, clamped 50-200 MB; a 1669 MB stick
+    recommends 166 MB), **Let me choose** (Buffer Size screen), or **Keep current**.
+    `tools._set_cache_mb()` applies it live via JSON-RPC (no restart needed).
+
+### Both-ways persistence (the split-brain settings lesson)
+
+`_set_devicename()` writes the name TWO ways on purpose, because the two platforms
+persist settings oppositely (this is `kodi-settings-clobber.md`'s hazard, both
+directions at once):
+
+- `Settings.SetSettingValue` updates Kodi's LIVE store. On **tvOS** that is the
+  durable path - guisettings.xml is rewritten from NSUserDefaults on boot, so a
+  file-only write reverts (the same reason `_kodisettings.apply_guisettings` exists
+  for restore).
+- `_kodisettings.write_guisetting()` writes `services.devicename` straight into
+  guisettings.xml, which is what survives a **Fire TV / Android UNCLEAN shutdown**
+  (there the live store only flushes to the file on a clean exit; a power-pull loses
+  an in-memory-only set). On tvOS this is harmless same-value reinforcement.
+
+Doing BOTH covers every platform. An identity setting that silently reverts (and
+would not re-prompt, since the marker is already cleared) is worse than the buffer's
+exposure, which self-heals on the next retune - so the buffer alone kept the simpler
+in-memory-only set, but the device name is hardened. `write_guisetting` also clears
+the `default="true"` marker so Kodi treats the value as user-set.
+
+**Verified on hardware (Bedroom Fire TV `192.168.7.84`, 2026-07-08, which was itself
+running a "base" backup named `base`):** `services.devicename` IS settable via
+`Settings.SetSettingValue` at the box's level (`result:true`, read-back confirmed).
+An in-memory-only set (SetSettingValue with NO file write) reverted to the on-disk
+value after an `am force-stop` unclean kill + relaunch - proving the hazard. The
+both-ways write (SetSettingValue + the value in guisettings.xml) SURVIVED the same
+unclean kill + relaunch. So the fix is confirmed, not just reasoned.
 
 ## Fleet facts (measured 2026-07-07, relevant to restore portability)
 

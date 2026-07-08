@@ -133,11 +133,12 @@ def _wait_kodi_ready(monitor, timeout=120):
     return True
 
 
-def _maybe_prompt_buffer_after_restore(monitor):
-    """On the FIRST boot after a restore, offer to retune the video cache buffer for THIS
-    device (the restore cloned the source box's buffer size). Fully guarded: nothing here
-    may block or crash the boot service, and it only waits for readiness if a marker from a
-    restore is actually pending (a normal boot returns immediately, no prompt)."""
+def _maybe_prompt_after_restore(monitor):
+    """On the FIRST boot after a restore, run the post-restore tune-up: offer to rename THIS
+    device and to retune the video cache buffer for it (a restore cloned the source box's name
+    and buffer size). Fully guarded: nothing here may block or crash the boot service. The marker
+    check happens BEFORE _wait_kodi_ready, so a normal boot (no marker) returns immediately and
+    never delays the maintenance loop; only a genuinely pending restore waits for the GUI."""
     try:
         from resources.lib.modules import tools
     except Exception:
@@ -150,7 +151,7 @@ def _maybe_prompt_buffer_after_restore(monitor):
     try:
         if not _wait_kodi_ready(monitor):
             return
-        tools.prompt_buffer_after_restore()
+        tools.prompt_after_restore()
     except Exception:
         pass
 
@@ -158,7 +159,7 @@ def _maybe_prompt_buffer_after_restore(monitor):
 if __name__ == "__main__":
     monitor = Monitor()
 
-    _maybe_prompt_buffer_after_restore(monitor)
+    _maybe_prompt_after_restore(monitor)
 
     while not monitor.abortRequested():
         # Sleep/wait for abort for 10 seconds

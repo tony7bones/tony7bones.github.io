@@ -27,7 +27,7 @@ v2.2.6: Fix: two more import-time crash gaps closed (a malformed local entries.j
             </assets>
         </extension>
     </addon>
-    <addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.07.6" provider-name="tony7bones">
+    <addon id="script.ezmaintenanceplusplus" name="EZ Maintenance++" version="2026.07.08.1" provider-name="tony7bones">
         <requires>
             <import addon="xbmc.python" version="3.0.0" />
             <import addon="script.module.requests" version="1.0.0" />
@@ -49,6 +49,13 @@ v2.2.6: Fix: two more import-time crash gaps closed (a malformed local entries.j
                 <fanart>fanart.jpg</fanart>
             </assets>
             <news>
+2026.07.08.1
+ - New: the "Restore Complete" prompt now also offers to rename THIS device. A restore
+   clones the other box's name (Settings &gt; Services &gt; General), so a box built from a
+   "base" backup comes up with the source box's name. On the first boot after a restore
+   you can rename it right there (or keep it), then set the video cache buffer as before.
+   The new name is written so it sticks even if the box is unplugged instead of closed
+   cleanly. Still asks only once, and never delays boot.
 2026.07.07.6
  - New: after a restore + restart, EZ Maintenance++ offers to set the video cache
    buffer to the size recommended for THIS device. A restore clones the other box's

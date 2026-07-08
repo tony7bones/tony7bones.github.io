@@ -42,6 +42,11 @@ ADV_XML = "special://home/userdata/advancedsettings.xml"
 CACHE_SETTING = "filecache.memorysize"
 KODI_DEFAULT_MB = 20  # Kodi's factory-default cache buffer
 
+# Device name lives in the core setting `services.devicename` (Settings > Services > General).
+# Set via JSON-RPC like the cache buffer; persisted both-ways (see _set_devicename).
+DEVICENAME_SETTING = "services.devicename"
+GUISETTINGS_XML = translatePath("special://home/userdata/guisettings.xml")
+
 
 def _jsonrpc(method, params):
     import json
@@ -70,6 +75,49 @@ def _set_cache_mb(mb):
         "Settings.SetSettingValue", {"setting": CACHE_SETTING, "value": int(mb)}
     )
     return bool(r.get("result"))
+
+
+def _get_devicename():
+    """This box's current device name from the live core setting. '' if unavailable."""
+    r = _jsonrpc("Settings.GetSettingValue", {"setting": DEVICENAME_SETTING})
+    try:
+        return r["result"]["value"]
+    except Exception:
+        return ""
+
+
+def _set_devicename(name):
+    """Set the device name durably on EVERY platform, then return True iff the live set took.
+
+    Two persistence hazards, opposite per platform, so we do BOTH writes:
+      - Settings.SetSettingValue updates Kodi's LIVE store. On tvOS that is the durable path
+        (guisettings.xml is rewritten from NSUserDefaults on boot, so a file-only write reverts).
+      - write_guisetting() puts the value straight into guisettings.xml, which is what survives a
+        Fire TV / Android UNCLEAN shutdown (there the live store only flushes to the file on a
+        clean exit). On tvOS it is harmless same-value reinforcement.
+    The live set is the authoritative in-session result; the file write is best-effort. On failure
+    we log so a wrong setting id / rejected value is diagnosable from kodi.log."""
+    r = _jsonrpc(
+        "Settings.SetSettingValue", {"setting": DEVICENAME_SETTING, "value": name}
+    )
+    ok = bool(r.get("result"))
+    if ok:
+        try:
+            from resources.lib.modules import _kodisettings
+
+            _kodisettings.write_guisetting(GUISETTINGS_XML, DEVICENAME_SETTING, name)
+        except Exception:
+            pass
+    else:
+        try:
+            xbmc.log(
+                "ezmaintenanceplus: could not set %s to '%s' (JSON-RPC returned %r)"
+                % (DEVICENAME_SETTING, name, r),
+                level=xbmc.LOGWARNING,
+            )
+        except Exception:
+            pass
+    return ok
 
 
 def _total_ram_mb():
@@ -236,6 +284,67 @@ def prompt_buffer_after_restore():
         pass
     finally:
         clear_buffer_prompt_marker()
+    return True
+
+
+def prompt_devicename_after_restore():
+    """Offer to rename THIS device after a restore cloned the SOURCE box's name (Settings >
+    Services > General). Unlike the buffer there is no derivable "right" value, so this is
+    text-entry: the keyboard is prefilled with the current name for the user to edit. Does NOT
+    touch the post-restore marker (the buffer step owns clearing it, so the combined flow fires
+    exactly once). Fully defensive. Returns True iff a new name was applied; False on
+    keep / cancel / unchanged / empty / failure."""
+    try:
+        cur = _get_devicename()
+        idx = dialog.select(
+            "Restore Complete",
+            [
+                "Rename this device  (currently: '%s')" % (cur or "unknown"),
+                "Keep '%s'" % (cur or "unknown"),
+            ],
+        )
+        if idx != 0:
+            return False  # Keep (1) or cancel / back (-1)
+        entered = _get_keyboard(
+            default=cur, heading="Device name (Cancel to keep current)", cancel=cur
+        )
+        new = (entered or "").strip()
+        if not new or new == cur:
+            return False
+        if _set_devicename(new):
+            try:
+                dialog.notification(
+                    AddonTitle,
+                    "Device name set to '%s'. The network name (AirPlay/UPnP) updates "
+                    "after the next restart." % new,
+                )
+            except Exception:
+                pass
+            return True
+        try:
+            ui.error("Could not change the device name. Nothing was changed.")
+        except Exception:
+            pass
+    except Exception:
+        pass
+    return False
+
+
+def prompt_after_restore():
+    """Single post-restore tune-up, gated ONCE by the (buffer-named) marker: run the device-name
+    step FIRST, then the buffer step. ONLY the buffer step clears the marker, and it always runs
+    after the wrapped device-name step, so the whole flow is exactly-once and a device-name-step
+    failure can never strand the marker. Returns True iff the flow ran (the marker was present)."""
+    try:
+        if not buffer_prompt_pending():
+            return False
+    except Exception:
+        return False
+    try:
+        prompt_devicename_after_restore()  # never clears the marker
+    except Exception:
+        pass
+    prompt_buffer_after_restore()  # clears the marker in its finally
     return True
 
 

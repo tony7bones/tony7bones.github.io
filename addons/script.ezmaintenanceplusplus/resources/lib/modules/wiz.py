@@ -733,14 +733,16 @@ def restore(zipFile, confirm=True, post_wipe=False, wipe=False):
     except Exception:
         pass
 
-    # A restore clones the SOURCE box's guisettings, so filecache.memorysize (the video
-    # cache buffer) is now sized for the WRONG device. Drop a persistent marker so the boot
-    # service offers a per-device buffer retune on the next boot. Written HERE - AFTER the
-    # extract completes and right before the restart prompt - deliberately: the pre-extract
-    # wipe (wipe/One-Tap paths) runs earlier and would remove it, and the extract itself
-    # would overwrite it. Covers BOTH the normal restore and One-Tap (onetap calls
-    # restore(post_wipe=True), which reaches this same point). Guarded: a marker-write
-    # failure must never break the restore.
+    # A restore clones the SOURCE box's guisettings, so this box now carries the wrong
+    # device name (services.devicename) AND a buffer (filecache.memorysize) sized for the
+    # wrong RAM. Drop a persistent marker so the boot service runs the post-restore tune-up
+    # on the next boot: offer to rename this device, then to retune the buffer for it. Written
+    # HERE - AFTER the extract completes and right before the restart prompt - deliberately:
+    # the pre-extract wipe (wipe/One-Tap paths) runs earlier and would remove it, and the
+    # extract itself would overwrite it. Covers BOTH the normal restore and One-Tap (onetap
+    # calls restore(post_wipe=True), which reaches this same point). The marker keeps its
+    # historical name (.ezm_buffer_prompt) - it now gates the whole combined flow. Guarded: a
+    # marker-write failure must never break the restore.
     try:
         tools.mark_buffer_prompt_pending()
     except Exception:

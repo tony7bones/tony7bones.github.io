@@ -581,3 +581,242 @@ def test_restore_no_wipe_still_overlays(wiz, monkeypatch, tmp_path):
     assert wiped == [], "the no-wipe path must never wipe"
     assert extracted == [True], "the no-wipe path must still extract"
     assert restarted == [True], "the no-wipe path must still offer a restart"
+
+
+# --------------------------------------------------------------------------- #
+# Post-restore, per-device DEVICE-NAME prompt (runs before the buffer prompt in
+# the combined post-restore tune-up, gated by the SAME marker).
+# --------------------------------------------------------------------------- #
+def test_get_devicename_reads_value(wiz, monkeypatch):
+    """_get_devicename returns the live core-setting value."""
+    tools = wiz.tools
+    monkeypatch.setattr(tools, "_jsonrpc", lambda m, p: {"result": {"value": "Box7"}})
+    assert tools._get_devicename() == "Box7"
+
+
+def test_get_devicename_bad_shape_returns_empty(wiz, monkeypatch):
+    """A JSON-RPC error / wrong id yields '' (never raises) so callers stay guarded."""
+    tools = wiz.tools
+    monkeypatch.setattr(tools, "_jsonrpc", lambda m, p: {})
+    assert tools._get_devicename() == ""
+
+
+def test_set_devicename_success_writes_both_live_and_file(wiz, monkeypatch):
+    """A successful live set ALSO writes guisettings.xml (both-ways persistence: the live
+    set is durable on tvOS, the file write survives a Fire TV / Android unclean shutdown)."""
+    tools = wiz.tools
+    monkeypatch.setattr(tools, "_jsonrpc", lambda m, p: {"result": True})
+    from resources.lib.modules import _kodisettings
+
+    wrote = []
+    monkeypatch.setattr(
+        _kodisettings,
+        "write_guisetting",
+        lambda path, sid, val: wrote.append((sid, val)) or True,
+    )
+    assert tools._set_devicename("NewName") is True
+    assert wrote == [("services.devicename", "NewName")], "must persist to the file too"
+
+
+def test_set_devicename_failure_does_not_touch_file(wiz, monkeypatch):
+    """When the live set fails, the file is NOT written (no half-applied name on disk)."""
+    tools = wiz.tools
+    monkeypatch.setattr(tools, "_jsonrpc", lambda m, p: {"result": False})
+    from resources.lib.modules import _kodisettings
+
+    monkeypatch.setattr(
+        _kodisettings,
+        "write_guisetting",
+        lambda *a, **k: (_ for _ in ()).throw(
+            AssertionError("must not write the file when the live set failed")
+        ),
+    )
+    assert tools._set_devicename("NewName") is False
+
+
+def test_prompt_devicename_rename_sets_notifies_and_prefills(wiz, monkeypatch):
+    """'Rename' -> keyboard PREFILLED with the current name -> _set_devicename(entered),
+    a confirmation notification, returns True."""
+    tools = wiz.tools
+    monkeypatch.setattr(tools, "_get_devicename", lambda: "OfficeBox")
+    monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: 0)  # Rename
+
+    kb = {}
+
+    def fake_kb(default="", heading="", hidden=False, cancel=""):
+        kb["default"] = default
+        kb["cancel"] = cancel
+        return "Living Room"
+
+    monkeypatch.setattr(tools, "_get_keyboard", fake_kb)
+    sets = []
+    monkeypatch.setattr(tools, "_set_devicename", lambda n: sets.append(n) or True)
+    notes = []
+    monkeypatch.setattr(tools.dialog, "notification", lambda *a, **k: notes.append(a))
+
+    assert tools.prompt_devicename_after_restore() is True
+    assert sets == ["Living Room"]
+    assert kb["default"] == "OfficeBox", (
+        "keyboard must be prefilled with the current name"
+    )
+    assert kb["cancel"] == "OfficeBox", "cancel must fall back to the current name"
+    assert notes, "a confirmation notification must be shown"
+
+
+@pytest.mark.parametrize(
+    "select_ret, kb_ret, why",
+    [
+        (1, "Living Room", "Keep"),
+        (-1, "Living Room", "cancel/back on the first select"),
+        (0, "", "empty entry"),
+        (0, "   ", "whitespace-only entry"),
+        (0, "OfficeBox", "name unchanged"),
+    ],
+)
+def test_prompt_devicename_no_change_paths(wiz, monkeypatch, select_ret, kb_ret, why):
+    """Every non-rename path leaves the device name untouched (no _set_devicename call)."""
+    tools = wiz.tools
+    monkeypatch.setattr(tools, "_get_devicename", lambda: "OfficeBox")
+    monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: select_ret)
+    monkeypatch.setattr(tools, "_get_keyboard", lambda **k: kb_ret)
+    monkeypatch.setattr(
+        tools,
+        "_set_devicename",
+        lambda n: (_ for _ in ()).throw(AssertionError("must not set on: " + why)),
+    )
+    assert tools.prompt_devicename_after_restore() is False, why
+
+
+def test_prompt_devicename_set_fails_shows_error_no_notification(wiz, monkeypatch):
+    """A rejected name (live set returns False) surfaces an error and shows NO success
+    notification (the silent-no-op gap the reviewers flagged)."""
+    tools = wiz.tools
+    monkeypatch.setattr(tools, "_get_devicename", lambda: "OfficeBox")
+    monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: 0)
+    monkeypatch.setattr(tools, "_get_keyboard", lambda **k: "Living Room")
+    monkeypatch.setattr(tools, "_set_devicename", lambda n: False)
+    notes = []
+    monkeypatch.setattr(tools.dialog, "notification", lambda *a, **k: notes.append(a))
+    errs = []
+    monkeypatch.setattr(tools.ui, "error", lambda *a, **k: errs.append(a))
+
+    assert tools.prompt_devicename_after_restore() is False
+    assert notes == [], "no success notification when the set failed"
+    assert errs, "a failure message must be surfaced"
+
+
+def test_prompt_devicename_notification_raise_still_true(wiz, monkeypatch):
+    """If the set succeeds but the notification call raises, the rename still counts (True)."""
+    tools = wiz.tools
+    monkeypatch.setattr(tools, "_get_devicename", lambda: "OfficeBox")
+    monkeypatch.setattr(tools.dialog, "select", lambda *a, **k: 0)
+    monkeypatch.setattr(tools, "_get_keyboard", lambda **k: "Living Room")
+    monkeypatch.setattr(tools, "_set_devicename", lambda n: True)
+
+    def boom(*a, **k):
+        raise RuntimeError("notification backend down")
+
+    monkeypatch.setattr(tools.dialog, "notification", boom)
+    assert tools.prompt_devicename_after_restore() is True
+
+
+def test_prompt_after_restore_runs_devicename_before_buffer(wiz, monkeypatch):
+    """The combined flow runs the device-name step BEFORE the buffer step (identity first)."""
+    tools = wiz.tools
+    tools.mark_buffer_prompt_pending()
+    order = []
+    monkeypatch.setattr(
+        tools, "prompt_devicename_after_restore", lambda: order.append("devicename")
+    )
+    monkeypatch.setattr(
+        tools, "prompt_buffer_after_restore", lambda: order.append("buffer") or True
+    )
+    assert tools.prompt_after_restore() is True
+    assert order == ["devicename", "buffer"], order
+
+
+def test_prompt_after_restore_no_marker_noop(wiz, monkeypatch):
+    """No marker => neither step runs and nothing is prompted."""
+    tools = wiz.tools
+    tools.clear_buffer_prompt_marker()
+    calls = []
+    monkeypatch.setattr(
+        tools, "prompt_devicename_after_restore", lambda: calls.append("d")
+    )
+    monkeypatch.setattr(
+        tools, "prompt_buffer_after_restore", lambda: calls.append("b") or False
+    )
+    assert tools.prompt_after_restore() is False
+    assert calls == []
+
+
+def test_prompt_after_restore_devicename_raise_still_clears_marker(wiz, monkeypatch):
+    """Exactly-once holds even if the device-name step RAISES: the buffer step still runs
+    and clears the marker, so the whole flow never re-fires on the next boot."""
+    tools = wiz.tools
+    tools.mark_buffer_prompt_pending()
+
+    def boom():
+        raise RuntimeError("devicename step blew up")
+
+    monkeypatch.setattr(tools, "prompt_devicename_after_restore", boom)
+    monkeypatch.setattr(
+        tools.dialog, "select", lambda *a, **k: 2
+    )  # buffer: Keep current
+
+    assert tools.prompt_after_restore() is True
+    assert not tools.buffer_prompt_pending(), "marker must be cleared despite the raise"
+
+
+def test_write_guisetting_updates_existing_and_clears_default(wiz, tmp_path):
+    """write_guisetting overwrites an existing <setting> and drops its default='true' marker
+    so Kodi treats the value as user-set."""
+    import xml.etree.ElementTree as ET
+
+    from resources.lib.modules import _kodisettings
+
+    p = tmp_path / "guisettings.xml"
+    p.write_text(
+        '<settings version="2">'
+        '<setting id="services.devicename" default="true">Kodi</setting>'
+        "</settings>"
+    )
+    assert _kodisettings.write_guisetting(str(p), "services.devicename", "Living Room")
+    node = [
+        n
+        for n in ET.parse(str(p)).getroot().iter("setting")
+        if n.get("id") == "services.devicename"
+    ][0]
+    assert node.text == "Living Room"
+    assert node.get("default") is None
+
+
+def test_write_guisetting_creates_missing_element(wiz, tmp_path):
+    """If the setting isn't present yet, it is created."""
+    import xml.etree.ElementTree as ET
+
+    from resources.lib.modules import _kodisettings
+
+    p = tmp_path / "guisettings.xml"
+    p.write_text(
+        '<settings version="2"><setting id="other.thing">x</setting></settings>'
+    )
+    assert _kodisettings.write_guisetting(str(p), "services.devicename", "Box9")
+    node = [
+        n
+        for n in ET.parse(str(p)).getroot().iter("setting")
+        if n.get("id") == "services.devicename"
+    ]
+    assert node and node[0].text == "Box9"
+
+
+def test_write_guisetting_missing_file_returns_false(wiz, tmp_path):
+    """A missing guisettings.xml is a guarded no-op (returns False, never raises)."""
+    from resources.lib.modules import _kodisettings
+
+    assert (
+        _kodisettings.write_guisetting(
+            str(tmp_path / "nope.xml"), "services.devicename", "X"
+        )
+        is False
+    )

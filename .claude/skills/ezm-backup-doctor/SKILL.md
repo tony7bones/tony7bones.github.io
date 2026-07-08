@@ -75,8 +75,9 @@ size> actual=0` on EVERY attempt, `xbmcvfs.Stat()` on the source has always
    because `userdata/` is the LAST ~70 files of the zip, this crash also presents as
    "views/skin settings did not restore" (the extract died before reaching them).
    Full mechanism + all the restore-flow features (opt-in clean wipe, wipe progress
-   bar, userdata-first extract, honest restart prompt, post-restore buffer retune):
-   `docs/playbooks/ezm-restore-hardening.md`.
+   bar, userdata-first extract, honest restart prompt, post-restore tune-up = the
+   combined device-name rename + video-cache buffer retune, one exactly-once
+   "Restore Complete" prompt): `docs/playbooks/ezm-restore-hardening.md`.
 
 ## Triage order
 
