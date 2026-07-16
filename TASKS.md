@@ -224,10 +224,10 @@ Support/Kodi.backup-20260715-124124` (deletable once confirmed).
       configs/ subdir), `test_secret_leak.py` now forbids tracking any
       `instance-settings*.xml`, all tags deleted, history squashed to a
       single root commit and force-pushed - the credential and the ~62MB of
-      binary-zip history are gone from the reachable repo. NOTE (owner):
-      GitHub can keep orphaned commits fetchable by SHA until support purges
-      them, and old clones/forks retain history - ROTATE the IPTV provider
-      credentials to close it fully.
+      binary-zip history are gone from the reachable repo. The leaked IPTV
+      provider credentials were ROTATED by the owner 2026-07-16, closing the
+      exposure fully (orphaned commits fetchable by SHA now carry dead
+      credentials).
 
 ## P2 - Pre-static hub cleanup - 🔄 IN PROGRESS (started 2026-07-15)
 
@@ -250,8 +250,7 @@ generated from a minimal, truthful repo.
 - [x] Leaked credential history remediation + history squash (2026-07-16) - done
       together: the file is untracked/gitignored, all tags deleted, and history
       squashed to a single root commit (see the post-install cleanup entry above).
-      REMAINING OWNER ACTION: rotate the IPTV provider credentials (orphaned
-      commits can stay fetchable by SHA on GitHub, and old clones keep history).
+      Credentials rotated by the owner 2026-07-16 - remediation COMPLETE.
 - ~~⛔ DO NOT CLEAN: anything an old engine bundle references~~ LIFTED by the
   2026-07-15 owner reframe (no fleet convergence; fresh installs only). The EZM++
   metadata shim `addons/script.ezmaintenanceplusplus/` stays because the catalog
