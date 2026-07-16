@@ -89,12 +89,12 @@ its `addon.xml`/zip under `addons/hosted/<id>/`).
 
 ### Source areas
 
-| Path                                              | Purpose                                                                                                       |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `addons/<addon-id>/`                              | Any dir with an `addon.xml` is built into a zip and listed in `addons.xml`.                                   |
-| `addons/hosted/<id>/`                             | Mirrored third-party-repo trees (not auto-indexed/zipped); includes the estuary7 / EZM++ metadata mirrors.    |
-| `dropbox/repositories/`                           | Third-party repository installer zips (Kodi installs them manually). Mirrored to the served `/repositories/`. |
-| `dropbox/media/`, `dropbox/iptv/`, `dropbox/rss/` | Hand-authored assets. Mirrored to the served root and auto-indexed for file-manager browsing.                 |
+| Path                            | Purpose                                                                                                                                                                                                   |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `addons/<addon-id>/`            | Any dir with an `addon.xml` is built into a zip and listed in `addons.xml`.                                                                                                                               |
+| `addons/hosted/<id>/`           | Mirrored third-party-repo trees (not auto-indexed/zipped); includes the estuary7 / EZM++ metadata mirrors.                                                                                                |
+| `dropbox/repositories/`         | Third-party repository installer zips (Kodi installs them manually). Mirrored to the served `/repositories/`.                                                                                             |
+| `dropbox/iptv/`, `dropbox/rss/` | Hand-authored assets. Mirrored to the served root and auto-indexed for file-manager browsing. (`dropbox/media/` retired 2026-07-16; the share keeps its existing copies - the sync is strictly additive.) |
 
 ### Generated files (must be committed)
 
