@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+venv/
+.venv/
+
+# Pytest
+.pytest_cache/
+
+# Ruff
+.ruff_cache/
+
+# macOS
+.DS_Store
+
+# Node
+node_modules/
+
+# Private IPTV settings — kept locally, never published or committed. The CI
+# mirror honors .gitignore (and the structural secret gate excludes the
+# basename pattern everywhere as a backstop), so the file can live in the
+# canvas for local use without ever reaching git or the served site.
+dropbox/iptv/configs/instance-settings*.xml
+instance-settings*.xml
+.coverage
+
+# Secrets / local env — never commit
+.env
+.env.*
+# tony7bones.env (per-device) + any other *.env master file
+*.env
+!.env.example
+!.env.device.example
+# generated secret IPTV outputs (curated m3u + instance-settings)
+/iptv-build/
+# curated playlists embed provider credentials
+*_custom.m3u
+
+# NOTE: docs/ is intentionally TRACKED. The playbooks under docs/playbooks/ are
+# real project deliverables and must be committed. Tracked/committed files do not
+# trip the pre-push generated-files staleness gate (that only flags UNTRACKED
+# output of generate_repo.py); the doc paths are also outside the CI workflow's
+# path filter, so committing them triggers no CI run.
+
+# CI site-build output (build_site.py); never committed - the whole point of
+# the Pages-from-Actions conversion is that the served tree is built, not tracked.
+/_site/
+/_site2/

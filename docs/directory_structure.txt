@@ -1,0 +1,12 @@
+# order: 
+# Kodi | Tivimate | Stremio | Plex | SmartTube | X-plore
+
+# device root:
+
+/storage/emulated/0/_T7B/.env.<device>  <-- Device .env file 
+/storage/emulated/0/_T7B/kodi/
+/storage/emulated/0/_T7B/kodi/backups
+/storage/emulated/0/_T7B/kodi/iptv
+/storage/emulated/0/_T7B/kodi/media
+/storage/emulated/0/_T7B/kodi/repositories
+/storage/emulated/0/_T7B/kodi/rss

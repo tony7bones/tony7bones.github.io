@@ -1,0 +1,40 @@
+#!/bin/sh
+# Release safety gate — runs before every push.
+#
+# Blocks the push unless: the test suite passes, the tooling lints clean, the
+# generated files are byte-reproducible (no stale output), and every changed
+# add-on bumped its version (check_versions.py).
+#
+# Install once after cloning:
+#     git config core.hooksPath .githooks
+#
+# Bypass in a genuine emergency only:  git push --no-verify
+set -e
+
+echo "[pre-push] running tests..."
+python3 -m pytest _tools/ -q
+
+echo "[pre-push] linting..."
+ruff check _tools/
+
+echo "[pre-push] checking generated files are up to date..."
+python3 _tools/generate_repo.py >/dev/null
+if [ -n "$(git status --porcelain)" ]; then
+  echo "[pre-push] BLOCKED: generated files are stale." >&2
+  echo "           Run 'python3 _tools/generate_repo.py' and commit the result." >&2
+  git status --porcelain >&2
+  exit 1
+fi
+
+echo "[pre-push] validating every changed add-on bumped its version..."
+python3 _tools/check_versions.py
+
+echo "[pre-push] OK — push allowed."
+
+# Best-effort: refresh the KodiShare backup mirror (installer + canvas +
+# sideload app zips). This covers add-on releases, which publish via plain
+# `git push` and never run publish_canvas.py. Main only, and it must NEVER
+# block a push - an unmounted share is normal.
+if [ "$(git rev-parse --abbrev-ref HEAD)" = "main" ]; then
+  python3 _tools/sync_share.py || true
+fi

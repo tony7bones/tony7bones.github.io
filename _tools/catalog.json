@@ -1,0 +1,262 @@
+[
+  {
+    "id": "repository.709",
+    "username": "Zaxxon709",
+    "repository": "zaxxon",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/zips/{id}/",
+    "assets": {
+      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/zips/{id}/{id}-{version}.zip"
+    }
+  },
+  {
+    "id": "repository.bugatsinho",
+    "username": "bugatsinho",
+    "repository": "bugatsinho.github.io",
+    "branch": "master",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/{id}/",
+    "assets": {
+      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/{id}-{version}.zip"
+    }
+  },
+  {
+    "id": "repository.cocoscrapers",
+    "username": "not-coco-joe",
+    "repository": "repository.cocoscrapers",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/zips/{id}/",
+    "assets": {
+      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/zips/{id}/{id}-{version}.zip"
+    }
+  },
+  {
+    "id": "repository.ivarbrandt",
+    "username": "ivarbrandt",
+    "repository": "ivarbrandt.github.io",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/packages/{id}/",
+    "assets": {
+      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/packages/{id}/{id}-{version}.zip"
+    }
+  },
+  {
+    "id": "repository.kodifitzwell",
+    "username": "tony7bones",
+    "repository": "tony7bones.github.io",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
+    "assets": {
+      "zip": "https://kodifitzwell.github.io/repo/repository.kodifitzwell-{version}.zip"
+    }
+  },
+  {
+    "id": "repository.peno64",
+    "username": "peno64",
+    "repository": "repository.peno64",
+    "branch": "master",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/repo/{id}/",
+    "assets": {
+      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/{id}-{version}.zip"
+    }
+  },
+  {
+    "id": "repository.umbrella",
+    "username": "tony7bones",
+    "repository": "tony7bones.github.io",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
+    "assets": {
+      "zip": "https://raw.githubusercontent.com/umbrellaplug/umbrellaplug.github.io/master/repository.umbrella-{version}.zip"
+    }
+  },
+  {
+    "id": "repository.diggz",
+    "username": "tony7bones",
+    "repository": "tony7bones.github.io",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
+    "assets": {
+      "zip": "https://raw.githubusercontent.com/nebulous42069/Omega/main/omega/zips/repository.diggz/repository.diggz-{version}.zip"
+    }
+  },
+  {
+    "id": "repository.Magnetic",
+    "username": "tony7bones",
+    "repository": "tony7bones.github.io",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
+    "assets": {
+      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/{id}.zip"
+    }
+  },
+  {
+    "id": "repository.kodinerds",
+    "username": "tony7bones",
+    "repository": "tony7bones.github.io",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
+    "assets": {
+      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/{id}.zip"
+    }
+  },
+  {
+    "id": "repository.loop",
+    "username": "tony7bones",
+    "repository": "tony7bones.github.io",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
+    "assets": {
+      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/{id}.zip"
+    }
+  },
+  {
+    "id": "repository.redwizard",
+    "username": "tony7bones",
+    "repository": "tony7bones.github.io",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
+    "assets": {
+      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/{id}.zip"
+    }
+  },
+  {
+    "id": "script.skinshortcuts",
+    "username": "tony7bones",
+    "repository": "tony7bones.github.io",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
+    "assets": {
+      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/{id}-{version}.zip"
+    }
+  },
+  {
+    "id": "script.image.resource.select",
+    "username": "tony7bones",
+    "repository": "tony7bones.github.io",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
+    "assets": {
+      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/{id}-{version}.zip"
+    }
+  },
+  {
+    "id": "script.module.autocompletion",
+    "username": "tony7bones",
+    "repository": "tony7bones.github.io",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
+    "assets": {
+      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/{id}-{version}.zip"
+    }
+  },
+  {
+    "id": "script.module.requests",
+    "username": "tony7bones",
+    "repository": "tony7bones.github.io",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
+    "assets": {
+      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/{id}-{version}.zip"
+    }
+  },
+  {
+    "id": "script.module.urllib3",
+    "username": "tony7bones",
+    "repository": "tony7bones.github.io",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
+    "assets": {
+      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/{id}-{version}.zip"
+    }
+  },
+  {
+    "id": "script.module.idna",
+    "username": "tony7bones",
+    "repository": "tony7bones.github.io",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
+    "assets": {
+      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/{id}-{version}.zip"
+    }
+  },
+  {
+    "id": "script.module.chardet",
+    "username": "tony7bones",
+    "repository": "tony7bones.github.io",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
+    "assets": {
+      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/{id}-{version}.zip"
+    }
+  },
+  {
+    "id": "script.module.certifi",
+    "username": "tony7bones",
+    "repository": "tony7bones.github.io",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
+    "assets": {
+      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/{id}-{version}.zip"
+    }
+  },
+  {
+    "id": "script.module.simplecache",
+    "username": "tony7bones",
+    "repository": "tony7bones.github.io",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
+    "assets": {
+      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/{id}-{version}.zip"
+    }
+  },
+  {
+    "id": "script.module.simpleeval",
+    "username": "tony7bones",
+    "repository": "tony7bones.github.io",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
+    "assets": {
+      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/{id}-{version}.zip"
+    }
+  },
+  {
+    "id": "script.module.unidecode",
+    "username": "tony7bones",
+    "repository": "tony7bones.github.io",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
+    "assets": {
+      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/{id}-{version}.zip"
+    }
+  },
+  {
+    "id": "skin.estuary7",
+    "username": "tony7bones",
+    "repository": "tony7bones.github.io",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
+    "assets": {
+      "zip": "https://github.com/moquette/estuary7/releases/download/v{version}/{id}-{version}.zip"
+    }
+  },
+  {
+    "id": "repository.tony7bones",
+    "username": "tony7bones",
+    "repository": "tony7bones.github.io",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/{id}/",
+    "assets": {
+      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/{id}/{id}-{version}.zip"
+    }
+  },
+  {
+    "id": "script.ezmaintenanceplusplus",
+    "username": "tony7bones",
+    "repository": "tony7bones.github.io",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
+    "assets": {
+      "zip": "https://github.com/moquette/ezmaintenanceplusplus/releases/download/v{version}/{id}-{version}.zip"
+    }
+  }
+]

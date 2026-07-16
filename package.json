@@ -1,0 +1,17 @@
+{
+  "name": "tony7bones-repo",
+  "private": true,
+  "description": "Script runner for the Tony.7.Bones Kodi add-on repository. The repo itself is static (GitHub Pages); these scripts wrap the Python release tooling. Each add-on's version lives only in its addons/<id>/addon.xml - intentionally NOT mirrored here, to avoid another place it could drift.",
+  "scripts": {
+    "release": "python3 _tools/release.py",
+    "release:dry": "python3 _tools/release.py --dry-run",
+    "release:push": "python3 _tools/release.py --push",
+    "publish": "python3 _tools/publish_canvas.py",
+    "publish:dry": "python3 _tools/publish_canvas.py --dry-run",
+    "check": "python3 _tools/release.py check",
+    "build": "python3 _tools/generate_repo.py",
+    "test": "python3 -m pytest _tools/ -q",
+    "lint": "ruff check _tools/",
+    "verify": "npm run test && npm run lint && npm run build && npm run check"
+  }
+}

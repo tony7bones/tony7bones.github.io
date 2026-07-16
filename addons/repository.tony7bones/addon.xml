@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<addon id="repository.tony7bones" name="Tony.7.Bones repository" provider-name="Tony.7.Bones" version="3.0.0">
+    <extension point="xbmc.addon.repository">
+        <dir>
+            <info>https://tony7bones.github.io/static/addons.xml</info>
+            <checksum>https://tony7bones.github.io/static/addons.xml.md5</checksum>
+            <datadir zip="true">https://tony7bones.github.io/static/</datadir>
+        </dir>
+    </extension>
+    <extension point="xbmc.addon.metadata">
+        <platform>all</platform>
+        <summary lang="en">Welcome to Tony.7.Bones repository. Enjoy!</summary>
+        <description lang="en">Static Kodi repository served from GitHub Pages. Add-on metadata and zips are plain files - no on-box service, no local proxy.</description>
+        <news>
+v3.0.0: Static repository - the on-box proxy engine is retired. Kodi reads add-ons directly from the GitHub Pages static tree.
+        </news>
+        <assets>
+            <icon>icon.png</icon>
+            <fanart>fanart.jpg</fanart>
+        </assets>
+    </extension>
+</addon>
