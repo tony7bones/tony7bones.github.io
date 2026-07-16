@@ -35,7 +35,7 @@ It currently has **26 entries** (verify with `python3 -c "import json;print(len(
 
 The repo has two committed source trees, each with a different job:
 
-- **`dropbox/`** is the owner's **pristine human canvas**. It holds ONLY hand-authored installable content (`repositories/` third-party repo installer zips, `media/`, `iptv/`, `rss/`, `zips/`) and NEVER any generated files (no `index.html`, no checksums). The CI build (`build_site.py`) **mirrors `dropbox/` 1:1 into the artifact ROOT**, which GitHub Pages serves at the bare URL `https://tony7bones.github.io/` - the mirror is generated fresh every deploy and is NEVER committed. Pointing Kodi's File Manager at the bare URL therefore shows exactly the canvas: `repositories/ media/ iptv/ rss/ zips/` plus the install zip and a generated Kodi index per folder. The mirror **honors `.gitignore`**, so a secret-bearing source file (e.g. `dropbox/iptv/configs/instance-settings*.xml`, which is gitignored and untracked) lives in the canvas for local use but is never committed or copied into the served tree.
+- **`dropbox/`** is the owner's **pristine human canvas**. It holds ONLY hand-authored installable content (`repositories/` third-party repo installer zips and `rss/`) and NEVER any generated files (no `index.html`, no checksums). The CI build (`build_site.py`) **mirrors `dropbox/` 1:1 into the artifact ROOT**, which GitHub Pages serves at the bare URL `https://tony7bones.github.io/` - the mirror is generated fresh every deploy and is NEVER committed. Pointing Kodi's File Manager at the bare URL therefore shows exactly the canvas: `repositories/ rss/` plus the install zip and a generated Kodi index per folder. The mirror **honors `.gitignore`**, so gitignored local files are never committed or copied into the served tree. (`media/`, `zips/`, and `iptv/` were retired from the canvas 2026-07-16: everything private or generated - IPTV configs, playlists, guides, settings - lives ONLY on the KodiShare, reachable via LAN/Tailscale.)
 - **`addons/`** is the add-on tree. It holds the add-on source, the built per-addon zips, `addons.xml`/`.sha256`/`.md5`, and the mirrored third-party-repo trees under `addons/hosted/<id>/`. It is NOT listed at the bare URL.
 
 ### Live add-ons under `addons/`
@@ -133,12 +133,12 @@ Note: pages.yml has NO path filter - every push to main builds and deploys (any 
 
 ### Source areas
 
-| Path                                              | Purpose                                                                                                                                                                                                                                                |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `addons/<addon-id>/`                              | Any dir with an `addon.xml` is built into a zip and listed in `addons/addons.xml`. Currently `repository.tony7bones` and the `script.ezmaintenanceplusplus` metadata mirror.                                                                           |
-| `addons/hosted/<id>/`                             | Mirrored third-party-repo trees (`addon.xml` + zip). Static, committed by hand, NOT zipped or indexed by the generator (`hosted` is the sole `_ADDONS_SPECIAL` entry). Includes the `skin.estuary7` / `script.ezmaintenanceplusplus` metadata mirrors. |
-| `dropbox/repositories/`                           | Hand-authored third-party repository installer zips. Not in `addons.xml`; Kodi installs them manually via File Manager. Mirrored 1:1 to the served `/repositories/`.                                                                                   |
-| `dropbox/media/`, `dropbox/iptv/`, `dropbox/rss/` | Hand-authored asset dirs. Mirrored to the served root and recursively auto-indexed for File-Manager browsing. Git-ignored files are kept locally and never copied into the served tree.                                                                |
+| Path                    | Purpose                                                                                                                                                                                                                                                |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `addons/<addon-id>/`    | Any dir with an `addon.xml` is built into a zip and listed in `addons/addons.xml`. Currently `repository.tony7bones` and the `script.ezmaintenanceplusplus` metadata mirror.                                                                           |
+| `addons/hosted/<id>/`   | Mirrored third-party-repo trees (`addon.xml` + zip). Static, committed by hand, NOT zipped or indexed by the generator (`hosted` is the sole `_ADDONS_SPECIAL` entry). Includes the `skin.estuary7` / `script.ezmaintenanceplusplus` metadata mirrors. |
+| `dropbox/repositories/` | Hand-authored third-party repository installer zips. Not in `addons.xml`; Kodi installs them manually via File Manager. Mirrored 1:1 to the served `/repositories/`.                                                                                   |
+| `dropbox/rss/`          | Hand-authored asset dir. Mirrored to the served root and recursively auto-indexed for File-Manager browsing. Git-ignored files are kept locally and never copied into the served tree. (`media/`, `iptv/`, `zips/` retired 2026-07-16.)                |
 
 `dropbox/` is **pristine**: the build NEVER writes generated files (index.html, checksums) back into it; `build_site.py` mirrors it into the CI artifact ROOT, which is what GitHub Pages serves at the bare URL. Nothing mirror-related is committed.
 
@@ -180,11 +180,6 @@ Release: `release.py`, `release_lib.py`, `release_detect.py`, `check_versions.py
 
 1. Drop the `.zip` into `dropbox/repositories/` (the canvas - the served copy is generated in CI).
 2. Commit it (`publish_canvas.py -m "..."` does commit+push in one step); CI mirrors the canvas and regenerates the served `repositories/` listing on deploy.
-
-### Adding images to media
-
-1. Drop the image into `dropbox/media/`.
-2. Commit it (or `publish_canvas.py`); CI mirrors it into the served `media/` on deploy.
 
 ## Playbooks + skills that still apply
 

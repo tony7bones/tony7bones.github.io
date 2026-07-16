@@ -70,13 +70,15 @@ zips, `addons.xml`, and the mirrored third-party-repo trees under
 ### The `dropbox/` canvas and the bare URL
 
 `dropbox/` is the owner's **pristine human canvas**: it holds ONLY hand-authored
-installable content (`repositories/` third-party repo installer zips, `media/`,
-`iptv/`, `rss/`) and NEVER any generated files. The build mirrors `dropbox/` 1:1
-to the repo ROOT, which is what GitHub Pages serves at the bare URL. Pointing
-Kodi's File Manager at the bare URL shows exactly the canvas plus the install zip
-and a generated `index.html` per folder. The mirror honors `.gitignore`, so
-secrets (e.g. `dropbox/iptv/instance-settings*.xml`) are kept locally and never
-copied into the served tree.
+installable content (`repositories/` third-party repo installer zips and `rss/`)
+and NEVER any generated files. The build mirrors `dropbox/` 1:1 to the repo
+ROOT, which is what GitHub Pages serves at the bare URL. Pointing Kodi's File
+Manager at the bare URL shows exactly the canvas plus the install zip and a
+generated `index.html` per folder. The mirror honors `.gitignore`, so
+gitignored local files are never copied into the served tree.
+(`media/`, `zips/`, and `iptv/` retired from the canvas 2026-07-16: everything
+private or generated lives on the KodiShare, reachable only via LAN/Tailscale -
+the public site serves `repositories/` and `rss/` only.)
 
 ### The static catalog (`/static/`)
 
@@ -89,12 +91,12 @@ its `addon.xml`/zip under `addons/hosted/<id>/`).
 
 ### Source areas
 
-| Path                            | Purpose                                                                                                                                                                                                   |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `addons/<addon-id>/`            | Any dir with an `addon.xml` is built into a zip and listed in `addons.xml`.                                                                                                                               |
-| `addons/hosted/<id>/`           | Mirrored third-party-repo trees (not auto-indexed/zipped); includes the estuary7 / EZM++ metadata mirrors.                                                                                                |
-| `dropbox/repositories/`         | Third-party repository installer zips (Kodi installs them manually). Mirrored to the served `/repositories/`.                                                                                             |
-| `dropbox/iptv/`, `dropbox/rss/` | Hand-authored assets. Mirrored to the served root and auto-indexed for file-manager browsing. (`dropbox/media/` retired 2026-07-16; the share keeps its existing copies - the sync is strictly additive.) |
+| Path                    | Purpose                                                                                                                                                                                                                           |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `addons/<addon-id>/`    | Any dir with an `addon.xml` is built into a zip and listed in `addons.xml`.                                                                                                                                                       |
+| `addons/hosted/<id>/`   | Mirrored third-party-repo trees (not auto-indexed/zipped); includes the estuary7 / EZM++ metadata mirrors.                                                                                                                        |
+| `dropbox/repositories/` | Third-party repository installer zips (Kodi installs them manually). Mirrored to the served `/repositories/`.                                                                                                                     |
+| `dropbox/rss/`          | Hand-authored assets. Mirrored to the served root and auto-indexed for file-manager browsing. (`dropbox/media/` and `dropbox/iptv/` retired 2026-07-16; private/generated content lives only on the KodiShare via LAN/Tailscale.) |
 
 ### Generated files (must be committed)
 
