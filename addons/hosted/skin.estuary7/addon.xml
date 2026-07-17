@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<addon id="skin.estuary7" version="1.0.59" name="Estuary 7" provider-name="Tony.7.Bones">
+<addon id="skin.estuary7" version="1.0.61" name="Estuary 7" provider-name="Tony.7.Bones">
 	<requires>
 		<import addon="xbmc.python" version="3.0.1"/>
 		<import addon="xbmc.gui" version="5.17.0"/>
@@ -50,7 +50,7 @@
 				<screenshot>resources/screenshot-08.jpg</screenshot>
 			</assets>
         <news>
-v1.0.59: the changelog inside the skin package now points at the release history instead of repeating an old release's text. No visual or behavioral changes.
+v1.0.61: the watched check mark on video covers moved from the bottom-left to the top-right of the poster, and a new Skin Settings switch, Hide watched check mark on covers, can remove it entirely.
         </news>
 	</extension>
 </addon>
