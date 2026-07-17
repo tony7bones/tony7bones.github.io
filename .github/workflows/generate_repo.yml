@@ -39,17 +39,13 @@ jobs:
       - name: Run tests
         run: python3 -m pytest _tools/ -q
 
-      # The full suite above already runs these; this named re-run exists so a
-      # broken setup-rewrite KEYSTONE invariant (Express/Guided no-fork +
-      # cadence + end-state equivalence; the library/bootstrap version guard;
-      # the installed-state probes incl. assert_box_complete) fails as its own
-      # loudly-named check, not a needle in the suite log. Phase 6.
-      - name: Setup invariant gates (no-fork / version guard / probes)
-        run: >
-          python3 -m pytest -q
-          _tools/test_no_fork.py
-          _tools/test_version_guard.py
-          _tools/test_setup_probes.py
+      # NOTE: the old "Setup invariant gates" re-run step was removed 2026-07-16.
+      # It re-ran _tools/test_no_fork.py / test_version_guard.py /
+      # test_setup_probes.py as a loudly-named subset, but all three were DELETED
+      # with the Setup add-on family (Express/Guided wizards, library/bootstrap),
+      # so the step failed every push with "file not found" - it had been red for
+      # weeks. The full suite above (pytest _tools/ -q) already runs every gate
+      # that still exists; there is nothing left to re-run separately.
 
       - name: Lint
         run: ruff check _tools/
