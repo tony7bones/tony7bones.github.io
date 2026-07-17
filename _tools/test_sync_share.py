@@ -275,8 +275,11 @@ ADDON_XML = '<?xml version="1.0"?>\n<addon id="{aid}" version="{ver}" name="X" p
 def _repo_with_addons(tmp_path):
     root = _repo(tmp_path)
     for aid, ver in (
-        ("script.ezmaintenanceplusplus", "2026.07.09.1"),
+        ("plugin.video.demo", "2026.07.09.1"),
         ("script.module.tony7bones", "1.8.0"),
+        # A release-managed add-on (source in a sibling repo, in-repo zip is a
+        # stub): sync_apps must SKIP it even when a copy is present in apps/.
+        ("script.ezmaintenanceplusplus", "2026.07.09.1"),
     ):
         d = root / "addons" / aid
         d.mkdir(parents=True)
@@ -297,11 +300,11 @@ def test_apps_opt_in_by_presence_refreshes_and_prunes(tmp_path):
     root = _repo_with_addons(tmp_path)
     apps = tmp_path / "apps"
     apps.mkdir()
-    (apps / "script.ezmaintenanceplusplus-2026.06.30.28.zip").write_bytes(b"STALE")
+    (apps / "plugin.video.demo-2026.06.30.28.zip").write_bytes(b"STALE")
     (apps / "some.foreign.tool-9.9.zip").write_bytes(b"FOREIGN")
     actions = sync_share.sync_apps(str(root), str(apps))
-    assert ("copied", "script.ezmaintenanceplusplus-2026.07.09.1.zip") in actions
-    assert ("pruned", "script.ezmaintenanceplusplus-2026.06.30.28.zip") in actions
+    assert ("copied", "plugin.video.demo-2026.07.09.1.zip") in actions
+    assert ("pruned", "plugin.video.demo-2026.06.30.28.zip") in actions
     # The library was NOT opted in (no zip present) -> never added.
     assert not any("script.module.tony7bones" in n for _, n in actions)
     assert not (apps / "script.module.tony7bones-1.8.0.zip").exists()
@@ -309,15 +312,35 @@ def test_apps_opt_in_by_presence_refreshes_and_prunes(tmp_path):
     assert (apps / "some.foreign.tool-9.9.zip").read_bytes() == b"FOREIGN"
 
 
+def test_apps_release_managed_addon_is_skipped_even_if_present(tmp_path):
+    """A release-managed add-on (source in a sibling repo; in-repo zip is a
+    non-installable stub) is NEVER copied or pruned by sync_apps, even when a
+    copy is already opted-in in apps/. The kodishare-sync skill owns its apps/
+    copy from the real GitHub Release, so sync_apps must not fight it with the
+    stub. Regression guard for the broken-restore-zip class."""
+    root = _repo_with_addons(tmp_path)
+    apps = tmp_path / "apps"
+    apps.mkdir()
+    real = apps / "script.ezmaintenanceplusplus-2026.07.17.5.zip"
+    real.write_bytes(b"REAL-RELEASE-FROM-SKILL")
+    actions = sync_share.sync_apps(str(root), str(apps))
+    # No action of any kind touches the release-managed add-on.
+    assert not any("script.ezmaintenanceplusplus" in n for _, n in actions)
+    # The skill-placed real zip is left exactly as-is (not overwritten/pruned).
+    assert real.read_bytes() == b"REAL-RELEASE-FROM-SKILL"
+    # And the stub version from the repo is never introduced.
+    assert not (apps / "script.ezmaintenanceplusplus-2026.07.09.1.zip").exists()
+
+
 def test_apps_idempotent_and_dry_run(tmp_path):
     root = _repo_with_addons(tmp_path)
     apps = tmp_path / "apps"
     apps.mkdir()
-    (apps / "script.ezmaintenanceplusplus-2026.06.30.28.zip").write_bytes(b"STALE")
+    (apps / "plugin.video.demo-2026.06.30.28.zip").write_bytes(b"STALE")
     dry = sync_share.sync_apps(str(root), str(apps), dry_run=True)
-    assert ("copied", "script.ezmaintenanceplusplus-2026.07.09.1.zip") in dry
-    assert not (apps / "script.ezmaintenanceplusplus-2026.07.09.1.zip").exists()
-    assert (apps / "script.ezmaintenanceplusplus-2026.06.30.28.zip").exists()
+    assert ("copied", "plugin.video.demo-2026.07.09.1.zip") in dry
+    assert not (apps / "plugin.video.demo-2026.07.09.1.zip").exists()
+    assert (apps / "plugin.video.demo-2026.06.30.28.zip").exists()
     sync_share.sync_apps(str(root), str(apps))
     again = sync_share.sync_apps(str(root), str(apps))
     assert all(a == "unchanged" for a, _ in again)
@@ -325,7 +348,7 @@ def test_apps_idempotent_and_dry_run(tmp_path):
 
 def test_apps_missing_built_zip_is_error_and_no_prune(tmp_path):
     root = _repo_with_addons(tmp_path)
-    aid = "script.ezmaintenanceplusplus"
+    aid = "plugin.video.demo"
     (root / "addons" / aid / f"{aid}-2026.07.09.1.zip").unlink()
     apps = tmp_path / "apps"
     apps.mkdir()
@@ -340,7 +363,7 @@ def test_apps_copy_failure_skips_prune(tmp_path, monkeypatch):
     root = _repo_with_addons(tmp_path)
     apps = tmp_path / "apps"
     apps.mkdir()
-    (apps / "script.ezmaintenanceplusplus-2026.06.30.28.zip").write_bytes(b"STALE")
+    (apps / "plugin.video.demo-2026.06.30.28.zip").write_bytes(b"STALE")
 
     def boom(src, dst):
         raise OSError("share went away")
@@ -348,7 +371,7 @@ def test_apps_copy_failure_skips_prune(tmp_path, monkeypatch):
     monkeypatch.setattr(sync_share.shutil, "copyfile", boom)
     actions = sync_share.sync_apps(str(root), str(apps))
     assert any(a.startswith("error:") for a, _ in actions)
-    assert (apps / "script.ezmaintenanceplusplus-2026.06.30.28.zip").exists()
+    assert (apps / "plugin.video.demo-2026.06.30.28.zip").exists()
 
 
 def test_best_effort_covers_both_dirs(tmp_path, capsys):
@@ -357,15 +380,15 @@ def test_best_effort_covers_both_dirs(tmp_path, capsys):
     share.mkdir()
     apps = tmp_path / "apps"
     apps.mkdir()
-    (apps / "script.ezmaintenanceplusplus-2026.06.30.28.zip").write_bytes(b"STALE")
+    (apps / "plugin.video.demo-2026.06.30.28.zip").write_bytes(b"STALE")
     sync_share.best_effort(
         str(root), str(share), str(apps), str(tmp_path / "root-missing")
     )
     out = capsys.readouterr().out
     assert "repository.tony7bones-2.2.6.zip" in out
-    assert "script.ezmaintenanceplusplus-2026.07.09.1.zip" in out
-    assert (apps / "script.ezmaintenanceplusplus-2026.07.09.1.zip").exists()
-    assert not (apps / "script.ezmaintenanceplusplus-2026.06.30.28.zip").exists()
+    assert "plugin.video.demo-2026.07.09.1.zip" in out
+    assert (apps / "plugin.video.demo-2026.07.09.1.zip").exists()
+    assert not (apps / "plugin.video.demo-2026.06.30.28.zip").exists()
 
 
 # -------------------------------------------------------------- canvas assets

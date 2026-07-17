@@ -58,6 +58,17 @@ SHARE_ROOT = "/Volumes/KodiShare"
 SHARE_DIR = SHARE_ROOT + "/repositories"
 APPS_DIR = SHARE_ROOT + "/apps"
 
+# Add-ons whose real source + installable release live in a SIBLING repo, kept
+# here only as a metadata mirror (addon.xml + icon). The zip generate_repo.py
+# builds for such an id is a tiny NON-INSTALLABLE stub, so sync_apps must never
+# copy it into apps/ - a wiped box sideloading it would get a broken package.
+# The real, current release zip is placed into apps/ by the kodishare-sync skill
+# (which pulls the GitHub Release asset). script.ezmaintenanceplusplus is the
+# restore tool: its source was extracted to moquette/ezmaintenanceplusplus on
+# 2026-07-14, leaving the stub behind. Keep sync_apps and the skill from fighting
+# over the same apps/ filename by owning it in exactly one place - the skill.
+_RELEASE_MANAGED = frozenset({"script.ezmaintenanceplusplus"})
+
 # Canvas asset dirs mirrored 1:1 (additive) to same-named share dirs. NOT
 # iptv/ - the mini's populator daemon owns the share's iptv output.
 CANVAS_ASSET_DIRS = ("media", "rss")
@@ -188,6 +199,8 @@ def sync_apps(repo_root: str = REPO, apps_dir: str = APPS_DIR, dry_run: bool = F
     existing = sorted(os.listdir(apps_dir))
 
     for aid, version in _first_party_versions(repo_root).items():
+        if aid in _RELEASE_MANAGED:
+            continue  # owned by the kodishare-sync skill; in-repo zip is a stub
         mine = [n for n in existing if n.startswith(aid + "-") and n.endswith(".zip")]
         if not mine:
             continue  # not opted in
