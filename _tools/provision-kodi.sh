@@ -218,47 +218,22 @@ _adb shell "ls $K/addons/script.module.tony7bones/lib/tony7bones/system.py" >/de
   die "Library didn't land correctly. Re-run (the wipe creates addons/ up front)."
 ok "Setup $BV + library $MV installed."
 
-# --- 4b. host-build the curated IPTV artifacts + stage them on the box ------ #
-# The HOST half of the IPTV layer (Phase 5b·2): build_iptv.py turns the env's
-# IPTV_<N>_* blocks into curated per-provider artifacts (local playlist with the
-# full groups grammar — relabel/sort/favorites — incl. the xtream->m3u synthesis
-# pvr.iptvsimple cannot do itself, plus customTVGroups + instance-settings).
-# They are pushed to the device-convention iptv/ dir and the derived env gets
-# IPTV_STAGING_DIR so apply_iptv consumes them; on ANY failure the box falls
-# back to the 5b·1 direct-env config (m3u providers still work; xtream skips).
-# Establish the canonical device tree (N1.1 — _T7B/kodi/ layout; survives the
-# Kodi wipe above because it lives outside the Kodi data dir). Idempotent. The
-# five subdirs are the canonical layout (docs/directory_structure.txt) and match
-# DEVICE_STAGING_SUBDIRS in tony7bones.setup.env — onboarding self-creates the
-# SAME tree in-Kodi (ensure_device_dirs), so this is belt-and-suspenders for the
-# computer path.
+# --- 4b. establish the canonical on-device tree ----------------------------- #
+# The five subdirs are the canonical layout (docs/directory_structure.txt) and
+# match DEVICE_STAGING_SUBDIRS in tony7bones.setup.env: onboarding self-creates
+# the SAME tree in-Kodi (ensure_device_dirs), so this is belt-and-suspenders for
+# the computer path. Survives the Kodi wipe above (lives outside the Kodi data
+# dir). Idempotent.
+#
+# NOTE: the old v1 host-build-and-stage IPTV step (Phase 5b.2: build_iptv.py ->
+# per-box staged artifacts consumed by apply_iptv) was RETIRED. The IPTV builder
+# was extracted to its own private repo (moquette/iptv) and the fleet moved to
+# the IPTV 2.0 share model: the Mac mini builds centrally and writes to an NFS
+# share that each box reads directly, so no per-box host build happens here.
+# IPTV_STAGED stays empty; the per-device env below omits IPTV_STAGING_DIR.
 _adb shell "mkdir -p $DEVICE_ROOT/backups $DEVICE_ROOT/iptv $DEVICE_ROOT/media $DEVICE_ROOT/repositories $DEVICE_ROOT/rss" >/dev/null 2>&1
 
 IPTV_STAGED=""
-if grep -qE '^IPTV_[0-9]+_' "$ENV_FILE"; then
-  say "  building curated IPTV artifacts (host-side: fetch + curate per provider)…"
-  IPTV_OUT="$REPO_ROOT/iptv-build/$DEVICE"
-  rm -rf "$IPTV_OUT" # never push STALE artifacts from a previous run
-  if python3 "$REPO_ROOT/_tools/build_iptv.py" --env "$ENV_FILE" --out "$IPTV_OUT"; then
-    :
-  else
-    # A PARTIAL build (one provider failed) is still worth staging: apply_iptv
-    # falls back per-provider, so the built providers keep their curation.
-    warn "IPTV host build reported failures — staging what DID build; failed providers fall back to direct-env config (xtream ones will be skipped)."
-  fi
-  if ls "$IPTV_OUT"/instance-settings-*.xml >/dev/null 2>&1; then
-    IPTV_DIR="$(dirname "$BOX_ENV_PATH")/iptv"
-    _adb shell "mkdir -p $IPTV_DIR" >/dev/null 2>&1
-    if _adb push "$IPTV_OUT/." "$IPTV_DIR/" >/dev/null 2>&1; then
-      IPTV_STAGED="$IPTV_DIR"
-      ok "IPTV artifacts staged on the box ($IPTV_DIR)."
-    else
-      warn "Couldn't push the IPTV artifacts — box falls back to direct-env IPTV config."
-    fi
-  else
-    warn "No IPTV artifacts built — box falls back to direct-env config."
-  fi
-fi
 
 # --- 4c. push the per-device config (derived from the master .env) ---------- #
 # Drop DEVICE_IP (laptop-only connection metadata) and override DEVICE_NAME with

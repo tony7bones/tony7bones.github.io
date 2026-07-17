@@ -165,7 +165,7 @@ Generated zips are **reproducible** so CI's staleness gate does not flag them on
 
 ### The `_tools/` inventory
 
-Release: `release.py`, `release_lib.py`, `release_detect.py`, `check_versions.py`. Build/deploy: `generate_repo.py`, `build_site.py`, `static_catalog.py` (+ manifest `catalog.json`), `verify_live_site.py`, `check_site_secrets.py`, `secret_patterns.py`, `check_hosted_release_sync.py`, `mirror_closure.py`. Canvas + backup: `publish_canvas.py`, `sync_share.py`. Device tooling: `firetv.sh`, `provision-kodi.sh` (the adb provisioner; the Setup add-ons it drove are retired, but the script is retained). IPTV builder: `build_iptv.py` + `make_custom_m3u.py` are still present, **pending extraction to a private repo** (an ACTIVE P1 task; see `TASKS.md`).
+Release: `release.py`, `release_lib.py`, `release_detect.py`, `check_versions.py`. Build/deploy: `generate_repo.py`, `build_site.py`, `static_catalog.py` (+ manifest `catalog.json`), `verify_live_site.py`, `check_site_secrets.py`, `secret_patterns.py`, `check_hosted_release_sync.py`, `mirror_closure.py`. Canvas + backup: `publish_canvas.py`, `sync_share.py`. Device tooling: `firetv.sh`, `provision-kodi.sh` (the adb provisioner; the Setup add-ons it drove are retired, but the script is retained). IPTV builder: `build_iptv.py` (+ its test suite) was **extracted to its own private repo (`moquette/iptv`) and removed here (2026-07-17)**; the mini builds IPTV centrally and serves it over the NFS share (IPTV 2.0), so this repo no longer host-builds. `make_custom_m3u.py` remains.
 
 ## Adding content
 
@@ -190,7 +190,7 @@ Release: `release.py`, `release_lib.py`, `release_detect.py`, `check_versions.py
 > - `docs/playbooks/kodi-install-mechanics.md` - install on Omega without blocking prompts (direct-extract + `SetAddonEnabled`, origin stamping, deps, platform binaries).
 > - `docs/playbooks/kodi-settings-clobber.md` - the "Kodi clobbers direct settings writes" class and the two fix mechanisms.
 > - `docs/playbooks/kodi-vfs-cannot-read-foreign-local-files.md` - Kodi's VFS can silently return empty reads for a local file a non-VFS writer produced.
-> - `docs/playbooks/iptv-channel-customization.md` - the env-driven IPTV curation pipeline (the host `build_iptv.py` half; pending extraction).
+> - `docs/playbooks/iptv-channel-customization.md` - the env-driven IPTV curation pipeline (the host `build_iptv.py` half; extracted to `moquette/iptv` 2026-07-17, kept here as historical reference).
 > - `docs/playbooks/firetv-adb-dev.md` - driving a Fire TV over ADB + JSON-RPC (`_tools/firetv.sh`).
 > - `docs/playbooks/firetv-stick-scoped-storage-provisioning.md` - provisioning a non-rooted Fire OS 11 Stick over adb.
 > - `docs/playbooks/mac-mini-media-server.md` - the `Mini` box that serves every Kodi client over NFS/SMB.

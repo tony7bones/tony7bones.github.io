@@ -26,7 +26,13 @@ tech-debt seam, the apply_iptv reporting bug, the zero-content guarantee). Keep 
 
 ---
 
-## P1 - Extract the IPTV builder into its own (PRIVATE) repo - 🔲 ACTIVE (raised P1 2026-07-14)
+## P1 - Extract the IPTV builder into its own (PRIVATE) repo - ✅ DONE 2026-07-17 (raised P1 2026-07-14)
+
+> **DONE 2026-07-17.** The IPTV builder now lives in the private `moquette/iptv` repo and the
+> Mac mini runs the pipeline from a checkout of it (IPTV 2.0 share model: the mini builds
+> centrally and writes to the NFS share each box reads). The duplicate `_tools/build_iptv.py`
+> (+ `test_build_iptv.py`) was removed from this repo and the `provision-kodi.sh` v1
+> host-build-and-stage step was retired. The scope block below is a historical record.
 
 The IPTV builder is a real ~4,600-line two-halves orchestration currently scattered in THIS
 repo. Owner decision (2026-07-13): it becomes its OWN repository, the same clean pattern as
