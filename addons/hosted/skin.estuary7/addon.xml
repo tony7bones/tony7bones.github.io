@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<addon id="skin.estuary7" version="1.0.54" name="Estuary 7" provider-name="Tony.7.Bones">
+<addon id="skin.estuary7" version="1.0.55" name="Estuary 7" provider-name="Tony.7.Bones">
 	<requires>
 		<import addon="xbmc.python" version="3.0.1"/>
 		<import addon="xbmc.gui" version="5.17.0"/>
@@ -50,7 +50,7 @@
 				<screenshot>resources/screenshot-08.jpg</screenshot>
 			</assets>
         <news>
-v1.0.54: Apple TV - select opens the OSD while watching live TV (matches Fire TV; select was a dead button on live streams). Movies and shows keep select = pause. Fire TV unchanged.
+v1.0.55: the home widget pane now animates when moving between two menu items that both use personal widgets (Movies and TV Shows). Upstream only played the fade and slide when the pane type changed, so those switches were a hard cut. Widget content unchanged.
         </news>
 	</extension>
 </addon>
