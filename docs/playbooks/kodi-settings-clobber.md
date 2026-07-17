@@ -93,15 +93,19 @@ writes, not the install).
 > different mechanism (an unconfirmed UI timeout, not a settings flush).
 >
 > **Also related but different - the tvOS NSUserDefaults durability model.** On
-> Apple TV, Kodi mirrors `userdata/*.xml` into NSUserDefaults and rewrites the
-> disk files from that mirror on launch (the ~500 KB app-storage limit). A
-> file-only restore therefore reverts on the next relaunch: the SAME "your
-> file write is silently undone" smell as instance 1, but the durable store is
+> Apple TV, Kodi vectors `userdata/*.xml` into NSUserDefaults (the ~500 KB
+> app-storage limit); reads check the key FIRST and fall back to disk only when
+> no key exists, so a key SHADOWS the disk file - nothing ever copies a key
+> back to disk. A file-only restore therefore appears to revert on the next
+> relaunch (the stale key wins every read): the SAME "your file write is
+> silently undone" smell as instance 1, but the durable store is
 > NSUserDefaults, not a live component's in-memory state, and the fix is to
 > vector the file THROUGH `xbmcvfs` so `CTVOSFile` writes it into NSUserDefaults
 > (EZM's `nsud.rewrite_userdata_xml`, 2026.07.08.2). That rewrite then
 > dual-layered the folder (POSIX file + NSUserDefaults key = File Manager
 > listing each userdata file twice); fixed 2026.07.08.6 by dropping the POSIX
-> copy after a read-back confirms the store holds the bytes, tvOS-gated. Full
+> copy after a read-back confirms the store holds the bytes, tvOS-gated. The
+> key is then the ONLY copy, with no disk fallback (`kodi-storage-map` skill,
+> §5). Full
 > mechanism: `docs/playbooks/ezm-restore-hardening.md` and the incident doc
 > `docs/incident-2026-07-08-ezmpp-tvos-restore-duplicate-userdata.md`.

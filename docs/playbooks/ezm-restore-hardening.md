@@ -143,8 +143,9 @@ persist settings oppositely (this is `kodi-settings-clobber.md`'s hazard, both
 directions at once):
 
 - `Settings.SetSettingValue` updates Kodi's LIVE store. On **tvOS** that is the
-  durable path - guisettings.xml is rewritten from NSUserDefaults on boot, so a
-  file-only write reverts (the same reason `_kodisettings.apply_guisettings` exists
+  durable path - the settings flush goes through `CTVOSFile` into the NSUserDefaults
+  key, and reads check that key FIRST, so a file-only write is shadowed by the stale
+  key and appears to revert (the same reason `_kodisettings.apply_guisettings` exists
   for restore).
 - `_kodisettings.write_guisetting()` writes `services.devicename` straight into
   guisettings.xml, which is what survives a **Fire TV / Android UNCLEAN shutdown**
@@ -200,8 +201,10 @@ TWO separate entities, so File Manager listed **every userdata file twice** unde
 `special://profile` after a restore. Fix (`nsud.py`, commit `4ccee62`): after a
 CONFIRMED vector, and ONLY after a **read-back** (`_vector_confirmed`) proves
 NSUserDefaults holds the identical bytes, drop the redundant POSIX copy so only the
-coherent CTVOSFile/NSUserDefaults entity remains (Kodi re-materializes the disk file
-from the mirror on the next launch). This is ordered write-then-delete - never delete a
+coherent CTVOSFile/NSUserDefaults entity remains. The key is then the ONLY copy -
+nothing ever re-materializes the disk file from it, so this trades a cosmetic
+duplicate listing for a zero-fallback state (see the `kodi-storage-map` skill, §5).
+This is ordered write-then-delete - never delete a
 file whose content is not already durably in the store - and the read-back guards the
 tiny NSUserDefaults budget silently truncating a large key. Hard tvOS gate
 (`_is_tvos()` = `xbmc.getCondVisibility("System.Platform.TVOS")`, defaulting False on any
