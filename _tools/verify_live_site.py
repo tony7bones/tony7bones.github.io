@@ -106,7 +106,11 @@ def _check_zips(base_url: str, manifest: dict) -> None:
 
 def _check_canvas(base_url: str, manifest: dict) -> None:
     root_html = _request(f"{base_url}/").decode(errors="ignore")
-    for folder in ("repositories/", "media/", "iptv/", "rss/"):
+    # media/, zips/ and iptv/ were retired from the public canvas 2026-07-16
+    # (everything private or generated now lives ONLY on the KodiShare), so the
+    # served root is repositories/ + rss/ only. Expecting the retired folders here
+    # made this consumer-seat verify fail every deploy since that retirement.
+    for folder in ("repositories/", "rss/"):
         if f'href="{folder}"' not in root_html:
             raise VerifyError(f"root canvas listing is missing {folder}")
     proxy = manifest["entries"].get("repository.tony7bones")

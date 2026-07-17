@@ -45,8 +45,9 @@ def _manifest_and_urls():
         f"{BASE}/static/addons.xml": addons_xml,
         f"{BASE}/static/addons.xml.md5": hashlib.md5(addons_xml).hexdigest().encode(),
         f"{BASE}/": (
-            '<a href="repositories/">r</a><a href="media/">m</a>'
-            '<a href="iptv/">i</a><a href="rss/">r</a>'
+            # The served canvas root after the 2026-07-16 retirement of
+            # media/ + zips/ + iptv/: repositories/ + rss/ only.
+            '<a href="repositories/">r</a><a href="rss/">r</a>'
         ).encode(),
         f"{BASE}/repository.tony7bones-3.0.0.zip": b"INSTALLER",
         f"{BASE}/addons/addons.xml": b"<addons/>",
@@ -107,7 +108,8 @@ def test_version_drift_fails(fake_http):
 
 def test_missing_canvas_folder_fails(fake_http):
     manifest, urls = fake_http
-    urls[f"{BASE}/"] = b'<a href="media/">m</a>'
+    # rss/ present but repositories/ missing -> a required canvas folder is gone.
+    urls[f"{BASE}/"] = b'<a href="rss/">r</a>'
     assert _verify(manifest) is False
 
 
