@@ -70,14 +70,11 @@ jobs:
         run: ruff check _tools/
 
       - name: Hosted release-freshness gate
-        # HARD-fail on push: a push must never ship a mirror that is behind its
-        # add-on's latest release. But on repository_dispatch (a sibling repo just
-        # published a release and pinged us) and on the daily schedule, the mirror
-        # is EXPECTED to be transiently behind until the follow-up mirror-bump push
-        # lands - failing here just spams GitHub failure emails for a window that
-        # self-heals. Warn-only on those events; the mirror-bump push re-runs this
-        # gate hard, and a genuinely-stale mirror is still caught on the next push.
-        continue-on-error: ${{ github.event_name == 'repository_dispatch' || github.event_name == 'schedule' }}
+        # The gate itself now treats "mirror behind latest" as a non-failing
+        # warning (only broken pointers - no release / missing asset - hard-fail),
+        # so the release-race window no longer fails this step on ANY event. No
+        # per-event continue-on-error is needed, and adding one would wrongly
+        # swallow GENUINE broken-pointer failures on schedule/repository_dispatch.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 _tools/check_hosted_release_sync.py

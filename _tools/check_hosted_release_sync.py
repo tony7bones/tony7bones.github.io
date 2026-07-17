@@ -232,13 +232,20 @@ def check_entry(entry: dict, token: str | None) -> tuple[bool, list[str], list[s
                     f"{latest_version} — WAIVED ({reason})"
                 )
             else:
-                rel_waiver = os.path.relpath(entry["waiver_path"], REPO_ROOT)
-                problems.append(
-                    f"{addon_id}: mirror addon.xml is {version} but the LATEST "
-                    f"published release on {owner}/{repo} is {latest_version} "
-                    f"— the proxy is serving a stale build. If this lag is "
-                    f"deliberate, commit {rel_waiver} with "
-                    f'{{"version": "{version}", "waived": "<reason>"}}.'
+                # NOT a hard failure. The mirror still points at a REAL, installable
+                # release (it passed the tag+asset checks above) - it is merely not
+                # the LATEST. That is exactly the transient state during a release:
+                # the sibling repo publishes v_new, the follow-up mirror-bump push
+                # lands seconds-to-minutes later, and in between the mirror is behind.
+                # Hard-failing that raced EVERY release (and every unrelated push that
+                # happened to land in the window) and spammed failure emails for a
+                # condition that self-heals. So warn, never fail; the bump-mirror push
+                # resolves it and a genuinely-forgotten bump still shows in every log.
+                info.append(
+                    f"WARNING: {addon_id}: mirror addon.xml is {version} but the "
+                    f"latest published release on {owner}/{repo} is {latest_version}. "
+                    f"The mirror is behind (transient during a release); bump "
+                    f"addons/hosted/{addon_id}/addon.xml to {latest_version}."
                 )
         else:
             info.append(

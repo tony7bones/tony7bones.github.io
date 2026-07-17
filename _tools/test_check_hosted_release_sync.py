@@ -321,8 +321,9 @@ def test_check_fails_when_tag_release_missing(tmp_path, monkeypatch):
 
     assert ok is False
     assert any("no published release tagged 'v1.0.99'" in p for p in problems)
-    # also flagged as stale vs latest — both symptoms of the same drift
-    assert any("LATEST published release" in p for p in problems)
+    # The version-vs-latest mismatch is now a non-failing WARNING (info), not a
+    # hard problem - the hard failure is the broken pointer above.
+    assert any("latest published release" in line for line in info)
 
 
 def test_check_fails_when_asset_name_missing_from_release(tmp_path, monkeypatch):
@@ -343,7 +344,13 @@ def test_check_fails_when_asset_name_missing_from_release(tmp_path, monkeypatch)
     assert any("does not carry the expected asset" in p for p in problems)
 
 
-def test_check_fails_when_mirror_lags_latest_release_unwaived(tmp_path, monkeypatch):
+def test_check_warns_not_fails_when_mirror_lags_latest_release(tmp_path, monkeypatch):
+    """A mirror pointing at a REAL, installable release that is merely BEHIND the
+    latest is a transient release-race state (a sibling just published; the
+    follow-up mirror-bump push lands seconds later). It must WARN, never fail:
+    hard-failing it spammed GitHub failure emails on every release AND every
+    unrelated push that landed in the window. Only genuinely-broken pointers
+    (no release / missing asset) hard-fail."""
     root = _setup_sandbox(tmp_path, "1.0.38")
     routes = _routes_for(
         "moquette",
@@ -357,13 +364,11 @@ def test_check_fails_when_mirror_lags_latest_release_unwaived(tmp_path, monkeypa
 
     ok, info, problems = gate.check(token=None, repo_root=str(root))
 
-    assert ok is False
+    assert ok is True
+    assert problems == []
     assert any(
-        "mirror addon.xml is 1.0.38 but the LATEST published release" in p
-        and "1.0.39" in p
-        for p in problems
+        "WARNING" in line and "1.0.39" in line and "behind" in line for line in info
     )
-    assert any("release-sync-waiver.json" in p for p in problems)
 
 
 def test_check_passes_when_lag_is_waived_for_exact_version(tmp_path, monkeypatch):
@@ -388,10 +393,11 @@ def test_check_passes_when_lag_is_waived_for_exact_version(tmp_path, monkeypatch
     assert any("WAIVED (hotfix rollout in progress)" in line for line in info)
 
 
-def test_check_stale_waiver_does_not_cover_new_version(tmp_path, monkeypatch):
-    """A waiver committed for a PRIOR mirror version must not silently keep
-    passing once the mirror moves — proves the waiver is not a permanent
-    silencer."""
+def test_check_stale_waiver_does_not_mark_lag_as_waived(tmp_path, monkeypatch):
+    """A waiver committed for a PRIOR mirror version must not label the current
+    lag as WAIVED. The lag itself is now a non-failing warning either way, but a
+    stale waiver must not silently claim this lag was a deliberate, reviewed
+    decision - the warning must read as an un-waived 'behind latest'."""
     root = _setup_sandbox(tmp_path, "1.0.39")
     (root / "addons/hosted/skin.estuary7/release-sync-waiver.json").write_text(
         json.dumps({"version": "1.0.38", "waived": "old, no-longer-relevant reason"})
@@ -408,8 +414,10 @@ def test_check_stale_waiver_does_not_cover_new_version(tmp_path, monkeypatch):
 
     ok, info, problems = gate.check(token=None, repo_root=str(root))
 
-    assert ok is False
-    assert any("LATEST published release" in p for p in problems)
+    assert ok is True
+    assert problems == []
+    assert not any("WAIVED" in line for line in info)
+    assert any("WARNING" in line and "1.0.40" in line for line in info)
 
 
 def test_check_fails_when_source_repo_has_no_releases_at_all(tmp_path, monkeypatch):
@@ -484,3 +492,27 @@ def test_main_returns_0_on_happy_path(tmp_path, monkeypatch, capsys):
 
     assert rc == 0
     assert "OK" in capsys.readouterr().out
+
+
+def test_main_returns_0_and_warns_on_behind_latest(tmp_path, monkeypatch, capsys):
+    """The whole point of the gate change: a mirror that is merely BEHIND the
+    latest release must exit 0 (no CI failure, no email) while printing a
+    WARNING. This pins the exit-code boundary the CI workflows key off."""
+    root = _setup_sandbox(tmp_path, "1.0.38")
+    monkeypatch.setattr(gate, "REPO_ROOT", str(root))
+    routes = _routes_for(
+        "moquette",
+        "estuary7",
+        "v1.0.38",
+        tag_assets=["skin.estuary7-1.0.38.zip"],
+        latest_tag="v1.0.39",
+        latest_assets=["skin.estuary7-1.0.39.zip"],
+    )
+    monkeypatch.setattr(gate.urllib.request, "urlopen", _fake_urlopen(routes))
+
+    rc = gate.main()
+
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "WARNING" in out
+    assert "behind" in out and "1.0.39" in out
