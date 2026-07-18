@@ -123,12 +123,12 @@ password is not in the vault.
    Mac for browsing. Kodi uses NFS because that is what Kodi speaks; Macs use SMB.
 2. **SMB guest access is dead on macOS 26.** `AllowGuestAccess -bool true` + an
    enabled guest account are BOTH ignored (`smbd_detect_sg_mode: NOT enabling super
-guest mode`); guest mounts fail even on loopback. SMB requires auth as
+   guest mode`); guest mounts fail even on loopback. SMB requires auth as
    `moquette`. Reverted; do not retry.
 3. **Never NFS-export the home directory.** `/-mapall=moquette -network
-192.168.7.0/24` on `/Users/moquette` would give any device that grabs a
+   192.168.7.0/24` on `/Users/moquette` would give any device that grabs a
    `192.168.7.x` address unauthenticated read/write to `~/.ssh`, `~/Library/
-Keychains`, and `~/Code/moquette/vault` (the plaintext credential vault). Home
+   Keychains`, and `~/Code/moquette/vault` (the plaintext credential vault). Home
    is SMB-only (authenticated); for full-home access from another machine use
    `sftp://mini` / `sshfs`.
 4. **External volumes are painful to share; avoid unless needed.** NFS-exporting an

@@ -252,7 +252,7 @@ committed on `no-computer-setup`, unreleased):
   `BOX_ENV_PATH = /storage/emulated/0/_T7B/kodi/tony7bones.env`
   (`.env.device.example` is the committed placeholder template).
 - Setup reads the env from the **ORDERED sources** (`setup/env.py
-box_env_paths`): the pushed derived env at the canonical root → the legacy
+  box_env_paths`): the pushed derived env at the canonical root → the legacy
   push path → the device-resident **MASTER** `.env.*` candidates (canonical
   root then legacy root, sorted; read with provisioner-parity derivation -
   `DEVICE_IP` dropped, `IPTV_STAGING_DIR` injected iff staged) → the

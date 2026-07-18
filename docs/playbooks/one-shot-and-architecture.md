@@ -46,7 +46,7 @@ Setup holds only its own configuration:
   stamping** into `Addons<NN>.db`.
 - `install.py` - the install orchestrators: `install_with_deps`, `install_closure`,
   `disable_after_install`, and `install_selection(selected, official_base,
-disable_ids, dialog, log)` (folded in from the retired standalone video Setup).
+  disable_ids, dialog, log)` (folded in from the retired standalone video Setup).
 - `system.py` - platform tag, Android detection, self-uninstall, restart.
 
 The Setup declares `<requires><import addon="script.module.tony7bones"

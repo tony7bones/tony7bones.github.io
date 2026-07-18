@@ -347,7 +347,7 @@ down** before any code.
 ### Confirmed by the panel (de-risks execution)
 
 - **Zip arcname is provably location-independent.** `arcname =
-relpath(fpath, dirname(addon_dir))` depends only on the add-on's basename, so
+  relpath(fpath, dirname(addon_dir))` depends only on the add-on's basename, so
   `repo/ → dropbox/` does not perturb member paths **provided the split only
   re-points the scan root and leaves the arcname math alone**. Add a test
   asserting member paths have no `dropbox/`/`repo/` prefix and the built zip hash

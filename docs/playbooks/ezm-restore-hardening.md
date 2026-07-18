@@ -132,7 +132,7 @@ clone-a-golden-image workflow:
     (no silent no-op) and logs to kodi.log.
   - **Buffer** (`prompt_buffer_after_restore`, unchanged): **Set to X MB** (X =
     `tools._recommended_mb()` = `max(50, min(200, int(System.Memory(total) *
-0.10)))`, device-aware off total RAM, clamped 50-200 MB; a 1669 MB stick
+    0.10)))`, device-aware off total RAM, clamped 50-200 MB; a 1669 MB stick
     recommends 166 MB), **Let me choose** (Buffer Size screen), or **Keep current**.
     `tools._set_cache_mb()` applies it live via JSON-RPC (no restart needed).
 

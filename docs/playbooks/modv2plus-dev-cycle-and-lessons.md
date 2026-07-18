@@ -253,11 +253,11 @@ while shipping modv2plus 1.5.0, on ATV1 (Apple TV 4K, tvOS, Kodi 21.3,
 `192.168.7.220`, bundle `ca.koditvbox.kodi.tvos.21`).
 
 - **Push / pull files:** `xcrun devicectl device copy to|from --device <UDID>
---domain-type appDataContainer --domain-identifier <bundle> --source S
+  --domain-type appDataContainer --domain-identifier <bundle> --source S
 --destination D`. Container root is `Library/Caches/Kodi/`. devicectl returns a
   NONZERO exit even on success: check that the file exists, not `$?`.
 - **Restart Kodi:** `xcrun devicectl device process launch --device <UDID>
---terminate-existing <bundle>`. Back up in about 5s.
+  --terminate-existing <bundle>`. Back up in about 5s.
 - **`TakeScreenshot` HARD-CRASHES Kodi on tvOS.** Every form: no-arg, and
   `TakeScreenshot(special://temp/x.png,sync)`. The process dies, port 8080 closes,
   kodi.log stops mid-line. `Input.ExecuteAction {"action":"screenshot"}` returns

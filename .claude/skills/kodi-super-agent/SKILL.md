@@ -33,7 +33,7 @@ on a rule below - they carry the WHY and the exact code locations.
   manifest `_tools/catalog.json`, then deployed via GitHub Pages.
 - **Two source trees:**
   - `dropbox/` is the pristine human canvas (hand-authored `repositories/
-media/ iptv/ rss/`, NEVER generated files). The build mirrors it 1:1 to the
+    media/ iptv/ rss/`, NEVER generated files). The build mirrors it 1:1 to the
     repo ROOT, which Pages serves at the bare URL `https://tony7bones.github.io/`
     (the Kodi File Manager source). The mirror honors `.gitignore`, so a
     secret-bearing file (e.g. `dropbox/iptv/instance-settings*.xml`) stays local
@@ -108,7 +108,7 @@ media/ iptv/ rss/`, NEVER generated files). The build mirrors it 1:1 to the
   zip churns, regenerate -> commit -> confirm a second regenerate is clean. A
   non-deterministic zip trips the CI staleness gate.
 - **Canvas-only changes** (`dropbox/` edits, no add-on release): `python3
-_tools/publish_canvas.py -m "..."` (commit + push; the CI deploy generates the
+  _tools/publish_canvas.py -m "..."` (commit + push; the CI deploy generates the
   served mirror; refuses to publish credential-like content unless
   `--allow-secrets`). `--dry-run` first.
 - **Gates:** `.githooks/pre-push` (pytest, ruff, generate_repo staleness,

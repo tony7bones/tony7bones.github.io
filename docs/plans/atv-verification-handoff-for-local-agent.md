@@ -86,7 +86,7 @@ verify on the actual device (you can SEE the container; decide from what's real)
 1. Owner triggers a restore in Kodi (the physical action), then **swipe-quit + reopen**.
 2. Pull the plist → `post.plist`, run the PlistBuddy→gunzip decode above on the
    `guisettings.xml` key AND on an `instance-settings-1.xml` key (for IPTV). Also `ls -l
-post.plist` to check it's well under the platform plist ceiling.
+   post.plist` to check it's well under the platform plist ceiling.
 3. Confirm in the Kodi UI (JSON-RPC over the web server, or ask the owner to glance) that
    weather/RSS/skin/TV actually came back.
 4. Interpret per the gate. Save `post.plist` + the decodes as evidence in the PR.

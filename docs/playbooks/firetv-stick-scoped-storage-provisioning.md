@@ -108,7 +108,7 @@ Standard Android boxes (KODI_DATA_PATH inside `Android/data`) are untouched -
    are gone. Don't trust `ls` here - verify via **Kodi**: `Addons.GetAddonDetails` for
    `script.tony7bones.bootstrap` returning an `error` (add-on unknown) is the real
    "uninstalled" signal. If it's still a known add-on, `Addons.SetAddonEnabled …
-enabled=false` is the clean fallback - a disabled add-on shows no home tile and
+   enabled=false` is the clean fallback - a disabled add-on shows no home tile and
    never runs (functionally uninstalled), no flaky delete required.
 
 5. **IPTV verification tag.** pvr.iptvsimple custom groups use `<channelGroupName>`,

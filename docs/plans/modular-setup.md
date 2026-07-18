@@ -468,7 +468,7 @@ deliberate behavior change (move `pvr.iptvsimple` install Foundation→IPTV gate
 ### Phase 3 - DONE (local commit; Express orchestrator + first deliberate behavior change)
 
 - **Landed:** `run()` → **`run_express(box_env)`** composing `apply_addons → apply_foundation →
-apply_iptv` as units (the Express orchestrator). `pvr.iptvsimple` INSTALL moved from base
+  apply_iptv` as units (the Express orchestrator). `pvr.iptvsimple` INSTALL moved from base
   `ADDONS` into `apply_iptv` (`_install_pvr_backend`, **install-or-fail-loud** - never configure a
   missing backend). `apply_addons` now owns the weather/RSS core settings.
 - **First DELIBERATE snapshot change - justified by a net-installed-SET equivalence proof:** the
@@ -804,9 +804,9 @@ box with no staging).
   further clean-shutdown quit+relaunch, `instance-settings-1.xml` + `-2.xml` both
   survive with identity/m3uPathType=0/tvGroupMode=2/groups-only intact, and JSON-RPC
   proves the acceptance: **8 groups** - provider 1 `US Entertainment 158 /
-US News/Weather 47 / PPV Events 24` (DISPLAY labels, alpha-sorted: A&E → ABC →
+  US News/Weather 47 / PPV Events 24` (DISPLAY labels, alpha-sorted: A&E → ABC →
   ADULT SWIM → AMC…), provider 2 `US Entertainment 214 / US News 100 / UFC PPV 12 /
-24/7 Favorites 5` (the favorites are exactly the five curated channels, incl. the
+  24/7 Favorites 5` (the favorites are exactly the five curated channels, incl. the
   two `id:`-pinned 4K feeds), `All channels` = **560 = 229+331**. MOD V2 active,
   Setup self-uninstalled, staged env read-then-removed. (Driver note: the run was
   triggered by patching the INSTALLED bootstrap copy's `run()` to call
@@ -825,7 +825,7 @@ US News/Weather 47 / PPV Events 24` (DISPLAY labels, alpha-sorted: A&E → ABC �
   borrows the first LIVE icon from another copy of the same channel in the stream
   list (`_name_core` match: country prefix / `24/7` markers / quality tags /
   Unicode decorations ignored, so `"US: THE SIMPSONS 4K"` ≡ `"24/7: THE
-SIMPSONS"`); no donor → original kept + a printed note. Only favorites are
+  SIMPSONS"`); no donor → original kept + a printed note. Only favorites are
   checked (the hand-picked shelf; validating every channel = hundreds of fetches);
   m3u mode is untouched (verbatim provider EXTINF - the failure is xtream's
   category-wide placeholder). +16 tests (suite 663 passed / 1 xfailed;
@@ -993,9 +993,9 @@ stays `run_express` until 5d), Guided-wizard UI, and the Add-ons layer (5c).
   leg 1 `run_foundation` → a proven Foundation-ONLY box (all 8 content ids NOT installed; skin
   21.4+omega.4 + modv2plus + pvr.artwork + weather.multi + autocomplete + all repos + our proxy
   repo installed/enabled; weather env-applied: `5 location(s) written; weatherbit=True
-owm=True`). Leg 2 `run_addons` (driver: patched INSTALLED copy's `run()`, repo source
+  owm=True`). Leg 2 `run_addons` (driver: patched INSTALLED copy's `run()`, repo source
   untouched) → log `stamped origin on 21 add-on(s)`, `disabled after install:
-plugin.video.dailymotion_com`, `_apply_rss: wrote 7 RSS feed(s) (interval 30)`; JSON-RPC:
+  plugin.video.dailymotion_com`, `_apply_rss: wrote 7 RSS feed(s) (interval 30)`; JSON-RPC:
   POV 6.06.06 / Loop 7.9 / Sports HD 0.1.85.1 / YouTube 7.4.3 installed+ENABLED, dailymotion
   2.4.4 installed+DISABLED, both base apps enabled; origins stamped (kodifitzwell/loop/
   bugatsinho/xbmc.org×2; the two peno64 base apps blank - PRE-EXISTING `install_with_deps`
@@ -1377,7 +1377,7 @@ Setup tile); everything else was the shipped flow.
   destroyed unaccepted ~200 ms AFTER our SendClick had already logged "accepted"
   (destroyed-unaccepted = "No" = revert), and all 3 attempts burned inside ONE build window:
   `accepted keep-skin` → `did not stick` ×3 → `FAILED to keep skin.estuary.modv2 after 3
-attempts` → the gate restarted onto STOCK Estuary. **Fix (`tony7bones/system.py`):** between
+  attempts` → the gate restarted onto STOCK Estuary. **Fix (`tony7bones/system.py`):** between
   attempts `activate_skin` now WAITS for skinshortcuts quiescence (`_wait_skin_quiescent`;
   bound raised 15 s → 30 s) BEFORE re-asserting, so the next confirm renders after the
   destroyer finishes. Mutation-proven test (the slow-build timeline: without the wait all 3
@@ -1385,7 +1385,7 @@ attempts` → the gate restarted onto STOCK Estuary. **Fix (`tony7bones/system.p
   updated - suite **768 passed / 1 xfailed**, ruff + secrets green. **Live re-verify:** fixed
   module pushed to the box, includes file deleted (recreating the fresh-box condition), the
   wizard re-offered Foundation (the self-heal) and the re-run committed - `active and
-committed (attempt 1)` (the warm rebuild won naturally) and `lookandfeel.skin =
+  committed (attempt 1)` (the warm rebuild won naturally) and `lookandfeel.skin =
 skin.estuary.modv2` PERSISTED in guisettings across the clean Quit.
 - **Leg B - Guided manual-reopen UX: COMPLETE (all four offers walked as a remote user).**
   `SETUP_MODE=guided` was injected into the DERIVED env only - a key-level diff proved the
@@ -1395,16 +1395,16 @@ skin.estuary.modv2` PERSISTED in guisettings across the clean Quit.
   `Install Foundation (Estuary MOD V2 skin + repositories)` / `Install IPTV (live TV)` /
   `Install Add-ons (curated content)` / `Finish - setup is complete, remove Setup`, each above
   `Remove Setup` and `Exit (keep Setup)`. Gate summaries: Foundation `Estuary MOD V2:
-installed / Repositories + sources installed. / Kodi will restart - reopen Setup to
+  installed / Repositories + sources installed. / Kodi will restart - reopen Setup to
 continue.`; IPTV `pvr.iptvsimple: installed / Instance settings: written / …`; Add-ons
   `Repos: 12/12 / Apps: 2/2 / Video add-ons: 4/4` - that dialog's 5th line (the restart
   notice) is CLIPPED off the dialog under MOD V2 at 1080p (UX observation, document-only).
   The Android restart seam is the Phase 6 autoclose, live-confirmed: notification `Setup
-complete - closing Kodi. Reopen it to finish.` + clean `Quit()`, prompt-free, ~4 s end to
+  complete - closing Kodi. Reopen it to finish.` + clean `Quit()`, prompt-free, ~4 s end to
   end. Each manual reopen landed on a complete working box (skin-only → +live TV → full);
   IPTV verified mid-walk (all 8 groups, counts == builder: 158/47/24 + 214/100/12 + 5
   favorites with 5/5 icons, All channels 560). Finish: `finish: box verified complete
-{'foundation': True, 'iptv': True, 'addons': True}` - `assert_box_complete` IN-KODI on the
+  {'foundation': True, 'iptv': True, 'addons': True}` - `assert_box_complete` IN-KODI on the
   real box - then env consumed, self-uninstall, clean Quit.
 - **Leg A - Express one-tap: COMPLETE (second run; the first run caught a PROVISIONER bug).**
   The provisioner's "waiting for Kodi to close itself" bound was 60 s, but the real-Fire-TV
@@ -1415,7 +1415,7 @@ complete - closing Kodi. Reopen it to finish.` + clean `Quit()`, prompt-free, ~4
   already self-uninstalled; the no-clean-shutdown settings-loss class, again). Fixed in
   `_tools/provision-kodi.sh`: the bound is now ~4 min with the failure mode documented inline.
   The clean re-run: wipe → seed → host IPTV build/stage → ONE unattended Express → `Kodi
-closed cleanly - no force-kill needed` + `Skin persisted as MOD V2` + patch/menu built; the
+  closed cleanly - no force-kill needed` + `Skin persisted as MOD V2` + patch/menu built; the
   box then verified end-to-end over JSON-RPC after a FULL DEVICE REBOOT (the restart-survival
   proof): MOD V2 active on Home, weather `Sacramento, California` 63°F, RSS on + ticker live,
   POV 6.06.06 / The Loop 7.9 / Sports HD 0.1.85.1 / YouTube 7.4.3 all enabled, dailymotion

@@ -220,7 +220,7 @@ the Xcode CLI (`docs/playbooks/atv-kodi-xcode-cli-troubleshooting.md`) on a real
 1. Restore a backup → **swipe-quit** → reopen.
 2. Pull the container plist:
    `xcrun devicectl device copy from --device <UDID> --domain-type appDataContainer
---domain-identifier <bundle-id> --source Library/Preferences/<bundle-id>.plist
+   --domain-identifier <bundle-id> --source Library/Preferences/<bundle-id>.plist
 --destination ./post.plist`
 3. Decode the key (the DECISIVE check):
    `/usr/libexec/PlistBuddy -c 'Print :"/userdata/guisettings.xml"' post.plist | xxd -r -p | gunzip | head`

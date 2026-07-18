@@ -625,7 +625,7 @@ Same gated treatment as every modular phase, plus the no-env dimension:
 
 - **Owner directives encoded (all 2026-06-10, all binding):** (1) the canonical
   device root is `/storage/emulated/0/_T7B/kodi/` (layout: `backups/ iptv/ media/
-repositories/ rss/ scripts/`, + `backups/EM+`); the `.env.<device>` masters live
+  repositories/ rss/ scripts/`, + `backups/EM+`); the `.env.<device>` masters live
   THERE on all machines; the old `kodi/tony.7.bones/` root becomes a read-only
   LEGACY fallback (read after the new root, never written again). (2) the
   device-resident master is PERSISTENT: read, apply, NEVER delete - wipe-and-redo
@@ -789,7 +789,7 @@ repositories/ rss/ scripts/`, + `backups/EM+`); the `.env.<device>` masters live
   old 1.7.0/1.4.0 zips 404; `addons.xml` advertises both new versions and the
   bootstrap's `<requires>` reads 1.5.0. Pages rebuilt commit `74e4553` (installer
   zip untouched at 2.2.1, so no install-relevant root change). The `Validate Kodi
-Repository` CI re-runs the same gate as a backstop.
+  Repository` CI re-runs the same gate as a backstop.
 - **Auto-update reality.** Completed boxes auto-update the library 1.4.0 → 1.5.0 -
   an import-only superset (adds the helper/constant + the staging guard; the mkdir
   is idempotent, no caller change on a configured box) - benign. The bootstrap

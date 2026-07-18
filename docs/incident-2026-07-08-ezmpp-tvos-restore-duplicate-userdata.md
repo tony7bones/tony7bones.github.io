@@ -54,7 +54,7 @@ that genuinely need durability, dual-layering the entire folder.
   plist (`Library/Preferences/ca.koditvbox.kodi.tvos.21.plist`) holds `/userdata/*` keys for
   the same files plus add-on settings (12 keys) - the mirror the rewrite populates.
 - **Boot log** (`Library/Caches/kodi.log`): `special://profile/ is mapped to
-special://masterprofile/`; `found key /userdata/guisettings.xml` /
+  special://masterprofile/`; `found key /userdata/guisettings.xml` /
   `NSUSerDefaults: compressed /userdata/profiles.xml ...` confirm the NSUserDefaults mirror
   is live.
 
@@ -76,7 +76,7 @@ Hardware verification (not code-only):
   (`guisettings.xml` 36,617 B); after a restart File Manager listed each userdata file ONCE.
 - **Bedroom (Amazon AFTHA001, Android 9, Kodi 21.3):** the actual fixed
   `rewrite_userdata_xml` run in-Kodi logged `T7BTEST SAFE platform_tvos=False is_tvos=False
-rewrite=(1,0,0) posix_survived=True` - the delete path never fires on Android.
+  rewrite=(1,0,0) posix_survived=True` - the delete path never fires on Android.
 
 Released 2026.07.08.6 (commit 1a054cf), live on `main`/raw and fetchable by the boxes.
 

@@ -123,7 +123,7 @@ three add-ons people actually iterate on do not.
   (REPLACES the `<news>` body with one line; the docstring at line 162-174 notes
   this is intentional single-line news, "if a rolling changelog is ever wanted,
   change this to prepend instead"). It is **hard-coded to `ADDON_ID =
-"repository.tony7bones"`** (line 23) - `zip_name`, `version_from_zip_name`,
+  "repository.tony7bones"`** (line 23) - `zip_name`, `version_from_zip_name`,
   `_ZIP_RE`, `is_root_zip_name`, `DeployPlan` are all proxy-specific. To reuse it
   for the `script.*` add-ons we must generalize the ID-bound parts (the version
   math and the addon.xml transforms are already ID-agnostic).
@@ -312,7 +312,7 @@ Options:
   RELATION, not a literal.** Replace `== "1.5.0"` with: parse the library's
   `addon.xml`, assert `is_single_digit`; and in the bootstrap test, parse BOTH
   manifests and assert `bootstrap.import("script.module.tony7bones").version ==
-library.version` (or `<=`, if we ever allow bootstrap to pin a floor below
+  library.version` (or `<=`, if we ever allow bootstrap to pin a floor below
   current). **RECOMMENDED.** This _deletes the hand-edit forever_ AND turns the
   test into a real lockstep guard (today it only checks a stale literal; a
   forgotten lockstep bump would pass the literal pin if it happened to match an old
@@ -613,7 +613,7 @@ Release plan (baseline origin/main):
   in sync on the current tree); the manual path is untouched (the tool is opt-in,
   the hook still backstops a hand-edit); deterministic regen; ruff + secret-leak
   green; NO add-on bump by the work. Commit (local): `feat(release): release.py
-one-command bump+news+lockstep (Phase 3)`.
+  one-command bump+news+lockstep (Phase 3)`.
 
 ### Phase 4 - Make it the documented default; auto-derive the version table - SHIPPED 2026-06-10
 
@@ -637,7 +637,7 @@ one-command bump+news+lockstep (Phase 3)`.
 - **Acceptance MET:** every release doc reflects `release.py`; the manual steps are
   marked historical; the version tables are accurate + flagged auto-derivable; no
   add-on bump; ZERO AI attribution. Commit (local): `docs(release): release.py is
-the one release command (Phase 4)`.
+  the one release command (Phase 4)`.
 
 ### Phase 5 - Unify the proxy path - SHIPPED 2026-06-10
 
@@ -668,7 +668,7 @@ the one release command (Phase 4)`.
   `release.py --proxy` (delegation = same code; parity test + live dry-run prove
   it); `test_deploy.py` passes UNCHANGED; `npm run deploy:*` wrappers still work; no
   add-on bump; ZERO AI attribution. Commit (local): `feat(release): unify proxy
-release into release.py (Phase 5)`.
+  release into release.py (Phase 5)`.
 
 ---
 
@@ -1039,7 +1039,7 @@ hardened contract:
   script-side analog of `check_consistency.check`) backs the hook, CI, and the
   tool's pre-commit assertion - asserting per changed add-on: well-formed,
   single-digit, `is_greater` vs `origin/main`, and `bootstrap.import ==
-library.version`. The tool calls it BEFORE committing; the hook + CI call it on
+  library.version`. The tool calls it BEFORE committing; the hook + CI call it on
   the refs. Divergence is structurally impossible because there is one
   implementation.
 - The version math stays exclusively in `release_lib` (`bump`, `is_greater`,

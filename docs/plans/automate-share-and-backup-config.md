@@ -49,7 +49,7 @@ genuinely closed against real code, then independently found new gaps):
   explicitly out of scope (3.5, Decision I).
 - Added a test for the FULL new Express execution order (not just "activation is
   last"), mirroring the existing `test_run_express_orchestration_order_addons_
-foundation_iptv` precedent (5).
+  foundation_iptv` precedent (5).
 
 Changelog v5 -> v6 (round four; both reviewers converged on the SAME modal-placement
 hazard from complementary angles, plus two narrower scoping fixes):
@@ -149,7 +149,7 @@ track of what already happened.
 - **Foundation is contractually zero-content today, and this plan preserves that.**
   `run_foundation`'s own docstring promises "stop here = a pristine, branded Kodi
   with ZERO content," and `test_run_foundation.py::test_run_foundation_installs_zero_
-content` asserts it. Weather is already grandfathered in under a narrow "branded
+  content` asserts it. Weather is already grandfathered in under a narrow "branded
   look, not content" rationale. EZ Maintenance++ is a real add-on with its own
   dependency closure - the same category the zero-content test explicitly excludes -
   so it does NOT go in Foundation (see 3.1a, a NEW phase, not folded in).
@@ -232,7 +232,7 @@ content` asserts it. Weather is already grandfathered in under a narrow "branded
   only checks registration, and `net.py`'s `enable()`/`disable()` are write-only. The
   Phase 3 "PVR installed AND enabled" probe (3.2, 3.6) requires building this from
   scratch (e.g. a `Addons.GetAddonDetails` JSON-RPC call with `properties:
-["enabled"]`), and must be clearly distinguished from the UNRELATED per-instance
+  ["enabled"]`), and must be clearly distinguished from the UNRELATED per-instance
   `kodi_addon_instance_enabled` key already living inside `instance-settings-<N>.xml`
   (`iptv.py`) - conflating "is the add-on enabled in Kodi's registry" with "is this
   PVR instance enabled in its own settings file" is a real, easy implementation bug.
@@ -686,7 +686,7 @@ Unit (mocked `xbmc*`, `__main__`-guarded imports, like the existing suite):
 - **`assert_box_complete` layer-list test:** Guided's Finish check names all 5 new
   layers; a box missing any one of them is correctly reported incomplete.
 - **Test-retirement list (now three, not two):** `test_wizard_reoffers_foundation_
-after_skin_revert`, `test_foundation_gate_installs_and_keeps_setup`, and
+  after_skin_revert`, `test_foundation_gate_installs_and_keeps_setup`, and
   `test_failed_foundation_gate_no_restart_no_activate` all assert today's bundled
   Foundation-includes-skin behavior and must be retired/rewritten under the split,
   not left to silently fail or silently pass on stale assumptions.
@@ -730,11 +730,11 @@ backed up. Part 1 makes the BOXES reproducible; Part 2 makes the MINI reproducib
 2. **Daemons as repo templates + install step:** `com.tony7bones.iptv2.plist` (+ any
    WiFi-keepalive template, conditional - only relevant while the mini is on WiFi;
    currently retired since the mini is wired); provision installs + `launchctl
-bootstrap`s them.
+   bootstrap`s them.
 3. **NFS:** `/etc/exports` (`Kodi/Share` + `Kodi/Backup`, `-mapall=moquette -network
-192.168.7.0 -mask 255.255.255.0`) + `nfs.conf`
+   192.168.7.0 -mask 255.255.255.0`) + `nfs.conf`
    (`nfs.server.mount.require_resv_port=0`, the Android-mount fix) + `nfsd
-enable/update`.
+   enable/update`.
 4. **SMB:** shares `KodiShare` + `KodiBackup` (guest) via `sharing -a ... -s 001 -g 001`.
 5. **Folder tree:** `~/Kodi/{Share,Backup,services/iptv}` (STRUCTURE only - Share media
    - Backup zips are DATA, never touched).

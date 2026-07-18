@@ -35,7 +35,7 @@ change without it.
 
 1. **The local-read VFS bug** (the one that took two real-device round-trips
    and two fix attempts to actually nail). Signature: `copied=0 total=<real
-size> actual=0` on EVERY attempt, `xbmcvfs.Stat()` on the source has always
+   size> actual=0` on EVERY attempt, `xbmcvfs.Stat()` on the source has always
    reported the CORRECT size. This is Kodi's VFS silently failing to read a
    local file that a _different, non-VFS writer_ (this add-on's own
    `CreateZip()`, which uses plain `zipfile`/`open()`) produced - confirmed on
@@ -90,7 +90,7 @@ size> actual=0` on EVERY attempt, `xbmcvfs.Stat()` on the source has always
    so this build's tvOS File Manager enumerates BOTH layers = two entries per file.
    Fixed by dropping the redundant POSIX copy after a read-back confirms NSUserDefaults
    holds the identical bytes, hard-gated to tvOS (`getCondVisibility
-System.Platform.TVOS`) so it is a strict no-op on Fire TV / Android / desktop. If you
+   System.Platform.TVOS`) so it is a strict no-op on Fire TV / Android / desktop. If you
    see this on a version >= 2026.07.08.6, the drop is not firing (check `nsud.py`'s
    `_is_tvos()` gate and the `_vector_confirmed` read-back). Full mechanism + the
    NSUserDefaults storage model + hardware proof:
@@ -106,7 +106,7 @@ System.Platform.TVOS`) so it is a strict no-op on Fire TV / Android / desktop. I
    log). If it's below 2026.07.04.5, the fix may simply not be on the device
    yet - that's the first thing to rule out, not a new bug.
 3. **Grep for the diagnostic line**: `chunked copy size mismatch (copied=...
-total=... actual=...)`. `copied=0` → mode 1 (local-read VFS bug, above).
+   total=... actual=...)`. `copied=0` → mode 1 (local-read VFS bug, above).
    `copied==total` with `actual` short → mode 2 (settle race - should already
    recover on its own via the settle-poll and, failing that, the fallback).
 4. **Grep for the raw destination setting** (`download.path`/`restore.path` in

@@ -206,7 +206,7 @@ by GitHub Pages, verified from the consumer seat (`verify_live_site.py`).
       `static_catalog._fill_art_from_zip` now materializes declared art out
       of each entry's zip - 31/31 icons served (test pinned).
       Kodi profile backup from the run: `~/Library/Application
-Support/Kodi.backup-20260715-124124` (deletable once confirmed).
+      Support/Kodi.backup-20260715-124124` (deletable once confirmed).
 - [~] **Phase 1 - LIVE (2026-07-15, owner "proceed"); soaking.** Pages source
   flipped to GitHub Actions (via `actions/configure-pages enablement:true`
   in the deploy job - the pushing moquette account has push-not-admin, so
@@ -414,7 +414,7 @@ generated from a minimal, truthful repo.
     unreachable; the `install_build` route (571-584); `CAT_TOOLS()` + the `tools` route
     (the TOOLS menu row is commented out at 105); `REMOVE_EMPTY_FOLDERS()` (339-355, zero
     callers); the dead video-addon querystring params (474-504: `title year tvdb tmdb
-season episode tvshowtitle premiered image meta select query content` - `select` is
+    season episode tvshowtitle premiered image meta select query content` - `select` is
     even shadowed at 563).
   - `wiz.py`: `skinswap()` (168-206, only caller is the dead `install_build` route; it
     does sleep-then-`ReloadSkin` from a plugin thread, the exact pattern memory says hangs
@@ -427,7 +427,7 @@ season episode tvshowtitle premiered image meta select query content` - `select`
       `control.py` runs on EVERY plugin invocation (imported at `default.py` top) and
       instantiates at module scope: `progressDialog = DialogProgress()`, `progressDialogBG`,
       `windowDialog = xbmcgui.WindowDialog()` (allocates a real GUI window), `player =
-xbmc.Player()`, `playlist`. Only TEN control attrs are used anywhere (`setting`,
+      xbmc.Player()`, `playlist`. Only TEN control attrs are used anywhere (`setting`,
       `selectDialog`, `infoDialog`, `USERDATA`, `openSettings`, `HOME`, `addonInfo`,
       `addonIcon`, `addonFanart`, plus `idle` internally - usage counts verified by grep).
       Everything else goes, including the latently BROKEN `addonThumb`/`addonPoster`/
