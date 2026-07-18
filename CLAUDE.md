@@ -2,6 +2,85 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+---
+
+## READ FIRST: where the open work is
+
+**`TASKS.md` is this repo's tracker, but be warned: it is roughly 900 lines and
+almost all of it is a historical record.** As audited on 2026-07-18, only two
+items in it are live work:
+
+1. **The EZM++ legacy metadata shim deletion** (the STOP block immediately
+   below). Documented, deliberately NOT executed, deferred by the owner.
+2. **The bedroom-box full-customization backup + clone-restore test**, which is
+   owner-gated on its first step.
+
+`docs/OPTIMIZATION-BACKLOG.md` holds five unstarted hub tooling items (A1, A3,
+R2, R4, and the deferred R3). Its own header states that none are implemented.
+
+Two headings in `TASKS.md` are actively misleading and were NOT rewritten,
+because history is not to be discarded: `## ▶ VERY NEXT STEP - P1: extract the
+IPTV builder...` points at a track that the same file marks DONE 2026-07-17,
+and `## ▶ Prior next-step ... (CANCELLED)` occupies ~90 lines of the tail with
+detailed instructions for cancelled work. Do not take either as your next task.
+
+**The other four repos in this fleet have their own trackers**, and most work
+that looks like it belongs here actually lives in one of them. The fleet meta
+index is `~/Code/moquette/kodi/TASKS.md`; the sub-project trackers are
+`ezmpp/TASKS.md`, `estuary7/TASKS.md` and `iptv/TASKS.md`. Note in particular
+that `docs/incident-2026-07-16-ezmpp-full-backup-was-not-full.md` is a
+self-declared OPEN release blocker for the EZM++ add-on with two owner-gated
+hardware runs outstanding.
+
+**This repo is a PUBLISHING SURFACE.** `_tools/build_site.py` copies every
+git-TRACKED file into the published Pages artifact. Every doc in `docs/`,
+`TASKS.md`, and this file are public. Think before adding a new tracked file.
+
+---
+
+## STOP - READ BEFORE TOUCHING `addons/script.ezmaintenanceplusplus/`
+
+**Open finding, 2026-07-18. Documented, deliberately NOT executed.**
+
+If you are here to reason about the legacy EZM++ metadata mirror at
+`addons/script.ezmaintenanceplusplus/`, the question is already settled. Do not
+re-derive it. Two independent reviews (QA + architecture) reached the same
+verdict, and two earlier analyses in that same session reversed themselves
+because they trusted the stale prose in this file over the evidence.
+
+**The verdict: the mirror is unjustified and should be deleted.** Every
+justification previously written in this file and in `TASKS.md` is false:
+
+- Pages `/addons/` was NEVER a declared `<dir>` in any historical `addon.xml`
+  (v2.2.x pointed at `127.0.0.1:61234`, v3.0.0 points at `/static/`).
+- The static catalog has ALWAYS read `addons/hosted/`, never this directory.
+- The owner LIFTED the "keep it for old engine bundles" rule on 2026-07-15
+  (no fleet convergence, fresh installs only).
+
+It is also actively harmful: the published 1,866-byte zip contains only
+`addon.xml`, which declares `library="default.py"` and an
+`xbmc.service start="startup"` that are not in the zip. Kodi installs it, fails
+at every boot, and squats the add-on ID at the stale version forever, because
+Kodi upgrades by version number only.
+
+**Before acting, read the full finding, which carries the exact change set and
+two gotchas that will otherwise bite you:**
+`~/Downloads/kodi-legacy-addons-shim-finding-20260718.md`
+
+The two gotchas, in short:
+
+1. Do NOT bundle an "exclude `addons/` from Pages" change. `pages.yml` passes
+   `--transition` and `verify_live_site.py` then HEADs `/addons/addons.xml`, so
+   excluding the tree fails CI today.
+2. The deletion is a catalog SHRINK and may need `--allow-catalog-shrink` on the
+   first deploy.
+
+**Why it has not been done yet:** deferred by the owner on 2026-07-18 to avoid
+disturbing the in-flight Streamvision parity gate. Confirm with the owner before
+executing.
+
+---
+
 ## What this repo is
 
 A GitHub Pages site (`tony7bones.github.io`) that hosts a **static** Kodi add-on repository. The site is static: no bundler, no runtime, no on-box service. Python tooling under `_tools/` generates and deploys everything; `package.json` is only a script-runner wrapper.
@@ -43,12 +122,12 @@ The repo has two committed source trees, each with a different job:
 Two first-party add-on dirs live directly under `addons/`:
 
 - **`addons/repository.tony7bones/`** - the static-only repository add-on (3.0.0) described above.
-- **`addons/script.ezmaintenanceplusplus/`** - a **hosted metadata mirror only** (`addon.xml` + icon + fanart). The real source lives in the sibling repo `~/Code/moquette/ezmaintenanceplusplus` (`moquette/ezmaintenanceplusplus`, public). It exists here so an older engine bundle that referenced this path still resolves; do not resurrect the deleted full-source copy.
+- **`addons/script.ezmaintenanceplusplus/`** - a **hosted metadata mirror only** (`addon.xml` + icon + fanart). The real source lives in the sibling repo `~/Code/moquette/kodi/ezmpp` (`moquette/ezmaintenanceplusplus`, public; note the local dir is `ezmpp`, and the standalone path `~/Code/moquette/ezmaintenanceplusplus` that older docs cite DOES NOT EXIST). **DISPUTED, slated for deletion - see the STOP block at the top of this file.** The justification previously written here ("an older engine bundle that referenced this path still resolves") was disproven on 2026-07-18: no historical `addon.xml` ever pointed at Pages `/addons/`, and the owner lifted that rule on 2026-07-15. It is six releases stale and publishes a code-less zip. Do not resurrect the deleted full-source copy either.
 
 `addons/hosted/<id>/` holds mirrored third-party-repo trees (static, hand-committed metadata; not zipped or indexed by the generator). **Two of the `hosted/<id>/` entries are OUR OWN add-ons**, mirrored here as metadata only with source in a sibling repo:
 
-- **`skin.estuary7`** (`addons/hosted/skin.estuary7/`) - source, build pipeline, and tests live in `~/Code/moquette/estuary7` (`moquette/estuary7`). This repo holds only `addon.xml` + `icon.png`/`fanart.jpg`; the catalog points `assets.zip` at that repo's GitHub Release asset.
-- **`script.ezmaintenanceplusplus`** (`addons/hosted/script.ezmaintenanceplusplus/`) - source, the full test suite, and release tooling live in `~/Code/moquette/ezmaintenanceplusplus`. Same mirror pattern. Fix bugs and add tests in the sibling repo; only bump the hosted metadata + release here. Triage guide: `.claude/skills/ezm-backup-doctor/SKILL.md`.
+- **`skin.estuary7`** (`addons/hosted/skin.estuary7/`) - source, build pipeline, and tests live in `~/Code/moquette/kodi/estuary7` (`moquette/estuary7`). This repo holds only `addon.xml` + `icon.png`/`fanart.jpg`; the catalog points `assets.zip` at that repo's GitHub Release asset.
+- **`script.ezmaintenanceplusplus`** (`addons/hosted/script.ezmaintenanceplusplus/`) - source, the full test suite, and release tooling live in `~/Code/moquette/kodi/ezmpp`. Same mirror pattern. Fix bugs and add tests in the sibling repo; only bump the hosted metadata + release here. Triage guide: `.claude/skills/ezm-backup-doctor/SKILL.md`.
 
 Both patterns mean a `git status` / "commits to push" question about the skin or EZM++ almost always resolves in the OTHER repo, not this one; see the deploy skill's troubleshooting table.
 
@@ -64,7 +143,7 @@ Everything lives on `main`. Main is **sources-only**: the canvas (`dropbox/`), t
 # Run this locally before committing whenever you change addon sources.
 python3 _tools/generate_repo.py            # npm run build
 
-# Run the full test suite (306 tests, all green)
+# Run the full test suite (235 tests, all green; verified 2026-07-18)
 python3 -m pytest _tools/ -q               # npm test
 
 # Lint the Python tooling
@@ -133,12 +212,12 @@ Note: pages.yml has NO path filter - every push to main builds and deploys (any 
 
 ### Source areas
 
-| Path                    | Purpose                                                                                                                                                                                                                                                |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `addons/<addon-id>/`    | Any dir with an `addon.xml` is built into a zip and listed in `addons/addons.xml`. Currently `repository.tony7bones` and the `script.ezmaintenanceplusplus` metadata mirror.                                                                           |
-| `addons/hosted/<id>/`   | Mirrored third-party-repo trees (`addon.xml` + zip). Static, committed by hand, NOT zipped or indexed by the generator (`hosted` is the sole `_ADDONS_SPECIAL` entry). Includes the `skin.estuary7` / `script.ezmaintenanceplusplus` metadata mirrors. |
-| `dropbox/repositories/` | Hand-authored third-party repository installer zips. Not in `addons.xml`; Kodi installs them manually via File Manager. Mirrored 1:1 to the served `/repositories/`.                                                                                   |
-| `dropbox/rss/`          | Hand-authored asset dir. Mirrored to the served root and recursively auto-indexed for File-Manager browsing. Git-ignored files are kept locally and never copied into the served tree. (`media/`, `iptv/`, `zips/` retired 2026-07-16.)                |
+| Path                    | Purpose                                                                                                                                                                                                                                                       |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `addons/<addon-id>/`    | Any dir with an `addon.xml` is built into a zip and listed in `addons/addons.xml`. Currently `repository.tony7bones` and the `script.ezmaintenanceplusplus` metadata mirror (the latter is DISPUTED and slated for deletion - see the STOP block at the top). |
+| `addons/hosted/<id>/`   | Mirrored third-party-repo trees (`addon.xml` + zip). Static, committed by hand, NOT zipped or indexed by the generator (`hosted` is the sole `_ADDONS_SPECIAL` entry). Includes the `skin.estuary7` / `script.ezmaintenanceplusplus` metadata mirrors.        |
+| `dropbox/repositories/` | Hand-authored third-party repository installer zips. Not in `addons.xml`; Kodi installs them manually via File Manager. Mirrored 1:1 to the served `/repositories/`.                                                                                          |
+| `dropbox/rss/`          | Hand-authored asset dir. Mirrored to the served root and recursively auto-indexed for File-Manager browsing. Git-ignored files are kept locally and never copied into the served tree. (`media/`, `iptv/`, `zips/` retired 2026-07-16.)                       |
 
 `dropbox/` is **pristine**: the build NEVER writes generated files (index.html, checksums) back into it; `build_site.py` mirrors it into the CI artifact ROOT, which is what GitHub Pages serves at the bare URL. Nothing mirror-related is committed.
 

@@ -2,6 +2,54 @@
 
 Tracking for the Tony.7.Bones repo.
 
+> ## What is actually OPEN in this file (audited 2026-07-18)
+>
+> **This file is ~900 lines and is almost entirely a historical record.** Two
+> items are live work for THIS repo:
+>
+> 1. **EZM++ legacy metadata shim deletion** - the `⛔ CORRECTION 2026-07-18`
+>    block inside the P2 section. Documented, deliberately NOT executed,
+>    deferred by the owner pending the IPTV Streamvision parity gate. It has no
+>    checkbox, so a checkbox scan misses it. See the STOP block in `CLAUDE.md`.
+> 2. **Bedroom box - full-customization backup + clone-restore test** - the
+>    `🔲 ACTIVE` section; three sequential sub-items, owner-gated on the first.
+>
+> Everything else with an open-looking marker is stale, not live:
+>
+> - The **two `▶` headings near the bottom** both point at finished or
+>   cancelled work. "VERY NEXT STEP - P1: extract the IPTV builder" names a
+>   track this same file marks `✅ DONE 2026-07-17`, and the "Prior next-step"
+>   N2 track is self-labeled CANCELLED. They are kept as history. **Neither is
+>   your next task.** The unticked boxes in the P1 IPTV section were simply
+>   never ticked; that work shipped.
+> - The **"Mini / home-server ops - open items 🔲 ACTIVE"** header is stale:
+>   all five sub-items are `[x]` DONE 2026-07-02. Only two advisory notes
+>   remain (`~/Kodi/Backup` has no pruning; purge `~/Kodi/.attic` when sure).
+> - The **"Estuary 7 - fork-by-build 🔲 ACTIVE"** section is a historical
+>   record of THIS repo's part (hosted metadata, catalog entry). Its "Phase 5
+>   not started" framing is contradicted earlier in this same file, which
+>   records Phase 5 as **DROPPED as a project** (owner, 2026-07-15). Live skin
+>   work belongs in `~/Code/moquette/kodi/estuary7/TASKS.md`.
+> - The **"Backlog - Estuary MOD V2+"** items target
+>   `script.tony7bones.modv2plus`, which is deprecated AND deleted. No repo
+>   owns them. Recommend striking rather than moving.
+>
+> **Sibling trackers.** This is one of five repos in a meta-checkout at
+> `~/Code/moquette/kodi`. Fleet meta index: `~/Code/moquette/kodi/TASKS.md`.
+> Per-project: `ezmpp/TASKS.md`, `estuary7/TASKS.md`, `iptv/TASKS.md`. Note
+> that `docs/incident-2026-07-16-ezmpp-full-backup-was-not-full.md` is a
+> self-declared OPEN release blocker for EZM++ with two owner-gated hardware
+> runs outstanding, and that a hardware-verification gate on the EZM++ release
+> checklist is requested by three separate incident writeups here and appears
+> never to have landed.
+>
+> Stale paths: several sections below cite `~/Code/moquette/estuary7` and
+> `~/Code/moquette/ezmaintenanceplusplus`. **Those standalone paths do not
+> exist.** The real checkouts are `~/Code/moquette/kodi/estuary7` and
+> `~/Code/moquette/kodi/ezmpp`.
+
+---
+
 > **The repo is now a STATIC Kodi repository served by GitHub Pages.** The virtual proxy engine
 > and the entire Setup add-on family (`script.tony7bones.bootstrap`, `script.module.tony7bones`,
 > `script.tony7bones.modv2plus`) have been RETIRED and DELETED; `repository.tony7bones` is a
@@ -258,9 +306,14 @@ generated from a minimal, truthful repo.
       squashed to a single root commit (see the post-install cleanup entry above).
       Credentials rotated by the owner 2026-07-16 - remediation COMPLETE.
 - ~~⛔ DO NOT CLEAN: anything an old engine bundle references~~ LIFTED by the
-  2026-07-15 owner reframe (no fleet convergence; fresh installs only). The EZM++
-  metadata shim `addons/script.ezmaintenanceplusplus/` stays because the catalog
-  builds from it, not for engine-bundle compatibility.
+  2026-07-15 owner reframe (no fleet convergence; fresh installs only).
+- ⛔ **CORRECTION 2026-07-18:** the follow-on claim previously written here (that
+  the EZM++ metadata shim `addons/script.ezmaintenanceplusplus/` "stays because
+  the catalog builds from it") is FALSE, and was false when written. The catalog
+  reads `addons/hosted/`, and has since `catalog.json` first appeared. Both
+  written justifications for that shim are disproven; it is slated for deletion,
+  documented but not executed. See the STOP block at the top of `CLAUDE.md` and
+  the full finding at `~/Downloads/kodi-legacy-addons-shim-finding-20260718.md`.
 
 ## P1 - EZ Maintenance++ boot path + cache-clean bugs - ✅ DONE (2026-07-09, branch `ezm-boot-cleanup`, released as 2026.07.09.1)
 
@@ -742,7 +795,17 @@ _tools/release.py` is THE release command for every add-on. As shipped in
 
 ---
 
-## ▶ VERY NEXT STEP - P1: extract the IPTV builder into its own PRIVATE repo (see the P1 track near the top)
+## ▶ HISTORICAL, NOT YOUR NEXT STEP - P1: extract the IPTV builder into its own PRIVATE repo (see the P1 track near the top)
+
+> **SUPERSEDED 2026-07-17. Heading annotated 2026-07-18; text below left
+> intact.** This extraction is DONE: the P1 track near the top of this file
+> marks it `✅ DONE 2026-07-17`, the builder lives in `moquette/iptv` (local
+> checkout `~/Code/moquette/kodi/iptv`), and `_tools/build_iptv.py` was removed
+> here in commit `b16ea06`. The original "VERY NEXT STEP" wording sent
+> returning agents at finished work, which is why this banner exists. For the
+> IPTV project's real open items, see `~/Code/moquette/kodi/iptv/TASKS.md`.
+
+---
 
 > **N2-N5 CANCELLED (owner decision 2026-06-10): "nuke N2… our .env method is working
 > fine."** The device-resident `.env.<device>` delivery mode (owner edits `.env.<device>`
@@ -756,7 +819,16 @@ _tools/release.py` is THE release command for every add-on. As shipped in
 > Q2-Q5 are moot (collector-only). No active track queued; await direction. Cancelled
 > detail: `docs/plans/no-computer-setup.md`.
 
-## ▶ Prior next-step (now superseded) - N2, the on-box config collector (CANCELLED)
+## ▶ HISTORICAL, NOT YOUR NEXT STEP - prior next-step, N2 on-box config collector (CANCELLED)
+
+> **Annotated 2026-07-18; text below left intact.** Everything in this section
+> is cancelled or deleted work, but it runs for roughly 90 lines and contains
+> detailed "Next: N2..." instructions plus two owner questions (Q2 RSS list, Q3
+> web-server default) that the block just above declares moot. The whole
+> subject (`script.tony7bones.bootstrap`, `script.module.tony7bones`) has since
+> been RETIRED AND DELETED. Read for archaeology only.
+
+---
 
 > **Phase N1.2 is RELEASED to `main` (2026-06-10)** - `script.tony7bones.bootstrap`
 > **1.8.0** + `script.module.tony7bones` **1.5.0** (release commit `74e4553`,
