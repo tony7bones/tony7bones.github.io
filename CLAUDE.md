@@ -51,9 +51,32 @@ that `docs/incident-2026-07-16-ezmpp-full-backup-was-not-full.md` is a
 self-declared OPEN release blocker for the EZM++ add-on with two owner-gated
 hardware runs outstanding.
 
-**This repo is a PUBLISHING SURFACE.** `_tools/build_site.py` copies every
-git-TRACKED file into the published Pages artifact. Every doc in `docs/`,
-`TASKS.md`, and this file are public. Think before adding a new tracked file.
+**This repo is a PUBLISHING SURFACE, but publishing is now an ALLOWLIST**
+(changed 2026-07-18; the previous text here said every tracked file is
+published, which was true then and is false now).
+
+`_tools/build_site.py` copies a tracked file into the Pages artifact only if
+`check_site_secrets.publish_refusal()` allows it: the dirs `addons/`, `images/`
+and `dropbox/`, plus `README.md`, `style.css`, `.nojekyll` and `package.json`.
+Everything else is refused, including `docs/`, `TASKS.md`, `.claude/`,
+`_tools/`, `.github/` and this file. Tracked symlinks are refused outright,
+because a copy dereferences them and would publish whatever they point at.
+
+Why it was inverted: an audit found the fleet's LAN addresses in 17 tracked
+files, 39 occurrences in one playbook alone, all live on the public site,
+alongside agent skills, adb runbooks and NFS export layouts. A denylist was
+tried first and an adversarial review enumerated bypasses in one pass. An
+allowlist fails toward "a public file is missing", which someone notices,
+instead of "an internal file was published", which nobody does.
+
+**So adding a new tracked file no longer publishes it by accident.** The
+inverse now applies: if you add something that genuinely SHOULD be public,
+add it to `_PUBLISH_DIRS` / `_PUBLISH_FILES` or it will silently not ship.
+
+**IMPORTANT:** exclusion from the artifact is NOT exclusion from the public.
+This repo and its full history remain public on GitHub, so everything listed
+above is still readable by anyone who clicks through. The change removes it
+from the served origin and from Pages crawling; it does not un-publish it.
 
 ---
 

@@ -69,12 +69,14 @@ def test_tooling_is_refused_by_the_publish_allowlist(tmp_path):
     # _tools/ used to be content-scan-exempt so the pattern definitions living
     # there could not self-flag. Since the 2026-07-18 allowlist inversion it is
     # not published at all, which is a stronger guarantee: it can neither leak
-    # nor self-flag. The reason must be the allowlist, not a content match.
+    # nor self-flag. The content-scan exemption (_SOURCE_DIRS) was then deleted
+    # as fail-open, so anything that DOES reach the artifact is scanned - hence
+    # the second assertion now expects a finding, not silence.
     import check_site_secrets as c
 
     assert c.publish_refusal("_tools/x.yml") == "not on the publish allowlist"
-    # and it remains content-scan-exempt in the artifact, so it cannot self-flag
-    assert _findings(tmp_path, {"_tools/x.yml": "password=not-a-real-served-secret"}) == []
+    hits = _findings(tmp_path, {"_tools/x.yml": "password=not-a-real-served-secret"})
+    assert hits and "credential-like content" in hits[0][1]
 
 
 def test_placeholder_env_examples_are_allowed(tmp_path):

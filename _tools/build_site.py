@@ -64,6 +64,17 @@ def copy_tracked_tree(out_dir: str, repo_root: str = REPO_ROOT) -> int:
     count = 0
     for rel in tracked_files(repo_root):
         src = os.path.join(repo_root, rel)
+        # Refuse tracked symlinks OUTRIGHT, before any other check. os.path.isfile
+        # and shutil.copyfile both dereference, so the allowlist would validate the
+        # link path and then publish whatever it points at: a proof-of-concept
+        # symlinked addons/sneak.md -> ../TASKS.md and published the full file
+        # while the log said TASKS.md was excluded, and the gate still reported
+        # clean. An absolute link is worse, reaching outside the repo entirely.
+        # Nothing here needs a tracked symlink, and refusing beats
+        # resolve-then-revalidate, which carries its own TOCTOU and ".." edges.
+        if os.path.islink(src):
+            static_catalog.warn(f"excluded from artifact (symlink): {rel}")
+            continue
         if not os.path.isfile(src):  # deleted-but-staged edge
             continue
         # The structural secret rules apply at COPY time, not just at the

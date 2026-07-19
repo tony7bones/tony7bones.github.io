@@ -34,9 +34,13 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from secret_patterns import ALLOW_FILES, SECRET_PATTERNS  # noqa: E402
 
-# Dirs whose CONTENT scan is skipped (source, not served content; covered by
-# test_secret_leak.py on the tracked tree). The STRUCTURAL check still applies.
-_SOURCE_DIRS = {"_tools", "docs", ".github", ".githooks", ".claude", "node_modules"}
+# NOTE: _SOURCE_DIRS was deleted 2026-07-18. It exempted _tools, docs, .github,
+# .githooks and .claude from the CONTENT scan, back when those trees rode along
+# in the artifact. Since the publish allowlist they cannot appear at all, so the
+# exemption bought nothing and failed OPEN: the day anyone adds "docs" to
+# _PUBLISH_DIRS to publish user documentation, that content would ship AND be
+# silently exempt from the credential scan, in one line, with no test failing.
+# Everything that reaches the artifact is now scanned.
 
 # Only these extensions are content-scanned (binary formats are skipped; zips
 # are covered by the structural rules on what may exist at all).
@@ -138,15 +142,12 @@ def scan_site(site_dir: str) -> list[tuple[str, str]]:
     site_dir = os.path.abspath(site_dir)
     for dirpath, dirnames, filenames in os.walk(site_dir):
         rel_dir = os.path.relpath(dirpath, site_dir)
-        top = rel_dir.split(os.sep)[0] if rel_dir != "." else ""
         dirnames.sort()
         for fname in sorted(filenames):
             relpath = os.path.normpath(os.path.join(rel_dir, fname))
             struct = _structural_violation(relpath)
             if struct:
                 findings.append((relpath, struct))
-                continue
-            if top in _SOURCE_DIRS:
                 continue
             if os.path.splitext(fname)[1].lower() not in _TEXT_EXTS:
                 continue
