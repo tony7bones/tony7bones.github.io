@@ -71,7 +71,7 @@ def copy_tracked_tree(out_dir: str, repo_root: str = REPO_ROOT) -> int:
         # tracked again, it could not ship in a built artifact.
         # check_site_secrets.py remains the backstop for content that
         # arrives any other way (e.g. downloaded at build time).
-        violation = check_site_secrets._structural_violation(rel)
+        violation = check_site_secrets.publish_refusal(rel)
         if violation:
             static_catalog.warn(f"excluded from artifact ({violation}): {rel}")
             continue

@@ -65,11 +65,16 @@ def test_credential_content_in_served_xml_is_flagged(tmp_path):
     assert hits and "credential-like content" in hits[0][1]
 
 
-def test_source_dirs_are_exempt_from_content_scan(tmp_path):
-    # the pattern definitions themselves live in _tools/ - must not self-flag
-    assert (
-        _findings(tmp_path, {"_tools/x.yml": "password=not-a-real-served-secret"}) == []
-    )
+def test_tooling_is_refused_by_the_publish_allowlist(tmp_path):
+    # _tools/ used to be content-scan-exempt so the pattern definitions living
+    # there could not self-flag. Since the 2026-07-18 allowlist inversion it is
+    # not published at all, which is a stronger guarantee: it can neither leak
+    # nor self-flag. The reason must be the allowlist, not a content match.
+    import check_site_secrets as c
+
+    assert c.publish_refusal("_tools/x.yml") == "not on the publish allowlist"
+    # and it remains content-scan-exempt in the artifact, so it cannot self-flag
+    assert _findings(tmp_path, {"_tools/x.yml": "password=not-a-real-served-secret"}) == []
 
 
 def test_placeholder_env_examples_are_allowed(tmp_path):
@@ -79,5 +84,48 @@ def test_placeholder_env_examples_are_allowed(tmp_path):
 
 
 def test_structural_rules_apply_even_inside_source_dirs(tmp_path):
-    hits = _findings(tmp_path, {"_tools/leftover.env": "SECRET=x"})
+    # An env file inside the PUBLISHED set must still be caught by the specific
+    # rule, not merely by the allowlist. addons/ is published, so it is the
+    # right place to assert this now that _tools/ is refused outright.
+    hits = _findings(tmp_path, {"addons/leftover.env": "SECRET=x"})
     assert hits and hits[0][1] == "env file"
+    # and the same rule fires at copy time, inside the allowed set
+    import check_site_secrets as c
+
+    assert c.publish_refusal("addons/leftover.env") == "env file"
+
+
+def test_publish_allowlist_refuses_internal_material(tmp_path):
+    """The inversion's whole point: unlisted paths are refused whatever they are
+    called, in any case, at any depth. Each of these bypassed the denylist that
+    preceded it."""
+    import check_site_secrets as c
+
+    for rel in (
+        "docs/playbooks/firetv-adb-dev.md",
+        "docs/Playbooks/firetv-adb-dev.md",
+        ".claude/skills/x/SKILL.md",
+        ".CLAUDE/skills/x/SKILL.md",
+        "vendor/_tools/leak.md",
+        "TASKS.md",
+        "CLAUDE.md",
+        "subdir/TASKS.md",
+        "./docs/playbooks/leak.md",
+    ):
+        assert c.publish_refusal(rel) == "not on the publish allowlist", rel
+
+
+def test_publish_allowlist_still_serves_the_site(tmp_path):
+    """The failure mode of an allowlist is a missing public file, so assert the
+    things visitors actually need are still allowed."""
+    import check_site_secrets as c
+
+    for rel in (
+        "addons/repository.tony7bones/addon.xml",
+        "images/logo.png",
+        "dropbox/rss/feed.xml",
+        "README.md",
+        "style.css",
+        ".nojekyll",
+    ):
+        assert c.publish_refusal(rel) is None, rel

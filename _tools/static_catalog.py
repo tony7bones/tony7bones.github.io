@@ -197,6 +197,27 @@ def _is_404(exc: Exception) -> bool:
     return isinstance(cause, urllib.error.HTTPError) and cause.code == 404
 
 
+def _relativize_source(source_url: str) -> str:
+    """Strip build-machine absolute paths out of anything we serve.
+
+    A locally-sourced entry carries the on-disk path it was built from. That is
+    fine internally and wrong to publish: it leaks the operator's username and
+    checkout layout into the deployed catalog.json. Remote URLs pass through
+    untouched; local paths become repo-relative.
+    """
+    if not source_url or "://" in source_url:
+        return source_url
+    try:
+        if os.path.isabs(source_url):
+            rel = os.path.relpath(source_url, REPO_ROOT)
+            # A path outside the repo tells the reader nothing useful and can
+            # still leak layout, so report only the basename.
+            return rel if not rel.startswith("..") else os.path.basename(source_url)
+    except Exception:
+        return os.path.basename(source_url)
+    return source_url
+
+
 def _subst(template: str, entry: dict, version: str | None = None) -> str:
     out = (
         template.replace("{username}", entry.get("username", ""))
@@ -588,7 +609,12 @@ def write_static_tree(resolved: list[ResolvedEntry], out_dir: str) -> dict:
             "zip_sha256": hashlib.sha256(item.zip_bytes).hexdigest(),
             "zip_size": len(item.zip_bytes),
             "kind": item.kind,
-            "source_url": item.source_url,
+            # Relativized before serving. For locally-sourced entries this is an
+            # absolute path on the build machine, which published the owner's
+            # home directory and checkout layout in the deployed catalog.json
+            # (16 entries, found 2026-07-18). The secret patterns do not match
+            # filesystem paths, so the gate passed it. Remote URLs are unchanged.
+            "source_url": _relativize_source(item.source_url),
             "stale": item.stale,
         }
 

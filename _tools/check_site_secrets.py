@@ -58,9 +58,67 @@ _TEXT_EXTS = {
 _MAX_SCAN_BYTES = 4 * 1024 * 1024
 
 
+# PUBLISH ALLOWLIST. Nothing tracked reaches the public artifact unless it is
+# named here.
+#
+# Inverted from a denylist on 2026-07-18. An audit found fleet LAN addresses in
+# 17 tracked files, 39 occurrences in one playbook alone, all published, along
+# with agent skills, adb runbooks, NFS export layouts and incident narratives.
+# A denylist was written first and an adversarial review enumerated bypasses in
+# one pass: case variants (`docs/Playbooks/`), nested copies (`x/_tools/`),
+# `ALLOW_FILES` short-circuiting ahead of the rules, and any newly added
+# internal doc publishing by default.
+#
+# The point of the inversion is the failure mode. A denylist fails toward
+# "a new internal file was published", which nobody notices. An allowlist fails
+# toward "a public file is missing", which someone notices immediately.
+#
+# Generated content (the canvas mirror, /static/, the root index and installer)
+# is produced AFTER this filter and is unaffected by it.
+_PUBLISH_DIRS = (
+    "addons",  # the add-on payloads this repository exists to serve
+    "images",  # site imagery
+    "dropbox",  # source for the generated canvas mirror
+)
+_PUBLISH_FILES = (
+    "README.md",  # the public face of the repository
+    "style.css",
+    ".nojekyll",
+    "package.json",
+)
+
+
+def publish_refusal(relpath: str) -> str | None:
+    """Return a reason when a TRACKED file must not be copied into the artifact.
+
+    Allowlist: anything not explicitly published is refused, whatever it is
+    called and wherever it sits. Used by build_site.copy_tracked_tree only.
+
+    This is deliberately NOT the same function scan_site uses. scan_site walks
+    the BUILT artifact, which is mostly generated content (the canvas mirror,
+    /static/, the root index) that never passes through here, so applying an
+    allowlist there would refuse the site's own output.
+    """
+    # normpath already collapses a leading "./"; do NOT lstrip("./") here, that
+    # strips a CHARACTER SET and would turn ".nojekyll" into "nojekyll",
+    # silently mangling every dotfile.
+    norm = os.path.normpath(relpath).replace(os.sep, "/")
+    lower = norm.lower()
+    parts = [p for p in lower.split("/") if p]
+    base = os.path.basename(norm)
+    if not parts:
+        return "empty path"
+    if parts[0] not in [d.lower() for d in _PUBLISH_DIRS]:
+        if len(parts) > 1 or base not in _PUBLISH_FILES:
+            return "not on the publish allowlist"
+    # Specific rules still apply inside the published set.
+    return _structural_violation(relpath)
+
+
 def _structural_violation(relpath: str) -> str | None:
+    """Structural rules that hold anywhere, including in generated output."""
     base = os.path.basename(relpath)
-    parts = relpath.split(os.sep)
+    parts = relpath.replace(os.sep, "/").split("/")
     if "iptv-build" in parts:
         return "iptv-build artifact"
     if base in ALLOW_FILES:
