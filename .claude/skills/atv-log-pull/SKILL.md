@@ -208,6 +208,72 @@ Apple TVs do NOT appear in `pymobiledevice3 usbmux list` because tvOS 17+ pairs
 over RemoteXPC. That is expected, not a fault. Prefer `devicectl` on macOS and
 keep `pymobiledevice3` for Linux hosts or when `devicectl` genuinely stalls.
 
+## 6. Read ANY Kodi setting off an Apple TV without Kodi running
+
+Proven on both atv1 and atv2, 2026-07-18. This is the workaround for the fact
+that tvOS suspends background apps, so JSON-RPC on 9090 is refused whenever
+Kodi is not foregrounded. `devicectl` reads the container regardless.
+
+**The trick: `guisettings.xml` is vectored into the NSUserDefaults key store AND
+GZIP COMPRESSED inside the key.** Reading it with `plutil -p` shows only binary.
+That compression is the `NSUSerDefaults: compressed` log line (note the
+upstream typo in the name).
+
+```bash
+UDID=$(xcrun devicectl list devices 2>/dev/null | awk '/ATV1/{print $3}')
+BUNDLE=ca.koditvbox.kodi.tvos.21
+OUT=/tmp/atvcfg; mkdir -p "$OUT"
+
+xcrun devicectl device copy from --device "$UDID" --user mobile \
+  --domain-type appDataContainer --domain-identifier "$BUNDLE" \
+  --source "Library/Preferences/$BUNDLE.plist" --destination "$OUT/prefs.plist"
+```
+
+```python
+import plistlib, gzip, re
+with open("/tmp/atvcfg/prefs.plist", "rb") as f:
+    d = plistlib.load(f)
+s = gzip.decompress(d["/userdata/guisettings.xml"]).decode("utf-8", errors="replace")
+m = re.search(r'<setting id="filecache\.memorysize"([^>]*)>([^<]*)</setting>', s)
+print(m.group(2))
+```
+
+A `<setting .../>` self-closing form means EMPTY, and a `default="true"`
+attribute means Kodi is using its built-in default rather than a chosen value.
+Both distinctions matter and neither is visible over JSON-RPC.
+
+The same plist lists every vectored `/userdata/*` path, which is the fastest way
+to see what the tvOS key layer is actually shadowing.
+
+### DO NOT write settings back this way
+
+You can decompress, edit, recompress and `copy to`. **It will be silently
+clobbered.** A suspended Kodi still holds its settings in memory, and on resume
+or clean shutdown `CApplication::Stop` -> `SaveSettings` serializes that memory
+over the store. This is the documented settings-clobber class
+(`docs/playbooks/kodi-settings-clobber.md`); writing the key while Kodi lives is
+instance N+1 of it.
+
+To CHANGE a setting on an Apple TV: foreground Kodi on the TV, then set it live
+over JSON-RPC so the in-memory copy is the one that persists.
+
+## Fleet values read this way, 2026-07-18
+
+Recorded because they answered questions that had been guessed at for days.
+Both Apple TVs are identical:
+
+| Setting | atv1 | atv2 |
+| --- | --- | --- |
+| `debug.screenshotpath` | EMPTY | EMPTY |
+| `filecache.memorysize` | 200 | 200 |
+| `filecache.readfactor` | 400 (default) | 400 (default) |
+| `services.webserver` | true | true |
+| `lookandfeel.skin` | skin.estuary7 | skin.estuary7 |
+
+`services.webserver` being true on both proves the JSON-RPC refusals are purely
+the tvOS suspend lifecycle, not a config problem. The empty screenshot path is
+the confirmed trigger for the screenshot reentrancy crash class.
+
 ## What lives where on the box (verified 2026-07-18)
 
 `guisettings.xml` is often ABSENT as a POSIX file in the container
