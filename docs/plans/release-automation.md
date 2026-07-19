@@ -28,11 +28,10 @@
 > python3 _tools/release.py --push          # opt-in push (default: commit only)
 > python3 _tools/release.py check           # the script-side consistency gate
 >
-> # repository.tony7bones proxy (IS the push: tag + atomic push + Pages + verify):
-> python3 _tools/release.py --proxy --news "What changed"   # delegates to deploy.py
-> python3 _tools/release.py --proxy --minor|--major|--version X.Y.Z
-> python3 _tools/release.py --proxy --news "..." --dry-run | --no-push
-> # (deploy.py + npm run deploy:* still work identically as the proxy fallback)
+> # RETIRED 2026-07-15 - the four proxy lines that stood here are all dead:
+> # release.py has no --proxy and no --no-push, deploy.py was deleted, and there
+> # are no npm deploy:* scripts. repository.tony7bones now releases exactly like
+> # every other add-on, with the plain commands above.
 > ```
 
 ## Owner decisions - LOCKED (2026-06-10)
@@ -452,7 +451,9 @@ python3 _tools/release.py --addon script.tony7bones.modv2plus --patch
 python3 _tools/release.py --addon script.module.tony7bones --version 1.6.0
 
 # Opt-in fully automatic level from conventional-commit prefixes:
-python3 _tools/release.py --auto-level
+# NOT IMPLEMENTED - --auto-level was proposed here and never shipped. It does
+# not exist on release.py and argparse rejects it. Left for the design record.
+# python3 _tools/release.py --auto-level
 
 # Override the news line for a specific add-on:
 python3 _tools/release.py --news "script.tony7bones.bootstrap=Fix first-boot race"

@@ -317,7 +317,9 @@ documented**.
 
 - **Landed:** `_tools/conftest.py` (the fake-Kodi `boot` fixture extracted from
   `test_bootstrap.py` - verified byte-equivalent, now reusable by all modular tests);
-  `_tools/test_modular_setup.py` + `modular_setup_snapshot.json` - the characterization
+  `_tools/test_modular_setup.py` + `modular_setup_snapshot.json` (both deleted with the
+  Setup add-on family; the test went at the static conversion, the orphaned snapshot on
+  2026-07-19) - the characterization
   oracle (`bare` + `full` snapshots) pinning the current `run()`'s install/enable order,
   the activate-skin-**last** cadence, and - at **runtime**, not source-grep - the restart,
   self-uninstall, and cancel-path wiring.

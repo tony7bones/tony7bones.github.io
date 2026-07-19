@@ -110,7 +110,7 @@ and commit the output; CI fails on stale output.
 
 ```bash
 python3 _tools/generate_repo.py     # regenerate addons.xml, zips, index pages
-python3 -m pytest _tools/ -q        # tests (306, all green)
+python3 -m pytest _tools/ -q        # tests (237, all green; verified 2026-07-19)
 ruff check _tools/                  # lint
 python3 _tools/build_site.py --out _site   # build the full served site (incl. /static/)
 git config core.hooksPath .githooks # install the pre-push gate (once after clone)

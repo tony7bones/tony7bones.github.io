@@ -167,6 +167,71 @@ The contract lives in `_tools/sync_share.py` (pinned by `test_sync_share.py`):
 
 Run it by hand anytime: `python3 _tools/sync_share.py [--dry-run]`.
 
+## Never hand-create a release (2026-07-19 incident)
+
+`ci.yml` gates publishing on the test job (`publish: needs: [test, anchored-build-check]`)
+and that gate WORKS - on a red run, `publish` is skipped. It was not bypassed by
+a workflow defect. It was bypassed by a human-equivalent running:
+
+```bash
+gh release create ...     # DO NOT DO THIS
+```
+
+which publishes an asset with no CI involvement at all. That is how skin.estuary7
+v1.0.67 shipped against a failing test suite. The agent that did it then reported
+its own bypass as a workflow defect, and that false report reached the owner.
+
+**Rules:**
+
+- Releases are published BY CI. If you find yourself typing `gh release create`,
+  stop - you are about to defeat the gate, not use it.
+- A red CI run is a hard stop on deployment even when the release asset already
+  exists and even when local tests pass. Local green is not the gate; the CI run
+  on the pushed commit is.
+- Before reporting a pipeline defect, READ THE WORKFLOW. This one was four lines
+  and would have taken thirty seconds to check.
+
+**The guard that now catches it:** `tools/verify_release.py` +
+`.github/workflows/release-guard.yml` in `estuary7`. It fails a release whose tag
+commit has no successful CI run, and independently checks the published asset
+byte-matches a deterministic rebuild of that commit. Demonstrated firing: run
+29690268676 FAILED on the hand-made v1.0.67, run 29690248062 passed on the
+CI-published v1.0.70.
+
+**Both legs are needed.** v1.0.67's asset hash DID match its recorded sha, so an
+integrity-only check would have passed the very release being policed. Only the
+provenance leg catches it.
+
+**Do not trust `skin_build.lock`'s `zip_sha256` as an integrity oracle** - it
+records the last LOCAL build, not the published asset. It was stale by two
+versions at v1.0.61. The deterministic rebuild is authoritative.
+
+**Detection is not prevention.** The guard makes a hand-made release loudly red
+AFTER the fact. Actual prevention is a repo setting only the owner can apply:
+GitHub, Settings, Rules, Rulesets, new tag ruleset, pattern `v*`, restricted to
+the `github-actions` bot.
+
+## Skins install from the repository, never by hand
+
+Owner rule, 2026-07-19. A skin reaches a box through Kodi's own add-on update
+from the Tony.7.Bones repository. No `adb push` of skin files, no
+`devicectl copy`, no unzipping a build onto a box.
+
+If a box does not offer the update, that is a DEFECT TO REPORT, not something to
+route around with a manual copy. Two reasons it matters:
+
+- Hand-pushing means "installed" and "installed the way a user installs" keep
+  diverging. A version bump twice carried the wrong bytes because of it.
+- On tvOS, `devicectl copy to` silently refuses to overwrite existing files while
+  reporting success, so a hand-push can leave a box running old code while every
+  report says it upgraded.
+
+Verify an install came through the repo by reading Kodi's log on the box, not by
+assuming. And note Kodi caches its repository index: a box with
+`addons.updatemode=1` (notify, do not auto-install) will not see a new version
+until its next scheduled check or until the owner triggers Settings, Add-ons,
+Check for updates. Do not force it and do not change that setting.
+
 ## CI - validation
 
 `.github/workflows/generate_repo.yml` (the push-validation workflow):

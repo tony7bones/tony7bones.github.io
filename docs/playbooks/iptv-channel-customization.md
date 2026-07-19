@@ -1,5 +1,15 @@
 # Playbook - IPTV channel / list / group customization (`.env`-driven)
 
+> ⛔ **HISTORICAL REFERENCE, NOT A RUNBOOK (banner added 2026-07-19).**
+> `_tools/build_iptv.py` and its test suite were EXTRACTED to the private repo
+> `moquette/iptv` and DELETED from this repo on 2026-07-17. Every
+> `python3 _tools/build_iptv.py ...` command below will fail with "No such file
+> or directory". The mini now builds IPTV centrally and serves it over the NFS
+> share (IPTV 2.0); this repo no longer host-builds. The in-Kodi apply half
+> (`tony7bones.setup.iptv`) was deleted separately with the Setup add-on family
+> at the static conversion (2026-07-15). Kept for the curation grammar and the
+> gotchas, which are still accurate and still the reason this doc exists.
+
 > How we turn a raw IPTV subscription into a curated, grouped, favorites-bearing set of
 > Kodi `pvr.iptvsimple` channels - driven entirely by a gitignored per-device `.env`,
 > built HOST-side by `_tools/build_iptv.py`, applied IN-Kodi by the IPTV layer

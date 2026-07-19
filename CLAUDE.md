@@ -37,11 +37,12 @@ items in it are live work:
 `docs/OPTIMIZATION-BACKLOG.md` holds five unstarted hub tooling items (A1, A3,
 R2, R4, and the deferred R3). Its own header states that none are implemented.
 
-Two headings in `TASKS.md` are actively misleading and were NOT rewritten,
-because history is not to be discarded: `## ▶ VERY NEXT STEP - P1: extract the
-IPTV builder...` points at a track that the same file marks DONE 2026-07-17,
-and `## ▶ Prior next-step ... (CANCELLED)` occupies ~90 lines of the tail with
-detailed instructions for cancelled work. Do not take either as your next task.
+Two headings in the tail of `TASKS.md` once read as live next steps and have
+since been relabelled `## ▶ HISTORICAL, NOT YOUR NEXT STEP - ...` (the IPTV
+builder extraction, which the same file marks DONE 2026-07-17, and the
+cancelled N2 on-box config collector, which still occupies ~90 lines). The
+bodies were deliberately kept, because history is not to be discarded. Do not
+take either as your next task.
 
 **The other four repos in this fleet have their own trackers**, and most work
 that looks like it belongs here actually lives in one of them. The fleet meta
@@ -185,7 +186,7 @@ Everything lives on `main`. Main is **sources-only**: the canvas (`dropbox/`), t
 # Run this locally before committing whenever you change addon sources.
 python3 _tools/generate_repo.py            # npm run build
 
-# Run the full test suite (235 tests, all green; verified 2026-07-18)
+# Run the full test suite (237 tests, all green; verified 2026-07-19)
 python3 -m pytest _tools/ -q               # npm test
 
 # Lint the Python tooling

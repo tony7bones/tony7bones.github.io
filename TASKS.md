@@ -643,10 +643,12 @@ RESOLVED (see the outcome block): the date scheme needs an explicit
 >   current; stale copies pruned only AFTER the fresh copy lands); `media/` + `rss/`
 >   (canvas 1:1, strictly additive, nothing ever deleted). NOT `iptv/` - the mini's
 >   populator daemon owns that.
-> - **Triggers (every publish path):** `deploy.py` post-push (incl. `release.py --proxy`),
->   `publish_canvas.py` post-push, and `.githooks/pre-push` (main only) - the hook is what
->   covers `script.*` releases, which publish via plain `git push`. Manual:
->   `python3 _tools/sync_share.py [--dry-run]`.
+> - **Triggers (every publish path):** `publish_canvas.py` post-push, and
+>   `.githooks/pre-push` (main only) - the hook is what covers add-on releases, which
+>   publish via plain `git push`. Manual: `python3 _tools/sync_share.py [--dry-run]`.
+>   (Amended 2026-07-19: this list previously led with `deploy.py` post-push "incl.
+>   `release.py --proxy`". Both were deleted with the proxy engine on 2026-07-15; the
+>   pre-push hook is now the only automatic trigger.)
 > - **Hard guarantees:** only when the volume is mounted (skip note otherwise - never
 >   creates dirs, never mounts, NEVER fails or blocks a release/push); additive toward
 >   owner-curated foreign files; SANDBOX-SAFE by construction (`sync_share.py` stays OUT
@@ -928,7 +930,15 @@ dialogs over JSON-RPC with `Input.ButtonEvent` (key-level), not `Input.Select`.
 
 ---
 
-## Build status (modular-setup branch)
+## ▶ HISTORICAL, NOT CURRENT STATE - Build status (modular-setup branch)
+
+> **Read as history only (banner added 2026-07-19).** This section records the
+> state of the modular Setup track as it stood at the 2026-06-10 merge. Every
+> add-on it calls "the shipped production code" (`script.module.tony7bones`,
+> `script.tony7bones.bootstrap`, `script.tony7bones.modv2plus`) was RETIRED AND
+> DELETED at the static conversion on 2026-07-15, and the proxy version it cites
+> refers to an engine that no longer exists. Nothing below describes what ships
+> today. The suite counts and branch names here are equally frozen in time.
 
 - **DONE, gated, committed LOCALLY** (suite **768 passed / 1 xfailed**):
   Phases 0-3 + 5a (Foundation, incl. 5a·2/5a·3) + **5b·1** (the two `apply_iptv` bugs - clobber
@@ -967,12 +977,20 @@ dialogs over JSON-RPC with `Input.ButtonEvent` (key-level), not `Input.Select`.
 
 ---
 
-## Backlog - Estuary MOD V2+ (`script.tony7bones.modv2plus`), lower priority
+## ▶ CLOSED, NOT ACTIONABLE - Backlog - Estuary MOD V2+ (`script.tony7bones.modv2plus`)
 
-- [ ] **Settings menu order toggle** - "Skin Settings first", default ON; off = stock order. _Harder_ (list item order isn't cleanly conditional).
-- [ ] **Re-skin the MOD V2+ add-on icon** to reflect the "+" branding (currently reuses the old patch icon).
-- [ ] **Localized `strings.po`** for our category labels/help (currently literal text).
-- [ ] **`drop/` staging folder** at the repo root - a staging area for incoming files/assets. _Purpose/usage to confirm before building._
+> **CLOSED 2026-07-19.** `script.tony7bones.modv2plus` is DEPRECATED AND DELETED
+> (see the banner at the top of this file). The first three items below can never
+> be done: there is no add-on left to do them to, and no repo owns them. They are
+> struck rather than removed so the design intent stays on the record. Do not pick
+> any of them up. The fourth item (`drop/`) was never modv2plus-scoped; its own
+> feasibility doc is `docs/plans/drop-folder-feasibility.md`, which is still open
+> and needs an owner decision.
+
+- ~~**Settings menu order toggle** - "Skin Settings first", default ON; off = stock order. _Harder_ (list item order isn't cleanly conditional).~~
+- ~~**Re-skin the MOD V2+ add-on icon** to reflect the "+" branding (currently reuses the old patch icon).~~
+- ~~**Localized `strings.po`** for our category labels/help (currently literal text).~~
+- ~~**`drop/` staging folder** at the repo root - a staging area for incoming files/assets.~~ Moved out of this dead backlog; see `docs/plans/drop-folder-feasibility.md`.
 
 > Conventions: batch work into versioned deliverables; build bundled skin files FRESH from current
 > omega source (b-jesch Omega / Kodinerds omega.4); verify on real local Kodi before shipping; no AI

@@ -1,7 +1,21 @@
 #!/usr/bin/env bash
 # shellcheck shell=bash
-# Fire TV ADB helper for script.tony7bones.modv2plus development.
+# Fire TV ADB helper, originally for script.tony7bones.modv2plus development.
 # Usage: firetv.sh <command> [args]
+#
+# ⛔ TWO HAZARDS, read before running (noted 2026-07-19):
+#
+# 1. FIRETV_IP DEFAULTS TO 192.168.7.162, WHICH IS THE OFFICE FIRE TV, AND THAT
+#    BOX IS HANDS-OFF WITHOUT EXPLICIT PER-INSTANCE OWNER PERMISSION. Running
+#    any command here with no FIRETV_IP set targets it. Always set FIRETV_IP
+#    explicitly.
+# 2. The add-on-specific commands are DEAD. ADDON_ID is
+#    script.tony7bones.modv2plus and SKIN_ID is skin.estuary.modv2, both RETIRED
+#    AND DELETED at the static conversion (2026-07-15). ADDON_SRC additionally
+#    resolves to <repo>/repo/<addon>, a path that has never existed in this
+#    layout. So push-addon, push-xml, apply and restore cannot work.
+#    The generic commands (connect, status, screencap, log, launch, stop,
+#    disconnect) are unaffected and are why this script is retained.
 #
 # Commands:
 #   connect          Connect (or reconnect) to the Fire TV

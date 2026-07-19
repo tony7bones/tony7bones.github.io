@@ -272,6 +272,59 @@ duplicate-userdata fix. The specifics that cost time, none of them obvious from 
 - The precise tvOS Developer-Mode enablement UI.
 - `KODI_HOME`/`userdata` location inside the container - resolve via §3a first.
 
+## 8. Launching, deploying, and reading code back (2026-07-19)
+
+Sections above cover pulling artifacts. This covers RUNNING the app and PUTTING
+FILES on the box. Every item here cost real time in one session.
+
+**The bundle id is NOT `org.xbmc.kodi`.** The fleet runs a KodiTVBox sideload:
+`ca.koditvbox.kodi.tvos.21`. The wrong id returns **OSStatus -10814**, which
+reads like sleep or permissions and actually means "application not found". Do
+not diagnose sleep from it - a box was rebooted on that misreading. Enumerate:
+
+```bash
+xcrun devicectl device info apps --device "$UDID" | grep -i kodi
+```
+
+**Kodi's tree is at `Library/Caches/Kodi/`, not `Documents/.kodi/`.** Probing the
+Documents path returns `CoreDeviceError 7000`, which looks like "the deploy never
+landed". List rather than guess:
+
+```bash
+xcrun devicectl device info files --device "$UDID" \
+  --domain-type appDataContainer --domain-identifier ca.koditvbox.kodi.tvos.21
+```
+
+Everything Kodi owns therefore sits under a directory tvOS may purge under
+storage pressure, and `guisettings.xml` does not exist on disk (NSUD-shadowed).
+
+**An asleep Apple TV refuses a foreground launch** with `RequestDenied`. Apple
+TVs ignore Wake-on-LAN and devicectl has no wake verb. `xcrun devicectl device
+reboot` wakes it; the launch then works after a few retries while the tunnel
+re-establishes. Non-destructive, verified on atv1 and atv2.
+
+**JSON-RPC answers only while Kodi is foregrounded.** "Port 8080 closed" almost
+always means "Kodi is not in the foreground", not "unreachable". Launch first.
+
+**`devicectl device copy to` SKIPS FILES IT THINKS ARE UNMODIFIED, AND ITS TEST
+IS SIZE-BASED.** Its own help says "skipping files that have not been modified".
+Measured on atv2 2026-07-19: overwriting an existing file with DIFFERENT content
+of the SAME LENGTH is silently skipped, zero errors, old content intact.
+Different-length content overwrites fine. So it is not "refuses to overwrite" -
+it is "same size looks unmodified".
+
+This is lethal for deploys here because `build.py` stamps every file with a fixed
+1980 timestamp for reproducibility, so mtime is constant across builds and
+staleness detection collapses onto SIZE ALONE. A same-length edit - a bumped
+version string, a flipped comparison, a reflowed docstring - is silently dropped
+while the command reports success. Nine consecutive attempts to push
+`addon.xml` 2026.07.19.2 -> .3 failed this way; the two files are the same length.
+
+Force it with `-r, --remove-existing-content`, or ALWAYS read a code file back
+off the box and HASH it against source. A bumped manifest proves nothing.
+
+Separately: a wrong flag ORDER prints a `Usage:` block that reads like success.
+
 ## Citations
 
 Fix/root-cause (this repo + Kodi Wiki): `_kodisettings.py`, `wiz.py`,

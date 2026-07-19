@@ -141,9 +141,9 @@ work in the other repo now:
 - Only THEN, back in this repo: bump the version in
   `addons/hosted/script.ezmaintenanceplusplus/addon.xml` to match (hand-synced
   metadata mirror, same pattern as `addons/hosted/skin.estuary7/`) and ship it
-  via `python3 _tools/release.py --proxy` - `repository.json` (which points at
-  the release asset) is bundled inside `repository.tony7bones`'s own zip, so a
-  proxy release is what actually gets the new version onto a box.
+  via `python3 _tools/release.py`. The static catalog `_tools/catalog.json`
+  points at the release asset, CI rebuilds `/static/addons.xml` on push, and
+  that is what actually gets the new version onto a box.
 - A change to `nsud.py`/`boxsetup.py` specifically also needs a fresh
   hardware-verification artifact before it ships - see
   `moquette/ezmaintenanceplusplus`'s `tests/test_storage_change_requires_device_verification.py`

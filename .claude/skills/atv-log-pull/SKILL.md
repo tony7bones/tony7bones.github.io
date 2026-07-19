@@ -1,6 +1,6 @@
 ---
 name: atv-log-pull
-description: Pull and read Kodi logs (kodi.log, kodi.old.log, NSUserDefaults plist) from a fleet Apple TV over the network - no adb exists on tvOS. Use when diagnosing any ATV crash, skin failure, or storage bug, when the user says "check the ATV logs", or when the EZM++ in-app log viewer cannot be used (it dies silently on crash-corrupted logs). Proven end-to-end on atv2 2026-07-17.
+description: Reach a fleet Apple TV over the network - pull Kodi logs, crash and jetsam reports, read any setting without Kodi running, LAUNCH Kodi, deploy files, and read code back off the box. No adb exists on tvOS. Use for any ATV crash, skin failure, storage bug, deploy, or verification, and BEFORE concluding an Apple TV is unreachable - it almost never is. Covers the bundle-id trap (-10814), the Library/Caches container path, reboot-to-wake, and the two silent copy-to traps. Proven on atv1 and atv2 2026-07-17 through 2026-07-19.
 ---
 
 # Pull Kodi logs from an Apple TV (no adb on tvOS)
@@ -282,9 +282,154 @@ pull: on tvOS the NSUserDefaults key SHADOWS the file. Read settings from
 `Library/Preferences/<bundle>.plist` with `plutil -p`, not from userdata.
 See the `tvos-kodi-storage` skill for what the keys mean.
 
+## 7. Launch Kodi, deploy to the box, and read code back (2026-07-19)
+
+Everything above reads. This section covers RUNNING the app and PUTTING FILES on
+the box. Learned the hard way in one session; each item cost real time.
+
+### The bundle id is NOT `org.xbmc.kodi`
+
+The fleet's Apple TVs run a KodiTVBox sideload:
+
+```
+ca.koditvbox.kodi.tvos.21
+```
+
+Launching `org.xbmc.kodi` returns **OSStatus -10814**, which reads like a
+permission or sleep problem and actually means "application not found". Do not
+diagnose sleep from it. Enumerate first, every time:
+
+```bash
+xcrun devicectl device info apps --device "$UDID" | grep -i kodi
+```
+
+### Kodi's tree is at `Library/Caches/Kodi/`, not `Documents/.kodi/`
+
+Probing the Documents path returns `CoreDeviceError 7000`, which looks like "the
+file is missing" or "the deploy never landed". List instead of guessing:
+
+```bash
+xcrun devicectl device info files --device "$UDID" \
+  --domain-type appDataContainer --domain-identifier ca.koditvbox.kodi.tvos.21
+```
+
+Two consequences: everything Kodi owns lives under a directory tvOS may purge
+under storage pressure, and `guisettings.xml` does **not** exist on disk there -
+it is NSUserDefaults-shadowed (section 6 reads it correctly).
+
+### An asleep Apple TV refuses a foreground launch - reboot wakes it
+
+A launch against a sleeping box returns `RequestDenied`
+(`FBSOpenApplicationServiceErrorDomain error 1`). Apple TVs ignore Wake-on-LAN
+and `devicectl` has no wake verb. What works:
+
+```bash
+xcrun devicectl device reboot --device "$UDID"
+# device goes "unavailable" for ~1 minute
+until xcrun devicectl list devices | grep -i "^ATV2" | grep -qi available; do sleep 10; done
+# then retry the launch a few times while the tunnel re-establishes
+xcrun devicectl device process launch --device "$UDID" ca.koditvbox.kodi.tvos.21
+```
+
+Non-destructive. Verified on atv1 and atv2.
+
+### JSON-RPC answers ONLY while Kodi is foregrounded
+
+tvOS suspends background apps. "Port 8080 closed" nearly always means "Kodi is
+not in the foreground", not "no route to this box". Launch it first, then query.
+Credentials `kodi`/`kodi`, port 8080.
+
+### `devicectl device copy to` has two SILENT traps
+
+1. **A directory destination silently no-ops.** Pass the FULL destination path
+   including the target directory name.
+2. **It silently refuses to OVERWRITE an existing file**, reporting success
+   either way. Writing to a NEW filename works fine. Proven: a probe under a new
+   name landed as the new version while `addon.xml` stayed on the old one across
+   nine attempts, single-file and directory, with Kodi stopped and after a reboot.
+
+So: **always read a CODE file back off the box** to confirm a deploy. A bumped
+`addon.xml` version proves nothing - the manifest can move while the code does
+not. If you must replace files and overwrite is refused, the supported route is
+Kodi's own repository update, not `copy to`.
+
+### Error codes are distinct - read them, do not guess
+
+| Code | Means |
+| --- | --- |
+| `OSStatus -10814` | wrong bundle id (NOT sleep) |
+| `RequestDenied` / `FBSOpenApplicationServiceErrorDomain error 1` | box is asleep |
+| `error 10002` | launch failed for another reason |
+| `CoreDeviceError 1011` | device not locatable right now - retry, tunnel is down |
+| `CoreDeviceError 4000` | connectivity interrupted mid-operation |
+| `CoreDeviceError 7000` | path does not exist in that container |
+
+### Screenshots are genuinely impossible on tvOS
+
+`WinSystemTVOS.mm` never calls `CScreenshotSurfaceGLES::Register()`, unlike
+`WinSystemIOS.mm`, `WinSystemAndroid.cpp` and the GBM/Wayland GLES backends. So
+Kodi's own screenshot is unregistered there and Apple TVs have no adb. This is
+the one ATV gap that is real. Report it as NOT PROVEN with this citation rather
+than substituting an XML check and calling it visual proof.
+
+### Reading state needs NO launch, NO foreground, NO reboot (added by qa-skin)
+
+The `appDataContainer` domain reads version, `addon_data` DATA files and the
+active includes with Kodi SUSPENDED. For read-only fleet state this is strictly
+better than JSON-RPC: no wake, no reboot, no taking over a screen in someone's
+house. Reach for `copy from` first and only foreground Kodi when you genuinely
+need a live query.
+
+Corollary, and this is the mistake that cost hours: **a closed port 8080 means
+"Kodi is not foregrounded", NOT "no path to this box".** Treating one failed
+probe as proof of absence is how both Apple TVs were reported unreachable all
+session while a container read would have answered every question.
+
+### `CoreDeviceError 1011` is often transient on first contact
+
+A box can show `available (paired)` in `devicectl list devices` and still throw
+1011 on the first real request - the tunnel establishes lazily. One retry clears
+it. So "available" is necessary but not sufficient: probe with a cheap REAL
+command (`device info apps`) and poll on ITS success, not on the state string.
+
+### Retry loops built on fast-failing commands do not wait
+
+25 launch attempts against an absent device fail instantly and look like 25 real
+tries. Poll for the state you need (`devicectl list devices` for `available`),
+do not just repeat the command.
+
+### Stale `__pycache__` cannot be removed with devicectl
+
+Observed on atv2. `devicectl` has no delete verb, so bytecode left by a previous
+build stays. An add-on can remove its own `__pycache__` in-process at startup;
+nothing external can. Relevant because CPython invalidates a `.pyc` on the
+source's mtime AND size, and deterministic builds stamp a fixed timestamp, so a
+same-length edit can leave stale bytecode executing.
+
 ## Related
 
 - `docs/playbooks/atv-kodi-xcode-cli-troubleshooting.md` - the full devicectl /
   unified-log / pymobiledevice3 toolbox (pushing files, plist diffing, §3a).
 - `~/Code/moquette/kodi/.claude/skills/tvos-kodi-storage/SKILL.md` - what the
   pulled plist keys MEAN (the NSUserDefaults shadow model).
+
+### CORRECTION 2026-07-19: copy-to overwrite behaviour
+
+**`devicectl device copy to` SKIPS FILES IT THINKS ARE UNMODIFIED, AND ITS TEST
+IS SIZE-BASED.** Its own help says "skipping files that have not been modified".
+Measured on atv2 2026-07-19: overwriting an existing file with DIFFERENT content
+of the SAME LENGTH is silently skipped, zero errors, old content intact.
+Different-length content overwrites fine. So it is not "refuses to overwrite" -
+it is "same size looks unmodified".
+
+This is lethal for deploys here because `build.py` stamps every file with a fixed
+1980 timestamp for reproducibility, so mtime is constant across builds and
+staleness detection collapses onto SIZE ALONE. A same-length edit - a bumped
+version string, a flipped comparison, a reflowed docstring - is silently dropped
+while the command reports success. Nine consecutive attempts to push
+`addon.xml` 2026.07.19.2 -> .3 failed this way; the two files are the same length.
+
+Force it with `-r, --remove-existing-content`, or ALWAYS read a code file back
+off the box and HASH it against source. A bumped manifest proves nothing.
+
+Separately: a wrong flag ORDER prints a `Usage:` block that reads like success.

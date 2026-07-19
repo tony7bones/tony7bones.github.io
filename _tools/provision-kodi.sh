@@ -3,12 +3,25 @@
 # provision-kodi.sh — guided, notebook-driven install + bootstrap of a fresh
 # Tony.7.Bones Kodi box on a Fire TV / Android device over ADB-on-network.
 #
-# Asks for the device IP, then walks you through every step: connect, reboot,
-# wipe, install the Setup, run it, accept the summary, clean-close, reopen, and
-# verify. Hardware-proven flow (see docs/playbooks/install-from-notebook.md).
+# Asks for the device NAME (not an IP), then walks you through every step:
+# connect, reboot, wipe, install the Setup, run it, accept the summary,
+# clean-close, reopen, and verify. See docs/playbooks/install-from-notebook.md.
 #
-# Usage:   _tools/provision-kodi.sh [DEVICE_IP]
-# Example: _tools/provision-kodi.sh 192.168.7.84
+# Usage:   _tools/provision-kodi.sh [DEVICE]
+# Example: _tools/provision-kodi.sh bedroom
+#
+# DEVICE selects the per-device config .env.<DEVICE> in the repo root, which
+# supplies the box IP and everything else. Passing an IP does NOT work: it is
+# looked up as .env.192.168.7.84 and the script dies "No per-device config".
+#
+# ⛔ BROKEN, DO NOT RUN (noted 2026-07-19, not yet repaired). Step 4 installs
+# script.module.tony7bones + script.tony7bones.bootstrap, both RETIRED AND
+# DELETED at the static conversion (2026-07-15). The curl 404s and the local
+# `cp -R` fails because addons/ no longer holds those dirs. Step 3 WIPES the
+# box before step 4 fails, so a run leaves a wiped Kodi with nothing installed
+# and the error message misattributes it to "no internet?". Repairing this to
+# install repository.tony7bones only is an open item; until then the script is
+# retained for its adb/scoped-storage mechanics, not for execution.
 #
 set -u
 
