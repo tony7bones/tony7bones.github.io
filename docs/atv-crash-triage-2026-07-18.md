@@ -99,10 +99,58 @@ ADDON::CRepositoryUpdateJob::DoWork() +1872  <- addons.db, not Textures13.db
 ```
 
 The same faulting offset reached through two unrelated callers means the defect
-lives in **`dbiplus::SqliteDataset::exec` itself**, most plausibly a mismatched
-allocator (something released with `sqlite3_free` that sqlite never allocated,
-or a double free of a sqlite-owned buffer). `CTextureDatabase::AddCachedTexture`
-is merely the most frequent caller, which is why it dominates the sample.
+lives in **`dbiplus::SqliteDataset::exec` itself**.
+`CTextureDatabase::AddCachedTexture` is merely the most frequent caller, which
+is why it dominates the sample.
+
+### SECOND CORRECTION: there is no heap corruption at all
+
+A guess at "mismatched allocator" was also wrong. The exact line, Kodi Omega
+`xbmc/dbwrappers/sqlitedataset.cpp:1122`:
+
+```cpp
+char* errmsg;                                    // UNINITIALIZED
+if ((res = db->setErr(sqlite3_exec(handle(), qry.c_str(), &callback, &exec_res, &errmsg),
+                      qry.c_str())) == SQLITE_OK)
+  return res;
+else
+{
+  if (errmsg)                                    // garbage stack value, usually non-NULL
+  {
+    DbErrors err("%s (%s)", db->getErrorMsg(), errmsg);
+    sqlite3_free(errmsg);                        // frees a non-heap pointer -> abort
+```
+
+`___BUG_IN_CLIENT_OF_LIBMALLOC_POINTER_BEING_FREED_WAS_NOT_ALLOCATED` does NOT
+mean something corrupted the heap. It means **an uninitialized stack pointer was
+passed to `free()`**. Nothing corrupted anything.
+
+**Kodi master has already fixed this**, with a comment naming the hazard:
+
+```cpp
+char* errmsg = nullptr; // Must be initialized to nullptr; sqlite3_exec may not always set it
+```
+
+Omega 21.3 is on the unfixed side.
+
+**And the trigger is pinned by construction.** Per SQLite's `legacy.c`,
+`sqlite3_exec` has exactly ONE return path that never touches `*pzErrMsg`:
+`if( !sqlite3SafetyCheckOk(db) ) return SQLITE_MISUSE_BKPT;`. Every other path
+funnels through `exec_out:` and sets it. So reaching `sqlite3_free` with an
+unset `errmsg` proves `sqlite3_exec` returned `SQLITE_MISUSE`, which proves
+**Kodi called `exec()` on a sqlite handle that was not OPEN** (closed, closing,
+zombie, or busy on another thread). That use-after-close race on a shared
+`CDatabase` handle is the real bug. The uninitialized `errmsg` only converts a
+silent failure into an abort.
+
+Corroboration that rules out corruption: the code FORMATS `errmsg` as a C string
+at line 1126 before freeing it at 1128. Reaching the free means the read
+succeeded, so it is a readable stale stack slot. A corrupted heap pointer would
+have faulted on the read.
+
+Fixing the one-line upstream defect stops the crash but **does not fix the
+underlying race**: it converts the abort into a thrown `DbErrors` that Kodi
+catches, so the database write is still lost. That is still a large win.
 
 **It is not atv2-only.** `atv1/Kodi-2026-07-09-040559.ips` carries a
 byte-identical stack, same symbols and same offsets. True counts are 10 on atv2
@@ -277,6 +325,77 @@ different bundle IDs have been in service. Both boxes now agree on 21.3
 | `SIGSEGV` Python (`PyDict_SetItemString` / `PyEval_ReleaseThread`) | 1 | 2 |
 | `SIGKILL` (`__ulock_wait` / `__psynch_cvwait`) | 4 | 3 |
 | `SIGSEGV` `CGUIComponent::GetWindowManager` | 1 | 0 |
+
+## Two free mitigations, evidence-backed, zero risk
+
+Neither needs a Kodi change and both are confirmed by the logs.
+
+1. **Set the screenshots folder on both boxes.** `SETTING_DEBUG_SCREENSHOTPATH`
+   is blank (`atv2-kodi.log:50` reads `screenshots folder:` with no value).
+   That blank is what makes `TakeScreenshot()` open a modal file browser, which
+   pumps the message loop and re-enters itself. Setting it removes the entire
+   reentrancy class, 6 crashes fleet-wide, with one setting. Note this does NOT
+   fix the missing `CScreenshotSurfaceGLES::Register()`, so a screenshot will
+   still crash on tvOS; it removes the reentrancy path only.
+2. **Stop installing add-on zips from the NFS share.** Install from local
+   storage or over HTTP. Three of the five NFS segfaults are
+   `CAddonInstallJob::DoWork` -> `CFilesystemInstaller::UnpackArchive` ->
+   `CFile::Copy` -> `CZipFile::Open` on NFS, and both `CLog` crashes are most
+   plausibly the same NFS read failing to enumerate the zip.
+
+## CLog crashes: SOLVED, and it is a logging bug
+
+`xbmc/addons/AddonInstaller.cpp:549` logs `items[0]->m_bIsFolder` on the FAILURE
+path, unconditionally, including when `items.Size() == 0`. The guard
+short-circuits safely but the log statement does not. The crash frame is
+`FormatAndLogInternal<std::string, int, bool&>` - note the `bool&` REFERENCE.
+Binding a reference to `nullptr->m_bIsFolder` is only address arithmetic, so the
+fault happens later when fmt dereferences it inside the logger, which is why the
+crash appears inside logging rather than at the call site. Fault address `0x8`
+is `offsetof(CFileItem, m_bIsFolder)` on a null `this`. The two crashes are 59
+seconds apart: an operator retrying the same failing zip install.
+
+## Correction: the NFS crashes are NOT the backup path
+
+Earlier framing assumed EZ Maintenance++ backup/restore. Actual breakdown of the
+five:
+
+- **3 are add-on installation** (`CAddonInstallJob` -> `UnpackArchive`)
+- **2 are IPTV Simple** (`InstanceSettings::LoadCustomChannelGroupFile`, and
+  `ConnectionManager::Process` -> `WebUtils::Check` -> `CFile::Exists`)
+- **0 are the EZM++ backup write path**
+
+Data risk is therefore low for backups: EZM++ stages
+`kodi_backup_*.zip.ezmpart` then renames, which is safe against a mid-write
+crash, and no crash landed in it. The real exposure is a **half-unpacked
+add-on** if `UnpackArchive` dies mid-copy.
+
+Prime suspect for the libnfs crashes, marked INFERRED not proven:
+`xbmc/filesystem/NFSFile.cpp:398-417`, `CNfsConnection::CheckIfIdle` does an
+unlocked read of `m_OpenConnections` / `m_pNfsContext` before taking the lock
+and calling `Deinit()` -> `destroyOpenContexts()`. The log shows "NFS is idle.
+Closing the remaining connections." firing three times in about four minutes.
+Under ARM64e a freed-and-reused context yields a PAC-signed callback whose
+signature fails auth, which is exactly the observed wild addresses.
+
+## Do NOT do these
+
+Each would burn time on a disproved theory:
+
+- **Do not chase heap corruption.** No guard malloc, no MallocScribble, no
+  libgmalloc. There is no corruption.
+- **Do not delete or rebuild `Textures13.db`.** It is not corrupt, and the same
+  abort arrives from `addons.db` through a different caller.
+- **Do not disable the texture cache.** It is the victim, not the culprit.
+- **Do not pursue memory pressure.** Confirmed dead.
+- **Do not treat this as a tvOS storage-split (vectored `.xml`) problem.** These
+  are SQLite `.db` files and NFS I/O; neither goes through `CTVOSFile`.
+
+## Baseline warning for any verification
+
+**atv2 has already updated past every crash report in this set.** All reports
+say OS build `23L5758b`; the current log says `23L5766a`. A clean baseline must
+be re-established before any change is credited with a fix.
 
 ## What this replaces
 
