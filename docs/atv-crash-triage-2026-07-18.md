@@ -81,6 +81,38 @@ atv2 has only **1** of these, so it never suffered atv1's problem.
 on-device and its crashes stopped four days after the fix. It can be closed, and
 the stack above should be pasted into it.
 
+## CORRECTION, same day: the heap corruption is FLEET-WIDE and is NOT a texture-cache bug
+
+The first pass of this document attributed the corruption to the texture cache
+and to atv2 alone. A second audit of the same 50 reports disproved both.
+
+**It is not the texture cache.** Two atv2 reports (`Kodi-2026-07-12-185126`,
+`Kodi-2026-07-16-193327`) reach the IDENTICAL faulting frames from an unrelated
+caller:
+
+```text
+sqlite3_free +124
+dbiplus::SqliteDataset::exec(...) +1124      <- same offset as the texture crashes
+CDatabase::ExecuteQuery(...) +132
+CDatabase::CommitMultipleExecute() +52
+ADDON::CRepositoryUpdateJob::DoWork() +1872  <- addons.db, not Textures13.db
+```
+
+The same faulting offset reached through two unrelated callers means the defect
+lives in **`dbiplus::SqliteDataset::exec` itself**, most plausibly a mismatched
+allocator (something released with `sqlite3_free` that sqlite never allocated,
+or a double free of a sqlite-owned buffer). `CTextureDatabase::AddCachedTexture`
+is merely the most frequent caller, which is why it dominates the sample.
+
+**It is not atv2-only.** `atv1/Kodi-2026-07-09-040559.ips` carries a
+byte-identical stack, same symbols and same offsets. True counts are 10 on atv2
+and 1 on atv1. So "why atv2 and not atv1" is the wrong question for this bug:
+atv2 simply has far more of it.
+
+This is a worked example of the warning below: the aborting frame is the victim.
+Two independent readers both anchored on `CTextureDatabase` because it appeared
+in 10 of 11 samples, and both were wrong about the culprit.
+
 ## atv2: heap corruption, LIVE and unexplained
 
 10 of atv2's 25, faulting thread `JobWorker`:
@@ -117,12 +149,121 @@ backup zip off the NFS share**, plus 2x in `CLog::FormatAndLogInternal` and 2x
 in `PyDict_SetItemString`. Those may be independent bugs or collateral from the
 corrupted heap; that is under expert review and is NOT yet decided.
 
-## Fleet-wide and unexplained: screenshot segfaults
+## Screenshot segfaults: ROOT-CAUSED, an upstream Kodi tvOS bug
 
-`CScreenShot::TakeScreenshot` `SIGSEGV`, **4 on atv1 and 2 on atv2**. The only
-non-trivial signature present on both boxes, so it is independent of each box's
-dominant bug. Nobody has investigated it. Note `script.t7bshot` is installed on
-the fleet.
+`CScreenShot::TakeScreenshot` `SIGSEGV`, 4 on atv1 and 2 on atv2. All six fault
+at the same instruction with the same address, `0xfffffffffffffff8`.
+
+First line of that function:
+
+```cpp
+auto surface = m_screenShotSurfaces.back()();
+```
+
+`m_screenShotSurfaces` is a static vector of callables. On tvOS it is **empty**,
+so `.back()` is undefined behaviour: the arithmetic yields element address -32
+(a libc++ `std::function` is 32 bytes) and invoking it loads the callable
+pointer at +24, i.e. address -8. That is exactly the observed fault address.
+
+**Why it is empty is a one-line copy-paste omission in the tvOS port.** Only
+`ScreenshotSurfaceGL`, `ScreenshotSurfaceGLES` and `ScreenshotSurfaceWindows`
+ever call `CScreenShot::Register`. `WinSystemIOS.mm` registers the GLES surface
+and includes its header; `WinSystemTVOS.mm` has the identical platform block
+with that single line missing.
+
+**Consequence: on tvOS every screenshot attempt is a guaranteed crash.** Not a
+race, not renderer state. The readback code never runs. Upstream fix is adding
+`CScreenshotSurfaceGLES::Register();` to `CWinSystemTVOS::InitWindowSystem`.
+
+Two corrections to earlier assumptions here. **Nothing in this fleet takes
+screenshots automatically** - no caller exists anywhere in the four repos, and
+`script.t7bshot` does not exist in the checkout and appears in neither device
+log. These are human button presses, clustering into three short sittings
+(three attempts in 8 minutes on atv1, two in 2 minutes on atv2), which is the
+signature of someone pressing a mis-mapped remote key and retrying.
+
+There is also a **second, independent reentrancy defect** in the same path. With
+`SETTING_DEBUG_SCREENSHOTPATH` empty (confirmed: `atv2-kodi.log:50` reads
+`screenshots folder:` with no value), `TakeScreenshot()` opens a modal file
+browser, which pumps `ProcessRenderLoop` and delivers a second queued screenshot
+action, re-entering `TakeScreenshot` while the first is still on the stack.
+
+## SIGKILL is a WATCHDOG, not jetsam and not a force-quit
+
+All 7 (`4 atv1, 3 atv2`) carry `termination.code 2343432205` = `0x8BADF00D` in
+the `FRONTBOARD` namespace: `Failed to terminate gracefully after 5.0s`,
+`WatchdogVisibility: Foreground`, thermal nominal, CPU idle. Every one is on the
+main thread inside `-[XBMCController enterBackground]`. The user backgrounded
+Kodi, shutdown blocked past the 5 second budget, the OS killed it. The process
+was blocked, not busy. Two distinct blockers:
+
+- **Thread-join hang** (4 atv1, 1 atv2, `__ulock_wait`): main thread blocks in
+  `std::thread::join` via `CThread::StopThread` under
+  `CTCPServer::StopServer` / `CEventServer::StopServer` and
+  `CNetworkServices::Stop`. A network-service thread parked in
+  `accept()`/`recvfrom()` never observes the stop flag. Missing socket shutdown
+  before join.
+- **Messenger deadlock** (2 atv2, `__psynch_cvwait`): `CPowerManager::OnSleep()`
+  tries to OPEN A GUI DIALOG during backgrounding and does a synchronous
+  `CApplicationMessenger::SendMsg`, blocking the main thread on a `CEvent` until
+  a thread that is being torn down processes it. Deadlock by construction.
+
+The 4 atv1 watchdogs are all from 07-03 on a **different build** (bundle
+`tv.kodi.tvos.piers`, `22.0-ALPHA3`) and stopped after the box moved to `21.3`.
+The atv2 ones are on the current 21.3, so the hang is live. Fix the
+`OnSleep` modal-dialog deadlock first; it has the cleanest root cause.
+
+## Two more operationally important crashes nobody had examined
+
+**libnfs `rpc_service` segfaults (5, atv2 only) are memory corruption.** Three of
+the five carry `possible pointer authentication failure` with wild addresses
+(`0x7109e38845123997`, `0x913d600090018500`, `0x6ff824937b36c250`,
+`0xd61087f8cd454e6c`). libnfs is dereferencing a corrupted callback/context
+pointer whose PAC signature failed: use-after-free or corruption in the RPC
+reply path, not a missing null check. Trending UP (2 on 07-17 alone), and it
+lands squarely on the tailnet NFS export work.
+
+One of the five is triggered from inside the IPTV add-on:
+`iptvsimple::InstanceSettings::LoadCustomChannelGroupFile` ->
+`CNfsConnection::Connect` -> `CNFSFile::Exists`, during
+`CPVRClients::UpdateClients`. So an IPTV instance whose custom channel-group
+file lives on an NFS path can crash the box at PVR startup. **It shares
+`UpdateClients` with atv1's closed IPTV bug and is easy to misfile as that one.
+It is a different defect** (segv in libnfs vs uncaught exception in a
+destructor).
+
+**`CAddonInstaller::InstallFromZip` segfaults (2, atv2, 07-12 22:19 and 22:20).**
+Null-ish dereference at offset 8 while logging inside `InstallFromZip`, after
+`CGUIWindowAddonBrowser::OnClick`. Two attempts a minute apart both died. This
+is the fleet's primary deployment path, install-from-zip off the KodiShare
+`apps/` share, and it is the one crash that can block shipping updates to boxes.
+
+## Python segfaults: real, upstream, and the add-on is NOT identifiable
+
+3 reports (2 atv2 `PyDict_SetItemString`, 1 atv1 `PyEval_ReleaseThread`).
+Python is statically linked into the Kodi binary and `.ips` does not record
+script paths, so `usedImages` carries no add-on-specific image for any of them.
+**Anyone naming a specific add-on from these reports is guessing.**
+
+The mechanism is interpreter concurrency: at the moment of death there were
+**9 concurrent `LanguageInvoker` threads**, several blocked on
+`_PyImport_AcquireLock` and one on `take_gil`, while the faulting thread was
+mid interpreter-init inside `CPythonInvoker::execute`. Multiple sub-interpreters
+initialising while others hold the import lock. Not locally fixable; the
+mitigation is reducing how many add-on scripts launch at once.
+
+The atv1 one is a different bug on the teardown side: a `plugin://` directory
+listing timed out and `CPythonInvoker::stop` released a thread-state that was
+already gone, racing another thread in `CScriptInvocationManager::OnExecutionDone`.
+
+## Build drift worth knowing
+
+atv1 ran bundle `tv.kodi.tvos.piers` / `22.0-ALPHA3` until 07-03, then
+`ca.koditvbox.kodi.tvos.21` / `21.3` from 07-08. Two sideload sources with
+different bundle IDs have been in service. Both boxes now agree on 21.3
+(`20251031-a3a448d26b`). The boxes are also on a moving tvOS beta train
+(`23L5753c` -> `23L5758b` -> `23L5766a`), which is context for any
+"only happens on Apple TV" triage.
 
 ## Crash inventory
 
