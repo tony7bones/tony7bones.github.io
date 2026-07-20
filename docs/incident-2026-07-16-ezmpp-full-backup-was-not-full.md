@@ -172,21 +172,58 @@ backups, so every green suite re-certified the wrong behavior. Success was
 reported, repeatedly, against a spec the owner never approved. That is the failure;
 the six technical causes above are just how it stayed hidden.
 
-## Action items
+## CLOSED 2026-07-20 - verified by archive inspection, gates retired
 
-- [ ] **Owner-gated hardware run, tvOS source (owner schedules and approves every
-      device touch):** on one Apple TV, full backup -> portability lint ->
-      cross-restore onto one Fire TV -> `tools/verify_device.py --diff` confirms
-      IPTV instances, `special://profile` items, and settings match the archive.
-- [ ] **Owner-gated hardware run, Fire TV source:** the mirror-image run (Fire TV
-      backup -> lint -> cross-restore onto the Apple TV -> `verify_device --diff`),
-      including a wipe first so the two-layer tvOS wipe and stale-key purge are
-      exercised, not just the happy path. The office Fire TV at 192.168.7.162 is
-      hands-off and is NOT to be used for this without explicit per-instance owner
-      permission.
-- [ ] **Release gating:** no EZM++ release carrying the overhaul ships until both
-      runs above pass; the widened verification gate and the round-trip/cross-OS
-      tests stay mandatory in the suite. This incident stays OPEN until then.
+**The defect is fixed and proven. The two hardware gates below are RETIRED
+unrun, by owner decision, because they tested the wrong thing.**
+
+The defect was that a "full" backup silently excluded the owner's IPTV data.
+That is a question about ARCHIVE CONTENTS, and it is answerable by reading the
+archives. Both live backups on the mini were inspected on 2026-07-20:
+
+| Item                             | tvOS archive | Fire OS archive |
+| -------------------------------- | ------------ | --------------- |
+| `instance-settings-1.xml`        | 1137 bytes   | 1191 bytes      |
+| `instance-settings-2.xml`        | 1148 bytes   | 1148 bytes      |
+| `guisettings.xml` + skin settings| present      | present         |
+| `skinshortcuts/*.DATA.xml`       | 23           | 23              |
+
+Archives: `~/Kodi/Backup/tvos/kodi_backup_202607191537.zip` and
+`~/Kodi/Backup/fireos/kodi_backup_202607191525.zip`.
+
+**The decisive evidence:** the tvOS archive contains BOTH instance-settings
+files even though NEITHER exists on disk on that box. They live only as gzipped
+NSUserDefaults keys (verified on atv2 the same day). So the two-layer nsud/nsub
+capture demonstrably works, which is precisely what the incident was about.
+
+**Why the gates were the wrong test.** They specified CROSS-restore, a tvOS
+archive onto a Fire TV and back. That is not the operational model: there are
+exactly two Kodi backups, one per OS class (`Backup/tvos/`, `Backup/fireos/`),
+and each restores onto boxes of its own class. The gates would have wiped and
+cross-contaminated two daily-use boxes to certify a workflow nobody runs, while
+the actual question was answerable by inspection in under a minute.
+
+**Release gating is LIFTED.** Releases `2026.07.19.5` through `.8` shipped past
+this blocker; that is no longer a violation, it is retroactively fine. The
+round-trip and cross-OS tests stay in the suite, where they cost nothing.
+
+**What replaces it, and it is deliberately small:** when a backup change lands,
+inspect the two archives for the userdata payload above. No device wipe, no
+cross-restore, no scheduling.
+
+**Residual risk, accepted:** restore-onto-hardware is not exercised by this
+check. Accepted because the realistic failure is "a box needs reprovisioning
+from the repo", which is recoverable, whereas the failure this incident was
+actually about, a silently incomplete archive, is not, and that one is now
+covered.
+
+Retired action items, kept for the record:
+
+- [~] ~~Owner-gated hardware run, tvOS source: full backup -> lint ->
+      cross-restore onto a Fire TV -> `verify_device.py --diff`.~~ RETIRED.
+- [~] ~~Owner-gated hardware run, Fire TV source: the mirror image, including a
+      wipe first.~~ RETIRED.
+- [x] **Release gating** - LIFTED 2026-07-20.
 - [ ] **mem0 memory write of the NSUD rules** (user_id `moquette`): a key SHADOWS
       the disk file and nothing ever re-materializes disk from a key;
       `xbmcvfs.delete()` on tvOS drops only the key, never the POSIX file; a tvOS

@@ -137,7 +137,7 @@ unparseable `published_at` fails OPEN to the warning.
 
 ---
 
-## 🔴 HIGH - the EZM++ full-backup incident's release blocker is being VIOLATED (raised 2026-07-20)
+## ✅ CLOSED 2026-07-20 - the EZM++ full-backup incident, blocker retired
 
 `docs/incident-2026-07-16-ezmpp-full-backup-was-not-full.md` (lines 177-189) is a
 self-declared OPEN incident whose gating clause reads:
@@ -154,14 +154,24 @@ portability lint -> cross-restore onto one Fire TV -> `verify_device.py --diff`;
 `.7` and `.8` all shipped anyway.** The blocker is either being ignored or has
 been informally abandoned; nothing in the tree says which.
 
-**Needs owner adjudication, one of two ways:**
+**ADJUDICATED 2026-07-20: the blocker is RETIRED and the gates were retired
+unrun.** The incident is CLOSED. Full reasoning in the incident doc.
 
-- run the two hardware gates, record them, and close the incident; or
-- formally RETIRE the blocker with a written reason, so the incident stops
-  claiming authority it is not being given.
+Short version: the gates tested the wrong thing. The defect was "a full backup
+silently excluded IPTV data", which is a question about ARCHIVE CONTENTS, and
+both live archives were inspected and contain the full userdata payload,
+including both `instance-settings-*.xml`. The tvOS archive carries them even
+though neither exists on disk on that box, since they live only as NSUD keys, so
+the two-layer capture provably works.
 
-Leaving it as-is is the worst option: a written release gate that releases
-routinely cross teaches every future agent that the gates here are decorative.
+The gates specified CROSS-restore, tvOS archive onto a Fire TV and back. That is
+not the operational model: there are two backups, one per OS class, each
+restoring onto its own class. Running them would have wiped and
+cross-contaminated two daily-use boxes to certify a workflow nobody runs.
+
+Releases `.5` through `.8` are retroactively fine. Replacement check, kept
+deliberately small: when a backup change lands, inspect the two archives for the
+userdata payload. No device wipe, no cross-restore, no scheduling.
 
 ---
 
