@@ -39,9 +39,20 @@ Tracking for the Tony.7.Bones repo.
 > Per-project: `ezmpp/TASKS.md`, `estuary7/TASKS.md`, `iptv/TASKS.md`. Note
 > that `docs/incident-2026-07-16-ezmpp-full-backup-was-not-full.md` is a
 > self-declared OPEN release blocker for EZM++ with two owner-gated hardware
-> runs outstanding, and that a hardware-verification gate on the EZM++ release
-> checklist is requested by three separate incident writeups here and appears
-> never to have landed.
+> runs outstanding (see the VIOLATION item below, added 2026-07-20).
+>
+> **The EZM++ hardware-verification gate: PARTIALLY DONE (narrowed 2026-07-20),
+> not "never landed".** The MECHANICAL half DID land in the sibling repo:
+> `ezmpp/tools/verify_device.py` plus
+> `ezmpp/tests/test_storage_change_requires_device_verification.py` fail the
+> suite when `nsud.py` / `boxsetup.py` / storage behavior changes without a
+> fresh `verification/<version>.json` pulled live from a real box. What did NOT
+> land is the CHECKLIST/PROCESS half that the three incident writeups
+> (`incident-2026-07-08-ezmpp-repeated-hardware-burns.md:100`,
+> `incident-2026-07-08-ezmpp-atv-settings-nsuserdefaults.md:65`, and implicitly
+> the 2026-07-17 Estuary 7 menu-refresh incident) actually asked for: a written
+> step on the EZM++ RELEASE CHECKLIST. **This item stays OPEN, narrowed to that
+> process half only.** Do not re-scope it to the mechanical gate; that exists.
 >
 > Stale paths: several sections below cite `~/Code/moquette/estuary7` and
 > `~/Code/moquette/ezmaintenanceplusplus`. **Those standalone paths do not
@@ -71,6 +82,58 @@ Tracking for the Tony.7.Bones repo.
 
 This discipline caught real bugs pre-commit in every phase (the snapshot rebaseline footgun, a
 tech-debt seam, the apply_iptv reporting bug, the zero-content guarantee). Keep it.
+
+---
+
+## 🔴 HIGH - the repository freshness gate is WARN-ONLY, so CI cannot catch a stale mirror (raised 2026-07-20)
+
+Commit `83ec255` ("freshness gate: 'behind latest' warns (exit 0), only broken
+pointers hard-fail") downgraded the hosted-mirror freshness check. A mirror that
+is BEHIND the released version now emits a warning and exits 0, so a green CI run
+proves nothing about whether the hub is actually serving current add-ons.
+
+**Both consequences are true in the tree right now:**
+
+1. `addons/hosted/skin.estuary7/addon.xml` publishes `1.0.70`, while the skin
+   repo has released `v1.0.71`. No box can get 1.0.71.
+2. The legacy `addons/addons.xml` publishes `script.ezmaintenanceplusplus`
+   `2026.07.14.1`, while `2026.07.19.8` is current. That is six releases stale.
+
+Neither was surfaced by CI, which is exactly the failure mode the gate existed to
+prevent. This is the same stale-mirror defect the 2026-07-18 hub review recorded
+against the legacy `/addons/` path, still open and now demonstrably unpoliced.
+
+**Recommendation: restore the gate to BLOCKING.** A warning nobody reads is not a
+gate. If a temporary behind-state must be allowed, it should need an explicit,
+expiring waiver rather than a silent exit 0.
+
+---
+
+## 🔴 HIGH - the EZM++ full-backup incident's release blocker is being VIOLATED (raised 2026-07-20)
+
+`docs/incident-2026-07-16-ezmpp-full-backup-was-not-full.md` (lines 177-189) is a
+self-declared OPEN incident whose gating clause reads:
+
+> no EZM++ release carrying the overhaul ships until both runs above pass; the
+> widened verification gate and the round-trip/cross-OS tests stay mandatory in
+> the suite. This incident stays OPEN until then.
+
+The two runs are owner-gated hardware runs: (1) tvOS source, full backup ->
+portability lint -> cross-restore onto one Fire TV -> `verify_device.py --diff`;
+(2) the mirror-image Fire TV source run, including a wipe first.
+
+**Neither has been recorded as done, and EZM++ releases `2026.07.19.5`, `.6`,
+`.7` and `.8` all shipped anyway.** The blocker is either being ignored or has
+been informally abandoned; nothing in the tree says which.
+
+**Needs owner adjudication, one of two ways:**
+
+- run the two hardware gates, record them, and close the incident; or
+- formally RETIRE the blocker with a written reason, so the incident stops
+  claiming authority it is not being given.
+
+Leaving it as-is is the worst option: a written release gate that releases
+routinely cross teaches every future agent that the gates here are decorative.
 
 ---
 
@@ -125,7 +188,9 @@ the owner.
       lands in the new repo's history.
 - [ ] Add its own CI (pytest + ruff + a build smoke), mirroring the ezm/estuary7 workflows.
 - [ ] Decide the in-Kodi `setup/iptv.py` boundary (move / thin-consumer / supersede).
-- [ ] Remove the moved source from THIS repo once the new home is verified (verify-before-remove).
+- [x] ~~Remove the moved source from THIS repo once the new home is verified
+      (verify-before-remove).~~ **CLOSED 2026-07-20:** commit `b16ea06` deleted
+      `_tools/build_iptv.py` and `_tools/test_build_iptv.py`.
 - [ ] Fold in the `iptv-2.0-share-populator` branch or record its disposition.
 - Full context + rationale: memory `iptv-builder-project-own-repo.md`.
 
@@ -230,9 +295,12 @@ by GitHub Pages, verified from the consumer seat (`verify_live_site.py`).
   limit, not a tree problem). Box restored to found state (test repo
   removed, engine repo re-enabled). SOAK ~1 week before Phase 2.
   Rollback if needed: `gh api -X PUT .../pages -f build_type=legacy` (or
-  the UI) - the committed tree still serves from main. TODO during soak:
+  the UI) - the committed tree still serves from main. ~~TODO during soak:
   widen/drop the push path filter (docs-only pushes otherwise go stale up
-  to 24h now that the build IS the deploy).
+  to 24h now that the build IS the deploy).~~ **CLOSED 2026-07-20: the filter
+  was dropped.** `.github/workflows/pages.yml` has no `paths:` key at all, so
+  every push to the branch builds and deploys. Docs-only pushes no longer go
+  stale.
 - [x] **ENGINE RETIRED - static-only 3.0.0 SHIPPED (2026-07-15, commit
       `08229a9`).** Owner reframe: every deployment is a fresh clean Kodi
       install, done manually at leisure (first target: Office Fire TV, then an
@@ -299,8 +367,11 @@ generated from a minimal, truthful repo.
       the remote and that NO released tag's baked manifest ever referenced `virtual-repo`;
       corrected the stale "may still exist" note in CLAUDE.md.
 - [x] Remove `_tools/repo-sources/` (hand-rebuild reference copies; nothing read them).
-- [ ] Remove the moved IPTV source from this repo - tracked by the IPTV-extraction P1
-      above (verify-before-remove).
+- [x] ~~Remove the moved IPTV source from this repo - tracked by the IPTV-extraction P1
+      above (verify-before-remove).~~ **CLOSED 2026-07-20.** Commit `b16ea06`
+      ("chore: remove extracted IPTV builder; retire v1 host-build in provisioner")
+      deleted `_tools/build_iptv.py` and `_tools/test_build_iptv.py`; neither path
+      exists in the tree.
 - [x] Leaked credential history remediation + history squash (2026-07-16) - done
       together: the file is untracked/gitignored, all tags deleted, and history
       squashed to a single root commit (see the post-install cleanup entry above).

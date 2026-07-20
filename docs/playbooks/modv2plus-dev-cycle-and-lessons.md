@@ -39,7 +39,8 @@ activates this add-on for you (the manual run is still available for re-applying
   lose upstream updates (manual merges). Rejected for now.
 - **Fork-by-build (the hybrid to remember if we ever reconsider):** keep our changes as deltas, apply
   them at _build_ time to the latest MOD V2, ship the _result_ as our own rebranded skin. Best of both;
-  re-basing = re-run the build. MIT licensed, so allowed (must keep license + credit the authors).
+  re-basing = re-run the build. Upstream is GPL-2.0 (code) + CC-BY-SA-4.0 (artwork), so this is
+  allowed (must keep the license, stay source-available, and credit the authors).
 
 ### How the patch works
 
