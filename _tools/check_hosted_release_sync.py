@@ -22,6 +22,15 @@ third add-on using the same template shape is covered automatically):
      template would build.
   2. That version is the source repo's LATEST published release — the design
      intent is "the proxy mirrors the latest release", not just "a" release.
+     This one is TIME-AWARE. A mirror that is behind a release published
+     within ``FRESHNESS_GRACE_SECONDS`` is the normal release-to-mirror-bump
+     race and only WARNS (exit 0). A mirror behind a release OLDER than that
+     window is a forgotten bump and hard-fails (exit 1). Override the window
+     with ``HOSTED_FRESHNESS_GRACE_SECONDS``.
+
+A broken pointer (check 1: no release for the declared version, or the release
+is missing the expected asset, or the source repo has no releases at all) always
+hard-fails, regardless of any timing.
 
 A genuine, deliberate lag may ship by committing
 ``addons/hosted/<id>/release-sync-waiver.json`` with
@@ -43,6 +52,7 @@ Usage:
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import os
 import re
@@ -58,6 +68,23 @@ REPO_ROOT = os.path.normpath(
 )
 API_BASE = "https://api.github.com"
 WAIVER_NAME = "release-sync-waiver.json"
+
+# How long a mirror is allowed to sit behind its source repo's LATEST release
+# before "behind" stops being the normal release-to-mirror-bump race and becomes
+# a real, human-forgot-to-bump staleness PROBLEM.
+#
+# Calibration: an observed healthy bump (skin.estuary7 1.0.70) followed its
+# release by about 13 minutes. The incident this window exists to catch was
+# skin.estuary7 1.0.71, released 2026-07-19T21:42:29Z, with the hub mirror still
+# on 1.0.70 roughly 15 hours later. 2 hours sits an order of magnitude above the
+# healthy bump latency and an order of magnitude below the incident, so it warns
+# through every legitimate race and fails on a genuinely forgotten bump.
+#
+# Override without editing code by setting HOSTED_FRESHNESS_GRACE_SECONDS (a
+# non-negative integer count of seconds). A missing, blank, non-integer or
+# negative value falls back to this default.
+FRESHNESS_GRACE_SECONDS = 2 * 60 * 60
+GRACE_ENV_VAR = "HOSTED_FRESHNESS_GRACE_SECONDS"
 
 # Matches a GitHub Releases asset template pointing at a THIRD-PARTY source
 # repo — owner/repo are literal in the URL, distinct from the entry's OWN
@@ -186,6 +213,73 @@ def waiver_reason(path: str, version: str) -> str | None:
     return reason if isinstance(reason, str) and reason.strip() else None
 
 
+def grace_seconds() -> int:
+    """The freshness grace window in seconds, env-overridable.
+
+    Reads ``HOSTED_FRESHNESS_GRACE_SECONDS`` so CI or a human can tune the
+    window without editing code. Anything unset, blank, non-integer or negative
+    falls back to ``FRESHNESS_GRACE_SECONDS``: a typo in an env var must not
+    silently disable or invert the gate.
+    """
+    raw = os.environ.get(GRACE_ENV_VAR)
+    if raw is None or not raw.strip():
+        return FRESHNESS_GRACE_SECONDS
+    try:
+        value = int(raw.strip())
+    except ValueError:
+        return FRESHNESS_GRACE_SECONDS
+    return value if value >= 0 else FRESHNESS_GRACE_SECONDS
+
+
+def parse_published_at(value: object) -> dt.datetime | None:
+    """GitHub's ``published_at`` (UTC ISO8601, e.g. ``2026-07-19T21:42:29Z``).
+
+    Returns a timezone-AWARE UTC datetime, or None if the field is absent,
+    not a string, or unparseable. Callers must treat None as "cannot judge
+    age" and fail open to the warning, never hard-fail: a timestamp parsing
+    problem is our bug, not evidence of a stale mirror.
+    """
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    # fromisoformat only learned the trailing 'Z' in 3.11; normalize for 3.9/3.10.
+    if text.endswith(("Z", "z")):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = dt.datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        # GitHub always sends an offset. A naive value means a shape we did not
+        # expect, so read it as UTC rather than as local time (which would skew
+        # the age by the runner's offset and could fail a fresh release).
+        return parsed.replace(tzinfo=dt.timezone.utc)
+    return parsed.astimezone(dt.timezone.utc)
+
+
+def _now() -> dt.datetime:
+    """Timezone-aware UTC now.
+
+    A named seam, not a style flourish: tests pin an exact instant here so the
+    real-incident fixture can use the literal 1.0.71 timestamps instead of
+    relative offsets. Never compare a UTC ``published_at`` against a naive
+    local ``datetime.now()`` - that skews the age by the runner's offset.
+    """
+    return dt.datetime.now(dt.timezone.utc)
+
+
+def _format_age(seconds: float) -> str:
+    """A short human age like '15h 3m' or '42m', for the failure message."""
+    total = int(max(seconds, 0))
+    hours, rem = divmod(total, 3600)
+    minutes = rem // 60
+    if hours:
+        return f"{hours}h {minutes}m"
+    if minutes:
+        return f"{minutes}m"
+    return f"{total}s"
+
+
 def check_entry(entry: dict, token: str | None) -> tuple[bool, list[str], list[str]]:
     """Return (ok, info_lines, problems) for one hosted mirror."""
     addon_id, owner, repo = entry["id"], entry["owner"], entry["repo"]
@@ -232,21 +326,59 @@ def check_entry(entry: dict, token: str | None) -> tuple[bool, list[str], list[s
                     f"{latest_version} — WAIVED ({reason})"
                 )
             else:
-                # NOT a hard failure. The mirror still points at a REAL, installable
-                # release (it passed the tag+asset checks above) - it is merely not
-                # the LATEST. That is exactly the transient state during a release:
-                # the sibling repo publishes v_new, the follow-up mirror-bump push
-                # lands seconds-to-minutes later, and in between the mirror is behind.
-                # Hard-failing that raced EVERY release (and every unrelated push that
-                # happened to land in the window) and spammed failure emails for a
-                # condition that self-heals. So warn, never fail; the bump-mirror push
-                # resolves it and a genuinely-forgotten bump still shows in every log.
-                info.append(
-                    f"WARNING: {addon_id}: mirror addon.xml is {version} but the "
-                    f"latest published release on {owner}/{repo} is {latest_version}. "
-                    f"The mirror is behind (transient during a release); bump "
-                    f"addons/hosted/{addon_id}/addon.xml to {latest_version}."
+                # The mirror still points at a REAL, installable release (it passed
+                # the tag+asset checks above) - it is merely not the LATEST. Whether
+                # that is benign or a defect depends entirely on HOW LONG it has been
+                # true, so the verdict is time-aware:
+                #
+                #   young latest (inside the grace window) -> WARNING, exit 0. This is
+                #     the normal release-to-mirror-bump race: the sibling repo
+                #     publishes v_new and the follow-up mirror-bump push lands minutes
+                #     later. Hard-failing it raced EVERY release (and every unrelated
+                #     push landing in the window) and spammed failure emails for a
+                #     condition that self-heals.
+                #
+                #   old latest (past the grace window) -> PROBLEM, exit 1. This is the
+                #     defect the warn-only gate stayed green through: skin.estuary7
+                #     1.0.71 shipped and the hub mirror sat on 1.0.70 for ~15 hours
+                #     until a human noticed. Nothing self-heals after the grace
+                #     window; somebody forgot the bump.
+                #
+                # A missing or unparseable published_at FAILS OPEN to the warning: a
+                # timestamp we cannot read is our parsing problem, not proof of a
+                # stale mirror, and must never turn CI red on its own.
+                grace = grace_seconds()
+                published = parse_published_at(latest.get("published_at"))
+                age = (
+                    None if published is None else (_now() - published).total_seconds()
                 )
+                fix = f"bump addons/hosted/{addon_id}/addon.xml to {latest_version}"
+                head = (
+                    f"{addon_id}: mirror addon.xml is {version} but the "
+                    f"latest published release on {owner}/{repo} is {latest_version}."
+                )
+                if age is not None and age > grace:
+                    problems.append(
+                        f"{head} The mirror has been behind for {_format_age(age)}, "
+                        f"past the {_format_age(grace)} freshness grace window, so "
+                        f"this is a forgotten mirror bump, not a release race. "
+                        f"Fix: {fix}."
+                    )
+                elif age is None:
+                    info.append(
+                        f"WARNING: {head} The mirror is behind, and the release "
+                        f"publish timestamp is missing or unparseable, so its age "
+                        f"could not be judged against the {_format_age(grace)} "
+                        f"freshness grace window. Treating as the transient release "
+                        f"race; {fix}."
+                    )
+                else:
+                    info.append(
+                        f"WARNING: {head} The mirror is behind, but that release is "
+                        f"only {_format_age(age)} old, inside the "
+                        f"{_format_age(grace)} freshness grace window (transient "
+                        f"during a release); {fix}."
+                    )
         else:
             info.append(
                 f"{addon_id}: mirror version {version} matches the latest release"

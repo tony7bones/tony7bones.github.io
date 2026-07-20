@@ -70,11 +70,15 @@ jobs:
         run: ruff check _tools/
 
       - name: Hosted release-freshness gate
-        # The gate itself now treats "mirror behind latest" as a non-failing
-        # warning (only broken pointers - no release / missing asset - hard-fail),
-        # so the release-race window no longer fails this step on ANY event. No
-        # per-event continue-on-error is needed, and adding one would wrongly
-        # swallow GENUINE broken-pointer failures on schedule/repository_dispatch.
+        # The gate handles the release-race window itself, and it is TIME-AWARE:
+        # "mirror behind latest" is a non-failing warning while the latest release
+        # is younger than HOSTED_FRESHNESS_GRACE_SECONDS (default 2h), and a hard
+        # failure once it is older. Broken pointers (no release / missing asset)
+        # always hard-fail. So the race window still never fails this step on ANY
+        # event, and no per-event continue-on-error is needed. Do NOT add one: it
+        # would swallow GENUINE broken-pointer failures AND the genuinely-stale
+        # mirror this gate now catches, on schedule/repository_dispatch - which is
+        # precisely where the daily cron is the only thing watching.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 _tools/check_hosted_release_sync.py

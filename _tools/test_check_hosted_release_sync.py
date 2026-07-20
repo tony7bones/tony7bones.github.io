@@ -11,6 +11,7 @@ import io
 import json
 import sys
 import urllib.error
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -252,17 +253,43 @@ def test_waiver_reason_blank_reason_is_ignored(tmp_path):
 # --------------------------------------------------------------------------- #
 # check() / check_entry() — end to end against a fake API
 # --------------------------------------------------------------------------- #
+_UNSET = object()
+
+
+def _ago(**delta) -> str:
+    """An ISO8601 UTC 'Z' timestamp that far in the past, as GitHub would send it."""
+    when = datetime.now(timezone.utc) - timedelta(**delta)
+    return when.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def _release_payload(assets):
     return {"tag_name": None, "assets": [{"name": n} for n in assets]}
 
 
-def _routes_for(owner, repo, tag, tag_assets, latest_tag, latest_assets):
+def _routes_for(
+    owner,
+    repo,
+    tag,
+    tag_assets,
+    latest_tag,
+    latest_assets,
+    latest_published_at=_UNSET,
+):
+    """Fake the two API calls the gate makes for one mirror.
+
+    ``latest_published_at`` defaults to the sentinel ``_UNSET``, which omits the
+    field entirely - that is the pre-existing shape every older test relies on,
+    and it exercises the fail-open-to-warning path. Pass an ISO8601 string (or
+    an explicit None / garbage) to drive the time-aware branch.
+    """
     tags_payload = None if tag_assets is None else _release_payload(tag_assets)
     if tags_payload is not None:
         tags_payload["tag_name"] = tag
     latest_payload = None if latest_assets is None else _release_payload(latest_assets)
     if latest_payload is not None:
         latest_payload["tag_name"] = latest_tag
+        if latest_published_at is not _UNSET:
+            latest_payload["published_at"] = latest_published_at
     return {
         f"https://api.github.com/repos/{owner}/{repo}/releases/tags/{tag}": (
             404 if tag_assets is None else 200,
@@ -516,3 +543,358 @@ def test_main_returns_0_and_warns_on_behind_latest(tmp_path, monkeypatch, capsys
     assert rc == 0
     assert "WARNING" in out
     assert "behind" in out and "1.0.39" in out
+
+
+# --------------------------------------------------------------------------- #
+# time-aware freshness: the grace window
+# --------------------------------------------------------------------------- #
+def test_grace_seconds_defaults_to_two_hours(monkeypatch):
+    monkeypatch.delenv(gate.GRACE_ENV_VAR, raising=False)
+    assert gate.FRESHNESS_GRACE_SECONDS == 2 * 60 * 60
+    assert gate.grace_seconds() == 2 * 60 * 60
+
+
+@pytest.mark.parametrize("raw", ["", "   ", "not-a-number", "-1", "1.5"])
+def test_grace_seconds_falls_back_on_unusable_env_value(monkeypatch, raw):
+    """A typo in the env var must not silently disable or invert the gate."""
+    monkeypatch.setenv(gate.GRACE_ENV_VAR, raw)
+    assert gate.grace_seconds() == gate.FRESHNESS_GRACE_SECONDS
+
+
+def test_grace_seconds_honors_valid_env_override(monkeypatch):
+    monkeypatch.setenv(gate.GRACE_ENV_VAR, "600")
+    assert gate.grace_seconds() == 600
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [None, "", "   ", "not-a-timestamp", 12345, "2026-13-45T99:99:99Z"],
+)
+def test_parse_published_at_returns_none_on_unusable_input(raw):
+    assert gate.parse_published_at(raw) is None
+
+
+def test_parse_published_at_reads_github_z_suffixed_utc():
+    parsed = gate.parse_published_at("2026-07-19T21:42:29Z")
+    assert parsed == datetime(2026, 7, 19, 21, 42, 29, tzinfo=timezone.utc)
+    assert parsed.tzinfo is not None
+
+
+def test_parse_published_at_normalizes_offset_to_utc():
+    """A non-Z offset must be converted, not truncated, or the age is wrong."""
+    parsed = gate.parse_published_at("2026-07-19T14:42:29-07:00")
+    assert parsed == datetime(2026, 7, 19, 21, 42, 29, tzinfo=timezone.utc)
+
+
+def test_check_warns_when_behind_a_release_inside_the_grace_window(
+    tmp_path, monkeypatch
+):
+    """CASE 1, the legitimate race: the sibling published 10 minutes ago and the
+    mirror-bump push has not landed yet. This is the exact condition that spammed
+    failure emails before 83ec255, and it must stay a non-failing WARNING."""
+    monkeypatch.delenv(gate.GRACE_ENV_VAR, raising=False)
+    root = _setup_sandbox(tmp_path, "1.0.38")
+    routes = _routes_for(
+        "moquette",
+        "estuary7",
+        "v1.0.38",
+        tag_assets=["skin.estuary7-1.0.38.zip"],
+        latest_tag="v1.0.39",
+        latest_assets=["skin.estuary7-1.0.39.zip"],
+        latest_published_at=_ago(minutes=10),
+    )
+    monkeypatch.setattr(gate.urllib.request, "urlopen", _fake_urlopen(routes))
+
+    ok, info, problems = gate.check(token=None, repo_root=str(root))
+
+    assert ok is True
+    assert problems == []
+    assert any(
+        "WARNING" in line and "1.0.39" in line and "grace window" in line
+        for line in info
+    )
+
+
+def test_check_fails_when_behind_a_release_older_than_the_grace_window(
+    tmp_path, monkeypatch
+):
+    """CASE 2, the REAL INCIDENT: skin.estuary7 1.0.71 was published
+    2026-07-19T21:42:29Z and the hub mirror sat at 1.0.70 for roughly 15 hours
+    until a human noticed on 2026-07-20. The warn-only gate stayed green the
+    whole time. Nothing self-heals that far past the release, so this must be a
+    hard failure that names the exact fix."""
+    monkeypatch.delenv(gate.GRACE_ENV_VAR, raising=False)
+    root = _setup_sandbox(tmp_path, "1.0.70")
+    routes = _routes_for(
+        "moquette",
+        "estuary7",
+        "v1.0.70",
+        tag_assets=["skin.estuary7-1.0.70.zip"],
+        latest_tag="v1.0.71",
+        latest_assets=["skin.estuary7-1.0.71.zip"],
+        latest_published_at="2026-07-19T21:42:29Z",
+    )
+    monkeypatch.setattr(gate.urllib.request, "urlopen", _fake_urlopen(routes))
+    monkeypatch.setattr(
+        gate, "_now", lambda: datetime(2026, 7, 20, 12, 45, 0, tzinfo=timezone.utc)
+    )
+
+    ok, info, problems = gate.check(token=None, repo_root=str(root))
+
+    assert ok is False
+    assert len(problems) == 1
+    problem = problems[0]
+    assert "1.0.70" in problem and "1.0.71" in problem
+    # how long it has been stale, and the exact fix
+    assert "15h 2m" in problem
+    assert "addons/hosted/skin.estuary7/addon.xml" in problem
+    assert "1.0.71" in problem.split("Fix:")[1]
+
+
+def test_check_ok_when_mirror_matches_latest_even_with_an_ancient_release(
+    tmp_path, monkeypatch
+):
+    """CASE 3: age is irrelevant when the mirror is not behind. A long-stable
+    add-on whose latest release is a year old must never trip the freshness gate."""
+    monkeypatch.delenv(gate.GRACE_ENV_VAR, raising=False)
+    root = _setup_sandbox(tmp_path, "1.0.38")
+    routes = _routes_for(
+        "moquette",
+        "estuary7",
+        "v1.0.38",
+        tag_assets=["skin.estuary7-1.0.38.zip"],
+        latest_tag="v1.0.38",
+        latest_assets=["skin.estuary7-1.0.38.zip"],
+        latest_published_at=_ago(days=365),
+    )
+    monkeypatch.setattr(gate.urllib.request, "urlopen", _fake_urlopen(routes))
+
+    ok, info, problems = gate.check(token=None, repo_root=str(root))
+
+    assert ok is True
+    assert problems == []
+    assert any("matches the latest release" in line for line in info)
+
+
+def test_check_broken_pointer_still_hard_fails_when_release_is_brand_new(
+    tmp_path, monkeypatch
+):
+    """CASE 4a: the grace window governs ONLY 'behind latest'. A mirror version
+    with no release at all 404s a fresh install right now, so it hard-fails even
+    when the latest release is seconds old and everything looks like a race."""
+    monkeypatch.delenv(gate.GRACE_ENV_VAR, raising=False)
+    root = _setup_sandbox(tmp_path, "1.0.99")
+    routes = _routes_for(
+        "moquette",
+        "estuary7",
+        "v1.0.99",
+        tag_assets=None,
+        latest_tag="v1.0.38",
+        latest_assets=["skin.estuary7-1.0.38.zip"],
+        latest_published_at=_ago(seconds=5),
+    )
+    monkeypatch.setattr(gate.urllib.request, "urlopen", _fake_urlopen(routes))
+
+    ok, info, problems = gate.check(token=None, repo_root=str(root))
+
+    assert ok is False
+    assert any("no published release tagged 'v1.0.99'" in p for p in problems)
+
+
+def test_check_missing_asset_still_hard_fails_regardless_of_release_age(
+    tmp_path, monkeypatch
+):
+    """CASE 4b: same for a release that exists but lacks the expected asset, at
+    both extremes of release age."""
+    monkeypatch.delenv(gate.GRACE_ENV_VAR, raising=False)
+    for label, published in (("new", _ago(seconds=5)), ("old", _ago(days=400))):
+        case_dir = tmp_path / label
+        case_dir.mkdir()
+        root = _setup_sandbox(case_dir, "1.0.38")
+        routes = _routes_for(
+            "moquette",
+            "estuary7",
+            "v1.0.38",
+            tag_assets=["some-other-file.zip"],
+            latest_tag="v1.0.38",
+            latest_assets=["some-other-file.zip"],
+            latest_published_at=published,
+        )
+        monkeypatch.setattr(gate.urllib.request, "urlopen", _fake_urlopen(routes))
+
+        ok, info, problems = gate.check(token=None, repo_root=str(root))
+
+        assert ok is False
+        assert any("does not carry the expected asset" in p for p in problems)
+
+
+def test_check_no_releases_at_all_still_hard_fails(tmp_path, monkeypatch):
+    """CASE 4c: no releases means there is no published_at to age at all, and it
+    must remain a hard failure rather than falling into the warn path."""
+    monkeypatch.delenv(gate.GRACE_ENV_VAR, raising=False)
+    root = _setup_sandbox(tmp_path, "1.0.38")
+    routes = _routes_for(
+        "moquette",
+        "estuary7",
+        "v1.0.38",
+        tag_assets=None,
+        latest_tag=None,
+        latest_assets=None,
+    )
+    monkeypatch.setattr(gate.urllib.request, "urlopen", _fake_urlopen(routes))
+
+    ok, info, problems = gate.check(token=None, repo_root=str(root))
+
+    assert ok is False
+    assert any("has no published releases at all" in p for p in problems)
+
+
+def test_check_waiver_still_waives_a_long_stale_lag(tmp_path, monkeypatch):
+    """CASE 5: a version-scoped waiver is a recorded, deliberate decision and
+    outranks the freshness window. A 15-hour lag under a matching waiver must
+    still pass, or the waiver mechanism is worthless for exactly the deliberate
+    long lags it exists to cover."""
+    monkeypatch.delenv(gate.GRACE_ENV_VAR, raising=False)
+    root = _setup_sandbox(tmp_path, "1.0.70")
+    (root / "addons/hosted/skin.estuary7/release-sync-waiver.json").write_text(
+        json.dumps({"version": "1.0.70", "waived": "1.0.71 held for hardware soak"})
+    )
+    routes = _routes_for(
+        "moquette",
+        "estuary7",
+        "v1.0.70",
+        tag_assets=["skin.estuary7-1.0.70.zip"],
+        latest_tag="v1.0.71",
+        latest_assets=["skin.estuary7-1.0.71.zip"],
+        latest_published_at=_ago(hours=15),
+    )
+    monkeypatch.setattr(gate.urllib.request, "urlopen", _fake_urlopen(routes))
+
+    ok, info, problems = gate.check(token=None, repo_root=str(root))
+
+    assert ok is True
+    assert problems == []
+    assert any("WAIVED (1.0.71 held for hardware soak)" in line for line in info)
+
+
+@pytest.mark.parametrize(
+    "published",
+    [_UNSET, None, "not-a-timestamp", "", 12345],
+    ids=["absent", "null", "garbage", "blank", "wrong-type"],
+)
+def test_check_fails_open_to_warning_when_published_at_is_unusable(
+    tmp_path, monkeypatch, published
+):
+    """CASE 6: a timestamp we cannot read is OUR parsing problem, not evidence of
+    a stale mirror. It must degrade to the warning (exit 0), say so in the
+    output, and never crash."""
+    monkeypatch.delenv(gate.GRACE_ENV_VAR, raising=False)
+    root = _setup_sandbox(tmp_path, "1.0.38")
+    routes = _routes_for(
+        "moquette",
+        "estuary7",
+        "v1.0.38",
+        tag_assets=["skin.estuary7-1.0.38.zip"],
+        latest_tag="v1.0.39",
+        latest_assets=["skin.estuary7-1.0.39.zip"],
+        latest_published_at=published,
+    )
+    monkeypatch.setattr(gate.urllib.request, "urlopen", _fake_urlopen(routes))
+
+    ok, info, problems = gate.check(token=None, repo_root=str(root))
+
+    assert ok is True
+    assert problems == []
+    assert any("WARNING" in line and "missing or unparseable" in line for line in info)
+
+
+def test_env_override_shortens_window_and_turns_a_warning_into_a_failure(
+    tmp_path, monkeypatch
+):
+    """CASE 7a: the same 10-minute-old release that warns under the 2-hour
+    default must hard-fail once the window is tightened to 60 seconds. This
+    proves the env var actually drives the threshold."""
+    root = _setup_sandbox(tmp_path, "1.0.38")
+    routes = _routes_for(
+        "moquette",
+        "estuary7",
+        "v1.0.38",
+        tag_assets=["skin.estuary7-1.0.38.zip"],
+        latest_tag="v1.0.39",
+        latest_assets=["skin.estuary7-1.0.39.zip"],
+        latest_published_at=_ago(minutes=10),
+    )
+    monkeypatch.setattr(gate.urllib.request, "urlopen", _fake_urlopen(routes))
+
+    monkeypatch.delenv(gate.GRACE_ENV_VAR, raising=False)
+    ok_default, _, problems_default = gate.check(token=None, repo_root=str(root))
+
+    monkeypatch.setenv(gate.GRACE_ENV_VAR, "60")
+    ok_tight, _, problems_tight = gate.check(token=None, repo_root=str(root))
+
+    assert ok_default is True and problems_default == []
+    assert ok_tight is False
+    assert any("freshness grace window" in p for p in problems_tight)
+
+
+def test_env_override_widens_window_and_turns_a_failure_into_a_warning(
+    tmp_path, monkeypatch
+):
+    """CASE 7b: the other direction. The 15-hour incident lag becomes a mere
+    warning under a 24-hour window, so an operator can deliberately widen the
+    gate without editing code."""
+    root = _setup_sandbox(tmp_path, "1.0.70")
+    routes = _routes_for(
+        "moquette",
+        "estuary7",
+        "v1.0.70",
+        tag_assets=["skin.estuary7-1.0.70.zip"],
+        latest_tag="v1.0.71",
+        latest_assets=["skin.estuary7-1.0.71.zip"],
+        latest_published_at=_ago(hours=15),
+    )
+    monkeypatch.setattr(gate.urllib.request, "urlopen", _fake_urlopen(routes))
+
+    monkeypatch.delenv(gate.GRACE_ENV_VAR, raising=False)
+    ok_default, _, _ = gate.check(token=None, repo_root=str(root))
+
+    monkeypatch.setenv(gate.GRACE_ENV_VAR, str(24 * 60 * 60))
+    ok_wide, info_wide, problems_wide = gate.check(token=None, repo_root=str(root))
+
+    assert ok_default is False
+    assert ok_wide is True and problems_wide == []
+    assert any("WARNING" in line and "1.0.71" in line for line in info_wide)
+
+
+def test_main_returns_1_and_prints_fix_on_a_genuinely_stale_mirror(
+    tmp_path, monkeypatch, capsys
+):
+    """The exit-code boundary CI keys off, for the incident case: a mirror stale
+    past the grace window must exit 1 and print the FAIL block naming the fix."""
+    monkeypatch.delenv(gate.GRACE_ENV_VAR, raising=False)
+    root = _setup_sandbox(tmp_path, "1.0.70")
+    monkeypatch.setattr(gate, "REPO_ROOT", str(root))
+    routes = _routes_for(
+        "moquette",
+        "estuary7",
+        "v1.0.70",
+        tag_assets=["skin.estuary7-1.0.70.zip"],
+        latest_tag="v1.0.71",
+        latest_assets=["skin.estuary7-1.0.71.zip"],
+        latest_published_at=_ago(hours=15),
+    )
+    monkeypatch.setattr(gate.urllib.request, "urlopen", _fake_urlopen(routes))
+
+    rc = gate.main()
+
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "FAIL" in out
+    assert "addons/hosted/skin.estuary7/addon.xml" in out
+
+
+def test_format_age_reads_as_hours_and_minutes():
+    assert gate._format_age(15 * 3600 + 2 * 60) == "15h 2m"
+    assert gate._format_age(42 * 60) == "42m"
+    assert gate._format_age(7) == "7s"
+    assert gate._format_age(-5) == "0s"
