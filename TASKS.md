@@ -90,27 +90,50 @@ tech-debt seam, the apply_iptv reporting bug, the zero-content guarantee). Keep 
 
 ---
 
-## 🔴 HIGH - the repository freshness gate is WARN-ONLY, so CI cannot catch a stale mirror (raised 2026-07-20)
+## ✅ CLOSED 2026-07-20 - the freshness gate is now TIME-AWARE (raised and fixed same day)
+
+**Fixed in `fe3fb88`. Both consequences below are resolved; keep the history for
+the WHY, because the naive fix is a regression.**
 
 Commit `83ec255` ("freshness gate: 'behind latest' warns (exit 0), only broken
 pointers hard-fail") downgraded the hosted-mirror freshness check. A mirror that
-is BEHIND the released version now emits a warning and exits 0, so a green CI run
-proves nothing about whether the hub is actually serving current add-ons.
+is BEHIND the released version emitted a warning and exited 0, so a green CI run
+proved nothing about whether the hub was actually serving current add-ons.
 
-**Both consequences are true in the tree right now:**
+**Both consequences were true in the tree when this was raised:**
 
-1. `addons/hosted/skin.estuary7/addon.xml` publishes `1.0.70`, while the skin
-   repo has released `v1.0.71`. No box can get 1.0.71.
-2. The legacy `addons/addons.xml` publishes `script.ezmaintenanceplusplus`
-   `2026.07.14.1`, while `2026.07.19.8` is current. That is six releases stale.
+1. `addons/hosted/skin.estuary7/addon.xml` published `1.0.70`, while the skin
+   repo had released `v1.0.71`. No box could get 1.0.71.
+   **Fixed in `c931cdd`; the live `/static/addons.xml` now serves 1.0.71.**
+2. The legacy `addons/addons.xml` published `script.ezmaintenanceplusplus`
+   `2026.07.14.1`, while `2026.07.19.8` was current.
+   **Fixed in `08d9a3d` by deleting the shim outright; the path now 404s.**
 
-Neither was surfaced by CI, which is exactly the failure mode the gate existed to
-prevent. This is the same stale-mirror defect the 2026-07-18 hub review recorded
-against the legacy `/addons/` path, still open and now demonstrably unpoliced.
+**DO NOT "restore the gate to blocking" as originally recommended here.** That
+recommendation was written before reading `83ec255`, and a straight revert
+reintroduces the exact problem `83ec255` solved: the gate fired during the normal
+release-to-mirror-bump race on EVERY release and spammed failure emails on two
+workflows. `83ec255` was correct for its problem. The hole was that it could not
+tell a race from a forgotten bump.
 
-**Recommendation: restore the gate to BLOCKING.** A warning nobody reads is not a
-gate. If a temporary behind-state must be allowed, it should need an explicit,
-expiring waiver rather than a silent exit 0.
+**What `fe3fb88` actually does:** it distinguishes them by the age of the release.
+Behind, with the latest release younger than `FRESHNESS_GRACE_SECONDS` (default
+2 hours), stays a non-failing WARNING, because that is the race and it self-heals.
+Behind, and older, is a hard failure naming the staleness duration and the
+one-line fix. Calibration: a healthy 1.0.70 bump followed its release by 13
+minutes; the 1.0.71 incident ran about 15 hours. Override with
+`HOSTED_FRESHNESS_GRACE_SECONDS`; anything unset, blank, non-integer or negative
+falls back to the default so a typo cannot silently disable the gate. A missing or
+unparseable `published_at` fails OPEN to the warning.
+
+**Two consequences accepted deliberately when this shipped:**
+
+- A genuinely stale mirror now blocks a Pages DEPLOY, including on an unrelated
+  push, because the gate runs before build and deploy. That is intended: the fix
+  is a one-line mirror bump, and shipping while stale is the defect.
+- Waivers do NOT expire. A waiver is version-scoped, so it self-invalidates on the
+  next mirror bump, and a deliberate long lag is what it exists for. If waivers
+  should also age out, that is a separate decision, not an oversight.
 
 ---
 
