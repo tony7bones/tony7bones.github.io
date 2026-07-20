@@ -21,6 +21,23 @@ Non-negotiable summary:
   `~/.claude/hooks/auto-format` on 2026-07-18, because prettier's markdown
   printer relocates content between block containers). Do not add it back.
 
+## House rules
+
+- **Independent QA + architecture review is required ONLY for changes to backup,
+  restore, or wipe code.** Everything else ships on a green suite. (Narrowed
+  2026-07-20 from "every phase, no exceptions".)
+- **Routine changes get a one-line commit message.** Long-form records
+  (acceptance logs, multi-paragraph commits) are for genuine incidents only.
+- Approval is needed for DESTRUCTIVE or OUTWARD-FACING actions only: wiping or
+  restoring onto a box, publishing, pushing. Reading logs, listing files,
+  read-only JSON-RPC queries and inspecting archives need no approval. The
+  office Fire TV at `192.168.7.162` stays HANDS-OFF for everything, reads
+  included.
+- Safety core, unchanged: a backup must contain what it claims (one
+  archive-contents inspection when backup/restore code changes); CI green before
+  deploy; skins install from the Kodi repo, never adb/devicectl push; the
+  publish allowlist and secret gate stay exactly as they are.
+
 ---
 
 ## READ FIRST: where the open work is
@@ -48,9 +65,10 @@ take either as your next task.
 that looks like it belongs here actually lives in one of them. The fleet meta
 index is `~/Code/moquette/kodi/TASKS.md`; the sub-project trackers are
 `ezmpp/TASKS.md`, `estuary7/TASKS.md` and `iptv/TASKS.md`. Note in particular
-that `docs/incident-2026-07-16-ezmpp-full-backup-was-not-full.md` is a
-self-declared OPEN release blocker for the EZM++ add-on with two owner-gated
-hardware runs outstanding.
+that `docs/incident-2026-07-16-ezmpp-full-backup-was-not-full.md` was a
+self-declared release blocker; it was **RETIRED and CLOSED 2026-07-20** and its
+two hardware runs were retired unrun. The replacement is small: when backup code
+changes, inspect the two archives for the userdata payload.
 
 **This repo is a PUBLISHING SURFACE, but publishing is now an ALLOWLIST**
 (changed 2026-07-18; the previous text here said every tracked file is

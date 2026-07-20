@@ -2,6 +2,10 @@
 
 Tracking for the Tony.7.Bones repo.
 
+**The LIVE open-item list is `~/Code/moquette/kodi/TASKS.md` (2026-07-20).**
+This file is now mostly historical record. Its bodies are kept deliberately;
+read them for context, not for what to do next.
+
 > ## What is actually OPEN in this file (audited 2026-07-18)
 >
 > **This file is ~900 lines and is almost entirely a historical record.** One
@@ -41,23 +45,13 @@ Tracking for the Tony.7.Bones repo.
 >
 > **Sibling trackers.** This is one of five repos in a meta-checkout at
 > `~/Code/moquette/kodi`. Fleet meta index: `~/Code/moquette/kodi/TASKS.md`.
-> Per-project: `ezmpp/TASKS.md`, `estuary7/TASKS.md`, `iptv/TASKS.md`. Note
-> that `docs/incident-2026-07-16-ezmpp-full-backup-was-not-full.md` is a
-> self-declared OPEN release blocker for EZM++ with two owner-gated hardware
-> runs outstanding (see the VIOLATION item below, added 2026-07-20).
+> Per-project: `ezmpp/TASKS.md`, `estuary7/TASKS.md`, `iptv/TASKS.md`. The
+> EZM++ full-backup incident blocker was RETIRED and CLOSED 2026-07-20; see the
+> CLOSED section below.
 >
-> **The EZM++ hardware-verification gate: PARTIALLY DONE (narrowed 2026-07-20),
-> not "never landed".** The MECHANICAL half DID land in the sibling repo:
-> `ezmpp/tools/verify_device.py` plus
-> `ezmpp/tests/test_storage_change_requires_device_verification.py` fail the
-> suite when `nsud.py` / `boxsetup.py` / storage behavior changes without a
-> fresh `verification/<version>.json` pulled live from a real box. What did NOT
-> land is the CHECKLIST/PROCESS half that the three incident writeups
-> (`incident-2026-07-08-ezmpp-repeated-hardware-burns.md:100`,
-> `incident-2026-07-08-ezmpp-atv-settings-nsuserdefaults.md:65`, and implicitly
-> the 2026-07-17 Estuary 7 menu-refresh incident) actually asked for: a written
-> step on the EZM++ RELEASE CHECKLIST. **This item stays OPEN, narrowed to that
-> process half only.** Do not re-scope it to the mechanical gate; that exists.
+> **The requested EZM++ release-checklist hardware-verification gate is DELETED
+> 2026-07-20.** Its parent incident was retired (`6b60962`), and the mechanical
+> gate in `ezmpp/` already covers backup/restore/wipe changes.
 >
 > Stale paths: several sections below cite `~/Code/moquette/estuary7` and
 > `~/Code/moquette/ezmaintenanceplusplus`. **Those standalone paths do not
@@ -77,16 +71,18 @@ Tracking for the Tony.7.Bones repo.
 
 ## ⛔ WORKFLOW - non-negotiable, every phase (do NOT skip or reorder)
 
-> **implement → TEST → COVERAGE (≥90% new code) → GATE (`pytest _tools/ -q` + `ruff` + secrets all
-> green) → adversarial QA completeness review → real-device verify on local Kodi (if runtime) →
-> DOCUMENT (phase log) → only THEN commit → only THEN start the next phase.**
+> **implement → TEST → GATE (`pytest _tools/ -q` + `ruff` + secrets all green) → commit.**
 
-1. **NO COMMIT until ALL of the above pass.** Red suite / missing test / unreviewed change /
-   undocumented phase = do not commit.
-2. **NO next phase until the current phase is committed green.** Phases are sequential-gated.
+1. **NO COMMIT on a red suite.** That part is not negotiable.
+2. **Independent QA + architecture review is required ONLY for backup, restore or
+   wipe code changes** (narrowed 2026-07-20; the old blanket "every phase,
+   adversarial QA, ≥90% coverage, phase log" ceremony is retired).
+3. Routine changes get a one-line commit message. Long-form records are for
+   genuine incidents only.
 
-This discipline caught real bugs pre-commit in every phase (the snapshot rebaseline footgun, a
-tech-debt seam, the apply_iptv reporting bug, the zero-content guarantee). Keep it.
+Safety core, unchanged: CI green before deploy, skins install from the Kodi repo
+rather than adb/devicectl push, and the publish allowlist plus secret gate stay
+as-is.
 
 ---
 
