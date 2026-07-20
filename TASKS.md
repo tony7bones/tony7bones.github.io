@@ -4,13 +4,18 @@ Tracking for the Tony.7.Bones repo.
 
 > ## What is actually OPEN in this file (audited 2026-07-18)
 >
-> **This file is ~900 lines and is almost entirely a historical record.** Two
-> items are live work for THIS repo:
+> **This file is ~900 lines and is almost entirely a historical record.** One
+> item is live work for THIS repo:
 >
-> 1. **EZM++ legacy metadata shim deletion** - the `⛔ CORRECTION 2026-07-18`
->    block inside the P2 section. Documented, deliberately NOT executed,
->    deferred by the owner pending the IPTV Streamvision parity gate. It has no
->    checkbox, so a checkbox scan misses it. See the STOP block in `CLAUDE.md`.
+> 1. ~~**EZM++ legacy metadata shim deletion**~~ **DONE 2026-07-20 (`08d9a3d`).**
+>    Executed with owner approval. `addons/script.ezmaintenanceplusplus/` and its
+>    code-less 3508-byte zip are deleted and `addons/addons.xml` regenerated to a
+>    single entry. The IPTV parity gate was NOT a real dependency: the shim has
+>    no IPTV linkage, so the original deferral was sequencing only. Verified
+>    before deleting: `repository.tony7bones` 3.0.0 reads `/static/`, and both
+>    reachable boxes (atv2, bedroom `192.168.7.84`) are on 3.0.0. Only a
+>    pre-3.0.0 repository addon could have noticed. See the STOP block in
+>    `CLAUDE.md`, now closed.
 > 2. **Bedroom box - full-customization backup + clone-restore test** - the
 >    `🔲 ACTIVE` section; three sequential sub-items, owner-gated on the first.
 >
