@@ -3,12 +3,14 @@
 # Fire TV ADB helper, originally for script.tony7bones.modv2plus development.
 # Usage: firetv.sh <command> [args]
 #
-# ⛔ TWO HAZARDS, read before running (noted 2026-07-19):
+# HAZARD, read before running:
 #
-# 1. FIRETV_IP DEFAULTS TO 192.168.7.162, WHICH IS THE OFFICE FIRE TV, AND THAT
-#    BOX IS HANDS-OFF WITHOUT EXPLICIT PER-INSTANCE OWNER PERMISSION. Running
-#    any command here with no FIRETV_IP set targets it. Always set FIRETV_IP
-#    explicitly.
+# 1. FIXED 2026-07-21: this used to DEFAULT silently to 192.168.7.162 (the office
+#    Fire TV), so any bare invocation targeted whatever box that happened to be.
+#    There is no default now: set FIRETV_IP, or pass an alias as the FIRST
+#    argument (ts1, ts2, bedroom, office). The resolved target is echoed on
+#    every run. (The office HANDS-OFF rule itself was lifted 2026-07-21; this
+#    guard is about hitting the box you MEANT, not a forbidden box.)
 # 2. The add-on-specific commands are DEAD. ADDON_ID is
 #    script.tony7bones.modv2plus and SKIN_ID is skin.estuary.modv2, both RETIRED
 #    AND DELETED at the static conversion (2026-07-15). ADDON_SRC additionally
@@ -16,6 +18,12 @@
 #    layout. So push-addon, push-xml, apply and restore cannot work.
 #    The generic commands (connect, status, screencap, log, launch, stop,
 #    disconnect) are unaffected and are why this script is retained.
+#
+# Target:
+#   firetv.sh bedroom status      alias as the first argument
+#   FIRETV_IP=192.168.7.77 firetv.sh status
+#   Aliases: ts1=.77  ts2=.211  bedroom=.84  office=.162
+#   Full roster: ../.claude/scripts/DEVICES.md
 #
 # Commands:
 #   connect          Connect (or reconnect) to the Fire TV
@@ -36,7 +44,21 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 # Configuration — edit these if your environment differs
 # ---------------------------------------------------------------------------
-FIRETV_IP="${FIRETV_IP:-192.168.7.162}"
+# No silent default. Resolve an alias passed as the first argument, else require
+# FIRETV_IP. A helper that quietly picks a box for you is how commands land on
+# the wrong TV.
+case "${1:-}" in
+  ts1)     FIRETV_IP="192.168.7.77";  shift ;;
+  ts2)     FIRETV_IP="192.168.7.211"; shift ;;
+  bedroom) FIRETV_IP="192.168.7.84";  shift ;;
+  office)  FIRETV_IP="192.168.7.162"; shift ;;
+esac
+if [ -z "${FIRETV_IP:-}" ]; then
+  echo "firetv.sh: no target. Pass an alias first (ts1|ts2|bedroom|office) or set FIRETV_IP." >&2
+  echo "           roster: .claude/scripts/DEVICES.md" >&2
+  exit 2
+fi
+echo "firetv.sh -> target ${FIRETV_IP}" >&2
 FIRETV_PORT="${FIRETV_PORT:-5555}"
 FIRETV="${FIRETV_IP}:${FIRETV_PORT}"
 
