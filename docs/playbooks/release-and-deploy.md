@@ -229,8 +229,25 @@ route around with a manual copy. Two reasons it matters:
 Verify an install came through the repo by reading Kodi's log on the box, not by
 assuming. And note Kodi caches its repository index: a box with
 `addons.updatemode=1` (notify, do not auto-install) will not see a new version
-until its next scheduled check or until the owner triggers Settings, Add-ons,
-Check for updates. Do not force it and do not change that setting.
+until its next scheduled check or until someone triggers Settings, Add-ons,
+Check for updates. **Never change `addons.updatemode`.** Triggering the check
+itself is fine and is the sanctioned remedy
+(`.claude/skills/deploy/SKILL.md:112`).
+
+CORRECTED 2026-07-21. This paragraph read "Do not force it and do not change
+that setting", which banned both the setting and the check, contradicted the
+deploy skill that preflight routes you to, and stalled a release for an hour.
+Only the setting is off limits.
+
+Update mode is also the wrong first suspect for a box that will not update.
+MEASURED 2026-07-21: ts1 and atv2 were BOTH at `addons.updatemode=1` and ts1
+installed a repository update anyway. What actually blocked atv2 was a blank
+`installed.origin` in `Addons33.db`, which makes Kodi treat the add-on as
+hand-installed and offer no Update button at all, with `addons://outdated/`
+empty while the repo index correctly advertised the new version
+(`docs/playbooks/kodi-install-mechanics.md:33`). Installing once from the
+repository restamps the origin and returns the box to the normal channel. Check
+the origin column before blaming update mode.
 
 ## CI - validation
 
