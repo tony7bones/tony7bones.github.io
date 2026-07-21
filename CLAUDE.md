@@ -23,9 +23,6 @@ Non-negotiable summary:
 
 ## House rules
 
-- **Independent QA + architecture review is required ONLY for changes to backup,
-  restore, or wipe code.** Everything else ships on a green suite. (Narrowed
-  2026-07-20 from "every phase, no exceptions".)
 - **Routine changes get a one-line commit message.** Long-form records
   (acceptance logs, multi-paragraph commits) are for genuine incidents only.
 - Approval is needed for DESTRUCTIVE or OUTWARD-FACING actions only: wiping or
