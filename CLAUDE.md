@@ -2,14 +2,9 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## MANDATORY: markdown house style
+## Markdown rules (enforced by the global git hook)
 
-Before writing or editing ANY `.md` file in this tree, follow the
-**`markdown-house-style`** skill at
-`~/Code/moquette/kodi/.claude/skills/markdown-house-style/SKILL.md`. It is the
-single standard for all five checkouts and every agent, with no exceptions.
-
-Non-negotiable summary:
+These are the whole standard. There is no skill to load.
 
 - No em dash, en dash, horizontal bar, robot emoji, or AI attribution anywhere.
   The plain hyphen `-` is always fine.
@@ -17,9 +12,7 @@ Non-negotiable summary:
   list item and splits your paragraph.
 - Never let an inline code span cross a line break. It strips the
   list-continuation indent and leaves the next agent editing a stale copy.
-- Markdown is deliberately NOT auto-formatted here (removed from
-  `~/.claude/hooks/auto-format` on 2026-07-18, because prettier's markdown
-  printer relocates content between block containers). Do not add it back.
+- Markdown is deliberately NOT auto-formatted here. Do not add it back.
 
 ## House rules
 
@@ -39,33 +32,11 @@ Non-negotiable summary:
 
 ## READ FIRST: where the open work is
 
-**`TASKS.md` is this repo's tracker, but be warned: it is roughly 900 lines and
-almost all of it is a historical record.** As audited on 2026-07-18, only two
-items in it are live work:
+There is no tracker. `TASKS.md` was deleted 2026-07-21 along with the fleet
+process; `docs/OPTIMIZATION-BACKLOG.md` still holds five unstarted hub tooling
+items and states plainly that none are implemented. `git log` is the load-bearing
+fact.
 
-1. **The EZM++ legacy metadata shim deletion** (the STOP block immediately
-   below). Documented, deliberately NOT executed, deferred by the owner.
-2. **The bedroom-box full-customization backup + clone-restore test**, which is
-   owner-gated on its first step.
-
-`docs/OPTIMIZATION-BACKLOG.md` holds five unstarted hub tooling items (A1, A3,
-R2, R4, and the deferred R3). Its own header states that none are implemented.
-
-Two headings in the tail of `TASKS.md` once read as live next steps and have
-since been relabelled `## ▶ HISTORICAL, NOT YOUR NEXT STEP - ...` (the IPTV
-builder extraction, which the same file marks DONE 2026-07-17, and the
-cancelled N2 on-box config collector, which still occupies ~90 lines). The
-bodies were deliberately kept, because history is not to be discarded. Do not
-take either as your next task.
-
-**The other four repos in this fleet have their own trackers**, and most work
-that looks like it belongs here actually lives in one of them. The fleet meta
-index is `~/Code/moquette/kodi/TASKS.md`; the sub-project trackers are
-`ezmpp/TASKS.md`, `estuary7/TASKS.md` and `iptv/TASKS.md`. Note in particular
-that `docs/incident-2026-07-16-ezmpp-full-backup-was-not-full.md` was a
-self-declared release blocker; it was **RETIRED and CLOSED 2026-07-20** and its
-two hardware runs were retired unrun. The replacement is small: when backup code
-changes, inspect the two archives for the userdata payload.
 
 **This repo is a PUBLISHING SURFACE, but publishing is now an ALLOWLIST**
 (changed 2026-07-18; the previous text here said every tracked file is
@@ -74,7 +45,7 @@ published, which was true then and is false now).
 `_tools/build_site.py` copies a tracked file into the Pages artifact only if
 `check_site_secrets.publish_refusal()` allows it: the dirs `addons/`, `images/`
 and `dropbox/`, plus `README.md`, `style.css`, `.nojekyll` and `package.json`.
-Everything else is refused, including `docs/`, `TASKS.md`, `.claude/`,
+Everything else is refused, including `docs/`, `.claude/`,
 `_tools/`, `.github/` and this file. Tracked symlinks are refused outright,
 because a copy dereferences them and would publish whatever they point at.
 
@@ -124,7 +95,7 @@ One correction to the record below: the published zip was **3508 bytes**, not
 reasoning. Retained for the WHY:
 
 **The verdict was: the mirror is unjustified and should be deleted.** Every
-justification previously written in this file and in `TASKS.md` was false:
+justification previously written in this file was false:
 
 - Pages `/addons/` was NEVER a declared `<dir>` in any historical `addon.xml`
   (v2.2.x pointed at `127.0.0.1:61234`, v3.0.0 points at `/static/`).
@@ -198,7 +169,7 @@ The repo has two committed source trees, each with a different job:
 `addons/hosted/<id>/` holds mirrored third-party-repo trees (static, hand-committed metadata; not zipped or indexed by the generator). **Two of the `hosted/<id>/` entries are OUR OWN add-ons**, mirrored here as metadata only with source in a sibling repo:
 
 - **`skin.estuary7`** (`addons/hosted/skin.estuary7/`) - source, build pipeline, and tests live in `~/Code/moquette/kodi/estuary7` (`moquette/estuary7`). This repo holds only `addon.xml` + `icon.png`/`fanart.jpg`; the catalog points `assets.zip` at that repo's GitHub Release asset.
-- **`script.ezmaintenanceplusplus`** (`addons/hosted/script.ezmaintenanceplusplus/`) - source, the full test suite, and release tooling live in `~/Code/moquette/kodi/ezmpp`. Same mirror pattern. Fix bugs and add tests in the sibling repo; only bump the hosted metadata + release here. Triage guide: `~/Code/moquette/kodi/.claude/skills/ezm-backup-doctor/SKILL.md`.
+- **`script.ezmaintenanceplusplus`** (`addons/hosted/script.ezmaintenanceplusplus/`) - source, the full test suite, and release tooling live in `~/Code/moquette/kodi/ezmpp`. Same mirror pattern. Fix bugs and add tests in the sibling repo; only bump the hosted metadata + release here. 
 
 Both patterns mean a `git status` / "commits to push" question about the skin or EZM++ almost always resolves in the OTHER repo, not this one; see the deploy skill's troubleshooting table.
 
@@ -346,6 +317,6 @@ Release: `release.py`, `release_lib.py`, `release_detect.py`, `check_versions.py
 > - `docs/playbooks/mac-mini-media-server.md` - the `Mini` box that serves every Kodi client over NFS/SMB.
 > - `.claude/skills/deploy/SKILL.md` - the release + deploy runbook.
 > - `.claude/skills/kodi-super-agent/SKILL.md` - distilled agent operating guide.
-> - `~/Code/moquette/kodi/.claude/skills/ezm-backup-doctor/SKILL.md` - triage guide for EZ Maintenance++ (source in `moquette/ezmaintenanceplusplus`, not here).
+> - `~/Code/moquette/kodi/.claude/skills/apple-tv/SKILL.md` - **THE Apple TV reference** (storage model, deploy traps, crash inventory). Section 0 is a dispatch index.
 > - `docs/playbooks/modv2plus-dev-cycle-and-lessons.md` - the retired MOD V2+ patch; kept as a historical record of hard-won Kodi lessons.
 > - `docs/incident-2026-07-15-proxy-engine-404-fleet-deadlock.md` and `docs/plans/` - historical records of the retired proxy architecture and the static conversion. Do not treat as current.
