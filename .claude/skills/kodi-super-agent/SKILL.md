@@ -46,13 +46,13 @@ on a rule below - they carry the WHY and the exact code locations.
   - `addons/script.ezmaintenanceplusplus/` - a LEGACY-COMPAT stub (`addon.xml` +
     a built zip, listed in the legacy `addons/addons.xml`), kept so an old engine
     bundle that referenced this path still resolves. The real source is in the
-    sibling repo `~/Code/moquette/ezmaintenanceplusplus`; the actual served
+    sibling repo `~/Code/moquette/kodi/ezmpp`; the actual served
     metadata mirror is `addons/hosted/script.ezmaintenanceplusplus/` (below). Do
     not resurrect the deleted full-source copy here.
   - **Two `addons/hosted/<id>/` entries are OUR OWN add-ons**, mirrored here as
     metadata only with source in a sibling repo: `skin.estuary7`
-    (`~/Code/moquette/estuary7`) and `script.ezmaintenanceplusplus`
-    (`~/Code/moquette/ezmaintenanceplusplus`). The catalog points `assets.zip`
+    (`~/Code/moquette/kodi/estuary7`) and `script.ezmaintenanceplusplus`
+    (`~/Code/moquette/kodi/ezmpp`). The catalog points `assets.zip`
     at each sibling repo's GitHub Release asset. Fix bugs and add tests in the
     sibling repo; only bump the hosted metadata + re-release here. A
     `git status` / "commits to push" question about the skin or EZM++ almost

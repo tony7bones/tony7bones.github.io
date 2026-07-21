@@ -126,5 +126,5 @@ vectoring files it should not have).
 5. **"Fixed in code" is not fixed** - re-confirmed. The one hardware run found
    the fix good in minutes; four releases of test-only confidence did not.
 
-Full technical write-up: `~/Code/moquette/estuary7/docs/playbooks/skinshortcuts-reset-tvos-vfs-split.md`
-(section "Post-1.0.65") and the release entry in `~/Code/moquette/estuary7/TASKS.md`.
+Full technical write-up: `~/Code/moquette/kodi/estuary7/docs/playbooks/skinshortcuts-reset-tvos-vfs-split.md`
+(section "Post-1.0.65") and the release entry in `~/Code/moquette/kodi/estuary7/TASKS.md`.

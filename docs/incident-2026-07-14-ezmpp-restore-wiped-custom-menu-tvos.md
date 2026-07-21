@@ -5,7 +5,7 @@
 > Kodi friendlyname now reports `atv2`) and the office Fire TV (`192.168.7.162`) are both
 > on `script.ezmaintenanceplusplus` `2026.07.14.1` and `skin.estuary7` `1.0.38` - past the
 > `2026.07.14.0`/`1.0.36`-`1.0.37` fixes this doc originally shipped, and past the `1.0.38`
-> regression fix (the boot-loop bug - see `~/Code/moquette/estuary7/TASKS.md`). **Verified
+> regression fix (the boot-loop bug - see `~/Code/moquette/kodi/estuary7/TASKS.md`). **Verified
 > directly in this audit** on the office Fire TV via JSON-RPC (`Addons.GetAddonDetails`
 > for both add-on ids); the bench Apple TV was asleep/unreachable over JSON-RPC at audit
 > time, so its versions were NOT independently re-confirmed here - stated per the session

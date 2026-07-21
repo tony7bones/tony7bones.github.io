@@ -7,7 +7,7 @@ successes. This incident is OPEN until the owner-gated hardware verification run
 the bottom are done.
 
 All code citations are file:line in the EZM++ source repo
-(`~/Code/moquette/ezmaintenanceplusplus`, checked out locally at
+(`~/Code/moquette/kodi/ezmpp`, checked out locally at
 `kodi/ezmpp/script.ezmaintenanceplusplus/`) as read on 2026-07-16, the day of the
 decision. The overhaul that implements the decision is in flight in that repo, so
 some cited lines are the code being replaced; they are the evidence of what shipped.

@@ -47,11 +47,11 @@ mirrored third-party repos under `addons/hosted/<id>/`, and two more of OUR add-
 that are hosted as metadata mirrors with their source in a sibling repo:
 
 - **`skin.estuary7`** ("Estuary 7") - a fork-by-build of Estuary MOD V2, built at
-  `~/Code/moquette/estuary7` (`moquette/estuary7`). The catalog points its
+  `~/Code/moquette/kodi/estuary7` (`moquette/estuary7`). The catalog points its
   `assets.zip` at that repo's GitHub Release asset.
 - **`script.ezmaintenanceplusplus`** ("EZ Maintenance++") - a VFS-safe fork of EZ
   Maintenance+ (backup/restore over NFS/SMB/Dropbox), built at
-  `~/Code/moquette/ezmaintenanceplusplus` (public, its own repo since 2026-07-14).
+  `~/Code/moquette/kodi/ezmpp` (public, its own repo since 2026-07-14).
   See `.claude/skills/ezm-backup-doctor/SKILL.md`.
 
 Fix bugs and add tests in those sibling repos; only bump the hosted metadata +

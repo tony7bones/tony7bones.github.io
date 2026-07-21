@@ -127,7 +127,7 @@ duplication that let fixes ship without their tests traveling with them. Do the
 work in the other repo now:
 
 - The copy/NFS fixes (modes 1-3) live in
-  `~/Code/moquette/ezmaintenanceplusplus/script.ezmaintenanceplusplus/resources/lib/modules/{ui.py,wiz.py}`;
+  `~/Code/moquette/kodi/ezmpp/script.ezmaintenanceplusplus/resources/lib/modules/{ui.py,wiz.py}`;
   the restore-flow fixes live in `wiz.py` (the crash/extract-order/wipe
   features, mode 4) and `nsud.py` (the tvOS NSUserDefaults rewrite + the
   duplicate-userdata drop, mode 5).

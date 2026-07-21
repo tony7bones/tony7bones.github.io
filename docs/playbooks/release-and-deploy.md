@@ -70,8 +70,8 @@ change to one never forces a bump of another.
 - `repository.tony7bones` (static-only, 3.0.0) - built from
   `addons/repository.tony7bones/` and released like any add-on.
 - `skin.estuary7` and `script.ezmaintenanceplusplus` - OUR add-ons whose source
-  lives in sibling repos (`~/Code/moquette/estuary7`,
-  `~/Code/moquette/ezmaintenanceplusplus`). This repo carries only a hosted
+  lives in sibling repos (`~/Code/moquette/kodi/estuary7`,
+  `~/Code/moquette/kodi/ezmpp`). This repo carries only a hosted
   metadata mirror (`addons/hosted/<id>/` + a `_tools/catalog.json` entry pointing
   at the sibling repo's GitHub Release asset). Fix bugs and bump the real version
   in the sibling repo; only bump the hosted metadata + re-release here.
@@ -277,5 +277,5 @@ rollback target for the current static repo.
 | Add-on                         | Where its source lives                            |
 | ------------------------------ | ------------------------------------------------- |
 | `repository.tony7bones`        | `addons/repository.tony7bones/` (this repo)       |
-| `skin.estuary7`                | `~/Code/moquette/estuary7` (sibling repo)         |
-| `script.ezmaintenanceplusplus` | `~/Code/moquette/ezmaintenanceplusplus` (sibling) |
+| `skin.estuary7`                | `~/Code/moquette/kodi/estuary7` (sibling repo)         |
+| `script.ezmaintenanceplusplus` | `~/Code/moquette/kodi/ezmpp` (sibling) |

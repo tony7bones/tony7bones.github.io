@@ -53,10 +53,11 @@ read them for context, not for what to do next.
 > 2026-07-20.** Its parent incident was retired (`6b60962`), and the mechanical
 > gate in `ezmpp/` already covers backup/restore/wipe changes.
 >
-> Stale paths: several sections below cite `~/Code/moquette/estuary7` and
+> Stale paths: sections below USED to cite `~/Code/moquette/estuary7` and
 > `~/Code/moquette/ezmaintenanceplusplus`. **Those standalone paths do not
-> exist.** The real checkouts are `~/Code/moquette/kodi/estuary7` and
-> `~/Code/moquette/kodi/ezmpp`.
+> exist** and every occurrence was corrected on 2026-07-21. The real checkouts
+> are `~/Code/moquette/kodi/estuary7` and `~/Code/moquette/kodi/ezmpp`. If you
+> find the old form again, it is new drift, not a known backlog item.
 
 ---
 
@@ -597,11 +598,11 @@ RESOLVED (see the outcome block): the date scheme needs an explicit
 > bold sweep the overlay rewrites 50+ skin files at runtime, and upstream Omega is
 > maintenance-only (b-jesch moved to Kodi 22 "Piers") - so the overlay's "ride upstream
 > for free" benefit is gone while its machinery remains. The new home is a STANDALONE
-> repo `~/Code/moquette/estuary7`: fork-by-build, id `skin.estuary7`, built from pinned
+> repo `~/Code/moquette/kodi/estuary7`: fork-by-build, id `skin.estuary7`, built from pinned
 > upstream `8d9b2c7c` (21.4+omega.4, verified byte-identical to the fleet's stock via
 > the Office box .bak snapshots), shipped via GitHub Release assets (the proxy engine's
 > plain-URL/`release_asset://` support is live-verified). Full phase plan + decision
-> record: **`~/Code/moquette/estuary7/docs/PLAN.md`**. Upstream is ALREADY at omega.5 -
+> record: **`~/Code/moquette/kodi/estuary7/docs/PLAN.md`**. Upstream is ALREADY at omega.5 -
 > do not let that auto-land surprise anyone; the omega.5 rebase is a deliberate
 > post-baseline exercise.
 >
@@ -619,7 +620,7 @@ RESOLVED (see the outcome block): the date scheme needs an explicit
 > skinshortcuts properties, no longer installs modv2plus on fresh boxes. The skin itself
 > has since moved past its Phase 3 baseline to **1.0.38** on the bench (a whole
 > post-launch hardening arc, 1.0.28-1.0.38, none of it a formal phase - see
-> `~/Code/moquette/estuary7/TASKS.md`, especially the 1.0.36-1.0.38 tvOS restore
+> `~/Code/moquette/kodi/estuary7/TASKS.md`, especially the 1.0.36-1.0.38 tvOS restore
 > self-heal / every-boot menu-rebuild-loop saga, cross-linked from
 > `docs/incident-2026-07-14-ezmpp-restore-wiped-custom-menu-tvos.md` below). Phase 5
 > (fleet migration) and Phase 6 (retirement) have **not** started; the 6-box fleet
