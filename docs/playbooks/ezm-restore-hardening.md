@@ -6,7 +6,7 @@ The restore path of `script.ezmaintenanceplusplus` was hardened end to end in th
 2026.07.07.x series, driven by a real cross-device clone workflow (one golden
 image per device family, restored onto the boxes in that family). Every fix here
 was proven on the actual Fire OS 8 stick that exhibited the failure, not inferred
-from static reading. Companion triage guide: `.claude/skills/ezm-backup-doctor/SKILL.md`.
+from static reading. Companion triage guide: `~/Code/moquette/kodi/.claude/skills/ezm-backup-doctor/SKILL.md`.
 
 ## The headline bug: Kodi's text renderer SIGSEGVs on a large restore (Fire OS 8)
 

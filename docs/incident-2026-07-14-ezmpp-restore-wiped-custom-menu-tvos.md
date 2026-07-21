@@ -138,7 +138,7 @@ branch is now known-unreachable **defense-in-depth**, not the active safety mech
 safety property is structural: the purge only ever calls `xbmcvfs.delete()` on a path whose POSIX
 copy already exists on disk (verified before the call), and that engine path is incapable of
 touching the POSIX file at all. **Data loss is impossible by construction** - just a different
-construction than originally documented. See `.claude/skills/kodi-storage-map/SKILL.md` §3/§7
+construction than originally documented. See `~/Code/moquette/kodi/.claude/skills/kodi-storage-map/SKILL.md` §3/§7
 rule 4, which already stated this correctly; this doc is now consistent with it.
 
 ## Hardware verification (ATV1, 192.168.7.183 - corrected per the note above; `.220` was never the box)
@@ -158,4 +158,4 @@ rule 4, which already stated this correctly; this doc is now consistent with it.
 3. **Verify a platform claim against the platform's source.** A wrong sentence in a doc
    ("Kodi rewrites disk from the mirror") propagated into code that deleted user data.
 
-Full storage model: `.claude/skills/kodi-storage-map/SKILL.md`.
+Full storage model: `~/Code/moquette/kodi/.claude/skills/kodi-storage-map/SKILL.md`.

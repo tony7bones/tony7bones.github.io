@@ -201,7 +201,7 @@ The repo has two committed source trees, each with a different job:
 `addons/hosted/<id>/` holds mirrored third-party-repo trees (static, hand-committed metadata; not zipped or indexed by the generator). **Two of the `hosted/<id>/` entries are OUR OWN add-ons**, mirrored here as metadata only with source in a sibling repo:
 
 - **`skin.estuary7`** (`addons/hosted/skin.estuary7/`) - source, build pipeline, and tests live in `~/Code/moquette/kodi/estuary7` (`moquette/estuary7`). This repo holds only `addon.xml` + `icon.png`/`fanart.jpg`; the catalog points `assets.zip` at that repo's GitHub Release asset.
-- **`script.ezmaintenanceplusplus`** (`addons/hosted/script.ezmaintenanceplusplus/`) - source, the full test suite, and release tooling live in `~/Code/moquette/kodi/ezmpp`. Same mirror pattern. Fix bugs and add tests in the sibling repo; only bump the hosted metadata + release here. Triage guide: `.claude/skills/ezm-backup-doctor/SKILL.md`.
+- **`script.ezmaintenanceplusplus`** (`addons/hosted/script.ezmaintenanceplusplus/`) - source, the full test suite, and release tooling live in `~/Code/moquette/kodi/ezmpp`. Same mirror pattern. Fix bugs and add tests in the sibling repo; only bump the hosted metadata + release here. Triage guide: `~/Code/moquette/kodi/.claude/skills/ezm-backup-doctor/SKILL.md`.
 
 Both patterns mean a `git status` / "commits to push" question about the skin or EZM++ almost always resolves in the OTHER repo, not this one; see the deploy skill's troubleshooting table.
 
@@ -349,6 +349,6 @@ Release: `release.py`, `release_lib.py`, `release_detect.py`, `check_versions.py
 > - `docs/playbooks/mac-mini-media-server.md` - the `Mini` box that serves every Kodi client over NFS/SMB.
 > - `.claude/skills/deploy/SKILL.md` - the release + deploy runbook.
 > - `.claude/skills/kodi-super-agent/SKILL.md` - distilled agent operating guide.
-> - `.claude/skills/ezm-backup-doctor/SKILL.md` - triage guide for EZ Maintenance++ (source in `moquette/ezmaintenanceplusplus`, not here).
+> - `~/Code/moquette/kodi/.claude/skills/ezm-backup-doctor/SKILL.md` - triage guide for EZ Maintenance++ (source in `moquette/ezmaintenanceplusplus`, not here).
 > - `docs/playbooks/modv2plus-dev-cycle-and-lessons.md` - the retired MOD V2+ patch; kept as a historical record of hard-won Kodi lessons.
 > - `docs/incident-2026-07-15-proxy-engine-404-fleet-deadlock.md` and `docs/plans/` - historical records of the retired proxy architecture and the static conversion. Do not treat as current.

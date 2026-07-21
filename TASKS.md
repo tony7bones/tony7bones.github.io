@@ -204,7 +204,7 @@ fleet meta-repo `~/Code/moquette/kodi/docs/static-repo-and-tailscale.md` (pointe
 - config/data: `iptv/configs/`, `iptv/groups/customTVGroups-*.xml`
 - docs: `docs/plans/iptv-automation.md`, `docs/playbooks/iptv-channel-customization.md`,
   `iptv-stream-troubleshooting.md`, `docs/incident-2026-07-08-ezmpp-iptv-brick.md`
-- skill: `.claude/skills/iptv-stream-doctor/SKILL.md`
+- skill: `~/Code/moquette/kodi/.claude/skills/iptv-stream-doctor/SKILL.md`
 - dev branch: `origin/iptv-2.0-share-populator`
 - runtime home: the Mac mini "mini" (192.168.7.2), the always-on IPTV server.
 
@@ -640,7 +640,7 @@ RESOLVED (see the outcome block): the date scheme needs an explicit
 > `addon.xml` + `icon.png` + `fanart.jpg`, hand-synced to the released version) and
 > `repository.json`'s `assets.zip` pointing at the other repo's release asset. Full
 > record: `moquette/ezmaintenanceplusplus`'s own `RESUME.md` + `README.md`; triage guide
-> here: `.claude/skills/ezm-backup-doctor/SKILL.md` (verified current in this audit).
+> here: `~/Code/moquette/kodi/.claude/skills/ezm-backup-doctor/SKILL.md` (verified current in this audit).
 >
 > **Also shipped this session, migrated into the new repo's `tests/`:** the chokepoint
 > lint banning a raw userdata-XML write that bypasses `nsud.persist_one`
@@ -660,7 +660,7 @@ RESOLVED (see the outcome block): the date scheme needs an explicit
 > NSUserDefaults mirror - a key SHADOWS the disk, nothing ever copies it back. Six docs +
 > the auto-loading agent memory carried the disproven "rewrites disk from the mirror"
 > model; all six are corrected, and `_tools/test_no_false_tvos_belief.py` now fails CI if
-> that sentence reappears unmarked. Authoritative model: `.claude/skills/kodi-storage-map/SKILL.md`.
+> that sentence reappears unmarked. Authoritative model: `~/Code/moquette/kodi/.claude/skills/kodi-storage-map/SKILL.md`.
 >
 > **RESOLVED (2026-07-15):** the proxy release flagged here as outstanding has shipped.
 > `repository.tony7bones` is released and live at v2.5.0 (tagged, Pages serves

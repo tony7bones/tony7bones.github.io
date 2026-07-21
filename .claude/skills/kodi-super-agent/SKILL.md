@@ -57,7 +57,7 @@ on a rule below - they carry the WHY and the exact code locations.
     sibling repo; only bump the hosted metadata + re-release here. A
     `git status` / "commits to push" question about the skin or EZM++ almost
     always resolves in the OTHER repo. EZM++ triage:
-    `.claude/skills/ezm-backup-doctor/SKILL.md`.
+    `~/Code/moquette/kodi/.claude/skills/ezm-backup-doctor/SKILL.md`.
 - **Single branch - `main` only**, served by GitHub Pages.
 - **Retired - do NOT describe as live** (all deleted): the virtual proxy engine
   (`127.0.0.1:61234`, `repository.github`); the whole Setup add-on family

@@ -4,7 +4,7 @@ First time the fleet's Apple TV crash reports have been pulled and read. 50
 reports, 25 per box, plus the jetsam event reports. Everything below is from the
 devices, not from reasoning.
 
-Method and tooling: `.claude/skills/atv-log-pull/SKILL.md` section 5.
+Method and tooling: `~/Code/moquette/kodi/.claude/skills/atv-log-pull/SKILL.md` section 5.
 
 ## Headline: the two Apple TVs have DIFFERENT diseases
 

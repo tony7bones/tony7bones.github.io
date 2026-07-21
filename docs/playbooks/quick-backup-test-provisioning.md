@@ -146,7 +146,7 @@ to justify it; until then this document is the reference for doing it by
 hand.
 
 > **Related but different:** this is not about diagnosing a backup FAILURE
-> (that's `.claude/skills/ezm-backup-doctor/SKILL.md` and
+> (that's `~/Code/moquette/kodi/.claude/skills/ezm-backup-doctor/SKILL.md` and
 > `docs/playbooks/kodi-vfs-cannot-read-foreign-local-files.md`) - this is
 > about getting a clean box ready to attempt one in the first place, as
 > quickly as possible.

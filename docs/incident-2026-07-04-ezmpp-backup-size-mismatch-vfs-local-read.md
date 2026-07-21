@@ -73,7 +73,7 @@ independently re-confirmed on hardware in the record.
       build (`docs/playbooks/atv-kodi-xcode-cli-troubleshooting.md`).
 - [x] Root cause documented as a reusable class in
       `docs/playbooks/kodi-vfs-cannot-read-foreign-local-files.md`.
-- [x] Triage guide captured in `.claude/skills/ezm-backup-doctor/SKILL.md`.
+- [x] Triage guide captured in `~/Code/moquette/kodi/.claude/skills/ezm-backup-doctor/SKILL.md`.
 
 ## The rule that would have prevented this
 

@@ -52,7 +52,7 @@ that are hosted as metadata mirrors with their source in a sibling repo:
 - **`script.ezmaintenanceplusplus`** ("EZ Maintenance++") - a VFS-safe fork of EZ
   Maintenance+ (backup/restore over NFS/SMB/Dropbox), built at
   `~/Code/moquette/kodi/ezmpp` (public, its own repo since 2026-07-14).
-  See `.claude/skills/ezm-backup-doctor/SKILL.md`.
+  See `~/Code/moquette/kodi/.claude/skills/ezm-backup-doctor/SKILL.md`.
 
 Fix bugs and add tests in those sibling repos; only bump the hosted metadata +
 release here.
@@ -141,10 +141,10 @@ back it up and never commit to main.
   (`_tools/firetv.sh`).
 - `docs/playbooks/firetv-stick-scoped-storage-provisioning.md` - provisioning a
   non-rooted Fire OS 11 Stick over ADB.
-- `.claude/skills/kodi-storage-map/SKILL.md` - the authoritative Kodi storage model
-  per OS.
-- `.claude/skills/ezm-backup-doctor/SKILL.md` - triage guide for EZ Maintenance++
-  (source in `moquette/ezmaintenanceplusplus`, not here).
+- `~/Code/moquette/kodi/.claude/skills/kodi-storage-map/SKILL.md` - the
+  authoritative Kodi storage model per OS.
+- `~/Code/moquette/kodi/.claude/skills/ezm-backup-doctor/SKILL.md` - triage guide
+  for EZ Maintenance++ (source in `moquette/ezmaintenanceplusplus`, not here).
 - `.claude/skills/deploy/SKILL.md` - the release + deploy runbook.
 - `.claude/skills/kodi-super-agent/SKILL.md` - agent operating guide.
 - `docs/plans/` and the `docs/incident-*` writeups - historical records (the
