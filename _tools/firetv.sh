@@ -42,7 +42,7 @@
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
-# Configuration — edit these if your environment differs
+# Configuration - edit these if your environment differs
 # ---------------------------------------------------------------------------
 # No silent default. Resolve an alias passed as the first argument, else require
 # FIRETV_IP. A helper that quietly picks a box for you is how commands land on
