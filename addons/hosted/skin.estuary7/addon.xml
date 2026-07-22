@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<addon id="skin.estuary7" version="1.0.76" name="Estuary 7" provider-name="Tony.7.Bones">
+<addon id="skin.estuary7" version="1.0.77" name="Estuary 7" provider-name="Tony.7.Bones">
 	<requires>
 		<import addon="xbmc.python" version="3.0.1"/>
 		<import addon="xbmc.gui" version="5.17.0"/>
@@ -50,7 +50,7 @@
 				<screenshot>resources/screenshot-08.jpg</screenshot>
 			</assets>
         <news>
-v1.0.76: release notes at https://github.com/moquette/estuary7/releases
+v1.0.77: release notes at https://github.com/moquette/estuary7/releases
         </news>
 	</extension>
 </addon>
