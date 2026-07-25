@@ -60,8 +60,14 @@ jobs:
         with:
           python-version: "3.12"
 
+      # ruff is PINNED. Unpinned, a new ruff release changes the stable rule set
+      # under a repo at rest and fails the deploy with zero commits pushed: ruff
+      # 0.16.0 (2026-07-23) did exactly that, red-lighting this workflow on the
+      # 07-24 and 07-25 scheduled runs with 95 findings on code last touched
+      # 07-22. Same commit is clean on 0.15.22. Bump this deliberately, in a
+      # commit that also clears whatever the new rules flag.
       - name: Install tooling deps
-        run: pip install pytest ruff
+        run: pip install pytest ruff==0.15.22
 
       - name: Test suite
         run: python3 -m pytest _tools/ -q
