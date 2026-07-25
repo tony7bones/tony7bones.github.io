@@ -60,14 +60,11 @@ jobs:
         with:
           python-version: "3.12"
 
-      # ruff is PINNED. Unpinned, a new ruff release changes the stable rule set
-      # under a repo at rest and fails the deploy with zero commits pushed: ruff
-      # 0.16.0 (2026-07-23) did exactly that, red-lighting this workflow on the
-      # 07-24 and 07-25 scheduled runs with 95 findings on code last touched
-      # 07-22. Same commit is clean on 0.15.22. Bump this deliberately, in a
-      # commit that also clears whatever the new rules flag.
+      # Versions live in requirements-ci.txt, which .githooks/pre-push installs
+      # from too, so the local gate and CI can never disagree about a tool
+      # version. See that file for why these are pinned at all.
       - name: Install tooling deps
-        run: pip install pytest ruff==0.15.22
+        run: pip install -r requirements-ci.txt
 
       - name: Test suite
         run: python3 -m pytest _tools/ -q

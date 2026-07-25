@@ -33,10 +33,10 @@ jobs:
         with:
           python-version: "3.12"
 
-      # ruff is PINNED, same reason as pages.yml: an unpinned linter turns an
-      # upstream release into a red build on unchanged code. Bump deliberately.
+      # Versions live in requirements-ci.txt, shared with pages.yml and with
+      # .githooks/pre-push. See that file for why these are pinned at all.
       - name: Install dependencies
-        run: pip install pytest ruff==0.15.22
+        run: pip install -r requirements-ci.txt
 
       - name: Run tests
         run: python3 -m pytest _tools/ -q

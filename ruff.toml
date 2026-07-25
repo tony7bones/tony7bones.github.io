@@ -1,0 +1,12 @@
+# The ruff version is declared here as well as in requirements-ci.txt, so that
+# running `ruff check` by hand with the WRONG version fails with one clear
+# sentence instead of a wall of findings that look like real defects.
+#
+# On 2026-07-24 and 07-25 the scheduled deploy failed with 95 findings against
+# code nobody had touched since 07-22: ruff 0.16.0 had moved rules into its
+# stable set. The findings were not defects, they were a version change wearing
+# a defect costume, and that cost real time to unmask.
+#
+# Keep this equal to the ruff pin in requirements-ci.txt. Bump both together, in
+# a commit that also clears whatever the new version flags.
+required-version = "==0.15.22"

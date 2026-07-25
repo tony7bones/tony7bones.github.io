@@ -1,0 +1,13 @@
+# Pinned CI tooling. SINGLE SOURCE OF TRUTH: both .github/workflows/*.yml and
+# .githooks/pre-push install from this file, so the local gate and CI can never
+# disagree about a tool version.
+#
+# Why pinned at all: on 2026-07-23 ruff 0.16.0 moved rules into its stable set
+# and failed the scheduled Pages deploy on 07-24 and 07-25 with 95 findings,
+# against code that had not been touched since 07-22. An unpinned tool turns an
+# upstream release into a red build with no local cause.
+#
+# Bumping: change the pin here ONLY, in a commit that also clears whatever the
+# new version flags. Never bump it to make a red build go green.
+pytest==9.1.1
+ruff==0.15.22

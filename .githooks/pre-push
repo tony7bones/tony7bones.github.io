@@ -11,6 +11,31 @@
 # Bypass in a genuine emergency only:  git push --no-verify
 set -e
 
+# Pinned tooling, installed from the SAME requirements-ci.txt the workflows use,
+# so this gate and CI can never disagree about a tool version.
+#
+# This used to run bare `python3 -m pytest` and `ruff` off PATH. On 2026-07-25
+# that made the hook STRICTER than CI: PATH ruff was 0.16.0 against a CI pin of
+# 0.15.22, so the hook blocked pushes CI would have passed, and the only way
+# through was --no-verify, which also skips the version-bump gate below. A local
+# gate that disagrees with CI in either direction is worse than no gate, because
+# it teaches people to bypass it.
+#
+# The venv is cached under .git/ (never tracked) and rebuilt only when the pins
+# change, so the common case costs nothing.
+TOOLS_VENV="$(git rev-parse --git-dir)/hook-tools"
+if ! cmp -s requirements-ci.txt "$TOOLS_VENV/.pins" 2>/dev/null; then
+  echo "[pre-push] installing pinned tooling (requirements-ci.txt changed)..."
+  rm -rf "$TOOLS_VENV"
+  python3 -m venv "$TOOLS_VENV"
+  "$TOOLS_VENV/bin/pip" install -q -r requirements-ci.txt
+  cp requirements-ci.txt "$TOOLS_VENV/.pins"
+fi
+PATH="$TOOLS_VENV/bin:$PATH"
+export PATH
+
+echo "[pre-push] tooling: $(ruff --version), $(python3 -m pytest --version 2>&1 | head -1)"
+
 echo "[pre-push] running tests..."
 python3 -m pytest _tools/ -q
 

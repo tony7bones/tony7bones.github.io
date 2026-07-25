@@ -269,11 +269,18 @@ The release tooling is split for testability: `_tools/release_lib.py` (pure vers
 git config core.hooksPath .githooks
 ```
 
-The hook runs `python3 -m pytest` and `ruff` with the bare interpreter on PATH, so those deps must be importable by that `python3` or the hook fails closed. On a fresh clone install them once (on an externally-managed PEP 668 Homebrew/macOS python):
+The hook installs its own pinned tooling from `requirements-ci.txt`, the same
+file the workflows install from, into a cached venv under `.git/hook-tools`
+(untracked, rebuilt only when the pins change). **Nothing to install by hand on
+a fresh clone.**
 
-```bash
-python3 -m pip install --user --break-system-packages pytest ruff
-```
+That indirection is load-bearing, not tidiness. The hook previously ran
+`python3 -m pytest` and `ruff` off the bare PATH, and on 2026-07-25 that made it
+STRICTER than CI: PATH ruff was 0.16.0 against a CI pin of 0.15.22, so it
+blocked pushes CI would have passed and the only way through was `--no-verify`,
+which also skips the version-bump gate. A local gate that disagrees with CI in
+either direction trains people to bypass it. Change a tool version in
+`requirements-ci.txt` only, and both sides move together.
 
 Two CI workflows back this up and **never commit to main**:
 

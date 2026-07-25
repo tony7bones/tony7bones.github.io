@@ -19,12 +19,15 @@ import pytest
 
 HERE = os.path.dirname(__file__)
 HOSTED = os.path.join(HERE, "..", "addons", "hosted")
-REPO_JSON = os.path.join(
-    HERE, "..", "_tools", "catalog.json"
-)
+REPO_JSON = os.path.join(HERE, "..", "_tools", "catalog.json")
 
 # Roots whose FULL closure must be hosted (the fleet installs these off-grid).
-ROOTS = ["skin.estuary7"]
+#
+# script.ezmaintenanceplusplus was added 2026-07-25. It ships to the same boxes
+# as the skin and carries its own <requires>, but only the skin's closure was
+# ever gated, so a bump to a dependency version this repo does not host would
+# 404 at install time on an off-grid Apple TV with nothing red anywhere.
+ROOTS = ["skin.estuary7", "script.ezmaintenanceplusplus"]
 
 BUILTINS = {
     "xbmc.python",
