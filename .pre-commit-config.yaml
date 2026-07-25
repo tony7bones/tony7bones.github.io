@@ -1,9 +1,0 @@
-repos:
-  - repo: local
-    hooks:
-      - id: pytest
-        name: pytest
-        entry: python3 -m pytest _tools/test_generate_repo.py -q
-        language: system
-        pass_filenames: false
-        always_run: true

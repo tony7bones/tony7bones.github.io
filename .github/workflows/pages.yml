@@ -60,18 +60,17 @@ jobs:
         with:
           python-version: "3.12"
 
-      # Versions live in requirements-ci.txt, which .githooks/pre-push installs
-      # from too, so the local gate and CI can never disagree about a tool
-      # version. See that file for why these are pinned at all.
-      - name: Install tooling deps
-        run: pip install -r requirements-ci.txt
-
-      - name: Test suite
-        run: python3 -m pytest _tools/ -q
-
-      - name: Lint
-        run: ruff check _tools/
-
+      # FIRST, and deliberately BEFORE `Install tooling deps`. This is the only
+      # WATCHDOG in the job: every other step validates THIS commit, and skipping
+      # one of those is fail-safe because `deploy: needs: build` blocks the deploy
+      # anyway. This step instead detects drift that exists independently of the
+      # push, so skipping it loses signal silently.
+      #
+      # It used to sit after Lint. On 2026-07-24 and 07-25 Lint failed on an
+      # unpinned-ruff release and this gate NEVER RAN for two days - the one
+      # watchdog for a forgotten mirror bump, dark, because a cheap advisory step
+      # upstream of it went red. It is stdlib-only and needs no pip install, so
+      # there is no reason for it to sit downstream of anything.
       - name: Hosted release-freshness gate
         # The gate handles the release-race window itself, and it is TIME-AWARE:
         # "mirror behind latest" is a non-failing warning while the latest release
@@ -85,6 +84,18 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python3 _tools/check_hosted_release_sync.py
+
+      # Versions live in requirements-ci.txt, which .githooks/pre-push installs
+      # from too, so the local gate and CI can never disagree about a tool
+      # version. See that file for why these are pinned at all.
+      - name: Install tooling deps
+        run: pip install -r requirements-ci.txt
+
+      - name: Test suite
+        run: python3 -m pytest _tools/ -q
+
+      - name: Lint
+        run: ruff check _tools/
 
       # The committed add-on artifacts (per-add-on zips, addons.xml + hashes)
       # must be fresh - a stale commit would feed the static catalog stale
