@@ -206,18 +206,21 @@ def test_classify_all_five_kinds():
 
 def test_classify_the_real_manifest_covers_all_entries():
     """The REAL catalog.json: every entry classifies, with the known per-class
-    counts (update deliberately when the catalog changes). 26 entries: after
-    estuary7 1.0.46 dropped PVR artwork + outline icons, and after the
-    engine-era setup machinery (script.tony7bones.bootstrap +
-    script.module.tony7bones) and the dead modv2plus were nuked. The only
-    first-party add-on left is the static repository itself."""
+    counts (update deliberately when the catalog changes). 25 entries: after
+    estuary7 1.0.46 dropped PVR artwork + outline icons, after the engine-era
+    setup machinery (script.tony7bones.bootstrap + script.module.tony7bones)
+    and the dead modv2plus were nuked, and after script.skinshortcuts was
+    dropped 2026-07-29 with its hosted mirror. The root CLAUDE.md forbids
+    hosting it and Kodi serves it from the official library, which every box
+    already has. The only first-party add-on left is the static repository
+    itself."""
     entries = sc.load_catalog()
     kinds = {}
     for e in entries:
         kinds.setdefault(sc.classify(e), []).append(e["id"])
-    assert len(entries) == 26
+    assert len(entries) == 25
     assert kinds[sc.KIND_FIRST_PARTY] == ["repository.tony7bones"]
-    assert len(kinds[sc.KIND_HOSTED]) == 15
+    assert len(kinds[sc.KIND_HOSTED]) == 14
     assert len(kinds[sc.KIND_HYBRID]) == 3
     assert len(kinds[sc.KIND_STREAMED]) == 5
     assert len(kinds[sc.KIND_RELEASE_ASSET]) == 2
@@ -229,8 +232,35 @@ def test_classify_the_real_manifest_covers_all_entries():
         "script.tony7bones.modv2plus",
         "script.tony7bones.bootstrap",
         "script.module.tony7bones",
+        "script.skinshortcuts",
     ):
         assert gone not in ids
+
+
+def test_no_catalog_entry_points_at_a_deleted_hosted_mirror():
+    """A dangling addons/hosted/<id>/ reference is not inert - it republishes.
+
+    When the primary 404s, resolve_all falls back to the last-good copy already
+    on the live site and marks the entry stale: a warning, not a failure. So a
+    catalog entry left behind after its mirror is deleted keeps serving that
+    mirror from /static/ forever, with a green build. That is how the
+    script.skinshortcuts zip would have survived the 2026-07-29 purge ordered
+    under the root CLAUDE.md hard rule. Deleting a hosted mirror means deleting
+    its catalog entry in the same change.
+    """
+    hosted_dir = os.path.join(sc.REPO_ROOT, "addons", "hosted")
+    hosted = {
+        d for d in os.listdir(hosted_dir) if os.path.isdir(os.path.join(hosted_dir, d))
+    }
+    dangling = sorted(
+        e["id"]
+        for e in sc.load_catalog()
+        if "/addons/hosted/" in json.dumps(e) and e["id"] not in hosted
+    )
+    assert not dangling, (
+        f"catalog.json points at addons/hosted/ mirrors that do not exist: "
+        f"{dangling} - remove the entry, or restore the mirror if it is ours"
+    )
 
 
 # ---------------------------------------------------------------------------

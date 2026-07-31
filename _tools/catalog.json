@@ -120,16 +120,6 @@
     }
   },
   {
-    "id": "script.skinshortcuts",
-    "username": "tony7bones",
-    "repository": "tony7bones.github.io",
-    "branch": "main",
-    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
-    "assets": {
-      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/{id}-{version}.zip"
-    }
-  },
-  {
     "id": "script.image.resource.select",
     "username": "tony7bones",
     "repository": "tony7bones.github.io",

@@ -43,6 +43,32 @@ BUILTINS = {
     "kodi.context.item",
 }
 
+# Dependencies this tree is FORBIDDEN to host. Unlike BUILTINS, which are Kodi
+# extension points no repository could host, these are REAL add-ons that Kodi
+# resolves from its own official library. Defined here rather than in the gate
+# because this tool is the thing that would otherwise re-create the mirror; the
+# gate (test_closure.py) imports this same set, so the two can never drift.
+#
+# `script.skinshortcuts` was mirrored at addons/hosted/script.skinshortcuts/
+# (2.0.3) until 2026-07-29, when the owner ordered every copy purged and the
+# root CLAUDE.md gained a hard rule: "We do not patch it, fork it, version it,
+# host it, mirror it, or ship it", with "adding it back to
+# repo/addons/hosted/" listed as forbidden without exception. The skin's own
+# `<import addon="script.skinshortcuts" .../>` line is explicitly the ONE
+# permitted reference to it in the tree, so the import stays and is walked past
+# rather than deleted. Kodi publishes it for every release this repo targets:
+# mirrors.kodi.tv/addons/{nexus,omega,piers}/script.skinshortcuts/ all return
+# 200, omega (the release skin.estuary7's xbmc.gui 5.17.0 pins) serves 2.0.3,
+# and the skin asks for >= 1.1.3, which Kodi reads as a MINIMUM.
+#
+# The cost, stated plainly rather than hidden: an off-grid box that cannot
+# reach mirrors.kodi.tv can no longer install Estuary 7 from this repo alone.
+# That is the owner's call, taken with the prohibition in hand, not an
+# oversight the gate should paper over. Anything added here needs the same kind
+# of written reason, because a silent entry turns a real gate into a rubber
+# stamp.
+OFFICIAL_LIBRARY = frozenset({"script.skinshortcuts"})
+
 
 def _imports(xml_text: str) -> list[str]:
     ids = []
@@ -90,6 +116,12 @@ def _fetch(url: str) -> bytes:
 
 
 def mirror_one(addon_id: str, apply: bool) -> str:
+    if addon_id in OFFICIAL_LIBRARY:
+        raise SystemExit(
+            f"refusing to mirror {addon_id}: Kodi resolves it from its official "
+            f"library and hosting it here is forbidden (see OFFICIAL_LIBRARY "
+            f"above and the HARD RULE in CLAUDE.md)"
+        )
     zip_name = _latest_zip(addon_id)
     url = MIRROR.format(id=addon_id) + zip_name
     blob = _fetch(url)
@@ -115,7 +147,7 @@ def closure(root_id: str, apply: bool) -> tuple[list[str], list[str]]:
     stack = [root_id]
     while stack:
         aid = stack.pop()
-        if aid in seen or aid in BUILTINS:
+        if aid in seen or aid in BUILTINS or aid in OFFICIAL_LIBRARY:
             continue
         seen.add(aid)
 
@@ -140,6 +172,14 @@ def main() -> None:
         raise SystemExit(__doc__)
     root = sys.argv[1]
     apply = "--apply" in sys.argv[2:]
+    if root in OFFICIAL_LIBRARY:
+        # Without this the walk skips the root and prints "closure complete",
+        # which reads as success for a run that mirrored nothing and never
+        # could. A vacuous pass is worse than a refusal.
+        raise SystemExit(
+            f"{root} is in OFFICIAL_LIBRARY: Kodi resolves it from its official "
+            f"library and this repo is forbidden to host it. Nothing to mirror."
+        )
     missing, mirrored = closure(root, apply)
     print(f"root: {root}")
     print(f"missing from hosted/ (transitive): {missing or 'NONE - closure complete'}")
