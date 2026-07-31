@@ -206,25 +206,47 @@ def test_classify_all_five_kinds():
 
 def test_classify_the_real_manifest_covers_all_entries():
     """The REAL catalog.json: every entry classifies, with the known per-class
-    counts (update deliberately when the catalog changes). 25 entries: after
-    estuary7 1.0.46 dropped PVR artwork + outline icons, after the engine-era
-    setup machinery (script.tony7bones.bootstrap + script.module.tony7bones)
-    and the dead modv2plus were nuked, and after script.skinshortcuts was
-    dropped 2026-07-29 with its hosted mirror. The root CLAUDE.md forbids
-    hosting it and Kodi serves it from the official library, which every box
-    already has. The only first-party add-on left is the static repository
-    itself."""
+    counts (update deliberately when the catalog changes).
+
+    27 entries, and the arithmetic behind that number, newest first:
+
+      +2  2026-07-31, the Estuary 8 launch. script.estuary8.shortcuts and
+          skin.estuary8 are both ADDED, both hosted, on the owner's explicit
+          instruction. Neither is a mirror of anything external: the first is
+          our fork of a menu add-on carried under our OWN add-on id, the second
+          is our skin. Hosting them is the opposite of the prohibition below
+          rather than an exception to it, and hosting BOTH is what makes an
+          install one step instead of a side-loaded zip followed by a skin.
+      -1  2026-07-29, script.skinshortcuts dropped with its hosted mirror. The
+          root CLAUDE.md forbids hosting it and Kodi serves it from the official
+          library, which every box already has.
+      -n  earlier: estuary7 1.0.46 dropped PVR artwork + outline icons, and the
+          engine-era setup machinery (script.tony7bones.bootstrap +
+          script.module.tony7bones) and the dead modv2plus were nuked.
+
+    skin.estuary8 is HOSTED, not release-asset like skin.estuary7, and that
+    difference is deliberate rather than an oversight. A release-asset entry
+    resolves its zip from a GitHub Release on the source repo, and
+    check_hosted_release_sync.py HARD-FAILS on a broken pointer: declare one
+    before a matching release exists and every build goes red. Estuary 8 has no
+    release yet. Hosting the zip in this repo also keeps the whole Estuary 8
+    closure installable off-grid, which is exactly what the skinshortcuts purge
+    above cost Estuary 7. Switching it to release-asset later is a one-line
+    change here plus a real release; do not do it before the release exists.
+    """
     entries = sc.load_catalog()
     kinds = {}
     for e in entries:
         kinds.setdefault(sc.classify(e), []).append(e["id"])
-    assert len(entries) == 25
+    assert len(entries) == 27
     assert kinds[sc.KIND_FIRST_PARTY] == ["repository.tony7bones"]
-    assert len(kinds[sc.KIND_HOSTED]) == 14
+    assert len(kinds[sc.KIND_HOSTED]) == 16
     assert len(kinds[sc.KIND_HYBRID]) == 3
     assert len(kinds[sc.KIND_STREAMED]) == 5
     assert len(kinds[sc.KIND_RELEASE_ASSET]) == 2
     assert "skin.estuary7" in kinds[sc.KIND_RELEASE_ASSET]
+    assert "skin.estuary8" in kinds[sc.KIND_HOSTED]
+    assert "script.estuary8.shortcuts" in kinds[sc.KIND_HOSTED]
     ids = {e["id"] for e in entries}
     for gone in (
         "script.module.pvr.artwork",
@@ -244,9 +266,9 @@ def test_no_catalog_entry_points_at_a_deleted_hosted_mirror():
     on the live site and marks the entry stale: a warning, not a failure. So a
     catalog entry left behind after its mirror is deleted keeps serving that
     mirror from /static/ forever, with a green build. That is how the
-    script.skinshortcuts zip would have survived the 2026-07-29 purge ordered
-    under the root CLAUDE.md hard rule. Deleting a hosted mirror means deleting
-    its catalog entry in the same change.
+    script.skinshortcuts 2.0.3 zip would have survived the 2026-07-29 purge
+    ordered under the root CLAUDE.md hard rule. Deleting a hosted mirror means
+    deleting its catalog entry in the same change.
     """
     hosted_dir = os.path.join(sc.REPO_ROOT, "addons", "hosted")
     hosted = {

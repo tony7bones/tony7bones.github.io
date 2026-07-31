@@ -157,7 +157,7 @@ The served `/static/` tree is the Kodi repository the add-on points at:
 - `/static/addons.xml` + `/static/addons.xml.md5` (the catalog index + checksum),
 - per-add-on zips and materialized art under `/static/<id>/`.
 
-It currently has **25 entries** (verify with `python3 -c "import json;print(len(json.load(open('_tools/catalog.json'))))"`). It is built in CI by `_tools/build_site.py` -> `_tools/static_catalog.py` from the manifest `_tools/catalog.json`, then deployed via GitHub Pages. `static_catalog.py` materializes each entry's declared art out of its zip so every icon/fanart URL resolves.
+It currently has **27 entries** (verify with `python3 -c "import json;print(len(json.load(open('_tools/catalog.json'))))"`). It is built in CI by `_tools/build_site.py` -> `_tools/static_catalog.py` from the manifest `_tools/catalog.json`, then deployed via GitHub Pages. `static_catalog.py` materializes each entry's declared art out of its zip so every icon/fanart URL resolves.
 
 ### Two source trees: `dropbox/` (canvas) and `addons/` (add-on tree)
 
@@ -174,10 +174,14 @@ The repo has two committed source trees, each with a different job:
 
 `addons/script.ezmaintenanceplusplus/` was **DELETED 2026-07-20** (`08d9a3d`); see the closed block at the top of this file. Do not recreate it, and do not resurrect the deleted full-source copy either. The EZM++ metadata that boxes actually read lives at `addons/hosted/script.ezmaintenanceplusplus/`, and its source is in the sibling repo `~/Code/moquette/kodi/ezmpp` (`moquette/ezmaintenanceplusplus`, public; note the local dir is `ezmpp`, and the standalone path `~/Code/moquette/ezmaintenanceplusplus` that older docs cite DOES NOT EXIST).
 
-`addons/hosted/<id>/` holds mirrored third-party-repo trees (static, hand-committed metadata; not zipped or indexed by the generator). **Two of the `hosted/<id>/` entries are OUR OWN add-ons**, mirrored here as metadata only with source in a sibling repo:
+`addons/hosted/<id>/` holds mirrored third-party-repo trees (static, hand-committed metadata; not zipped or indexed by the generator). **Four of the `hosted/<id>/` entries are OUR OWN add-ons**, with source in a sibling repo. Two are metadata-only mirrors whose zip comes from a GitHub Release, and two carry the zip here:
 
 - **`skin.estuary7`** (`addons/hosted/skin.estuary7/`) - source, build pipeline, and tests live in `~/Code/moquette/kodi/estuary7` (`moquette/estuary7`). This repo holds only `addon.xml` + `icon.png`/`fanart.jpg`; the catalog points `assets.zip` at that repo's GitHub Release asset.
-- **`script.ezmaintenanceplusplus`** (`addons/hosted/script.ezmaintenanceplusplus/`) - source, the full test suite, and release tooling live in `~/Code/moquette/kodi/ezmpp`. Same mirror pattern. Fix bugs and add tests in the sibling repo; only bump the hosted metadata + release here. 
+- **`script.ezmaintenanceplusplus`** (`addons/hosted/script.ezmaintenanceplusplus/`) - source, the full test suite, and release tooling live in `~/Code/moquette/kodi/ezmpp`. Same mirror pattern. Fix bugs and add tests in the sibling repo; only bump the hosted metadata + release here.
+- **`skin.estuary8`** (`addons/hosted/skin.estuary8/`) - source and build tooling live in `~/Code/moquette/kodi/estuary8` (`moquette/skin.estuary8`). Added 2026-07-31. Unlike Estuary 7 this is a full `hosted` entry: `addon.xml` plus the zip itself, because there is no GitHub Release to point at yet and `check_hosted_release_sync.py` hard-fails on a pointer to a release that does not exist. Art is materialized out of the zip, so no `resources/` is committed here. Bump it by rebuilding in the sibling repo (`python3 estuary8/tools/build.py`), then copying the zip and its `addon.xml` here.
+- **`script.estuary8.shortcuts`** (`addons/hosted/script.estuary8.shortcuts/`) - the menu add-on Estuary 8 depends on, source in the same sibling repo, same full-hosted shape. It exists nowhere else, so if this repo does not host it the skin cannot be installed anywhere at all; that is why `skin.estuary8` is a gated closure root in `test_closure.py`.
+
+Estuary 8 requires Kodi 22 (Piers). A Kodi 21 box is told it is incompatible, which is the floor working, not a bug.
 
 Both patterns mean a `git status` / "commits to push" question about the skin or EZM++ almost always resolves in the OTHER repo, not this one; see the deploy skill's troubleshooting table.
 

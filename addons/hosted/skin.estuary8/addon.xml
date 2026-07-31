@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<addon id="skin.estuary8" version="0.1.25" name="Estuary 8" provider-name="Tony.7.Bones">
+	<requires>
+		<!-- KODI 22 FLOOR. These two lines are the whole reason Estuary 8
+	     cannot be installed or run on Kodi 21, so read this before editing
+	     either of them.
+
+	     Kodi 21.3 provides xbmc.python 3.0.1 and xbmc.gui 5.17.0.
+	     Kodi 22.0 provides xbmc.python 3.0.2 and xbmc.gui 5.18.0.
+	     Each line below is above what 21 has, so 21 refuses the skin three
+	     separate ways: install from zip is rejected outright, enabling a
+	     hand-copied copy is rejected, and a profile that already had it
+	     active gets it disabled at startup with an "Incompatible add-ons"
+	     dialog naming Estuary 8. Verified on a real 21.3, see
+	     notes/kodi22-hardfail.md.
+
+	     DO NOT add a minversion attribute here. It looks like a tidy-up and
+	     it silently re-admits Kodi 21. Kodi's DependencyInfo constructor is
+	     versionMin(versionMin.empty() ? version : versionMin), so with no
+	     minversion the version below IS the hard minimum. Supply a
+	     minversion and it becomes the minimum instead, while version
+	     degrades to an upper bound that Kodi 21 satisfies. Measured: a probe
+	     declaring minversion="5.17.0" version="5.18.0" enables cleanly on
+	     Kodi 21.3.
+
+	     estuary8/tools/check_kodi_floor.py enforces all of the above, and its
+	     self-test mode proves it catches each way of breaking it. -->
+		<import addon="xbmc.python" version="3.0.2"/>
+		<import addon="xbmc.gui" version="5.18.0"/>
+		<!-- THE MENU SYSTEM. script.estuary8.shortcuts is ours: a fork of Skin
+		     Shortcuts 3.0.1 carried under its own add-on id, so that control 307,
+		     the button reading "Change action", opens the shortcut picker instead
+		     of a raw keyboard prefilled with an ActivateWindow string, and so that
+		     an upstream release cannot silently revert that. Every RunScript,
+		     $ADDON[] string, System.HasAddon and Addon.OpenSettings in this skin
+		     names it.
+
+		     This is the ONLY shortcuts add-on the skin imports. It briefly also
+		     imported the external script.skinshortcuts, purely because the floor
+		     guard asserted through that id, which installed two add-ons that
+		     looked identical in the add-on browser. The guard now accepts this id
+		     (tools/check_skinshortcuts_floor.py, FORK_ID) with the same pinning
+		     rules, so the second import is gone. Do not add it back to satisfy a
+		     check; the check already knows.
+
+		     ITS VERSION IS 3.0.1 ON PURPOSE, and it is the same number the
+		     add-on it was forked from carries. That is the provenance: this is
+		     that 3.0.1 with our changes on top. It is NOT an attempt to outrank
+		     anything, and it cannot be one, because outranking requires sharing
+		     an id and this add-on has its own. Kodi resolves and compares
+		     add-ons by id, so the two are never weighed against each other.
+		     Owner directive 2026-07-30: the fork carries the version it was
+		     forked from. -->
+		<import addon="script.estuary8.shortcuts" version="3.0.1.1"/>
+		<import addon="script.image.resource.select" version="3.0.2"/>
+		<!-- script.module.pvr.artwork is NOT imported. Every consumer already
+	     degrades on its own: the four PVRArtworks* variables in Variables.xml
+	     each end with an unconditional $INFO[ListItem.Icon], the one script
+	     call in Custom_1134_PVRNextUp.xml is gated on System.AddonIsEnabled,
+	     and SkinSettings.xml:615 offers InstallAddon for anyone who wants it.
+	     A hard import only forced it on every install. -->
+	</requires>
+	<extension point="xbmc.gui.skin" debugging="false">
+		<res width="1920" height="1440" aspect="4:3" default="false" folder="xml" />
+		<res width="1920" height="1280" aspect="3:2" default="false" folder="xml" />
+		<res width="1920" height="1200" aspect="16:10" default="false" folder="xml" />
+		<res width="2040" height="1080" aspect="17:9" default="false" folder="xml" />
+		<res width="1920" height="1080" aspect="16:9" default="true" folder="xml" />
+		<res width="2338" height="1080" aspect="19.5:9" default="false" folder="xml" />
+ 		<res width="2160" height="1080" aspect="18:9" default="false" folder="xml" />
+		<res width="2560" height="1080" aspect="21:9" default="false" folder="xml" />
+	</extension>
+	<extension point="xbmc.service" library="scripts/services.py" visible="!String.IsEmpty(Window(home).Property(CurrentSkin))" />
+	<!-- There is deliberately NO xbmc.python.script extension here. Declaring
+	     one files this skin under Kodi's Program Add-ons, where a skin does not
+	     belong: it appears as a launchable script beside Skin Shortcuts. The
+	     upstream MOD V2 rebase (02dde5d) introduced it, and it has come back
+	     three times because every removal before this one lived in a working
+	     tree and was reverted before it was ever committed.
+
+	     Nothing needs it. The extension only matters for RunScript(<add-on id>,
+	     ...), and every call site resolves helpers.py by PATH instead:
+	     RunScript(special://skin/scripts/helpers.py,...), 18 of them across 7
+	     files, converted in 1d3fc47. helpers.py itself uses no add-on context,
+	     no xbmcaddon.Addon() and no getAddonInfo, so the path form is
+	     behaviourally identical.
+
+	     A future rebase from b-jesch/skin.estuary.modv2 will reintroduce this
+	     line. Delete it again, and do not "restore" it to fix an unrelated
+	     symptom: it was once wrongly blamed for the Skin Shortcuts Change
+	     action dialog, which is a bare keyboard in 3.0.1 by design. -->
+	<extension point="kodi.context.item">
+      	<menu id="kodi.core.main">
+      		<item library="scripts/context_menu_jumptoletter.py">
+			<label>$LOCALIZE[31365]</label>
+			<visible>!String.IsEmpty(Window(home).Property(CurrentSkin)) + [String.IsEqual(ListItem.dbtype,movie) | String.IsEqual(ListItem.dbtype,set) | String.IsEqual(ListItem.dbtype,tvshow) | String.IsEqual(ListItem.dbtype,artist) | String.IsEqual(ListItem.dbtype,album) | String.IsEqual(ListItem.dbtype,musicvideo) | Container.Content(addons)] + !Window.IsVisible(Home)</visible>
+		</item>
+      		<item library="scripts/context_menu_moviessets.py">
+			<label>$LOCALIZE[31381]</label>
+			<visible>!String.IsEmpty(Window(home).Property(CurrentSkin)) + String.IsEqual(ListItem.DBType,set) + !Window.IsVisible(Home)</visible>
+		</item>
+    	</menu>
+ 	</extension>
+	<extension point="xbmc.addon.metadata">
+		<summary lang="en_GB">A modern, customizable take on Kodi&apos;s Estuary.</summary>
+		<description lang="en_GB">Requires Kodi 22 (Piers) or newer. It will not install on Kodi 21 or earlier.[CR][CR]Estuary 8 brings Kodi&apos;s classic Estuary into the present: a clean, modern interface with rich skin settings, smart home widgets, and a light, uncluttered layout that stays fast and familiar for Kodi Piers 22. Yours to shape.</description>
+		<news>[B]0.1.25[/B][CR]- Skin Settings: &quot;Show system info on Settings focus&quot; has moved. It was under General; it is now under Home menu, just below &quot;Enable background of &apos;Power options&apos; shortcut&quot;, and it is renamed &quot;Enable system info on &apos;Settings&apos; shortcut&quot; to match the rows it now sits with. It does the same thing, and whatever you had it set to is kept.[CR]- Skin Settings: the Necessary add-ons page called our menu add-on &quot;Skin Shortcuts&quot;. It now reads &quot;Estuary 8 Shortcuts&quot;, which is its actual name. The button already installed the right add-on; only the name on screen was wrong.[CR]- Housekeeping, no visible change: a block of unreachable Live TV submenu markup was removed. It could never be shown, and it carried two more rows labelled from an add-on this skin does not install.[CR]- Needs script.estuary8.shortcuts 3.0.1.1 or newer. Install that zip first; it carries a new icon and nothing else.[CR][CR][B]0.1.24[/B][CR]- The Live TV submenu no longer has two blank rows at the top. It had eight entries and the first two were empty and did nothing; it now has the six real ones, starting at Channels.[CR]- Those two rows were labelled from an add-on this skin does not install and never will, so on your box the label came out as nothing at all. They came in with the Piers layout this skin was rebuilt from.[CR]- Radio, Movies, TV shows, Music, Music videos, Add-ons and Videos are untouched, and the Live TV rows that remain keep their own settings. If you had reordered or renamed anything in that submenu, it stays as you left it.[CR][CR][B]0.1.23[/B][CR]- Installing this skin now adds ONE menu add-on, not two. It asked for Estuary 8 Shortcuts and also for the add-on that was forked to make it, so both were installed and both showed up under Program add-ons with almost the same name. Only ours was ever used. The unused one is no longer requested.[CR]- Estuary 8 Shortcuts is now numbered 3.0.1, the version of the add-on it was forked from, so its number says what it is instead of looking like an unrelated, much older add-on. It is the same code that was numbered 1.1.0. Install that zip first; this skin asks for 3.0.1 or newer.[CR]- Sharing that number with the official add-on is safe. Kodi tells add-ons apart by their id, not their name or version, and Estuary 8 Shortcuts has its own id, so neither one can update, replace or outrank the other.[CR]- No other change. Once it is running this is the same skin as 0.1.22.[CR]- 0.1.22 was built but never published, and its zip asks for both add-ons. Use this one.[CR][CR][B]0.1.22[/B][CR]- Menu editor: the &quot;Change action&quot; row now reads &quot;Movies / Titles&quot; instead of &quot;videodb://movies/titles/&quot;. Estuary 7 shows a readable name there; this closes that gap. Add-on paths show the add-on&apos;s own name.[CR]- Widgets: browsing into a widget no longer asks &quot;Select Widget Type&quot; when the answer is already known. It is taken from the type the widget declares, or worked out from the path you browsed to, so picking a movies list gives a movies widget without a second question.[CR]- That prompt was also the loop. Cancelling it threw the whole selection away and put you back at the start of the picker, which is why choosing a widget could feel like it never took.[CR]- Widgets: a plugin add-on picked from the add-ons list no longer gets stamped with the type &quot;video&quot;, which is not a widget type at all and matched none of the skin&apos;s own conditions.[CR]- Needs script.estuary8.shortcuts 1.1.0 or newer. Install that zip first.[CR][CR][B]0.1.21[/B][CR]- Menu editor: &quot;Change action&quot; opens the shortcut picker. That is the whole point of this build. It used to open a raw keyboard prefilled with a string like ActivateWindow(Videos,videodb://movies/titles/,return), which is not something anyone should have to type.[CR]- NEITHER BUTTON WAS RENAMED. &quot;Change action&quot; is on the same button it was on, &quot;Choose item for menu&quot; is on the other, and both still match Estuary 7 one for one. Only the behaviour changed. Typing an action by hand is still there, on the item context menu as &quot;Edit Action&quot;.[CR]- This needed a new add-on, script.estuary8.shortcuts, and it is ours: a fork of Skin Shortcuts 3.0.1 by MikeSiLVO, under its own add-on id, with his licence and credit unchanged. That button is wired to the keyboard inside the add-on&apos;s own code, so no skin could reach it from the outside. Carrying it under our own id also means an upstream release can never silently undo it.[CR]- INSTALL script.estuary8.shortcuts FIRST. This skin now depends on it, and Kodi will refuse to install the skin until it is present.[CR]- Your existing menus come across by themselves the first time the new add-on runs. Nothing is moved or deleted, and the old menu data is left exactly where it is, so going back loses nothing.[CR][CR][B]0.1.20[/B][CR]- Menu editor: &quot;Choose item for menu&quot; is now offered on EVERY home menu item. It used to be hidden on the eight items that carry a submenu (Movies, TV shows, Music, Music videos, Live TV, Radio, Add-ons, Videos), which left &quot;Change action&quot; and its raw keyboard as the first thing on the pane for those eight. The picker is the friendly way to repoint a menu item and it is now always there.[CR]- The picker&apos;s first entry is a new &quot;Main menu&quot; list holding all twelve home sections. Pick Movies on the Movies row and nothing is lost; pick TV shows on the Movies row and the row becomes TV shows and brings the TV shows submenu with it. Before this build every possible pick deleted the item&apos;s submenu: 0 of 144 item and choice combinations preserved one, and 64 do now, including all eight same-section picks.[CR]- Picks that still clear a submenu do so correctly. A browsed folder, an add-on or a typed action is not a library section and has no submenu to inherit.[CR]- &quot;Change action&quot; is unchanged and still opens the keyboard. That is Estuary 7&apos;s layout exactly: the picker first, the raw string second for anyone who wants it. Skin Shortcuts 3.0.1 wires the keyboard to that button inside its own code, so the skin cannot make that one button open a picker; it can only make sure the picker button is never hidden, which is what this build does.[CR][CR][B]0.1.19[/B][CR]- Menu editor: the two action buttons are renamed to match Estuary 7 one for one. The button that opens the shortcut picker now reads &quot;Choose item for menu&quot;, and the button that opens the keyboard now reads &quot;Change action&quot;. In 0.1.16 those same two buttons read &quot;Change action&quot; and &quot;Enter action&quot;, so the name &quot;Change action&quot; has moved from the picker to the keyboard button. This is the biggest visible change in the build, so it is worth knowing before you go looking for it.[CR]- Neither button behaves differently, and neither appears anywhere it did not appear before. The picker is still offered only on items that have no submenu, the keyboard is still offered wherever it was, and the keyboard dialog itself is still headed &quot;Enter action&quot;. Only the two labels moved.[CR]- This reverses what 0.1.16 shipped as its headline change, and the 0.1.16 note below is left in place so the history stays honest. That note says &quot;Change action&quot; opens the shortcut picker. From this build on, &quot;Change action&quot; opens the keyboard and &quot;Choose item for menu&quot; opens the picker. Matching Estuary 7 is the standard for both skins, and that is the reason.[CR]- Widgets: choosing a picture add-on now creates a picture widget directly, with no widget-type prompt. It used to ask, and offer Movies / TV shows / Episodes, because the Pictures row asked for a target Skin Shortcuts does not map.[CR]- Add a menu item: the two rows that were both labelled &quot;Files&quot; are now &quot;Library&quot; and &quot;Media sources&quot;. They list different things and nothing on screen told them apart.[CR]- Housekeeping, no visible change: the menu rebuild no longer passes parameters that Skin Shortcuts 3 ignores, and 12 files were removed from the skin that Skin Shortcuts 3 never reads.[CR]- 0.1.17 and 0.1.18 were built but never published. The 0.1.17 note claimed only addon.xml differed from 0.1.16; two files did. The 0.1.18 note claimed the menu editor buttons were unchanged; they were not, and that is the first item above.[CR][CR][B]0.1.16[/B][CR]- Menu editor: &quot;Change action&quot; now opens the shortcut picker on menu items that have no submenu, instead of only offering a raw keyboard entry. Items that DO carry a submenu still get &quot;Enter action&quot; and the keyboard only, because Skin Shortcuts 3.0.1 has no action-only picker and offering the picker there would delete the item&apos;s submenu. Partial fix by design; see the comment in xml/script-skinshortcuts.xml.[CR]- Version 0.1.15 was built elsewhere and is not this fix. Use 0.1.16.</news>
+		<platform>all</platform>
+		<license>CC BY-SA 4.0, GNU GENERAL PUBLIC LICENSE Version 2.0</license>
+		<source>https://github.com/b-jesch/skin.estuary.modv2/tree/Piers</source>
+		<!-- The line above is the UPSTREAM this skin forks from, kept so the
+		     provenance travels with the add-on. See ATTRIBUTION.md and
+		     UPSTREAM.lock for the exact pinned commit. -->
+			<!-- Icon, fanart and all eight screenshots are stock Estuary 4.1.0's,
+			     the skin that ships inside Kodi 22 Piers, vendored at
+			     reference/stock-estuary-4.1.0/. Flat paths directly under
+			     resources/, which is stock's own layout and Estuary 7's; the
+			     resources/screenshots/ directory this fork inherited from the
+			     upstream above is gone. -->
+			<assets>
+				<icon>resources/icon.png</icon>
+				<fanart>resources/fanart.jpg</fanart>
+				<screenshot>resources/screenshot-01.jpg</screenshot>
+				<screenshot>resources/screenshot-02.jpg</screenshot>
+				<screenshot>resources/screenshot-03.jpg</screenshot>
+				<screenshot>resources/screenshot-04.jpg</screenshot>
+				<screenshot>resources/screenshot-05.jpg</screenshot>
+				<screenshot>resources/screenshot-06.jpg</screenshot>
+				<screenshot>resources/screenshot-07.jpg</screenshot>
+				<screenshot>resources/screenshot-08.jpg</screenshot>
+			</assets>
+	</extension>
+</addon>

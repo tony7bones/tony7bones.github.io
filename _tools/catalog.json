@@ -130,6 +130,16 @@
     }
   },
   {
+    "id": "script.estuary8.shortcuts",
+    "username": "tony7bones",
+    "repository": "tony7bones.github.io",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
+    "assets": {
+      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/{id}-{version}.zip"
+    }
+  },
+  {
     "id": "script.module.autocompletion",
     "username": "tony7bones",
     "repository": "tony7bones.github.io",
@@ -227,6 +237,16 @@
     "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
     "assets": {
       "zip": "https://github.com/moquette/estuary7/releases/download/v{version}/{id}-{version}.zip"
+    }
+  },
+  {
+    "id": "skin.estuary8",
+    "username": "tony7bones",
+    "repository": "tony7bones.github.io",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
+    "assets": {
+      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/{id}-{version}.zip"
     }
   },
   {

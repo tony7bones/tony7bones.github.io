@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<addon id="script.estuary8.shortcuts" name="Estuary 8 Shortcuts" version="3.0.1.1" provider-name="Tony.7.Bones">
+    <requires>
+        <import addon="xbmc.python" version="3.0.2"/>
+    </requires>
+    <extension point="xbmc.python.script" library="default.py"/>
+    <extension point="xbmc.addon.metadata">
+        <news>
+3.0.1.1
+  - Artwork: new add-on icon. No code change.
+  - This is the bump the 3.0.1 note below said the next change would need. A
+    content change that reused 3.0.1 would be invisible to Kodi, which compares
+    add-ons by id and version: a box would silently keep the old build and the
+    old icon, with no error and no symptom.
+  - The number is our FIRST revision on top of upstream 3.0.1, which is why it
+    reads 3.0.1.1 and not 3.0.2. The 3.0.1 prefix still states the provenance
+    the way the note below intended, and 3.0.2 stays free to mean a future
+    re-fork from upstream's own 3.0.2. Nothing here can collide with upstream:
+    the id is ours and they never publish under it.
+  - Supersedes one claim below: this add-on IS now offered by a repository, the
+    Tony.7.Bones repository, so a box resolves it as an ordinary dependency
+    rather than needing a zip installed by hand.
+
+3.0.1
+  - Renumbered from 1.1.0. This add-on now carries the version of the upstream
+    build it was forked from, so the number itself states the provenance: it is
+    Skin Shortcuts 3.0.1 with the changes listed below on top. Nothing else
+    changed in this step; the code is what was released as 1.1.0.
+  - Sharing a version number with the official add-on is safe and cannot lead to
+    either one replacing the other. Kodi identifies, resolves and compares
+    add-ons by their id, and this add-on's id is its own. The official build is
+    never consulted for an update to this one, and this one is offered by no
+    repository at all.
+  - Consequence worth knowing: because the version now matches upstream's, two
+    different builds of THIS add-on must not both be labelled 3.0.1. The next
+    change to the code needs a number above it.
+
+Changes below were first released as 1.1.0.
+  - Fix: browsing into a widget no longer asks which type it is when the answer
+    is already known. A type the skin declared is honoured, as upstream's own
+    widgets.md shows it being declared (type="movies" browse="true"), and
+    otherwise the type is inferred from the browsed path. Cancelling that prompt
+    used to discard the whole selection and drop the user back at the start of
+    the picker, which is the loop this removes.
+  - Fix: a plugin add-on resolved from content source="addons" no longer claims
+    the content-source target as its widget type. That produced widgetType
+    "video", which is a target rather than a type and matches no skin condition.
+  - Add: pathLabel beside path on every menu item, a readable rendering of the
+    content path, so a skin can show "Movies / Titles" or an add-on's own name
+    instead of videodb://movies/titles/
+
+Changes below were first released as 1.0.0.
+  - Fork of Skin Shortcuts 3.0.1 by MikeSiLVO, under a separate add-on id so it
+    never collides with, outranks or is overwritten by the official build.
+    Licence and authorship are unchanged; see ATTRIBUTION.md.
+  - Fix: the management dialog's Change action button (control 307) opens the
+    shortcut picker instead of a bare keyboard, falling back to manual entry
+    only when the skin declares no groupings
+  - Add: menus, widgets and per-item data are adopted once from an existing
+    Skin Shortcuts profile, so an already configured box keeps its Home menu
+        </news>
+        <summary lang="en_GB">Custom menus, properties, and artwork for skins</summary>
+        <platform>all</platform>
+        <license>GPL-2.0-only</license>
+        <source>https://github.com/MikeSiLVO/script.skinshortcuts</source>
+        <assets>
+            <icon>resources/media/icon.png</icon>
+            <fanart>resources/media/fanart.jpg</fanart>
+        </assets>
+        <description lang="ar_SA">إضافة مخصصه للمظهر لتوفير إدارة بسيطة للودجيت &quot;الأقسام&quot; و الاختصارات على الشاشة (تتطلب دعم المظهر لها)</description>
+        <description lang="cs_CZ">Doplněk pro vzhledy poskytující jednoduchý management a seznamy uživatelských zkratek (vyžaduje podporu vzhledu)</description>
+        <description lang="da_DK">Add-on til skins der giver enkel styring og lister over brugergenveje (kræver skin-understøttelse)</description>
+        <description lang="de_DE">Addon für Skins zum einfachen Bearbeiten und Auflisten von benutzerdefinierten Verknüpfungen (erfordert Skinunterstützung)</description>
+        <description lang="el_GR">Πρόσθετο για κελύφη, το οποίο παρέχει έναν απλό τρόπο διαχείρισης και κατηγοριοποίησης των συντομεύσεων του χρήστη (πρέπει να υποστηρίζεται από το κέλυφος)</description>
+        <description lang="en_GB">Add-on for skins to provide simple managing and listing of user shortcuts (requires skin support)</description>
+        <description lang="en_NZ">Add-on for skins to provide simple managing and listing of user shortcuts (requires skin support)</description>
+        <description lang="en_US">Add-on for skins to provide simple managing and listing of user shortcuts (requires skin support)</description>
+        <description lang="es_ES">Complemento para las pieles para proporcionar una gestión sencilla y lista de atajos de usuario (requiere que la piel lo soporte)</description>
+        <description lang="fi_FI">Lisäosa, joka mahdollistaa ulkoasujen valikkokohteiden ja omien pikavalintojen lisäyksen ja niiden muokkauksen (vaatii tuen ulkoasulta)</description>
+        <description lang="fr_CA">Addiciel pour habillages qui fournit une gestion simple et un listage des raccourcis utilisateurs (exige la prise en charge de l&apos;habillage)</description>
+        <description lang="fr_FR">Module complémentaire pour les skins pour fournir une gestion et une liste simples de raccourcis utilisateur (nécessite la prise en charge des skins)</description>
+        <description lang="gl_ES">Complemento que fornece aos temas dunha xestión sinxela dos atallos dos usuarios (require soporte do tema)</description>
+        <description lang="hr_HR">Dodatak za presvlake koji omogućuje jednostavno upravljanje i prikaz prečaca korisnika (zahtijeva podršku presvlake)</description>
+        <description lang="hu_HU">Felszín kiegészítő amely könnyen kezelhetővé és listázhatóvá teszi a felhasználói parancsikonokat (Felszín támogatás szükséges)</description>
+        <description lang="is_IS">Viðbót fyrir viðmót til að halda utan um flýtivísa og fá yfirlit yfir þá (þarfnast stuðnings frá viðmóti)</description>
+        <description lang="it_IT">Add-on per gli skin per consentire un facile gestione ed elenco delle scorciatoie utente (richiede che lo skin lo supporti)</description>
+        <description lang="ko_KR">사용자 단축키의 간단한 관리 및 목록을 제공하는 스킨용 애드온(스킨 지원 필요)</description>
+        <description lang="lt_LT">Priedas teminėms išvaizdoms, kad jos turėtų galimybę paprastai tvarkyti ir atvaizduoti vartotojo sukurtas nuorodas (reikalingas teminės išvaizdos palaikymas)</description>
+        <description lang="nb_NO">Tillegg for enkel administrering og opplisting av bruker-snarveier i tema (krever støtte i tema)</description>
+        <description lang="nl_NL">Add-on voor skins om te voorzien in het eenvoudig beheren en sorteren van gebruikers snelkoppelingen (vereist skin ondersteuning)</description>
+        <description lang="pl_PL">Wtyczka dla skór, która zapewnia proste zarządzanie i tworzenie list skrótów użytkownika (wymaga wsparcia skóry)</description>
+        <description lang="pt_BR">Add-on para que as skins possam prover gerenciamento de lista de atalhos para o menu principal (requer suporte da skin)</description>
+        <description lang="pt_PT">Um add-on que permite que os temas tenham recursos simples para gerir e listar atalhos de utilizadores (é necessário suporte do tema)</description>
+        <description lang="ru_RU">Дополнение для обложек, предоставляющее простой способ управления пользовательскими ярлыками (требуется поддержка обложкой)</description>
+        <description lang="sk_SK">Doplnok poskytujúci jednoduchý manažment zoznamu užívateľských odkazov (vyžaduje podporu v doplnku pre vzhľad)</description>
+        <description lang="sv_SE">Skinntillägg som tillhandahåller enkel hantering och översikt av användargenvägar (om skinnet stöder det)</description>
+        <description lang="zh_CN">皮肤加载项，提供简单的用户快捷方式管理和列表（需要皮肤支持）</description>
+        <description lang="zh_TW">插件为皮肤提供了简单的管理和用户连接方式列表 (需要皮肤支持)</description>
+    </extension>
+</addon>

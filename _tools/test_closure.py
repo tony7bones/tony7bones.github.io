@@ -42,7 +42,13 @@ from mirror_closure import OFFICIAL_LIBRARY  # noqa: E402
 # as the skin and carries its own <requires>, but only the skin's closure was
 # ever gated, so a bump to a dependency version this repo does not host would
 # 404 at install time on an off-grid Apple TV with nothing red anywhere.
-ROOTS = ["skin.estuary7", "script.ezmaintenanceplusplus"]
+#
+# skin.estuary8 was added 2026-07-31, the day it was first hosted here. Its
+# closure is the interesting one: it imports script.estuary8.shortcuts, which is
+# OURS and exists nowhere else, so an unhosted dependency is not a slow 404 on
+# an off-grid box but an install that cannot succeed anywhere at all. Gating it
+# from day one is cheap; discovering it from a box is not.
+ROOTS = ["skin.estuary7", "script.ezmaintenanceplusplus", "skin.estuary8"]
 
 BUILTINS = {
     "xbmc.python",
