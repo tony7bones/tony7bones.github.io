@@ -208,8 +208,14 @@ def test_classify_the_real_manifest_covers_all_entries():
     """The REAL catalog.json: every entry classifies, with the known per-class
     counts (update deliberately when the catalog changes).
 
-    27 entries, and the arithmetic behind that number, newest first:
+    28 entries, and the arithmetic behind that number, newest first:
 
+      +1  2026-08-03, plugin.video.estuary8.search ADDED, hosted. It is the
+          Estuary 8 streaming-search result filter and a declared dependency of
+          skin.estuary8, so hosting it here is what lets Kodi install it from
+          this repo alongside the skin. Ours, not a mirror of anything external,
+          and hosted for the same reason the two Estuary 8 entries below are:
+          there is no GitHub Release to point at.
       +2  2026-07-31, the Estuary 8 launch. script.estuary8.shortcuts and
           skin.estuary8 are both ADDED, both hosted, on the owner's explicit
           instruction. Neither is a mirror of anything external: the first is
@@ -238,15 +244,16 @@ def test_classify_the_real_manifest_covers_all_entries():
     kinds = {}
     for e in entries:
         kinds.setdefault(sc.classify(e), []).append(e["id"])
-    assert len(entries) == 27
+    assert len(entries) == 28
     assert kinds[sc.KIND_FIRST_PARTY] == ["repository.tony7bones"]
-    assert len(kinds[sc.KIND_HOSTED]) == 16
+    assert len(kinds[sc.KIND_HOSTED]) == 17
     assert len(kinds[sc.KIND_HYBRID]) == 3
     assert len(kinds[sc.KIND_STREAMED]) == 5
     assert len(kinds[sc.KIND_RELEASE_ASSET]) == 2
     assert "skin.estuary7" in kinds[sc.KIND_RELEASE_ASSET]
     assert "skin.estuary8" in kinds[sc.KIND_HOSTED]
     assert "script.estuary8.shortcuts" in kinds[sc.KIND_HOSTED]
+    assert "plugin.video.estuary8.search" in kinds[sc.KIND_HOSTED]
     ids = {e["id"] for e in entries}
     for gone in (
         "script.module.pvr.artwork",

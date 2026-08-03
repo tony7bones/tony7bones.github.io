@@ -157,7 +157,7 @@ The served `/static/` tree is the Kodi repository the add-on points at:
 - `/static/addons.xml` + `/static/addons.xml.md5` (the catalog index + checksum),
 - per-add-on zips and materialized art under `/static/<id>/`.
 
-It currently has **27 entries** (verify with `python3 -c "import json;print(len(json.load(open('_tools/catalog.json'))))"`). It is built in CI by `_tools/build_site.py` -> `_tools/static_catalog.py` from the manifest `_tools/catalog.json`, then deployed via GitHub Pages. `static_catalog.py` materializes each entry's declared art out of its zip so every icon/fanart URL resolves.
+It currently has **28 entries** (verify with `python3 -c "import json;print(len(json.load(open('_tools/catalog.json'))))"`). It is built in CI by `_tools/build_site.py` -> `_tools/static_catalog.py` from the manifest `_tools/catalog.json`, then deployed via GitHub Pages. `static_catalog.py` materializes each entry's declared art out of its zip so every icon/fanart URL resolves.
 
 ### Two source trees: `dropbox/` (canvas) and `addons/` (add-on tree)
 

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<addon id="plugin.video.estuary8.search" name="Estuary 8 Search Filter" version="0.1.1" provider-name="Tony.7.Bones">
+    <requires>
+        <!-- Kodi 22 (Piers) floor, to match skin.estuary8 and
+             script.estuary8.shortcuts. Kodi 21 provides xbmc.python 3.0.1, so
+             this line keeps the whole Estuary 8 set on one platform. -->
+        <import addon="xbmc.python" version="3.0.2"/>
+    </requires>
+    <extension point="xbmc.python.pluginsource" library="addon.py">
+        <provides>video</provides>
+    </extension>
+    <extension point="xbmc.addon.metadata">
+        <summary lang="en_GB">Filters art-less results out of Estuary 8 streaming search.</summary>
+        <description lang="en_GB">A small helper for the Estuary 8 skin. It proxies a streaming provider's own movie and TV-show search, reads each as a directory, drops the art-less placeholder cards the provider returns (empty posters and the "Next Page" item), and re-serves the real results with their poster, info and playable path unchanged. Movies are listed first, then TV shows. The provider add-ons are never modified; they are read exactly as Kodi would navigate them.</description>
+        <platform>all</platform>
+        <license>GPL-2.0-only</license>
+        <source>https://github.com/tony7bones</source>
+        <news>[B]0.1.1[/B][CR]- Search now returns Movies and TV Shows together in one poster wall, all movies first, then all TV shows. The two categories are pulled from the same provider and each is filtered for real art. The skin's two Search toggles decide which are included; both are on by default.[CR][B]0.1.0[/B][CR]- First build. Routes Estuary 8's streaming search through a filter that drops results with no real poster, so the poster wall shows only art-carrying titles and the "Next Page" placeholder card is gone. The underlying provider is read as a directory and never forked.</news>
+    </extension>
+</addon>
