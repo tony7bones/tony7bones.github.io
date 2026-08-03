@@ -1,11 +1,18 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="script.estuary8.shortcuts" name="Estuary 8 Shortcuts" version="3.0.1.4" provider-name="Tony.7.Bones">
+<addon id="script.estuary8.shortcuts" name="Estuary 8 Shortcuts" version="3.0.1.5" provider-name="Tony.7.Bones">
     <requires>
         <import addon="xbmc.python" version="3.0.2"/>
     </requires>
-    <extension point="xbmc.python.script" library="default.py"/>
+    <extension point="xbmc.python.library" library="default.py"/>
     <extension point="xbmc.addon.metadata">
         <news>
+3.0.1.5
+  - The helper no longer appears as a browsable Program add-on. It is the skin's
+    internal menu engine, run by the skin, not a program to launch by hand, so it
+    is now declared as a script library rather than a program script. Kodi lists
+    program scripts under Program add-ons; a script library is not listed there.
+    The skin still runs it exactly as before and nothing about the menu changed.
+
 3.0.1.4
   - Updated the add-on icon. That one file, resources/media/icon.png, is the
     only difference between this build and 3.0.1.3. No code, no settings and no
