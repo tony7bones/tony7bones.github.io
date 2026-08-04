@@ -1,11 +1,24 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="script.estuary8.shortcuts" name="Estuary 8 Shortcuts" version="3.0.1.5" provider-name="Tony.7.Bones">
+<addon id="script.estuary8.shortcuts" name="Estuary 8 Shortcuts" version="3.0.1.6" provider-name="Tony.7.Bones">
     <requires>
         <import addon="xbmc.python" version="3.0.2"/>
     </requires>
     <extension point="xbmc.python.library" library="default.py"/>
     <extension point="xbmc.addon.metadata">
         <news>
+3.0.1.6
+  - "Change action" (control 307) now offers a "Custom action..." row at the top
+    of the picker: a keyboard, pre-filled with the item's current action, that
+    writes whatever builtin you type onto the item and nothing else, so any Kodi
+    window or action stays reachable even when the skin's groupings never named
+    it. The TV Guide is the case that prompted it.
+  - "Choose item for menu" (control 401) is unchanged and does not offer that
+    row, because that button adopts a whole shortcut and a typed builtin has no
+    label, icon or submenu to adopt.
+  - "Change action" still changes only the action, leaving the item's label,
+    thumbnail, visibility and submenu untouched, and still shows its protection
+    prompt before replacing an existing action.
+
 3.0.1.5
   - The helper no longer appears as a browsable Program add-on. It is the skin's
     internal menu engine, run by the skin, not a program to launch by hand, so it
