@@ -4,8 +4,8 @@
 THE PROBLEM this closes: a fleet box picks what to install by reading the
 proxy's ``addons/hosted/<id>/addon.xml`` version. Two mirrors under
 ``addons/hosted/`` point their GitHub-Releases asset template at a SOURCE
-repo we also own (``skin.estuary7`` -> ``moquette/estuary7``,
-``script.ezmaintenanceplusplus`` -> ``moquette/ezmaintenanceplusplus``), and
+repo we also own (``skin.estuary7`` -> ``moquette/kodi-estuary7``,
+``script.ezmaintenanceplusplus`` -> ``moquette/kodi-ezmpp``), and
 nothing verified that the mirrored version corresponds to a real, LATEST
 published release on that source repo. The sync is hand-done; a silent
 mismatch 404s a fresh install (no release for that version at all) or serves

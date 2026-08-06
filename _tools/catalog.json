@@ -236,7 +236,7 @@
     "branch": "main",
     "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
     "assets": {
-      "zip": "https://github.com/moquette/estuary7/releases/download/v{version}/{id}-{version}.zip"
+      "zip": "https://github.com/moquette/kodi-estuary7/releases/download/v{version}/{id}-{version}.zip"
     }
   },
   {
@@ -276,7 +276,7 @@
     "branch": "main",
     "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
     "assets": {
-      "zip": "https://github.com/moquette/ezmaintenanceplusplus/releases/download/v{version}/{id}-{version}.zip"
+      "zip": "https://github.com/moquette/kodi-ezmpp/releases/download/v{version}/{id}-{version}.zip"
     }
   }
 ]

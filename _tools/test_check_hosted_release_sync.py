@@ -91,7 +91,7 @@ ESTUARY_ENTRY = {
     "branch": "main",
     "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
     "assets": {
-        "zip": "https://github.com/moquette/estuary7/releases/download/v{version}/{id}-{version}.zip"
+        "zip": "https://github.com/moquette/kodi-estuary7/releases/download/v{version}/{id}-{version}.zip"
     },
 }
 
@@ -102,7 +102,7 @@ EZM_ENTRY = {
     "branch": "main",
     "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
     "assets": {
-        "zip": "https://github.com/moquette/ezmaintenanceplusplus/releases/download/v{version}/{id}-{version}.zip"
+        "zip": "https://github.com/moquette/kodi-ezmpp/releases/download/v{version}/{id}-{version}.zip"
     },
 }
 
@@ -144,7 +144,7 @@ def test_hosted_release_entries_parses_owner_repo_from_url(tmp_path):
     ]
     estuary = next(e for e in entries if e["id"] == "skin.estuary7")
     assert estuary["owner"] == "moquette"
-    assert estuary["repo"] == "estuary7"
+    assert estuary["repo"] == "kodi-estuary7"
     assert estuary["asset_template"] == "{id}-{version}.zip"
 
 
@@ -315,7 +315,7 @@ def test_check_happy_path_mirror_matches_latest(tmp_path, monkeypatch):
     root = _setup_sandbox(tmp_path, "1.0.38")
     routes = _routes_for(
         "moquette",
-        "estuary7",
+        "kodi-estuary7",
         "v1.0.38",
         tag_assets=["skin.estuary7-1.0.38.zip"],
         latest_tag="v1.0.38",
@@ -336,7 +336,7 @@ def test_check_fails_when_tag_release_missing(tmp_path, monkeypatch):
     root = _setup_sandbox(tmp_path, "1.0.99")
     routes = _routes_for(
         "moquette",
-        "estuary7",
+        "kodi-estuary7",
         "v1.0.99",
         tag_assets=None,  # no release tagged v1.0.99
         latest_tag="v1.0.38",
@@ -357,7 +357,7 @@ def test_check_fails_when_asset_name_missing_from_release(tmp_path, monkeypatch)
     root = _setup_sandbox(tmp_path, "1.0.38")
     routes = _routes_for(
         "moquette",
-        "estuary7",
+        "kodi-estuary7",
         "v1.0.38",
         tag_assets=["some-other-file.zip"],  # release exists, wrong asset
         latest_tag="v1.0.38",
@@ -381,7 +381,7 @@ def test_check_warns_not_fails_when_mirror_lags_latest_release(tmp_path, monkeyp
     root = _setup_sandbox(tmp_path, "1.0.38")
     routes = _routes_for(
         "moquette",
-        "estuary7",
+        "kodi-estuary7",
         "v1.0.38",
         tag_assets=["skin.estuary7-1.0.38.zip"],
         latest_tag="v1.0.39",
@@ -405,7 +405,7 @@ def test_check_passes_when_lag_is_waived_for_exact_version(tmp_path, monkeypatch
     )
     routes = _routes_for(
         "moquette",
-        "estuary7",
+        "kodi-estuary7",
         "v1.0.38",
         tag_assets=["skin.estuary7-1.0.38.zip"],
         latest_tag="v1.0.39",
@@ -431,7 +431,7 @@ def test_check_stale_waiver_does_not_mark_lag_as_waived(tmp_path, monkeypatch):
     )
     routes = _routes_for(
         "moquette",
-        "estuary7",
+        "kodi-estuary7",
         "v1.0.39",
         tag_assets=["skin.estuary7-1.0.39.zip"],
         latest_tag="v1.0.40",
@@ -451,7 +451,7 @@ def test_check_fails_when_source_repo_has_no_releases_at_all(tmp_path, monkeypat
     root = _setup_sandbox(tmp_path, "1.0.38")
     routes = _routes_for(
         "moquette",
-        "estuary7",
+        "kodi-estuary7",
         "v1.0.38",
         tag_assets=None,
         latest_tag=None,
@@ -488,7 +488,7 @@ def test_main_returns_1_and_prints_to_stderr_on_gate_error(
         "urlopen",
         _fake_urlopen(
             {
-                "https://api.github.com/repos/moquette/estuary7/releases/tags/v1.0.38": (
+                "https://api.github.com/repos/moquette/kodi-estuary7/releases/tags/v1.0.38": (
                     500,
                     None,
                 )
@@ -507,7 +507,7 @@ def test_main_returns_0_on_happy_path(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(gate, "REPO_ROOT", str(root))
     routes = _routes_for(
         "moquette",
-        "estuary7",
+        "kodi-estuary7",
         "v1.0.38",
         tag_assets=["skin.estuary7-1.0.38.zip"],
         latest_tag="v1.0.38",
@@ -529,7 +529,7 @@ def test_main_returns_0_and_warns_on_behind_latest(tmp_path, monkeypatch, capsys
     monkeypatch.setattr(gate, "REPO_ROOT", str(root))
     routes = _routes_for(
         "moquette",
-        "estuary7",
+        "kodi-estuary7",
         "v1.0.38",
         tag_assets=["skin.estuary7-1.0.38.zip"],
         latest_tag="v1.0.39",
@@ -596,7 +596,7 @@ def test_check_warns_when_behind_a_release_inside_the_grace_window(
     root = _setup_sandbox(tmp_path, "1.0.38")
     routes = _routes_for(
         "moquette",
-        "estuary7",
+        "kodi-estuary7",
         "v1.0.38",
         tag_assets=["skin.estuary7-1.0.38.zip"],
         latest_tag="v1.0.39",
@@ -627,7 +627,7 @@ def test_check_fails_when_behind_a_release_older_than_the_grace_window(
     root = _setup_sandbox(tmp_path, "1.0.70")
     routes = _routes_for(
         "moquette",
-        "estuary7",
+        "kodi-estuary7",
         "v1.0.70",
         tag_assets=["skin.estuary7-1.0.70.zip"],
         latest_tag="v1.0.71",
@@ -660,7 +660,7 @@ def test_check_ok_when_mirror_matches_latest_even_with_an_ancient_release(
     root = _setup_sandbox(tmp_path, "1.0.38")
     routes = _routes_for(
         "moquette",
-        "estuary7",
+        "kodi-estuary7",
         "v1.0.38",
         tag_assets=["skin.estuary7-1.0.38.zip"],
         latest_tag="v1.0.38",
@@ -686,7 +686,7 @@ def test_check_broken_pointer_still_hard_fails_when_release_is_brand_new(
     root = _setup_sandbox(tmp_path, "1.0.99")
     routes = _routes_for(
         "moquette",
-        "estuary7",
+        "kodi-estuary7",
         "v1.0.99",
         tag_assets=None,
         latest_tag="v1.0.38",
@@ -713,7 +713,7 @@ def test_check_missing_asset_still_hard_fails_regardless_of_release_age(
         root = _setup_sandbox(case_dir, "1.0.38")
         routes = _routes_for(
             "moquette",
-            "estuary7",
+            "kodi-estuary7",
             "v1.0.38",
             tag_assets=["some-other-file.zip"],
             latest_tag="v1.0.38",
@@ -735,7 +735,7 @@ def test_check_no_releases_at_all_still_hard_fails(tmp_path, monkeypatch):
     root = _setup_sandbox(tmp_path, "1.0.38")
     routes = _routes_for(
         "moquette",
-        "estuary7",
+        "kodi-estuary7",
         "v1.0.38",
         tag_assets=None,
         latest_tag=None,
@@ -761,7 +761,7 @@ def test_check_waiver_still_waives_a_long_stale_lag(tmp_path, monkeypatch):
     )
     routes = _routes_for(
         "moquette",
-        "estuary7",
+        "kodi-estuary7",
         "v1.0.70",
         tag_assets=["skin.estuary7-1.0.70.zip"],
         latest_tag="v1.0.71",
@@ -792,7 +792,7 @@ def test_check_fails_open_to_warning_when_published_at_is_unusable(
     root = _setup_sandbox(tmp_path, "1.0.38")
     routes = _routes_for(
         "moquette",
-        "estuary7",
+        "kodi-estuary7",
         "v1.0.38",
         tag_assets=["skin.estuary7-1.0.38.zip"],
         latest_tag="v1.0.39",
@@ -817,7 +817,7 @@ def test_env_override_shortens_window_and_turns_a_warning_into_a_failure(
     root = _setup_sandbox(tmp_path, "1.0.38")
     routes = _routes_for(
         "moquette",
-        "estuary7",
+        "kodi-estuary7",
         "v1.0.38",
         tag_assets=["skin.estuary7-1.0.38.zip"],
         latest_tag="v1.0.39",
@@ -846,7 +846,7 @@ def test_env_override_widens_window_and_turns_a_failure_into_a_warning(
     root = _setup_sandbox(tmp_path, "1.0.70")
     routes = _routes_for(
         "moquette",
-        "estuary7",
+        "kodi-estuary7",
         "v1.0.70",
         tag_assets=["skin.estuary7-1.0.70.zip"],
         latest_tag="v1.0.71",
@@ -876,7 +876,7 @@ def test_main_returns_1_and_prints_fix_on_a_genuinely_stale_mirror(
     monkeypatch.setattr(gate, "REPO_ROOT", str(root))
     routes = _routes_for(
         "moquette",
-        "estuary7",
+        "kodi-estuary7",
         "v1.0.70",
         tag_assets=["skin.estuary7-1.0.70.zip"],
         latest_tag="v1.0.71",

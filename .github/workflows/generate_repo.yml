@@ -55,7 +55,7 @@ jobs:
       - name: Hosted-mirror release-freshness gate
         # Every addons/hosted/<id> mirror whose repository.json asset template
         # points at a GitHub Releases download URL (skin.estuary7 -> moquette/
-        # estuary7, script.ezmaintenanceplusplus -> moquette/ezmaintenanceplusplus)
+        # estuary7, script.ezmaintenanceplusplus -> moquette/kodi-ezmpp)
         # must resolve to a REAL, LATEST published release on the source repo —
         # a silent mismatch here 404s a fresh install or serves a stale build
         # forever, with no error anywhere. Talks to the live GitHub REST API;
