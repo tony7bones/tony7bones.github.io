@@ -1,11 +1,30 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<addon id="script.estuary8.shortcuts" name="Estuary 8 Shortcuts" version="3.0.1.6" provider-name="Tony.7.Bones">
+<addon id="script.estuary8.shortcuts" name="Estuary 8 Shortcuts" version="3.0.1.8" provider-name="Tony.7.Bones">
     <requires>
         <import addon="xbmc.python" version="3.0.2"/>
     </requires>
     <extension point="xbmc.python.library" library="default.py"/>
     <extension point="xbmc.addon.metadata">
         <news>
+3.0.1.8
+  - A widget button can opt in to a rename prompt with rename="true". Pick a
+    widget for a slot and a keyboard opens straight away, seeded with that
+    widget's own label, so a row showing "Trending" can be retyped to whatever
+    you want before you leave the picker. The prompt is off unless the skin asks
+    for it.
+  - The typed title goes into the slot's own widgetLabel.N, the key the picker
+    already writes and the skin already reads, so the Home row heading and the
+    "Select widget N" row both follow it. No second key, no new controls.
+  - Cancelling the keyboard writes nothing and keeps the widget's own label.
+    Confirming it unchanged is a no-op. Clearing the field stores a single space,
+    which is how a heading is made deliberately blank and stays blank.
+  - Picking a widget always resets the slot's title to the new widget's label
+    first, so a row can never keep announcing content it no longer shows.
+  - No prompt for custom widgets or inside a widget submenu, where the item's
+    own label already drives the title.
+  - rename="true" on a button that is not a widget button is ignored and logged
+    as an error at load, instead of silently doing nothing.
+
 3.0.1.6
   - "Change action" (control 307) now offers a "Custom action..." row at the top
     of the picker: a keyboard, pre-filled with the item's current action, that
