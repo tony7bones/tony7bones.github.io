@@ -232,7 +232,8 @@ single point of failure.
 
 The full `/Library/LaunchDaemons` inventory as of 2026-08-16:
 
-- `com.tony7bones.iptv2.plist` - the IPTV service (created 2026-07-02). A
+- `com.tony7bones.iptv.plist` - the IPTV service (created 2026-07-02, label
+  renamed from `com.tony7bones.iptv2` on 2026-08-16). A
   LaunchDaemon, so it runs regardless of login, but `UserName` is `moquette`, not
   root. It fires 16 times a day at 7 minutes past the hour and writes into
   `~/Kodi/Share/iptv/`, the export every Kodi box reads. This is the only process
@@ -242,11 +243,11 @@ The full `/Library/LaunchDaemons` inventory as of 2026-08-16:
   | ------------------ | ------------------------------------------------- |
   | `WorkingDirectory` | `~/Code/iptv/mini` |
   | `--config` | `~/Code/iptv/mini/iptv/providers.yaml` |
-  | stdout / stderr | `~/Library/Logs/iptv2/populate.{log,err.log}` |
+  | stdout / stderr | `~/Library/Logs/iptv/populate.{log,err.log}` |
 
   `python3 -m iptv` resolves the package out of `WorkingDirectory`, so that path
   IS the running code. The tracked template at
-  `mini/iptv/deploy/com.tony7bones.iptv2.plist` in the `moquette/iptv` repo must
+  `mini/iptv/deploy/com.tony7bones.iptv.plist` in the `moquette/iptv` repo must
   be kept in step with the live plist, or the next redeploy reinstates dead paths.
 - `homebrew.mxcl.tailscale.plist` - the Tailscale daemon that puts the mini on
   the tailnet. The read-only tailnet export above is worthless without it.
