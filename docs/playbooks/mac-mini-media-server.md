@@ -31,57 +31,89 @@ land here.
 
 ## The rule that ends the confusion: NFS for appliances, SMB for Macs
 
-The mini serves the **same three folders** over **both** protocols at once. NFS
+The mini serves the **same two roots** over **both** protocols at once. NFS
 and SMB are two doors into the identical directories, not separate copies.
 
-| Folder on `Mini`              | Over NFS (Kodi) | Over SMB (Macs) |
-| ----------------------------- | --------------- | --------------- |
-| `/Users/moquette/Kodi/Share`  | KodiShare       | KodiShare       |
-| `/Users/moquette/Kodi/Backup` | KodiBackup      | KodiBackup      |
-| `/Users/moquette/Public`      | Public          | Public          |
-| `/Users/moquette` (home)      | **never**       | moquette        |
+| Folder on `Mini`         | Over NFS (Kodi) | Over SMB (Macs) |
+| ------------------------ | --------------- | --------------- |
+| `/Users/moquette/Kodi`   | Kodi            | Kodi            |
+| `/Users/moquette/Public` | Public          | Public          |
+| `/Users/moquette` (home) | **never**       | moquette        |
+
+`Share/` and `Backup/` are now **subdirectories of the one `Kodi` share**, not
+separate shares. Consolidated 2026-08-16: mounting Kodi assets used to take two
+connections, which was pure friction for no benefit.
 
 - **Kodi boxes mount over NFS** (`nfs://192.168.7.2/Users/moquette/Kodi/Share`,
-  `.../Kodi/Backup`, `.../Public`). This is how Kodi has always read them; it is
-  unaffected by anything the Macs do.
+  `.../Kodi/Backup`, `.../Public`). Those deep paths still work unchanged after
+  the consolidation, because the export carries `-alldirs`. No box needed
+  reconfiguring, and none should be reconfigured now.
 - **Macs mount over SMB** (`smb://Mini`, authenticate as `moquette`, save to
   Keychain). SMB is the ONLY protocol that shows a browsable share list in Finder.
+  One mount of `Kodi` now yields both `Share/` and `Backup/`.
 - The two protocols do not interfere: a Mac using SMB and a Kodi box using NFS hit
   the same files on the mini simultaneously.
+
+### `~/Kodi` holds Kodi assets ONLY
+
+This is a rule, not an observation. Until 2026-08-16 that directory also held
+`iptv-repo/` (a working checkout of the private `moquette/iptv` repo) and
+`backups/` (13 historical copies of `providers.yaml`). Both have been moved out,
+to `~/Code/iptv` and `~/Library/Application Support/iptv/config-backups`.
+
+Nothing that is not meant for every Kodi box may live under `~/Kodi` again. The
+export is unauthenticated and read-write to the whole LAN, and `-mapall=moquette`
+makes every client the owner, so a mode 0600 file in there is readable by anything
+that gets a `192.168.7.x` lease. Worse, the IPTV daemon executes its Python
+package from its checkout, so while that checkout sat under `~/Kodi` any LAN
+device could have rewritten code that then ran as `moquette`. Keep code and
+credentials out.
 
 ### NFS config (`/etc/exports`) - for Kodi
 
 ```
-/Users/moquette/Kodi/Share  -mapall=moquette -network 192.168.7.0 -mask 255.255.255.0
-/Users/moquette/Kodi/Backup -alldirs -mapall=moquette -network 192.168.7.0 -mask 255.255.255.0
-/Users/moquette/Public      -mapall=moquette -network 192.168.7.0 -mask 255.255.255.0
-/Users/moquette/Kodi/Share  -ro -mapall=moquette -network 100.64.0.0 -mask 255.192.0.0
+/Users/moquette/Kodi -alldirs -mapall=moquette -network 192.168.7.0 -mask 255.255.255.0
+/Users/moquette/Kodi -alldirs -ro -mapall=moquette -network 100.64.0.0 -mask 255.192.0.0
+/Users/moquette/Public -mapall=moquette -network 192.168.7.0 -mask 255.255.255.0
 ```
 
 `-mapall=moquette` makes every client write land as `moquette:staff` regardless of
 the client's uid, so writes just work. `nfs.server.require_resv_port = 0` and
 `nfs.server.mount.require_resv_port = 0` in `/etc/nfs.conf` allow non-root clients.
-Validate with `sudo nfsd checkexports`.
+Validate with `sudo nfsd checkexports`, apply with `sudo nfsd update`.
 
-**The fourth line is the tailnet export, and it is easy to lose.** It was added
-2026-07-16, after the rest of this playbook was written, and a rebuild that copies
-only the first three lines silently drops remote access while everything on the
-LAN keeps working. `100.64.0.0/10` is the CGNAT range Tailscale allocates from, so
-that one line covers every tailnet node without naming any of them. Two properties
-matter and are deliberate:
+**`-alldirs` is what makes the consolidation invisible to the fleet.** It lets a
+client mount at any point inside the exported tree, so the boxes keep mounting
+`/Users/moquette/Kodi/Share` exactly as before while a Mac mounts the `Kodi` root.
+Verified by mounting both paths after the change, not assumed.
 
-- It is **`-ro`**. Remote nodes read the share; they never write it. The IPTV
-  daemon is the only writer and it runs locally on the mini.
-- It exports **only `Kodi/Share`**. `Kodi/Backup` and `Public` stay LAN-only.
+**The second line is the tailnet export, and it is easy to lose.** A rebuild that
+copies only the LAN line silently drops remote access while everything on the LAN
+keeps working. `100.64.0.0/10` is the CGNAT range Tailscale allocates from, so that
+one line covers every tailnet node without naming any of them. It is **`-ro`**:
+remote nodes read, never write. The IPTV daemon is the only writer and it runs
+locally on the mini.
 
-The same path being exported twice with different options is legal and works:
-`showmount -e localhost` lists `/Users/moquette/Kodi/Share` against both
-`100.64.0.0` and `192.168.7.0`.
+**You cannot scope the tailnet more tightly than the LAN.** macOS refuses to
+export a directory and its own subdirectory at the same time, even to different
+networks:
+
+```
+exports:3: /Users/moquette/Kodi/Share conflicts with existing export /Users/moquette/Kodi
+```
+
+So exporting the `Kodi` root to the LAN forces the tailnet line to the same root.
+That was a deliberate trade accepted on 2026-08-16: remote nodes gained read-only
+visibility of `Backup/` in exchange for the single mount. Exporting the same path
+on two lines with different networks and options is legal and is what makes it
+work at all.
 
 ### SMB config - for Macs
 
-- `smbd` runs at boot. Share points (`sharing -l`): `KodiShare`, `KodiBackup`,
-  `Public`, `moquette` (home). Guest is OFF (see lessons); auth as `moquette`.
+- `smbd` runs at boot. Share points (`sharing -l`): `Kodi`, `Public`, `moquette`
+  (home). Guest is OFF (see lessons); auth as `moquette`. The old `KodiShare` and
+  `KodiBackup` share points were removed 2026-08-16; re-add with `sharing -a` only
+  if you deliberately want the split back.
 - Any Mac: Finder -> Connect to Server (Cmd K) -> `smb://Mini` -> log in as
   `moquette`, tick "Remember in my keychain". Shares appear as mountable volumes
   under a `Mini` entry in the sidebar. No per-machine config files needed.
@@ -107,20 +139,22 @@ FileVault off, the box boots and starts `nfsd` + `smbd` with no login.
 ssh mini 'pmset -g custom | grep -E " sleep|disksleep|autorestart|womp"'  # sleep 0, disksleep 0, autorestart 1, womp 1
 ssh mini 'nfsd status && showmount -e localhost'                          # NFS exports present
 ssh mini 'grep -c 100.64.0.0 /etc/exports'                                # 1 = tailnet export intact
-ssh mini 'sharing -l | grep name:'                                        # SMB shares present
+ssh mini 'sharing -l | grep name:'                                        # Kodi, Public, moquette
+ssh mini 'ls ~/Kodi'                                                      # ONLY Share and Backup
 ssh mini 'fdesetup status'                                                # FileVault Off
 ```
 
-`showmount -e localhost` collapses the four export lines into three, one per path,
-and `/Users/moquette/Kodi/Share` must list BOTH networks:
+`showmount -e localhost` collapses the three export lines into two, one per path,
+and `/Users/moquette/Kodi` must list BOTH networks:
 
 ```
 /Users/moquette/Public              192.168.7.0
-/Users/moquette/Kodi/Share          100.64.0.0 192.168.7.0
-/Users/moquette/Kodi/Backup         192.168.7.0
+/Users/moquette/Kodi                100.64.0.0 192.168.7.0
 ```
 
-If `Kodi/Share` shows only `192.168.7.0`, the tailnet export was lost.
+If `Kodi` shows only `192.168.7.0`, the tailnet export was lost. If you see
+`Kodi/Share` and `Kodi/Backup` as separate entries, someone reverted the
+2026-08-16 consolidation.
 
 ---
 
@@ -198,10 +232,22 @@ single point of failure.
 
 The full `/Library/LaunchDaemons` inventory as of 2026-08-16:
 
-- `com.tony7bones.iptv2.plist` - root LaunchDaemon running the IPTV service
-  (created 2026-07-02). Runs at boot regardless of login and writes into
-  `~/Kodi/Share/iptv/`, which is the export every Kodi box reads. This is the
-  only process that writes the share.
+- `com.tony7bones.iptv2.plist` - the IPTV service (created 2026-07-02). A
+  LaunchDaemon, so it runs regardless of login, but `UserName` is `moquette`, not
+  root. It fires 16 times a day at 7 minutes past the hour and writes into
+  `~/Kodi/Share/iptv/`, the export every Kodi box reads. This is the only process
+  that writes the share. Its moving parts, all relocated 2026-08-16:
+
+  | Key | Value |
+  | ------------------ | ------------------------------------------------- |
+  | `WorkingDirectory` | `~/Code/iptv/mini` |
+  | `--config` | `~/Code/iptv/mini/iptv/providers.yaml` |
+  | stdout / stderr | `~/Library/Logs/iptv2/populate.{log,err.log}` |
+
+  `python3 -m iptv` resolves the package out of `WorkingDirectory`, so that path
+  IS the running code. The tracked template at
+  `mini/iptv/deploy/com.tony7bones.iptv2.plist` in the `moquette/iptv` repo must
+  be kept in step with the live plist, or the next redeploy reinstates dead paths.
 - `homebrew.mxcl.tailscale.plist` - the Tailscale daemon that puts the mini on
   the tailnet. The read-only tailnet export above is worthless without it.
 - `com.adguard.mac.adguard.helper.plist` and `us.zoom.ZoomDaemon.plist` - vendor
@@ -222,5 +268,8 @@ happens only through the SMB and NFS share points above.
 ## Kodi clients that depend on this box (5 boxes)
 
 Bedroom Fire TV (`192.168.7.84`), Office Fire TV, Shield, and two Travelsticks.
-They mount `KodiShare` / `KodiBackup` / `Public` over NFS from `192.168.7.2` for
-addon/IPTV/RSS content.
+They mount the server paths `/Users/moquette/Kodi/Share`,
+`/Users/moquette/Kodi/Backup` and `/Users/moquette/Public` over NFS from
+`192.168.7.2` for addon, IPTV and RSS content. Kodi stores those paths literally,
+so they are a contract: the 2026-08-16 share consolidation deliberately left every
+one of them working rather than asking five boxes to be reconfigured.
