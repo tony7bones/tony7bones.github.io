@@ -128,20 +128,20 @@ It commits the canvas edit and pushes `main`; the CI deploy regenerates the
 served mirror. It refuses to publish credential-like content to the public site
 unless `--allow-secrets`.
 
-## KodiShare backup mirror (automatic, best-effort)
+## Kodi share backup mirror (automatic, best-effort)
 
 The Mac mini share holds backup-install copies that MUST track releases:
 
-- `/Volumes/KodiShare/repositories/` - the current
+- `/Volumes/Kodi/Share/repositories/` - the current
   `repository.tony7bones-<version>.zip` root installer plus the hand-authored
   third-party installer zips from `dropbox/repositories/`.
-- `/Volumes/KodiShare/apps/` - sideloadable add-on zips, **opt-in-by-presence**:
+- `/Volumes/Kodi/Share/apps/` - sideloadable add-on zips, **opt-in-by-presence**:
   the owner curates WHICH add-ons belong by having any version of one in the dir;
   the sync refreshes those to the current release and prunes superseded versions,
   and never adds add-ons on its own. This matters most for EZ Maintenance++ - it
   is the RESTORE tool a wiped box sideloads from this share, so a stale copy
   resurrects exactly the backup/restore bugs later releases fixed.
-- `/Volumes/KodiShare/{media,rss}/` - mirrored 1:1 from the canvas
+- `/Volumes/Kodi/Share/{media,rss}/` - mirrored 1:1 from the canvas
   (`dropbox/media`, `dropbox/rss`), **strictly additive**: unversioned filenames
   are overwritten on change but NOTHING is ever deleted, and a missing share
   subdir is skipped, never created. NOT `iptv/`: the mini's populator daemon owns

@@ -56,7 +56,7 @@ python3 _tools/check_versions.py
 
 echo "[pre-push] OK — push allowed."
 
-# Best-effort: refresh the KodiShare backup mirror (installer + canvas +
+# Best-effort: refresh the Kodi share backup mirror (installer + canvas +
 # sideload app zips). This covers add-on releases, which publish via plain
 # `git push` and never run publish_canvas.py. Main only, and it must NEVER
 # block a push - an unmounted share is normal.

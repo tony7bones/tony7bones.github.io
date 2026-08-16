@@ -34,7 +34,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from release import git, run_generator  # noqa: E402
 
-# The KodiShare backup mirror - guarded exactly as in deploy.py (not in any
+# The Kodi share backup mirror - guarded exactly as in deploy.py (not in any
 # sandbox copy list; a missing module means "no share sync in this env").
 try:
     import sync_share  # noqa: E402
@@ -165,7 +165,7 @@ def main(argv: list[str] | None = None) -> int:
     git("push", "origin", args.branch)
     # The push triggers the Pages build+deploy workflow (Pages source is now
     # GitHub Actions); no manual build trigger is needed.
-    # Refresh the KodiShare backup copies of the canvas installer zips
+    # Refresh the Kodi share backup copies of the canvas installer zips
     # (best-effort, mount-guarded; publishing never fails on the share).
     if sync_share is not None:
         sync_share.best_effort()
