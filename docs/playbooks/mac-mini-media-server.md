@@ -232,8 +232,7 @@ single point of failure.
 
 The full `/Library/LaunchDaemons` inventory as of 2026-08-16:
 
-- `com.tony7bones.iptv.plist` - the IPTV service (created 2026-07-02, label
-  renamed from `com.tony7bones.iptv2` on 2026-08-16). A
+- `com.tony7bones.iptv.plist` - the IPTV service (created 2026-07-02). A
   LaunchDaemon, so it runs regardless of login, but `UserName` is `moquette`, not
   root. It fires 16 times a day at 7 minutes past the hour and writes into
   `~/Kodi/Share/iptv/`, the export every Kodi box reads. This is the only process
