@@ -241,7 +241,7 @@ ok "Setup $BV + library $MV installed."
 # NOTE: the old v1 host-build-and-stage IPTV step (Phase 5b.2: build_iptv.py ->
 # per-box staged artifacts consumed by apply_iptv) was RETIRED. The IPTV builder
 # was extracted to its own private repo (moquette/iptv) and the fleet moved to
-# the IPTV 2.0 share model: the Mac mini builds centrally and writes to an NFS
+# the share model: the Mac mini builds centrally and writes to an NFS
 # share that each box reads directly, so no per-box host build happens here.
 # IPTV_STAGED stays empty; the per-device env below omits IPTV_STAGING_DIR.
 _adb shell "mkdir -p $DEVICE_ROOT/backups $DEVICE_ROOT/iptv $DEVICE_ROOT/media $DEVICE_ROOT/repositories $DEVICE_ROOT/rss" >/dev/null 2>&1
