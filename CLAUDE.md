@@ -214,7 +214,7 @@ python3 _tools/build_site.py --out _site
 python3 _tools/publish_canvas.py -m "Add foo repo zip to canvas"   # npm run publish
 python3 _tools/publish_canvas.py -m "..." --dry-run                # npm run publish:dry
 
-# Refresh the KodiShare backup mirror by hand. Runs automatically on every push
+# Refresh the Kodi share backup mirror by hand. Runs automatically on every push
 # of main (pre-push hook); mount-guarded, best-effort, never blocks.
 python3 _tools/sync_share.py --dry-run
 

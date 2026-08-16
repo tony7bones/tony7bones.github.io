@@ -1,8 +1,8 @@
-"""Mirror the installable zips to the local KodiShare backup share.
+"""Mirror the installable zips to the local Kodi share backup.
 
 Two share dirs, two contracts:
 
-`/Volumes/KodiShare/repositories/` holds a backup-install copy of the same
+`/Volumes/Kodi/Share/repositories/` holds a backup-install copy of the same
 zips the site serves: the current `repository.tony7bones-<version>.zip` root
 installer plus the hand-authored third-party installer zips from
 `dropbox/repositories/`. Without this step it goes stale on every proxy
@@ -10,7 +10,7 @@ release (a stale `repository.tony7bones-1.0.5.zip` sat there pointing at the
 long-dead `repo/` layout - it installed on a fresh box and then silently
 served nothing).
 
-`/Volumes/KodiShare/apps/` holds sideloadable copies of first-party add-on
+`/Volumes/Kodi/Share/apps/` holds sideloadable copies of first-party add-on
 zips - most importantly EZ Maintenance++, the RESTORE tool: a wiped box
 sideloads it from this share to recover, so a stale copy there resurrects
 exactly the backup/restore bugs later releases fixed. Membership is
@@ -54,7 +54,7 @@ import sys
 import xml.etree.ElementTree as ET
 
 REPO = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
-SHARE_ROOT = "/Volumes/KodiShare"
+SHARE_ROOT = "/Volumes/Kodi/Share"
 SHARE_DIR = SHARE_ROOT + "/repositories"
 APPS_DIR = SHARE_ROOT + "/apps"
 
@@ -303,7 +303,7 @@ def _report(actions, share_dir: str) -> None:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
-        description="Mirror installer/canvas/app zips to the KodiShare backup share."
+        description="Mirror installer/canvas/app zips to the Kodi share backup."
     )
     ap.add_argument(
         "--share", default=SHARE_DIR, help=f"repositories dir (default {SHARE_DIR})"

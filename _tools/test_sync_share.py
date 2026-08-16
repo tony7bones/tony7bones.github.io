@@ -1,4 +1,4 @@
-"""Coverage for _tools/sync_share.py - the KodiShare backup mirror.
+"""Coverage for _tools/sync_share.py - the Kodi share backup mirror.
 
 Contract pinned here (see the module docstring):
   * skipped ENTIRELY when the share dir does not exist (volume unmounted) -

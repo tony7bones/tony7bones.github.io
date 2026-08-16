@@ -107,7 +107,7 @@ def _check_zips(base_url: str, manifest: dict) -> None:
 def _check_canvas(base_url: str, manifest: dict) -> None:
     root_html = _request(f"{base_url}/").decode(errors="ignore")
     # media/, zips/ and iptv/ were retired from the public canvas 2026-07-16
-    # (everything private or generated now lives ONLY on the KodiShare), so the
+    # (everything private or generated now lives ONLY on the Kodi share), so the
     # served root is repositories/ + rss/ only. Expecting the retired folders here
     # made this consumer-seat verify fail every deploy since that retirement.
     for folder in ("repositories/", "rss/"):
