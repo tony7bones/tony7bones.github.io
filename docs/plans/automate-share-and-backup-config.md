@@ -727,7 +727,7 @@ backed up. Part 1 makes the BOXES reproducible; Part 2 makes the MINI reproducib
 1. **The iptv populator code (biggest gap).** Bring `~/Kodi/services/iptv/` INTO the
    repo (versioned); the mini gets it via a deploy step. Today it exists only on the
    mini.
-2. **Daemons as repo templates + install step:** `com.tony7bones.iptv2.plist` (+ any
+2. **Daemons as repo templates + install step:** `com.tony7bones.iptv.plist` (+ any
    WiFi-keepalive template, conditional - only relevant while the mini is on WiFi;
    currently retired since the mini is wired); provision installs + `launchctl
    bootstrap`s them.

@@ -5,7 +5,7 @@
 > `moquette/iptv` and DELETED from this repo on 2026-07-17. Every
 > `python3 _tools/build_iptv.py ...` command below will fail with "No such file
 > or directory". The mini now builds IPTV centrally and serves it over the NFS
-> share (IPTV 2.0); this repo no longer host-builds. The in-Kodi apply half
+> share; this repo no longer host-builds. The in-Kodi apply half
 > (`tony7bones.setup.iptv`) was deleted separately with the Setup add-on family
 > at the static conversion (2026-07-15). Kept for the curation grammar and the
 > gotchas, which are still accurate and still the reason this doc exists.
