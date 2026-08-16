@@ -8,13 +8,14 @@ land here.
 
 ---
 
-## Device facts (confirmed 2026-07-07)
+## Device facts (confirmed 2026-07-07, re-verified 2026-08-16)
 
 | Field         | Value                                                          |
 | ------------- | -------------------------------------------------------------- |
 | Computer Name | **Mini**                                                       |
 | Bonjour       | **Mini.local** (`LocalHostName` = `Mini`)                      |
 | LAN IP        | **192.168.7.2** (gateway 192.168.7.1, `en0`)                   |
+| Tailnet IP    | **100.121.59.123** (node `mini`, offers exit node)             |
 | Model / OS    | Mac16,10 (M4-class), macOS 26.5.2                              |
 | Shell access  | `ssh mini` (key-based, no password)                            |
 | Admin access  | passwordless `sudo` for `moquette` (`/etc/sudoers.d/moquette`) |
@@ -54,12 +55,28 @@ and SMB are two doors into the identical directories, not separate copies.
 /Users/moquette/Kodi/Share  -mapall=moquette -network 192.168.7.0 -mask 255.255.255.0
 /Users/moquette/Kodi/Backup -alldirs -mapall=moquette -network 192.168.7.0 -mask 255.255.255.0
 /Users/moquette/Public      -mapall=moquette -network 192.168.7.0 -mask 255.255.255.0
+/Users/moquette/Kodi/Share  -ro -mapall=moquette -network 100.64.0.0 -mask 255.192.0.0
 ```
 
 `-mapall=moquette` makes every client write land as `moquette:staff` regardless of
 the client's uid, so writes just work. `nfs.server.require_resv_port = 0` and
 `nfs.server.mount.require_resv_port = 0` in `/etc/nfs.conf` allow non-root clients.
 Validate with `sudo nfsd checkexports`.
+
+**The fourth line is the tailnet export, and it is easy to lose.** It was added
+2026-07-16, after the rest of this playbook was written, and a rebuild that copies
+only the first three lines silently drops remote access while everything on the
+LAN keeps working. `100.64.0.0/10` is the CGNAT range Tailscale allocates from, so
+that one line covers every tailnet node without naming any of them. Two properties
+matter and are deliberate:
+
+- It is **`-ro`**. Remote nodes read the share; they never write it. The IPTV
+  daemon is the only writer and it runs locally on the mini.
+- It exports **only `Kodi/Share`**. `Kodi/Backup` and `Public` stay LAN-only.
+
+The same path being exported twice with different options is legal and works:
+`showmount -e localhost` lists `/Users/moquette/Kodi/Share` against both
+`100.64.0.0` and `192.168.7.0`.
 
 ### SMB config - for Macs
 
@@ -89,9 +106,21 @@ FileVault off, the box boots and starts `nfsd` + `smbd` with no login.
 ```
 ssh mini 'pmset -g custom | grep -E " sleep|disksleep|autorestart|womp"'  # sleep 0, disksleep 0, autorestart 1, womp 1
 ssh mini 'nfsd status && showmount -e localhost'                          # NFS exports present
+ssh mini 'grep -c 100.64.0.0 /etc/exports'                                # 1 = tailnet export intact
 ssh mini 'sharing -l | grep name:'                                        # SMB shares present
 ssh mini 'fdesetup status'                                                # FileVault Off
 ```
+
+`showmount -e localhost` collapses the four export lines into three, one per path,
+and `/Users/moquette/Kodi/Share` must list BOTH networks:
+
+```
+/Users/moquette/Public              192.168.7.0
+/Users/moquette/Kodi/Share          100.64.0.0 192.168.7.0
+/Users/moquette/Kodi/Backup         192.168.7.0
+```
+
+If `Kodi/Share` shows only `192.168.7.0`, the tailnet export was lost.
 
 ---
 
@@ -146,25 +175,47 @@ password is not in the vault.
 
 ---
 
-## The T7 (external 4 TB SSD) - currently UNPLUGGED
+## The T7 (external 4 TB SSD) - REMOVED
 
-The Samsung T7 is an empty 4 TB external SSD, **set aside and physically unplugged**
-as of 2026-07-07. It is out of `/etc/exports` and out of `sharing -l`; nothing on
-the mini references it. It was never load-bearing: Kodi's content lives on the
-internal SSD.
+The Samsung T7 was an empty 4 TB external SSD. It was unplugged and set aside on
+2026-07-07, then **removed entirely by owner decision** (confirmed 2026-08-16).
+It is out of `/etc/exports` and out of `sharing -l`, `/Volumes` holds only
+`Macintosh HD`, and nothing on the mini references it. It was never load-bearing:
+Kodi's content lives on the internal SSD and totals well under a gigabyte
+(`Share` 19M, `Backup` 120M, `Public` 4K as of 2026-08-16).
 
-To bring it back later: plug it in, then decide the protocol. For Kodi (NFS) it
-needs `/sbin/nfsd` Full Disk Access; for Macs (SMB) it needs `smbd` Full Disk
-Access (System Settings -> Privacy & Security -> Full Disk Access -> enable the
-daemon). Add the export/share, and give any irreplaceable data on it a second copy
-(a single external SSD is a single point of failure).
+Do not plan around it, and do not treat any older note describing a T7 SMB share
+as current. If an external volume is ever added back, the macOS tax is unchanged:
+for Kodi (NFS) it needs `/sbin/nfsd` Full Disk Access, and for Macs (SMB) it needs
+`smbd` Full Disk Access (System Settings -> Privacy & Security -> Full Disk Access
+-> enable the daemon). Both are GUI-only TCC grants no script can perform. Give
+any irreplaceable data on it a second copy, since a single external SSD is a
+single point of failure.
 
 ---
 
 ## Other services on the box
 
-- `/Library/LaunchDaemons/com.tony7bones.iptv2.plist` - root LaunchDaemon running
-  the IPTV service (created 2026-07-02). Runs at boot regardless of login.
+The full `/Library/LaunchDaemons` inventory as of 2026-08-16:
+
+- `com.tony7bones.iptv2.plist` - root LaunchDaemon running the IPTV service
+  (created 2026-07-02). Runs at boot regardless of login and writes into
+  `~/Kodi/Share/iptv/`, which is the export every Kodi box reads. This is the
+  only process that writes the share.
+- `homebrew.mxcl.tailscale.plist` - the Tailscale daemon that puts the mini on
+  the tailnet. The read-only tailnet export above is worthless without it.
+- `com.adguard.mac.adguard.helper.plist` and `us.zoom.ZoomDaemon.plist` - vendor
+  helpers, unrelated to serving.
+
+### Retired (do not describe as live)
+
+The mini-infra services that once ran here are **deleted**: `com.mini.shared` (a
+Filebrowser 2.63.14 instance serving a household folder at `mini.local:8080`) and
+`com.mini.wifi-keepalive`. Removed by owner decision; verified gone 2026-08-16
+with no `com.mini.*` job in either launchd domain, nothing listening on port 8080,
+no filebrowser binary, and no `~/mini`, `~/mini-data`, `~/mini-services` or
+`~/opt` on disk. Do not re-provision them. Household file sharing on this box now
+happens only through the SMB and NFS share points above.
 
 ---
 
