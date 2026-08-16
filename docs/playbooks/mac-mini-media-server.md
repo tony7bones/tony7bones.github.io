@@ -15,7 +15,7 @@ land here.
 | Computer Name | **Mini**                                                       |
 | Bonjour       | **Mini.local** (`LocalHostName` = `Mini`)                      |
 | LAN IP        | **192.168.7.2** (gateway 192.168.7.1, `en0`)                   |
-| Tailnet IP    | **100.121.59.123** (node `mini`, offers exit node)             |
+| Tailnet       | node **mini**, offers exit node (`tailscale status` for IP)    |
 | Model / OS    | Mac16,10 (M4-class), macOS 26.5.2                              |
 | Shell access  | `ssh mini` (key-based, no password)                            |
 | Admin access  | passwordless `sudo` for `moquette` (`/etc/sudoers.d/moquette`) |
@@ -151,15 +151,15 @@ password is not in the vault.
    you can only clear with Disconnect or a `killall Finder`. Do not mount NFS on a
    Mac for browsing. Kodi uses NFS because that is what Kodi speaks; Macs use SMB.
 2. **SMB guest access is dead on macOS 26.** `AllowGuestAccess -bool true` + an
-   enabled guest account are BOTH ignored (`smbd_detect_sg_mode: NOT enabling super
-   guest mode`); guest mounts fail even on loopback. SMB requires auth as
-   `moquette`. Reverted; do not retry.
-3. **Never NFS-export the home directory.** `/-mapall=moquette -network
-   192.168.7.0/24` on `/Users/moquette` would give any device that grabs a
-   `192.168.7.x` address unauthenticated read/write to `~/.ssh`, `~/Library/
-   Keychains`, and `~/Code/moquette/vault` (the plaintext credential vault). Home
-   is SMB-only (authenticated); for full-home access from another machine use
-   `sftp://mini` / `sshfs`.
+   enabled guest account are BOTH ignored; the giveaway in the log is
+   `smbd_detect_sg_mode: NOT enabling super guest mode`. Guest mounts fail even
+   on loopback. SMB requires auth as `moquette`. Reverted; do not retry.
+3. **Never NFS-export the home directory.** An export line reading
+   `/Users/moquette -mapall=moquette -network 192.168.7.0/24` would give any
+   device that grabs a `192.168.7.x` address unauthenticated read/write to
+   `~/.ssh`, `~/Library/Keychains`, and `~/Code/moquette/vault` (the plaintext
+   credential vault). Home is SMB-only (authenticated); for full-home access
+   from another machine use `sftp://mini` / `sshfs`.
 4. **External volumes are painful to share; avoid unless needed.** NFS-exporting an
    external drive fails `checkexports` (`sandbox_check ... nfsd has no read access`)
    until `/sbin/nfsd` is granted **Full Disk Access** (GUI only). Serving one over
