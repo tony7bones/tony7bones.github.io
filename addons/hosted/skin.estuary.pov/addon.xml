@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<addon id="skin.estuary.pov" version="1.2.1" name="Estuary POV" provider-name="Tony.7.Bones">
+<addon id="skin.estuary.pov" version="1.2.2" name="Estuary POV" provider-name="Tony.7.Bones">
 	<requires>
+		<!-- The boot service (scripts/services.py) is Python, so the skin needs
+		     the python api declared even though the skin itself draws no Python. -->
+		<import addon="xbmc.python" version="3.0.0"/>
 		<import addon="xbmc.gui" version="5.18.0"/>
 		<!-- POV drives the Movies and TV shows home tabs and the main-menu
 		     search. Without it every row on those two tabs is empty and the log
@@ -19,6 +22,13 @@
 		<res width="2338" height="1080" aspect="19.5:9" default="false" folder="xml" />
 		<res width="2160" height="1080" aspect="18:9" default="false" folder="xml" />
 	</extension>
+	<!-- Boot service. Kodi loads keymaps ONLY from userdata/keymaps/, which a skin
+	     cannot ship into, so correcting this skin's own Siri remote behaviour needs
+	     a service. tvOS only, idempotent by content, and a strict no-op everywhere
+	     else. Deliberately carries NO visible= condition: skin.estuary.pov never
+	     sets Window(home).Property(CurrentSkin), so gating on it as skin.estuary7
+	     does would mean the service never ran. -->
+	<extension point="xbmc.service" library="scripts/services.py" start="startup"/>
 	<extension point="xbmc.addon.metadata">
 		<platform>all</platform>
 		<license>CC BY-SA 4.0, GNU GENERAL PUBLIC LICENSE Version 2.0</license>
@@ -30,7 +40,7 @@
 			<icon>resources/icon.png</icon>
 			<fanart>resources/fanart.jpg</fanart>
 		</assets>
-		<news>[B]1.2.1[/B][CR]- POV is now a real install dependency, so Kodi pulls it in with the skin instead of leaving the Movies and TV shows rows empty on a box that does not have it.[CR]- Skin details rewritten to describe this skin rather than stock Estuary.[CR][CR][B]1.2.0[/B][CR]- Movies and TV shows home tabs are driven by POV rather than the local library, with per-row toggles in skin settings.[CR]- Main-menu items and search open POV directly.[CR]- Rounded poster treatment ported from Estuary 8.[CR]- Trimmed 1.9 MB of unreachable payload out of the package.</news>
+		<news>[B]1.2.2[/B][CR]- Apple TV only: POV, Multi Weather and EZ Maintenance++ work again. Kodi 22's Apple TV build ships a Python with a piece missing that every add-on fetching over the internet needs, so those add-ons failed the moment they started. The skin puts that piece back on every start, and puts it back again if an add-on update removes it.[CR]- Apple TV only: the Siri remote no longer opens the Favourites window when you back out of a video, and back in fullscreen returns to the menu with playback continuing instead of stopping it. Double play/pause goes back into fullscreen, and select opens the OSD on live TV.[CR]- No change on Fire TV, Android or desktop.[CR][CR][B]1.2.1[/B][CR]- POV is now a real install dependency, so Kodi pulls it in with the skin instead of leaving the Movies and TV shows rows empty on a box that does not have it.[CR]- Skin details rewritten to describe this skin rather than stock Estuary.[CR][CR][B]1.2.0[/B][CR]- Movies and TV shows home tabs are driven by POV rather than the local library, with per-row toggles in skin settings.[CR]- Main-menu items and search open POV directly.[CR]- Rounded poster treatment ported from Estuary 8.[CR]- Trimmed 1.9 MB of unreachable payload out of the package.</news>
 		<summary lang="en_GB">Estuary with the Movies and TV shows tabs driven by POV.</summary>
 		<description lang="en_GB">Estuary POV is Kodi&apos;s stock Estuary with its Movies and TV shows home tabs rebuilt around the POV add-on instead of the local video library. Trending, popular, premieres, upcoming, in progress and watched rows all come from POV, each row can be switched off individually in skin settings, and the main-menu items and search open POV directly. Posters carry the rounded treatment from Estuary 8. Requires Kodi 22 (Piers) and the POV add-on.</description>
 		<disclaimer lang="en_GB">The Movies and TV shows tabs need the POV add-on. Kodi installs it with the skin.</disclaimer>
