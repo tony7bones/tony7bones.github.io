@@ -1,7 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<addon id="skin.estuary.pov" version="1.2.0" name="Estuary POV" provider-name="tony.7.bones">
+<addon id="skin.estuary.pov" version="1.2.1" name="Estuary POV" provider-name="Tony.7.Bones">
 	<requires>
 		<import addon="xbmc.gui" version="5.18.0"/>
+		<!-- POV drives the Movies and TV shows home tabs and the main-menu
+		     search. Without it every row on those two tabs is empty and the log
+		     fills with "Unable to find plugin plugin.video.pov", so it is a real
+		     install dependency, not a suggestion. Kodi has no minversion here, so
+		     the version below IS the hard minimum. -->
+		<import addon="plugin.video.pov" version="6.08.15"/>
 	</requires>
 	<extension point="xbmc.gui.skin" debugging="false">
 		<res width="1920" height="1440" aspect="4:3" default="false" folder="xml" />
@@ -17,13 +23,16 @@
 		<platform>all</platform>
 		<license>CC BY-SA 4.0, GNU GENERAL PUBLIC LICENSE Version 2.0</license>
 		<forum>http://forum.kodi.tv/</forum>
-		<source>https://github.com/xbmc/skin.estuary/</source>
+		<source>https://github.com/moquette/kodi-estuary-pov</source>
+		<!-- Forked from stock Kodi Estuary 4.1.0, the skin that ships inside
+		     Kodi 22 Piers: https://github.com/xbmc/skin.estuary -->
 		<assets>
 			<icon>resources/icon.png</icon>
 			<fanart>resources/fanart.jpg</fanart>
 		</assets>
-		<summary lang="en_GB">Estuary skin by tony.7.bones. (Kodi&apos;s default skin)</summary>
-		<description lang="en_GB">Estuary is the default skin for Kodi 17.0 and above. It attempts to be easy for first time Kodi users to understand and use.</description>
-		<disclaimer lang="en_GB">Estuary is the default skin for Kodi, removing it may cause issues</disclaimer>
+		<news>[B]1.2.1[/B][CR]- POV is now a real install dependency, so Kodi pulls it in with the skin instead of leaving the Movies and TV shows rows empty on a box that does not have it.[CR]- Skin details rewritten to describe this skin rather than stock Estuary.[CR][CR][B]1.2.0[/B][CR]- Movies and TV shows home tabs are driven by POV rather than the local library, with per-row toggles in skin settings.[CR]- Main-menu items and search open POV directly.[CR]- Rounded poster treatment ported from Estuary 8.[CR]- Trimmed 1.9 MB of unreachable payload out of the package.</news>
+		<summary lang="en_GB">Estuary with the Movies and TV shows tabs driven by POV.</summary>
+		<description lang="en_GB">Estuary POV is Kodi&apos;s stock Estuary with its Movies and TV shows home tabs rebuilt around the POV add-on instead of the local video library. Trending, popular, premieres, upcoming, in progress and watched rows all come from POV, each row can be switched off individually in skin settings, and the main-menu items and search open POV directly. Posters carry the rounded treatment from Estuary 8. Requires Kodi 22 (Piers) and the POV add-on.</description>
+		<disclaimer lang="en_GB">The Movies and TV shows tabs need the POV add-on. Kodi installs it with the skin.</disclaimer>
 	</extension>
 </addon>

@@ -250,6 +250,16 @@
     }
   },
   {
+    "id": "plugin.video.pov",
+    "username": "kodiyashimaru",
+    "repository": "kodiyashimaru.github.io",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/tony7bones/tony7bones.github.io/{ref}/addons/hosted/{id}/",
+    "assets": {
+      "zip": "https://kodiyashimaru.github.io/repo/{id}/{id}-{version}.zip"
+    }
+  },
+  {
     "id": "skin.estuary.pov",
     "username": "tony7bones",
     "repository": "tony7bones.github.io",

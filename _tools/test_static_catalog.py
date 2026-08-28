@@ -208,8 +208,32 @@ def test_classify_the_real_manifest_covers_all_entries():
     """The REAL catalog.json: every entry classifies, with the known per-class
     counts (update deliberately when the catalog changes).
 
-    29 entries, and the arithmetic behind that number, newest first:
+    30 entries, and the arithmetic behind that number, newest first:
 
+      +1  2026-08-27, plugin.video.pov ADDED, HYBRID. It is not ours and its
+          bytes are not committed here: only its addon.xml is, and the build
+          fetches the zip from the upstream Pages host at
+          kodiyashimaru.github.io and republishes it under our own /static/.
+          It is here because skin.estuary.pov declares a hard <import> on it,
+          and MEASURED on a Kodi 22 bench: Kodi resolves a hard dependency only
+          from the repository the add-on is being installed FROM. With POV
+          reachable only through repository.kodifitzwell the skin install failed
+          with "failed to find dependency plugin.video.pov" three times over,
+          even with kodifitzwell installed, enabled, indexed, and offering POV
+          6.08.15 through Addons.GetAddons. Serving POV ourselves is what makes
+          the dependency resolvable at all.
+
+          HYBRID rather than STREAMED, and that is forced, not chosen. A
+          streamed entry fetches <asset_prefix>/addon.xml from upstream, and
+          kodiyashimaru publishes no per-addon addon.xml: /repo/<id>/addon.xml,
+          /repo/packages/<id>/addon.xml and /repo/zips/<id>/addon.xml all 404,
+          and only /repo/packages/addons.xml (the index) and the zip exist. So
+          the metadata has to come from our committed copy. The cost, stated
+          rather than hidden: the version in addons/hosted/plugin.video.pov/
+          addon.xml is hand-maintained, exactly like a hosted mirror, and goes
+          stale when upstream bumps. repository.kodifitzwell is the same shape
+          against the same kind of Pages host, so this is the established
+          pattern here, not a new one.
       +1  2026-08-27, skin.estuary.pov ADDED, hosted. Ours: stock Kodi Estuary
           4.1.0 reworked so the Movies and TV shows home tabs are driven by
           plugin.video.pov instead of the local library. Hosted rather than
@@ -254,10 +278,10 @@ def test_classify_the_real_manifest_covers_all_entries():
     kinds = {}
     for e in entries:
         kinds.setdefault(sc.classify(e), []).append(e["id"])
-    assert len(entries) == 29
+    assert len(entries) == 30
     assert kinds[sc.KIND_FIRST_PARTY] == ["repository.tony7bones"]
     assert len(kinds[sc.KIND_HOSTED]) == 18
-    assert len(kinds[sc.KIND_HYBRID]) == 3
+    assert len(kinds[sc.KIND_HYBRID]) == 4
     assert len(kinds[sc.KIND_STREAMED]) == 5
     assert len(kinds[sc.KIND_RELEASE_ASSET]) == 2
     assert "skin.estuary7" in kinds[sc.KIND_RELEASE_ASSET]
@@ -265,6 +289,7 @@ def test_classify_the_real_manifest_covers_all_entries():
     assert "script.estuary8.shortcuts" in kinds[sc.KIND_HOSTED]
     assert "plugin.video.estuary8.search" in kinds[sc.KIND_HOSTED]
     assert "skin.estuary.pov" in kinds[sc.KIND_HOSTED]
+    assert "plugin.video.pov" in kinds[sc.KIND_HYBRID]
     ids = {e["id"] for e in entries}
     for gone in (
         "script.module.pvr.artwork",
