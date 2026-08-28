@@ -48,7 +48,18 @@ from mirror_closure import OFFICIAL_LIBRARY  # noqa: E402
 # OURS and exists nowhere else, so an unhosted dependency is not a slow 404 on
 # an off-grid box but an install that cannot succeed anywhere at all. Gating it
 # from day one is cheap; discovering it from a box is not.
-ROOTS = ["skin.estuary7", "script.ezmaintenanceplusplus", "skin.estuary8"]
+#
+# skin.estuary.pov was added 2026-08-27, the day it was first hosted here, for
+# that same "cheap on day one" reason and not because it has anything to gate
+# yet: its only <import> is xbmc.gui 5.18.0, a BUILTIN, so the closure passes
+# trivially today. The gate earns its place the first time the skin declares a
+# real dependency, which is exactly when nobody remembers to check.
+ROOTS = [
+    "skin.estuary7",
+    "script.ezmaintenanceplusplus",
+    "skin.estuary8",
+    "skin.estuary.pov",
+]
 
 BUILTINS = {
     "xbmc.python",

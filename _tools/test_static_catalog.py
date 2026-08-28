@@ -208,8 +208,18 @@ def test_classify_the_real_manifest_covers_all_entries():
     """The REAL catalog.json: every entry classifies, with the known per-class
     counts (update deliberately when the catalog changes).
 
-    28 entries, and the arithmetic behind that number, newest first:
+    29 entries, and the arithmetic behind that number, newest first:
 
+      +1  2026-08-27, skin.estuary.pov ADDED, hosted. Ours: stock Kodi Estuary
+          4.1.0 reworked so the Movies and TV shows home tabs are driven by
+          plugin.video.pov instead of the local library. Hosted rather than
+          release-asset for the same reason as Estuary 8 and one stronger: its
+          source repo moquette/kodi-estuary-pov does not exist on GitHub at all
+          (measured with git ls-remote, "Repository not found"), so a
+          release-asset pointer would have nothing to resolve and
+          check_hosted_release_sync.py would hard-fail every build. At 2.4MB the
+          committed zip is a ninth of Estuary 8's, so the cost of self-hosting
+          is small and the install stays available off-grid.
       +1  2026-08-03, plugin.video.estuary8.search ADDED, hosted. It is the
           Estuary 8 streaming-search result filter and a declared dependency of
           skin.estuary8, so hosting it here is what lets Kodi install it from
@@ -244,9 +254,9 @@ def test_classify_the_real_manifest_covers_all_entries():
     kinds = {}
     for e in entries:
         kinds.setdefault(sc.classify(e), []).append(e["id"])
-    assert len(entries) == 28
+    assert len(entries) == 29
     assert kinds[sc.KIND_FIRST_PARTY] == ["repository.tony7bones"]
-    assert len(kinds[sc.KIND_HOSTED]) == 17
+    assert len(kinds[sc.KIND_HOSTED]) == 18
     assert len(kinds[sc.KIND_HYBRID]) == 3
     assert len(kinds[sc.KIND_STREAMED]) == 5
     assert len(kinds[sc.KIND_RELEASE_ASSET]) == 2
@@ -254,6 +264,7 @@ def test_classify_the_real_manifest_covers_all_entries():
     assert "skin.estuary8" in kinds[sc.KIND_HOSTED]
     assert "script.estuary8.shortcuts" in kinds[sc.KIND_HOSTED]
     assert "plugin.video.estuary8.search" in kinds[sc.KIND_HOSTED]
+    assert "skin.estuary.pov" in kinds[sc.KIND_HOSTED]
     ids = {e["id"] for e in entries}
     for gone in (
         "script.module.pvr.artwork",
