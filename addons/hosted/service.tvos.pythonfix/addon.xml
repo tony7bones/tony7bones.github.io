@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<addon id="service.tvos.pythonfix" version="1.0.0" name="tvOS Python Fix" provider-name="Tony.7.Bones">
+<addon id="service.tvos.pythonfix" version="1.0.1" name="tvOS Python Fix" provider-name="Tony.7.Bones">
 	<requires>
 		<import addon="xbmc.python" version="3.0.0"/>
 		<!-- NOT decoration, and NOT a library this add-on imports. It is the
@@ -61,7 +61,7 @@
 		     the skin, and shipping the skin's artwork on a different add-on would
 		     be wrong in the add-on browser. Kodi shows its generic placeholder
 		     instead, which is honest for a service nobody browses to. -->
-		<news>[B]1.0.0[/B][CR]- First release. On Apple TV, puts back the piece of Python that Kodi 22's Apple TV build leaves out, so every add-on that fetches anything over the internet works again. Without it POV, Multi Weather and EZ Maintenance++ all fail the moment they start.[CR]- Does nothing at all on Fire TV, Android, Windows, Linux or macOS.</news>
+		<news>[B]1.0.1[/B][CR]- No change in what it does. Documentation only: the measured margin this add-on wins by was recorded as seconds and is actually milliseconds, and getting that wrong in a comment is how the ordering it depends on gets removed later.[CR][CR][B]1.0.0[/B][CR]- First release. On Apple TV, puts back the piece of Python that Kodi 22's Apple TV build leaves out, so every add-on that fetches anything over the internet works again. Without it POV, Multi Weather and EZ Maintenance++ all fail the moment they start.[CR]- Does nothing at all on Fire TV, Android, Windows, Linux or macOS.</news>
 		<summary lang="en_GB">Puts back the piece of Python that Kodi&apos;s Apple TV build leaves out.</summary>
 		<description lang="en_GB">Kodi 22&apos;s Apple TV build ships a Python with the _scproxy module removed, while Python carries on reporting that it is running on macOS. Anything that imports urllib.request or requests therefore fails at import, which is every add-on that fetches anything over the internet. This service writes a stand-in for the missing module on every start, and writes it again if an add-on update removes it. It does nothing at all on any other platform.</description>
 		<disclaimer lang="en_GB">A workaround for a defect in Kodi&apos;s own Apple TV build. Delete this add-on once a Kodi build ships that no longer needs it.</disclaimer>
