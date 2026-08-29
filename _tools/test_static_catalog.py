@@ -218,11 +218,16 @@ def test_classify_the_real_manifest_covers_all_entries():
           installed AFTER its dependencies and therefore structurally cannot
           repair them: MEASURED on atv1, plugin.video.pov was installed at
           07:42:31.754 and had already died on the missing module at
-          07:42:32.991, 117 ms before the skin reached disk. skin.estuary.pov
-          1.2.7 declares a hard <import> on it, first in the list, so the same
-          rule measured for plugin.video.pov below applies: a hard dependency
-          resolves only from the repository the add-on is installed FROM, so
-          leaving it unhosted would fail every 1.2.7 install outright.
+          07:42:32.991, 117 ms before the skin reached disk.
+          NOTE, and this changed the same day it was added: skin.estuary.pov
+          1.2.7 declared a hard <import> on it, and 1.2.8 REMOVED that import.
+          No skin depends on it now. It is USER-INSTALLED, by an Apple TV owner,
+          from this repository's own listing, which makes hosting it more load
+          bearing rather than less: a dependency has a parent that can drag it
+          in, and this has nothing but this catalog entry. It is also a root of
+          its own in test_closure.py as of the same day, because reachability
+          through the skin was the only thing gating its subtree and that is
+          exactly what 1.2.8 removed.
       +1  2026-08-29, plugin.program.autocompletion ADDED, hosted. Not ours: a
           verbatim mirror of the official build, pulled by mirror_closure.py,
           version 2.1.2 on both the omega and piers mirrors. skin.estuary.pov

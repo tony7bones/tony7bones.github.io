@@ -50,15 +50,31 @@ from mirror_closure import OFFICIAL_LIBRARY  # noqa: E402
 # from day one is cheap; discovering it from a box is not.
 #
 # skin.estuary.pov was added 2026-08-27, the day it was first hosted here, for
-# that same "cheap on day one" reason and not because it has anything to gate
-# yet: its only <import> is xbmc.gui 5.18.0, a BUILTIN, so the closure passes
-# trivially today. The gate earns its place the first time the skin declares a
-# real dependency, which is exactly when nobody remembers to check.
+# that same "cheap on day one" reason. It was trivial then, when its only
+# <import> was xbmc.gui: it is not now. As of 1.2.8 it imports xbmc.python,
+# xbmc.gui, plugin.program.autocompletion and plugin.video.pov, and the last two
+# drag real subtrees behind them.
+#
+# service.tvos.pythonfix is a ROOT OF ITS OWN, added 2026-08-29, and the reason
+# is the trap that produced it. It was reachable here for exactly two days, as a
+# child of skin.estuary.pov 1.2.7's <import>. Removing that import in 1.2.8 is
+# correct (it is a tvOS-only add-on and had no business on Fire TV), but it also
+# silently dropped this add-on out of every closure walk in this file: no test
+# fails, no gate turns red, and the first symptom would be an off-grid Apple TV
+# unable to install it because script.module.requests stopped being hosted.
+#
+# The general lesson, worth more than this entry: a root that is reachable only
+# THROUGH another root is not gated, it is coincidentally covered, and the cover
+# disappears with an ordinary edit to somebody else's addon.xml. Anything the
+# fleet installs DIRECTLY belongs in this list directly. This add-on is now
+# user-installed on Apple TVs rather than pulled in by a skin, which makes it
+# exactly that case.
 ROOTS = [
     "skin.estuary7",
     "script.ezmaintenanceplusplus",
     "skin.estuary8",
     "skin.estuary.pov",
+    "service.tvos.pythonfix",
 ]
 
 BUILTINS = {
