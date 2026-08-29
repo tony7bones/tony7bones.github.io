@@ -51,9 +51,11 @@ from mirror_closure import OFFICIAL_LIBRARY  # noqa: E402
 #
 # skin.estuary.pov was added 2026-08-27, the day it was first hosted here, for
 # that same "cheap on day one" reason. It was trivial then, when its only
-# <import> was xbmc.gui: it is not now. As of 1.2.8 it imports xbmc.python,
-# xbmc.gui, plugin.program.autocompletion and plugin.video.pov, and the last two
-# drag real subtrees behind them.
+# <import> was xbmc.gui: it is not now. As of 1.3.0 it imports xbmc.gui,
+# plugin.program.autocompletion and plugin.video.pov, and the last two drag real
+# subtrees behind them. 1.3.0 also DROPPED xbmc.python, which it had declared
+# only to support a boot service it no longer has: the skin ships no Python at
+# all now, and every tvOS repair lives in service.tvos.pythonfix below.
 #
 # service.tvos.pythonfix is a ROOT OF ITS OWN, added 2026-08-29, and the reason
 # is the trap that produced it. It was reachable here for exactly two days, as a

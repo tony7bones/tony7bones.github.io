@@ -219,9 +219,11 @@ def test_classify_the_real_manifest_covers_all_entries():
           repair them: MEASURED on atv1, plugin.video.pov was installed at
           07:42:31.754 and had already died on the missing module at
           07:42:32.991, 117 ms before the skin reached disk.
-          NOTE, and this changed the same day it was added: skin.estuary.pov
-          1.2.7 declared a hard <import> on it, and 1.2.8 REMOVED that import.
-          No skin depends on it now. It is USER-INSTALLED, by an Apple TV owner,
+          NOTE, and this changed twice within two days of being added:
+          skin.estuary.pov 1.2.7 declared a hard <import> on it, 1.2.8 REMOVED
+          that import, and 1.3.0 handed it the Siri remote keymap as well and
+          deleted the skin's boot service outright. No skin depends on it and no
+          skin carries any tvOS code. It is USER-INSTALLED, by an Apple TV owner,
           from this repository's own listing, which makes hosting it more load
           bearing rather than less: a dependency has a parent that can drag it
           in, and this has nothing but this catalog entry. It is also a root of

@@ -1,21 +1,35 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<addon id="service.tvos.pythonfix" version="1.0.1" name="tvOS Python Fix" provider-name="Tony.7.Bones">
+<!-- The id NEVER changes. It is what every installed box, the repository
+     catalog and the hosted mirror key on, and "pythonfix" is now narrower than
+     what this add-on does: 1.1.0 absorbed the Siri remote keymap that
+     skin.estuary.pov wrote through 1.2.8. The display name below carries the
+     truth; the id carries the continuity. Renaming the id would orphan every
+     box that already has this installed. -->
+<addon id="service.tvos.pythonfix" version="1.1.0" name="Apple TV Fixes" provider-name="Tony.7.Bones">
 	<requires>
 		<import addon="xbmc.python" version="3.0.0"/>
 		<!-- NOT decoration, and NOT a library this add-on imports. It is the
-		     ORDERING lever and the location guarantee, both at once.
+		     LOCATION GUARANTEE for the _scproxy shim.
 
-		     Location: the shim is written into script.module.requests' own lib
-		     directory, because that is the only writable directory that is on
-		     the sys.path of every add-on the defect actually kills. Declaring it
-		     here means Kodi has finished installing it before this add-on's
-		     service runs, so the directory is guaranteed to exist.
+		     The shim is written into the library directories of this add-on and
+		     of its own four dependencies, because those are the only writable
+		     directories that are on the sys.path of every add-on the defect
+		     actually kills. Declaring this one means Kodi has finished
+		     installing the whole subtree (certifi, chardet, idna, urllib3, then
+		     requests) before this add-on's service runs, so every one of those
+		     directories is guaranteed to exist.
 
-		     Ordering: Kodi installs a dependency's own dependencies before the
-		     dependency itself, so this line puts script.module.requests and its
-		     four modules ahead of this add-on, and this add-on ahead of anything
-		     the parent declares after it. See scripts/service.py for the
-		     measured install order that makes that concrete. -->
+		     ONE import, not five, and that is deliberate. Kodi has no minversion
+		     attribute here, so every <import> line is a hard version FLOOR that
+		     somebody has to maintain, and the other four are already pulled in
+		     transitively by this one. scripts/service.py names all five
+		     directories but SKIPS any that is absent, so if requests ever drops
+		     a dependency this add-on adapts instead of failing a version check.
+
+		     Ordering is no longer part of the reason. This add-on is installed
+		     by the user, on its own, before anything that needs it. It was a
+		     sibling dependency of skin.estuary.pov in 1.2.7 only, and that is
+		     over. -->
 		<import addon="script.module.requests" version="2.31.0"/>
 	</requires>
 	<!-- ONE extension point, and no <provides>. Both are the invisibility, and
@@ -32,38 +46,88 @@
 	     screen's All list. It adds NO new section. Kodi bundles its own
 	     service.xbmc.versioncheck, so the Services category is on every install
 	     already, and this is a second row in a list nobody browses. Nothing
-	     appears anywhere on the skin's Add-ons home tab: those five rows are
+	     appears anywhere on a skin's Add-ons home tab: those five rows are
 	     addons://sources/<type>/, which queries only PLUGIN, SCRIPT and GAMEDLL
 	     (AddonsDirectory.cpp:915-949), so a service cannot reach them. -->
 	<extension point="xbmc.service" library="scripts/service.py" start="startup"/>
 	<extension point="xbmc.addon.metadata">
-		<!-- all, and do NOT narrow it to tvos. It reads like the obvious way to
-		     keep a tvOS-only add-on off other boxes, and it BREAKS THE SKIN.
+		<!-- all, and do NOT narrow it to tvos. "tvos" IS a valid platform tag
+		     (AddonInfoBuilder.cpp:875-877), so nothing rejects the edit and the
+		     damage is invisible until a box tries to install this. Narrowing it
+		     is the obvious-looking way to keep a tvOS-only add-on off other
+		     boxes, and it is wrong for two reasons that outlive whoever declares
+		     it.
+
+		     ONE: this add-on is USER-INSTALLED, from a repository listing.
 		     PlatformSupportsAddon returning false makes CAddonInfoBuilder::Generate
 		     return nullptr (AddonInfoBuilder.cpp:224-243) for BOTH the local scan
-		     and the repository addons.xml parse, so a Fire TV never sees this
-		     add-on in the repo listing at all. skin.estuary.pov imports it
-		     non-optionally, so CheckDependencies then fails with "requires X
-		     version Y which is not available" (AddonInstaller.cpp:580-592) and the
-		     SKIN'S OWN install and update fail on every Fire TV, Android, Windows,
-		     Linux and macOS box. Measured on a bench with <platform>tvos</platform>:
-		     "No platform for add-on service.tvos.pythonfix", followed by
-		     "CAddonDatabase: service.tvos.pythonfix has been uninstalled".
-		     optional="true" does not rescue it either: an optional dependency that
-		     is not installed is never installed at all (AddonInstaller.cpp:1097-1102),
-		     including on tvOS, which removes the only reason this exists.
-		     The gate that actually matters is the runtime one in scripts/service.py,
-		     System.Platform.TVOS, and it is enforced by tests. -->
+		     and the repository addons.xml parse. That is not "hidden on the wrong
+		     platform"; it is absent from the repository listing entirely, and it
+		     is also the parse of the WHOLE addons.xml, which is shared by every
+		     box. Measured on a bench with <platform>tvos</platform>: "No platform
+		     for add-on service.tvos.pythonfix", followed by "CAddonDatabase:
+		     service.tvos.pythonfix has been uninstalled" - Kodi tears the add-on
+		     out of its database rather than leaving it dormant. An add-on Kodi
+		     refuses to build an info object for cannot be listed, installed or
+		     updated by anybody, on any box, and the one platform that needs it
+		     would get it only by luck of the repo cache.
+
+		     TWO, and this is the reason that is CURRENT rather than historical:
+		     narrowing it would make this add-on UNVERIFIABLE. The wipeable macOS
+		     Kodi bench is where this project does its cheapest and most-used
+		     testing, and the standalone install path is now the ONLY way anybody
+		     gets this add-on, so it is the one path that must be provable. With
+		     <platform>tvos</platform> the add-on cannot even be browsed to on
+		     macOS and that test cannot be run at all.
+
+		     An earlier revision of this comment argued from skin.estuary.pov
+		     1.2.7's hard <import>, which made a narrowed platform fail the
+		     SKIN's install on every non-tvOS box. That import is gone as of skin
+		     1.2.8 and that argument is void. It is recorded here only so nobody
+		     reads its absence as the ban having expired: the two reasons above
+		     never rested on any skin.
+
+		     The gate that actually matters is the runtime one in
+		     scripts/service.py, System.Platform.TVOS, and it is enforced by
+		     tests. Off tvOS this add-on starts, checks that one condition and
+		     returns, which is what "does nothing on other platforms" costs. -->
 		<platform>all</platform>
 		<license>GPL-2.0-or-later</license>
 		<source>https://github.com/moquette/kodi-estuary-pov</source>
-		<!-- No <assets> yet, deliberately. The only icon in this repo belongs to
-		     the skin, and shipping the skin's artwork on a different add-on would
-		     be wrong in the add-on browser. Kodi shows its generic placeholder
-		     instead, which is honest for a service nobody browses to. -->
-		<news>[B]1.0.1[/B][CR]- No change in what it does. Documentation only: the measured margin this add-on wins by was recorded as seconds and is actually milliseconds, and getting that wrong in a comment is how the ordering it depends on gets removed later.[CR][CR][B]1.0.0[/B][CR]- First release. On Apple TV, puts back the piece of Python that Kodi 22's Apple TV build leaves out, so every add-on that fetches anything over the internet works again. Without it POV, Multi Weather and EZ Maintenance++ all fail the moment they start.[CR]- Does nothing at all on Fire TV, Android, Windows, Linux or macOS.</news>
-		<summary lang="en_GB">Puts back the piece of Python that Kodi&apos;s Apple TV build leaves out.</summary>
-		<description lang="en_GB">Kodi 22&apos;s Apple TV build ships a Python with the _scproxy module removed, while Python carries on reporting that it is running on macOS. Anything that imports urllib.request or requests therefore fails at import, which is every add-on that fetches anything over the internet. This service writes a stand-in for the missing module on every start, and writes it again if an add-on update removes it. It does nothing at all on any other platform.</description>
-		<disclaimer lang="en_GB">A workaround for a defect in Kodi&apos;s own Apple TV build. Delete this add-on once a Kodi build ships that no longer needs it.</disclaimer>
+		<!-- ONE asset, and the decision recorded at 1.0.1 ("no <assets> yet,
+		     deliberately") is REVERSED here rather than silently dropped. The
+		     old reason was that the only icon in this repo belonged to the skin
+		     and shipping a skin's artwork on a service would be wrong; the
+		     answer to that was to draw this add-on one of its own, not to go
+		     without. Kodi 22 has NO implicit icon.png fallback: AddonInfoBuilder
+		     sets m_icon only from this block (AddonInfoBuilder.cpp:432-471), so
+		     without it the row is the generic DefaultAddon.png placeholder and
+		     an owner cannot tell at a glance that the box has this on it.
+
+		     512x512 RGBA PNG, which is the convention this repo uses for scripts
+		     and services (script.ezmaintenanceplusplus, repository.tony7bones).
+		     256x256 RGB is the SKIN convention and this is not a skin.
+
+		     No <fanart>, no <screenshot>, no <banner>, no <clearlogo>: fanart
+		     renders as the background of the add-on info dialog, a screen nobody
+		     reaches for a service with no UI, and one would be 30x the size of
+		     this entire add-on.
+
+		     No settings screen either, and that is a decision rather than an
+		     omission. There is nothing to configure: one behaviour, two fixed
+		     targets, one platform gate. The only version with real value is a
+		     read-only "last written" status line, and that would need a
+		     setSetting call on every boot, which means a write into this
+		     add-on's own addon_data on tvOS. That storage class has produced
+		     four separate bugs on these boxes (Apple TV playbook sections 8 and
+		     11). The evidence already exists and costs nothing: one INFO line in
+		     kodi.log on every tvOS start. -->
+		<assets>
+			<icon>resources/icon.png</icon>
+		</assets>
+		<news>[B]1.1.0[/B][CR]- The Siri remote fixes moved here from the Estuary POV skin, so they now work on Apple TV whatever skin you use, and Estuary POV no longer carries any Apple TV code at all. Back leaves fullscreen video with playback continuing, double play/pause returns to it, select opens the OSD on live TV, and back at Home no longer opens the Favourites window.[CR]- The Python repair is now written to five places instead of one, so updating any single add-on can no longer take it away and leave your other add-ons broken until the next restart.[CR]- Renamed from "tvOS Python Fix" to "Apple TV Fixes", because it is no longer only about Python. Nothing needs reinstalling; it is the same add-on.[CR]- Dropped a weather refresh that ran on every start and never did anything. Kodi drops that request unless the Weather window is the one on screen, which at startup it never is. The service now finishes the moment both files are written instead of waiting ten seconds.[CR]- It has an icon now, so you can see it in your add-on list.[CR]- Still does nothing at all on Fire TV, Android, Windows, Linux or macOS.[CR][CR][B]1.0.1[/B][CR]- No change in what it does. Documentation only: the measured margin this add-on wins by was recorded as seconds and is actually milliseconds, and getting that wrong in a comment is how the ordering it depends on gets removed later.[CR][CR][B]1.0.0[/B][CR]- First release. On Apple TV, puts back the piece of Python that Kodi 22's Apple TV build leaves out, so every add-on that fetches anything over the internet works again. Without it POV, Multi Weather and EZ Maintenance++ all fail the moment they start.[CR]- Does nothing at all on Fire TV, Android, Windows, Linux or macOS.</news>
+		<summary lang="en_GB">Everything Kodi&apos;s Apple TV build needs put right, in one add-on.</summary>
+		<description lang="en_GB">Kodi&apos;s Apple TV build has two problems that no skin and no other add-on can fix, and this puts both right on every start.[CR][CR]It ships a Python with the _scproxy module removed while Python carries on reporting that it is running on macOS, so anything that imports urllib.request or requests fails the moment it starts, which is every add-on that fetches anything over the internet. This writes a stand-in for the missing module, and writes it again if an add-on update removes it.[CR][CR]It also maps the Siri remote in ways that fight you: back stops playback outright in fullscreen video, with no button that returns to fullscreen, and back at the home screen opens the Favourites window instead of doing nothing. This writes a keymap that fixes all of it.[CR][CR]Install it once on an Apple TV, before anything else, and forget it. It does nothing at all on any other platform.</description>
+		<disclaimer lang="en_GB">A workaround for defects in Kodi&apos;s own Apple TV build. Delete this add-on once a Kodi build ships that no longer needs it.</disclaimer>
 	</extension>
 </addon>
