@@ -208,8 +208,21 @@ def test_classify_the_real_manifest_covers_all_entries():
     """The REAL catalog.json: every entry classifies, with the known per-class
     counts (update deliberately when the catalog changes).
 
-    31 entries, and the arithmetic behind that number, newest first:
+    32 entries, and the arithmetic behind that number, newest first:
 
+      +1  2026-08-29, service.tvos.pythonfix ADDED, hosted. OURS, and it exists
+          nowhere else, so an unhosted entry is not a slow 404 on an off-grid box
+          but an install that cannot succeed anywhere at all. It carries the
+          _scproxy shim that skin.estuary.pov's own boot service wrote in 1.2.2
+          through 1.2.5, moved out into a separate add-on because a skin is
+          installed AFTER its dependencies and therefore structurally cannot
+          repair them: MEASURED on atv1, plugin.video.pov was installed at
+          07:42:31.754 and had already died on the missing module at
+          07:42:32.991, 117 ms before the skin reached disk. skin.estuary.pov
+          1.2.7 declares a hard <import> on it, first in the list, so the same
+          rule measured for plugin.video.pov below applies: a hard dependency
+          resolves only from the repository the add-on is installed FROM, so
+          leaving it unhosted would fail every 1.2.7 install outright.
       +1  2026-08-29, plugin.program.autocompletion ADDED, hosted. Not ours: a
           verbatim mirror of the official build, pulled by mirror_closure.py,
           version 2.1.2 on both the omega and piers mirrors. skin.estuary.pov
@@ -290,9 +303,9 @@ def test_classify_the_real_manifest_covers_all_entries():
     kinds = {}
     for e in entries:
         kinds.setdefault(sc.classify(e), []).append(e["id"])
-    assert len(entries) == 31
+    assert len(entries) == 32
     assert kinds[sc.KIND_FIRST_PARTY] == ["repository.tony7bones"]
-    assert len(kinds[sc.KIND_HOSTED]) == 19
+    assert len(kinds[sc.KIND_HOSTED]) == 20
     assert len(kinds[sc.KIND_HYBRID]) == 4
     assert len(kinds[sc.KIND_STREAMED]) == 5
     assert len(kinds[sc.KIND_RELEASE_ASSET]) == 2
@@ -302,6 +315,7 @@ def test_classify_the_real_manifest_covers_all_entries():
     assert "plugin.video.estuary8.search" in kinds[sc.KIND_HOSTED]
     assert "skin.estuary.pov" in kinds[sc.KIND_HOSTED]
     assert "plugin.program.autocompletion" in kinds[sc.KIND_HOSTED]
+    assert "service.tvos.pythonfix" in kinds[sc.KIND_HOSTED]
     assert "plugin.video.pov" in kinds[sc.KIND_HYBRID]
     ids = {e["id"] for e in entries}
     for gone in (

@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<addon id="service.tvos.pythonfix" version="1.0.0" name="tvOS Python Fix" provider-name="Tony.7.Bones">
+	<requires>
+		<import addon="xbmc.python" version="3.0.0"/>
+		<!-- NOT decoration, and NOT a library this add-on imports. It is the
+		     ORDERING lever and the location guarantee, both at once.
+
+		     Location: the shim is written into script.module.requests' own lib
+		     directory, because that is the only writable directory that is on
+		     the sys.path of every add-on the defect actually kills. Declaring it
+		     here means Kodi has finished installing it before this add-on's
+		     service runs, so the directory is guaranteed to exist.
+
+		     Ordering: Kodi installs a dependency's own dependencies before the
+		     dependency itself, so this line puts script.module.requests and its
+		     four modules ahead of this add-on, and this add-on ahead of anything
+		     the parent declares after it. See scripts/service.py for the
+		     measured install order that makes that concrete. -->
+		<import addon="script.module.requests" version="2.31.0"/>
+	</requires>
+	<!-- ONE extension point, and no <provides>. Both are the invisibility, and
+	     both were measured against the Kodi 22 source and on a clean bench
+	     because the owner asked for this to stay out of the user interface.
+
+	     No <provides>: CAddonInfo::HasType is mainType OR ProvidesSubContent
+	     (AddonInfo.cpp:193-197) and GenerateMainCategoryListing builds its
+	     categories from HasType, so adding <provides>video would put this in
+	     "My add-ons > Video add-ons" as well. Absent is already optimal.
+
+	     WHERE IT STILL SHOWS, since Kodi offers no way to hide an add-on: as a
+	     row inside Settings > Add-ons > My add-ons > Services, and in that
+	     screen's All list. It adds NO new section. Kodi bundles its own
+	     service.xbmc.versioncheck, so the Services category is on every install
+	     already, and this is a second row in a list nobody browses. Nothing
+	     appears anywhere on the skin's Add-ons home tab: those five rows are
+	     addons://sources/<type>/, which queries only PLUGIN, SCRIPT and GAMEDLL
+	     (AddonsDirectory.cpp:915-949), so a service cannot reach them. -->
+	<extension point="xbmc.service" library="scripts/service.py" start="startup"/>
+	<extension point="xbmc.addon.metadata">
+		<!-- all, and do NOT narrow it to tvos. It reads like the obvious way to
+		     keep a tvOS-only add-on off other boxes, and it BREAKS THE SKIN.
+		     PlatformSupportsAddon returning false makes CAddonInfoBuilder::Generate
+		     return nullptr (AddonInfoBuilder.cpp:224-243) for BOTH the local scan
+		     and the repository addons.xml parse, so a Fire TV never sees this
+		     add-on in the repo listing at all. skin.estuary.pov imports it
+		     non-optionally, so CheckDependencies then fails with "requires X
+		     version Y which is not available" (AddonInstaller.cpp:580-592) and the
+		     SKIN'S OWN install and update fail on every Fire TV, Android, Windows,
+		     Linux and macOS box. Measured on a bench with <platform>tvos</platform>:
+		     "No platform for add-on service.tvos.pythonfix", followed by
+		     "CAddonDatabase: service.tvos.pythonfix has been uninstalled".
+		     optional="true" does not rescue it either: an optional dependency that
+		     is not installed is never installed at all (AddonInstaller.cpp:1097-1102),
+		     including on tvOS, which removes the only reason this exists.
+		     The gate that actually matters is the runtime one in scripts/service.py,
+		     System.Platform.TVOS, and it is enforced by tests. -->
+		<platform>all</platform>
+		<license>GPL-2.0-or-later</license>
+		<source>https://github.com/moquette/kodi-estuary-pov</source>
+		<!-- No <assets> yet, deliberately. The only icon in this repo belongs to
+		     the skin, and shipping the skin's artwork on a different add-on would
+		     be wrong in the add-on browser. Kodi shows its generic placeholder
+		     instead, which is honest for a service nobody browses to. -->
+		<news>[B]1.0.0[/B][CR]- First release. On Apple TV, puts back the piece of Python that Kodi 22's Apple TV build leaves out, so every add-on that fetches anything over the internet works again. Without it POV, Multi Weather and EZ Maintenance++ all fail the moment they start.[CR]- Does nothing at all on Fire TV, Android, Windows, Linux or macOS.</news>
+		<summary lang="en_GB">Puts back the piece of Python that Kodi&apos;s Apple TV build leaves out.</summary>
+		<description lang="en_GB">Kodi 22&apos;s Apple TV build ships a Python with the _scproxy module removed, while Python carries on reporting that it is running on macOS. Anything that imports urllib.request or requests therefore fails at import, which is every add-on that fetches anything over the internet. This service writes a stand-in for the missing module on every start, and writes it again if an add-on update removes it. It does nothing at all on any other platform.</description>
+		<disclaimer lang="en_GB">A workaround for a defect in Kodi&apos;s own Apple TV build. Delete this add-on once a Kodi build ships that no longer needs it.</disclaimer>
+	</extension>
+</addon>
