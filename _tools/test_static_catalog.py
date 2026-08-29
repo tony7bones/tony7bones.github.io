@@ -208,8 +208,20 @@ def test_classify_the_real_manifest_covers_all_entries():
     """The REAL catalog.json: every entry classifies, with the known per-class
     counts (update deliberately when the catalog changes).
 
-    30 entries, and the arithmetic behind that number, newest first:
+    31 entries, and the arithmetic behind that number, newest first:
 
+      +1  2026-08-29, plugin.program.autocompletion ADDED, hosted. Not ours: a
+          verbatim mirror of the official build, pulled by mirror_closure.py,
+          version 2.1.2 on both the omega and piers mirrors. skin.estuary.pov
+          1.2.4 declares a hard <import> on it so the virtual keyboard's
+          suggestion panel has a content provider, and by the SAME rule already
+          measured for plugin.video.pov two entries down, a hard dependency
+          resolves only from the repository the add-on is installed FROM.
+          Leaving it to repository.xbmc.org would therefore have failed every
+          1.2.4 skin update with "failed to find dependency", not just the
+          off-grid ones. test_closure.py caught it before the push. Its own
+          dependency script.module.autocompletion (>= 2.0.5) was already hosted
+          here at 2.1.1, so the closure closes with nothing else added.
       +1  2026-08-27, plugin.video.pov ADDED, HYBRID. It is not ours and its
           bytes are not committed here: only its addon.xml is, and the build
           fetches the zip from the upstream Pages host at
@@ -278,9 +290,9 @@ def test_classify_the_real_manifest_covers_all_entries():
     kinds = {}
     for e in entries:
         kinds.setdefault(sc.classify(e), []).append(e["id"])
-    assert len(entries) == 30
+    assert len(entries) == 31
     assert kinds[sc.KIND_FIRST_PARTY] == ["repository.tony7bones"]
-    assert len(kinds[sc.KIND_HOSTED]) == 18
+    assert len(kinds[sc.KIND_HOSTED]) == 19
     assert len(kinds[sc.KIND_HYBRID]) == 4
     assert len(kinds[sc.KIND_STREAMED]) == 5
     assert len(kinds[sc.KIND_RELEASE_ASSET]) == 2
@@ -289,6 +301,7 @@ def test_classify_the_real_manifest_covers_all_entries():
     assert "script.estuary8.shortcuts" in kinds[sc.KIND_HOSTED]
     assert "plugin.video.estuary8.search" in kinds[sc.KIND_HOSTED]
     assert "skin.estuary.pov" in kinds[sc.KIND_HOSTED]
+    assert "plugin.program.autocompletion" in kinds[sc.KIND_HOSTED]
     assert "plugin.video.pov" in kinds[sc.KIND_HYBRID]
     ids = {e["id"] for e in entries}
     for gone in (
