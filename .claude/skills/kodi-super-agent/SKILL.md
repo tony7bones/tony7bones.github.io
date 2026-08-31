@@ -49,11 +49,10 @@ on a rule below - they carry the WHY and the exact code locations.
     sibling repo `~/Code/moquette/kodi/ezmpp`; the actual served
     metadata mirror is `addons/hosted/script.ezmaintenanceplusplus/` (below). Do
     not resurrect the deleted full-source copy here.
-  - **Two `addons/hosted/<id>/` entries are OUR OWN add-ons**, mirrored here as
-    metadata only with source in a sibling repo: `skin.estuary7`
-    (`~/Code/moquette/kodi/estuary7`) and `script.ezmaintenanceplusplus`
-    (`~/Code/moquette/kodi/ezmpp`). The catalog points `assets.zip`
-    at each sibling repo's GitHub Release asset. Fix bugs and add tests in the
+  - **One `addons/hosted/<id>/` entry is a metadata-only mirror of OUR OWN
+    add-on**, with source in a sibling repo: `script.ezmaintenanceplusplus`
+    (`~/Code/moquette/kodi/ezmpp`). The catalog points its `assets.zip`
+    at that repo's GitHub Release asset. Fix bugs and add tests in the
     sibling repo; only bump the hosted metadata + re-release here. A
     `git status` / "commits to push" question about the skin or EZM++ almost
     always resolves in the OTHER repo. EZM++ triage:

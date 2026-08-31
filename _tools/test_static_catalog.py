@@ -208,8 +208,18 @@ def test_classify_the_real_manifest_covers_all_entries():
     """The REAL catalog.json: every entry classifies, with the known per-class
     counts (update deliberately when the catalog changes).
 
-    32 entries, and the arithmetic behind that number, newest first:
+    28 entries, and the arithmetic behind that number, newest first:
 
+      -4  2026-08-31, the Estuary 7/8 DECOMMISSION, owner order ("we're only
+          supporting EPOV"). skin.estuary7 (release-asset; its zips stay on the
+          archived moquette/kodi-estuary7 Releases), skin.estuary8,
+          script.estuary8.shortcuts and plugin.video.estuary8.search (hosted;
+          their only published copies, which survive in this repo's git
+          history) are all REMOVED. Every running box is on POV; atv2's boxed
+          Kodi 21 copy of estuary7 is offline and unaffected. This also ended
+          the estuary7-release repository_dispatch in pages.yml and the
+          Releases-API polling of kodi-estuary7 in
+          check_hosted_release_sync.py.
       +1  2026-08-29, service.tvos.pythonfix ADDED, hosted. OURS, and it exists
           nowhere else, so an unhosted entry is not a slow 404 on an off-grid box
           but an install that cannot succeed anywhere at all. It carries the
@@ -310,16 +320,12 @@ def test_classify_the_real_manifest_covers_all_entries():
     kinds = {}
     for e in entries:
         kinds.setdefault(sc.classify(e), []).append(e["id"])
-    assert len(entries) == 32
+    assert len(entries) == 28
     assert kinds[sc.KIND_FIRST_PARTY] == ["repository.tony7bones"]
-    assert len(kinds[sc.KIND_HOSTED]) == 20
+    assert len(kinds[sc.KIND_HOSTED]) == 17
     assert len(kinds[sc.KIND_HYBRID]) == 4
     assert len(kinds[sc.KIND_STREAMED]) == 5
-    assert len(kinds[sc.KIND_RELEASE_ASSET]) == 2
-    assert "skin.estuary7" in kinds[sc.KIND_RELEASE_ASSET]
-    assert "skin.estuary8" in kinds[sc.KIND_HOSTED]
-    assert "script.estuary8.shortcuts" in kinds[sc.KIND_HOSTED]
-    assert "plugin.video.estuary8.search" in kinds[sc.KIND_HOSTED]
+    assert len(kinds[sc.KIND_RELEASE_ASSET]) == 1
     assert "skin.estuary.pov" in kinds[sc.KIND_HOSTED]
     assert "plugin.program.autocompletion" in kinds[sc.KIND_HOSTED]
     assert "service.tvos.pythonfix" in kinds[sc.KIND_HOSTED]
@@ -332,6 +338,10 @@ def test_classify_the_real_manifest_covers_all_entries():
         "script.tony7bones.bootstrap",
         "script.module.tony7bones",
         "script.skinshortcuts",
+        "skin.estuary7",
+        "skin.estuary8",
+        "script.estuary8.shortcuts",
+        "plugin.video.estuary8.search",
     ):
         assert gone not in ids
 

@@ -3,6 +3,11 @@
 No test here talks to the real network: every GitHub API call is routed through
 a fake `urllib.request.urlopen` keyed by exact URL, so the suite is fast,
 deterministic, and cannot flake on GitHub rate limits or an outage.
+
+The `skin.estuary7` / `moquette/kodi-estuary7` pair used throughout is a
+SYNTHETIC fixture id: the real skin was decommissioned and unpublished on
+2026-08-31 and the live gate no longer polls that repo. The fixtures keep the
+name because they exercise the mechanism, not the catalog.
 """
 
 from __future__ import annotations

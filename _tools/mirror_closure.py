@@ -49,25 +49,16 @@ BUILTINS = {
 # because this tool is the thing that would otherwise re-create the mirror; the
 # gate (test_closure.py) imports this same set, so the two can never drift.
 #
-# `script.skinshortcuts` was mirrored at addons/hosted/script.skinshortcuts/
-# (2.0.3) until 2026-07-29, when the owner ordered every copy purged and the
-# root CLAUDE.md gained a hard rule: "We do not patch it, fork it, version it,
-# host it, mirror it, or ship it", with "adding it back to
-# repo/addons/hosted/" listed as forbidden without exception. The skin's own
-# `<import addon="script.skinshortcuts" .../>` line is explicitly the ONE
-# permitted reference to it in the tree, so the import stays and is walked past
-# rather than deleted. Kodi publishes it for every release this repo targets:
-# mirrors.kodi.tv/addons/{nexus,omega,piers}/script.skinshortcuts/ all return
-# 200, omega (the release skin.estuary7's xbmc.gui 5.17.0 pins) serves 2.0.3,
-# and the skin asks for >= 1.1.3, which Kodi reads as a MINIMUM.
-#
-# The cost, stated plainly rather than hidden: an off-grid box that cannot
-# reach mirrors.kodi.tv can no longer install Estuary 7 from this repo alone.
-# That is the owner's call, taken with the prohibition in hand, not an
-# oversight the gate should paper over. Anything added here needs the same kind
-# of written reason, because a silent entry turns a real gate into a rubber
-# stamp.
-OFFICIAL_LIBRARY = frozenset({"script.skinshortcuts"})
+# EMPTY since 2026-08-31, and that is a ledger entry, not an invitation. Its
+# one entry ever was `script.skinshortcuts`: mirrored here at 2.0.3 until
+# 2026-07-29 (owner order: "we do not patch it, fork it, version it, host it,
+# mirror it, or ship it"), then carried in this set because the decommissioned
+# skin.estuary7 imported it and Kodi resolves it from the official library.
+# The skin's unpublishing on 2026-08-31 removed the last importer, so the
+# entry left with it. The mechanism stays, gated by test_closure.py: anything
+# added here needs a written reason of that same kind, because a silent entry
+# turns a real gate into a rubber stamp.
+OFFICIAL_LIBRARY = frozenset()
 
 
 def _imports(xml_text: str) -> list[str]:

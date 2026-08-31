@@ -34,7 +34,7 @@ on:
         type: boolean
         default: false
   repository_dispatch:
-    types: [estuary7-release, ezmpp-release]
+    types: [ezmpp-release]
 
 # Deploy credentials (pages/id-token) are scoped to the deploy job only -
 # the build job never needs them.

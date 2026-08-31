@@ -29,9 +29,11 @@ def test_daily_cron_bounds_third_party_staleness():
 
 
 def test_release_dispatch_types_are_wired():
+    # estuary7-release left 2026-08-31 with the skin's decommission; ezmpp is
+    # the one sibling repo that still dispatches a release event here.
     text = _text()
     assert "repository_dispatch:" in text
-    assert "estuary7-release" in text
+    assert "estuary7-release" not in text
     assert "ezmpp-release" in text
 
 

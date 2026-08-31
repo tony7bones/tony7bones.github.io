@@ -43,11 +43,10 @@ from mirror_closure import OFFICIAL_LIBRARY  # noqa: E402
 # ever gated, so a bump to a dependency version this repo does not host would
 # 404 at install time on an off-grid Apple TV with nothing red anywhere.
 #
-# skin.estuary8 was added 2026-07-31, the day it was first hosted here. Its
-# closure is the interesting one: it imports script.estuary8.shortcuts, which is
-# OURS and exists nowhere else, so an unhosted dependency is not a slow 404 on
-# an off-grid box but an install that cannot succeed anywhere at all. Gating it
-# from day one is cheap; discovering it from a box is not.
+# skin.estuary7 (rooted from this file's creation) and skin.estuary8 (rooted
+# 2026-07-31) left on 2026-08-31, when both skins were decommissioned and
+# unpublished on the owner's order; their closures left with their catalog
+# entries.
 #
 # skin.estuary.pov was added 2026-08-27, the day it was first hosted here, for
 # that same "cheap on day one" reason. It was trivial then, when its only
@@ -72,9 +71,7 @@ from mirror_closure import OFFICIAL_LIBRARY  # noqa: E402
 # user-installed on Apple TVs rather than pulled in by a skin, which makes it
 # exactly that case.
 ROOTS = [
-    "skin.estuary7",
     "script.ezmaintenanceplusplus",
-    "skin.estuary8",
     "skin.estuary.pov",
     "service.tvos.pythonfix",
 ]
@@ -98,19 +95,10 @@ BUILTINS = {
 }
 
 # OFFICIAL_LIBRARY comes from mirror_closure.py; see the import at the top and
-# that file for the per-entry reasons. Recorded here because it is this gate,
-# not that tool, that a reader hits first: the one entry today is
-# script.skinshortcuts, whose hosted 2.0.3 mirror was deleted 2026-07-29 under
-# the root CLAUDE.md hard rule ("we do not patch it, fork it, version it, host
-# it, mirror it, or ship it"; re-adding it to addons/hosted/ is listed as
-# forbidden without exception). The skin's <import> line stays, and is named
-# there as the ONE permitted reference to it in the tree.
-#
-# The cost, stated rather than hidden: an off-grid box that cannot reach
-# mirrors.kodi.tv can no longer install Estuary 7 from this repo alone. That is
-# the owner's call taken with the prohibition in hand, not an oversight this
-# gate should paper over. Anything added to that set needs the same kind of
-# written reason, or the set turns a real gate into a rubber stamp.
+# that file for the history. EMPTY since 2026-08-31: its one entry ever,
+# script.skinshortcuts, existed for the decommissioned skin.estuary7 and left
+# with it. The mechanism and its four gates below stay, so a future entry
+# needs a written reason rather than a silent line.
 
 
 def _imports(xml_text):
@@ -218,20 +206,29 @@ def test_official_library_is_a_closed_list_of_named_ids():
     missing dependency the day one of ours happened to match it. Changing this
     list is meant to require changing this line.
     """
-    assert OFFICIAL_LIBRARY == frozenset({"script.skinshortcuts"})
+    assert OFFICIAL_LIBRARY == frozenset()
 
 
-def test_an_official_library_dependency_is_satisfied_unhosted():
-    """The actual fix: our add-on may import it without this repo hosting it."""
-    fake = {"skin.ours": '<import addon="script.skinshortcuts" version="1.1.3"/>'}
+def test_an_official_library_dependency_is_satisfied_unhosted(monkeypatch):
+    """The mechanism: our add-on may import an exempted id without this repo
+    hosting it. Exercised with a synthetic id injected into this module's
+    OFFICIAL_LIBRARY binding (the set itself is empty today; the historical
+    entry was script.skinshortcuts, which left with skin.estuary7)."""
+    monkeypatch.setattr(
+        sys.modules[__name__], "OFFICIAL_LIBRARY", frozenset({"script.official.example"})
+    )
+    fake = {"skin.ours": '<import addon="script.official.example" version="1.0.0"/>'}
     assert closure_missing("skin.ours", fake.get) == []
 
 
-def test_a_missing_dependency_of_ours_still_fails():
+def test_a_missing_dependency_of_ours_still_fails(monkeypatch):
     """The exemption must not have turned the gate into a rubber stamp."""
+    monkeypatch.setattr(
+        sys.modules[__name__], "OFFICIAL_LIBRARY", frozenset({"script.official.example"})
+    )
     fake = {
         "skin.ours": (
-            '<import addon="script.skinshortcuts" version="1.1.3"/>'
+            '<import addon="script.official.example" version="1.0.0"/>'
             '<import addon="script.module.ours" version="1.0.0"/>'
         )
     }

@@ -42,13 +42,11 @@ addons/<id>/addon.xml`). The two add-on dirs under `addons/` are:
 | `repository.tony7bones`        | Tony.7.Bones repository | The static-only repository add-on (3.0.0). Points Kodi at `https://tony7bones.github.io/static/`. No service, no proxy. |
 | `script.ezmaintenanceplusplus` | EZ Maintenance++        | A **hosted metadata mirror** (`addon.xml` + icon/fanart only). Real source lives in `moquette/ezmaintenanceplusplus`.   |
 
-The served catalog (`/static/`) currently lists 26 entries: the two above, the
-mirrored third-party repos under `addons/hosted/<id>/`, and two more of OUR add-ons
-that are hosted as metadata mirrors with their source in a sibling repo:
+The served catalog (`/static/`) currently lists 28 entries (four Estuary 7/8
+entries were removed 2026-08-31 when both skins were decommissioned): the two
+above, the mirrored third-party repos under `addons/hosted/<id>/`, and OUR own
+add-ons hosted there with their source in a sibling repo, among them:
 
-- **`skin.estuary7`** ("Estuary 7") - a fork-by-build of Estuary MOD V2, built at
-  `~/Code/moquette/kodi/estuary7` (`moquette/estuary7`). The catalog points its
-  `assets.zip` at that repo's GitHub Release asset.
 - **`script.ezmaintenanceplusplus`** ("EZ Maintenance++") - a VFS-safe fork of EZ
   Maintenance+ (backup/restore over NFS/SMB/Dropbox), built at
   `~/Code/moquette/kodi/ezmpp` (public, its own repo since 2026-07-14).
@@ -94,7 +92,7 @@ its `addon.xml`/zip under `addons/hosted/<id>/`).
 | Path                    | Purpose                                                                                                                                                                                                                           |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `addons/<addon-id>/`    | Any dir with an `addon.xml` is built into a zip and listed in `addons.xml`.                                                                                                                                                       |
-| `addons/hosted/<id>/`   | Mirrored third-party-repo trees (not auto-indexed/zipped); includes the estuary7 / EZM++ metadata mirrors.                                                                                                                        |
+| `addons/hosted/<id>/`   | Mirrored third-party-repo trees (not auto-indexed/zipped); includes the EZM++ metadata mirror.                                                                                                                        |
 | `dropbox/repositories/` | Third-party repository installer zips (Kodi installs them manually). Mirrored to the served `/repositories/`.                                                                                                                     |
 | `dropbox/rss/`          | Hand-authored assets. Mirrored to the served root and auto-indexed for file-manager browsing. (`dropbox/media/` and `dropbox/iptv/` retired 2026-07-16; private/generated content lives only on the KodiShare via LAN/Tailscale.) |
 
