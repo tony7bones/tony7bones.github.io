@@ -19,9 +19,11 @@ on:
   push:
     branches: [main]
   schedule:
-    # Daily third-party snapshot + release-asset freshness (see the
-    # refresh-third-party flag below). Kodi-side staleness bound: <=24h for
-    # third-party listings, minutes for owned content (push-triggered).
+    # Daily third-party snapshot (see the refresh-third-party flag below).
+    # Kodi-side staleness bound: <=24h for third-party listings, minutes for
+    # owned content: the build resolves the latest EZM++ release and the POV
+    # upstream index fresh on EVERY run, so a push, this cron and the
+    # ezmpp-release dispatch all pick up a new version with no commit here.
     - cron: "17 9 * * *"
   workflow_dispatch:
     inputs:
@@ -60,31 +62,6 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-
-      # FIRST, and deliberately BEFORE `Install tooling deps`. This is the only
-      # WATCHDOG in the job: every other step validates THIS commit, and skipping
-      # one of those is fail-safe because `deploy: needs: build` blocks the deploy
-      # anyway. This step instead detects drift that exists independently of the
-      # push, so skipping it loses signal silently.
-      #
-      # It used to sit after Lint. On 2026-07-24 and 07-25 Lint failed on an
-      # unpinned-ruff release and this gate NEVER RAN for two days - the one
-      # watchdog for a forgotten mirror bump, dark, because a cheap advisory step
-      # upstream of it went red. It is stdlib-only and needs no pip install, so
-      # there is no reason for it to sit downstream of anything.
-      - name: Hosted release-freshness gate
-        # The gate handles the release-race window itself, and it is TIME-AWARE:
-        # "mirror behind latest" is a non-failing warning while the latest release
-        # is younger than HOSTED_FRESHNESS_GRACE_SECONDS (default 2h), and a hard
-        # failure once it is older. Broken pointers (no release / missing asset)
-        # always hard-fail. So the race window still never fails this step on ANY
-        # event, and no per-event continue-on-error is needed. Do NOT add one: it
-        # would swallow GENUINE broken-pointer failures AND the genuinely-stale
-        # mirror this gate now catches, on schedule/repository_dispatch - which is
-        # precisely where the daily cron is the only thing watching.
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python3 _tools/check_hosted_release_sync.py
 
       # Versions live in requirements-ci.txt, which .githooks/pre-push installs
       # from too, so the local gate and CI can never disagree about a tool
@@ -131,7 +108,14 @@ jobs:
           restore-keys: |
             t7b-fetch-v1-
 
+      # GH_TOKEN authenticates the releases/latest lookup for release-asset
+      # entries (static_catalog._latest_release_version). Without it the build
+      # still resolves via github.com's unauthenticated redirect, which is what
+      # a developer machine does; the token only keeps CI off the shared-runner
+      # anonymous API limit.
       - name: Build site
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           FLAGS=""
           if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.refresh_third_party }}" = "true" ] || [ "${{ github.event_name }}" = "repository_dispatch" ]; then
@@ -149,6 +133,8 @@ jobs:
       # Second build reads the cache the first build populated (no refresh
       # flag), so byte-inequality here means real nondeterminism, not drift.
       - name: Determinism gate (double build, byte diff)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           FLAGS=""
           if [ "${{ inputs.allow_catalog_shrink }}" = "true" ]; then

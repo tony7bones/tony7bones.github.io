@@ -157,7 +157,7 @@ The served `/static/` tree is the Kodi repository the add-on points at:
 - `/static/addons.xml` + `/static/addons.xml.md5` (the catalog index + checksum),
 - per-add-on zips and materialized art under `/static/<id>/`.
 
-It currently has **30 entries** (verify with `python3 -c "import json;print(len(json.load(open('_tools/catalog.json'))))"`). It is built in CI by `_tools/build_site.py` -> `_tools/static_catalog.py` from the manifest `_tools/catalog.json`, then deployed via GitHub Pages. `static_catalog.py` materializes each entry's declared art out of its zip so every icon/fanart URL resolves.
+It currently has **28 entries** (verify with `python3 -c "import json;print(len(json.load(open('_tools/catalog.json'))))"`). It is built in CI by `_tools/build_site.py` -> `_tools/static_catalog.py` from the manifest `_tools/catalog.json`, then deployed via GitHub Pages. `static_catalog.py` materializes each entry's declared art out of its zip so every icon/fanart URL resolves.
 
 ### Two source trees: `dropbox/` (canvas) and `addons/` (add-on tree)
 
@@ -172,16 +172,16 @@ The repo has two committed source trees, each with a different job:
 
 - **`addons/repository.tony7bones/`** - the static-only repository add-on (3.0.0) described above. This is the ONLY entry in `addons/addons.xml`.
 
-`addons/script.ezmaintenanceplusplus/` was **DELETED 2026-07-20** (`08d9a3d`); see the closed block at the top of this file. Do not recreate it, and do not resurrect the deleted full-source copy either. The EZM++ metadata that boxes actually read lives at `addons/hosted/script.ezmaintenanceplusplus/`, and its source is in the sibling repo `~/Code/moquette/kodi/ezmpp` (`moquette/ezmaintenanceplusplus`, public; note the local dir is `ezmpp`, and the standalone path `~/Code/moquette/ezmaintenanceplusplus` that older docs cite DOES NOT EXIST).
+`addons/script.ezmaintenanceplusplus/` was **DELETED 2026-07-20** (`08d9a3d`); see the closed block at the top of this file. Do not recreate it, and do not resurrect the deleted full-source copy either. The EZM++ metadata that boxes actually read is resolved at build time from the latest GitHub release of `moquette/kodi-ezmpp` (no committed copy since 2026-09-26; the `addons/hosted/script.ezmaintenanceplusplus/` mirror is gone too), and its source is in the sibling repo `~/Code/moquette/kodi/ezmpp` (note the local dir is `ezmpp`, and the standalone path `~/Code/moquette/ezmaintenanceplusplus` that older docs cite DOES NOT EXIST).
 
-`addons/hosted/<id>/` holds mirrored third-party-repo trees (static, hand-committed metadata; not zipped or indexed by the generator). **Three of the `hosted/<id>/` entries are OUR OWN add-ons**, with source in a sibling repo (the count read six until 2026-08-31, when the Estuary 7/8 decommission removed `skin.estuary7`, `skin.estuary8`, `script.estuary8.shortcuts` and `plugin.video.estuary8.search`; their history survives in git). One is a metadata-only mirror whose zip comes from a GitHub Release, and the other two carry the zip here:
+`addons/hosted/<id>/` holds mirrored third-party-repo trees (static, hand-committed metadata; not zipped or indexed by the generator). **Two of the `hosted/<id>/` entries are OUR OWN add-ons**, with source in a sibling repo (the count read six until 2026-08-31, when the Estuary 7/8 decommission removed `skin.estuary7`, `skin.estuary8`, `script.estuary8.shortcuts` and `plugin.video.estuary8.search`; their history survives in git), and both carry the zip here. Two further catalog entries have NO `addons/hosted/` directory at all, because the build resolves their version and metadata upstream on every run (since 2026-09-26; owner's rule: THERE MUST BE NO MIRROR VERSION TO BE WRONG):
 
-- **`script.ezmaintenanceplusplus`** (`addons/hosted/script.ezmaintenanceplusplus/`) - source, the full test suite, and release tooling live in `~/Code/moquette/kodi/ezmpp`. Same mirror pattern. Fix bugs and add tests in the sibling repo; release there. The hosted metadata here is bumped automatically by `sync_hosted_mirror.yml`.
-- **`plugin.video.pov`** (`addons/hosted/plugin.video.pov/`) - NOT ours. A `hybrid` entry added 2026-08-27: only its `addon.xml` is committed here, and the build fetches the zip from the upstream Pages host `kodiyashimaru.github.io` and republishes it under our `/static/`, so no third-party binary lives in this repo. It is served because `skin.estuary.pov` declares a hard `<import>` on it, and Kodi resolves a hard dependency only from the repository the add-on is installed FROM: with POV reachable only via `repository.kodifitzwell` the install fails with `failed to find dependency plugin.video.pov`, measured on a Kodi 22 bench. `hybrid` rather than `streamed` because that upstream publishes no per-addon `addon.xml` (only an index plus zips). Its version here is NOT hand-maintained: the catalog entry's `upstream_index` names upstream's `packages/addons.xml`, and `sync_hosted_mirror.yml` copies the addon.xml out of whatever zip that index declares. The hand-typed version rotted once already (6.08.15 against an upstream 6.09.06 on 2026-09-26, zip 404, POV DROPPED from the build, skin uninstallable).
+- **`script.ezmaintenanceplusplus`** (no hosted dir; `release-asset` entry) - ours. Source, the full test suite, and release tooling live in `~/Code/moquette/kodi/ezmpp`. Fix bugs and add tests in the sibling repo; release there. Every build of this hub asks `moquette/kodi-ezmpp` for its LATEST published release (`static_catalog._latest_release_version`: the REST API with `GH_TOKEN` in CI, else the unauthenticated `releases/latest` redirect), downloads that release's zip, and takes `addon.xml`, icon and fanart out of the zip. Releasing there IS publishing here: ezmpp CI fires the `ezmpp-release` dispatch, `pages.yml` rebuilds, and a box sees the new version after the Pages deploy. Before 2026-09-26 a hand-maintained `addons/hosted/script.ezmaintenanceplusplus/addon.xml` was the version boxes read, and it sat nine days behind a release.
+- **`plugin.video.pov`** (no hosted dir; `hybrid` entry with `upstream_index`) - NOT ours. Added 2026-08-27: the build fetches the zip from the upstream Pages host `kodiyashimaru.github.io` and republishes it under our `/static/`, so no third-party binary lives in this repo. It is served because `skin.estuary.pov` declares a hard `<import>` on it, and Kodi resolves a hard dependency only from the repository the add-on is installed FROM: with POV reachable only via `repository.kodifitzwell` the install fails with `failed to find dependency plugin.video.pov`, measured on a Kodi 22 bench. `hybrid` rather than `streamed` because that upstream publishes no per-addon `addon.xml` (only an index plus zips). Its version is never typed here: the catalog entry's `upstream_index` names upstream's `packages/addons.xml`, the build reads the version from it on every run and takes `addon.xml` out of the zip. The hand-typed version rotted once (6.08.15 against an upstream 6.09.06 on 2026-09-26, zip 404, POV DROPPED from the build, skin uninstallable), which is why no committed copy exists anymore.
 - **`skin.estuary.pov`** (`addons/hosted/skin.estuary.pov/`) - source and its reproducible build script live in `~/Code/moquette/kodi/estuary-pov`, the git checkout of record (its GitHub remote `moquette/kodi-estuary-pov` exists as of 2026-08-31). Added 2026-08-27, full `hosted` entry. It is stock Kodi Estuary 4.1.0 reworked so the Movies and TV shows home tabs are driven by `plugin.video.pov` rather than the local library. Self-hosted rather than release-asset because `moquette/kodi-estuary-pov` does not exist on GitHub, so there is no release to point at. It imports `xbmc.gui` 5.18.0, which is the Kodi 22 floor on its own, and since 1.2.1 also `plugin.video.pov` 6.08.15, which is why this repo serves POV as well. Bump it by rebuilding in the source repo (`python3 tools/build_skin.py skin.estuary.pov --check --verify-clean`), then copying `dist/<id>-<version>.zip` and the skin's `addon.xml` here.
 - **`service.tvos.pythonfix`** (`addons/hosted/service.tvos.pythonfix/`) - ours, added 2026-08-29, full `hosted` entry (`addon.xml` + zip). The tvOS Python repair service, user-installed by Apple TV owners from this listing; source and its reproducible build live in `~/Code/kodi/estuary-pov` alongside the skin. It is a closure root of its own in `test_closure.py`.
 
-Both patterns mean a `git status` / "commits to push" question about the skin or EZM++ almost always resolves in the OTHER repo, not this one; see the deploy skill's troubleshooting table.
+Both patterns mean a `git status` / "commits to push" question about the skin or EZM++ almost always resolves in the OTHER repo, not this one; see the deploy skill's troubleshooting table. Build-resolved entries whose lookup fails (release API down, upstream index unreachable, zip 404, packaged version not matching the tag) fall back to the live last-good copy and are marked `stale` in the manifest, exactly like any other entry; their `<import>`s are checked against the catalog at build time (`_check_imports_hosted`), since `test_closure.py` can only walk committed `addon.xml` files.
 
 ### Single branch - `main` only
 
@@ -195,7 +195,7 @@ Everything lives on `main`. Main is **sources-only**: the canvas (`dropbox/`), t
 # Run this locally before committing whenever you change addon sources.
 python3 _tools/generate_repo.py            # npm run build
 
-# Run the full test suite (270 tests, all green; verified 2026-07-25)
+# Run the full test suite (244 tests, all green; verified 2026-09-26)
 python3 -m pytest _tools/ -q               # npm test
 
 # Lint the Python tooling. Needs the PINNED ruff: ruff.toml declares
@@ -270,24 +270,24 @@ defaults. Bump both files in one commit that also clears whatever the new
 version flags, and never bump a pin to make a red build go green.
 
 Everything above is also runnable across all four repos at once with
-`../bin/check-all` (10 gates, about 46 seconds), which provisions the same
-pinned venv this hook uses.
+`../bin/check-all` (11 gates), which provisions the same pinned venv this hook
+uses.
 
-Three CI workflows back this up. The first two **never commit to main**;
-the third commits exactly one kind of change, a hosted-mirror version bump:
+Two CI workflows back this up, and **neither ever commits to main**:
 
-- **`.github/workflows/generate_repo.yml`** ("Validate Kodi Repository") re-runs the tests, lint, the hosted-mirror release-freshness gate (`check_hosted_release_sync.py`), the generator-staleness check, and the per-add-on version-bump gate (main only).
-- **`.github/workflows/pages.yml`** ("Build & Deploy Pages") runs the same gates, builds the full site with `build_site.py` (including the `/static/` catalog), runs the secret gate (`check_site_secrets.py`) and a double-build determinism diff, then **deploys via GitHub Pages** (Pages source = GitHub Actions) and verifies live from the consumer seat (`verify_live_site.py`). It also runs on a daily cron to refresh mutable third-party metadata, and on `repository_dispatch` when a sibling repo (ezmpp) publishes a release.
-- **`.github/workflows/sync_hosted_mirror.yml`** ("Sync hosted mirrors to latest release", added 2026-09-26) runs `_tools/sync_hosted_mirror.py` on the same `ezmpp-release` dispatch, daily, and by hand. It copies the latest release's own `addon.xml` over `addons/hosted/<id>/addon.xml`, re-runs the gates, commits the bump, pushes main and dispatches pages.yml (a GITHUB_TOKEN push raises no push workflows, so it has to). It replaced the hand bump that was forgotten for nine days in September 2026 while the freshness gate sat red.
+- **`.github/workflows/generate_repo.yml`** ("Validate Kodi Repository") re-runs the tests, lint, the generator-staleness check, and the per-add-on version-bump gate (main only).
+- **`.github/workflows/pages.yml`** ("Build & Deploy Pages") runs the same gates, builds the full site with `build_site.py` (including the `/static/` catalog, with `GH_TOKEN` so the latest-release lookup uses the REST API), runs the secret gate (`check_site_secrets.py`) and a double-build determinism diff, then **deploys via GitHub Pages** (Pages source = GitHub Actions) and verifies live from the consumer seat (`verify_live_site.py`). It also runs on a daily cron to refresh mutable third-party metadata, and on `repository_dispatch` when a sibling repo (ezmpp) publishes a release. Every one of those runs re-resolves the EZM++ release and the POV upstream index, so a new version needs no commit here.
 
 Note: pages.yml has NO path filter - every push to main builds and deploys (any tracked file can shape the artifact). Only generate_repo.yml keeps a path filter.
 
-In pages.yml the hosted release-freshness gate runs FIRST, ahead of the tooling
-install, and must stay there. Every other step validates the pushed commit; that
-one is the job's only WATCHDOG for drift that exists independently of the push,
-so skipping it loses signal silently. It used to sit after Lint, and on
-2026-07-24 and 07-25 an unpinned-ruff release failed Lint and left the watchdog
-dark for two days. It is stdlib-only, so it needs nothing installed first.
+Retired 2026-09-26, both on the same day: the hosted release-freshness gate
+(`check_hosted_release_sync.py`, which turned a stale hand-maintained mirror
+into a red build after a 2h grace) and the mirror sync workflow
+(`sync_hosted_mirror.yml` + `_tools/sync_hosted_mirror.py`, which bumped the
+mirror by bot commit). Both existed to keep a committed version in step with
+an upstream truth; with no committed version there is nothing for either to
+check or bump. Do not reinstate a committed `addon.xml` for a build-resolved
+entry, and do not add a gate that compares one.
 
 **Rollback:** a bad canvas/tooling commit rolls back with `git revert` + push (CI redeploys). A bad ADD-ON release must roll FORWARD (new version bump) - reverting lowers the version and the version-bump gate rightly blocks it. NEVER flip the Pages source back to branch serving (`build_type=legacy`): main is sources-only and would serve a site with no /static/, no root index, and no installer.
 
@@ -298,7 +298,7 @@ dark for two days. It is stdlib-only, so it needs nothing installed first.
 | Path                    | Purpose                                                                                                                                                                                                                                                       |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `addons/<addon-id>/`    | Any dir with an `addon.xml` is built into a zip and listed in `addons/addons.xml`. Currently `repository.tony7bones` ONLY, since the `script.ezmaintenanceplusplus` shim was deleted 2026-07-20.                                                              |
-| `addons/hosted/<id>/`   | Mirrored third-party-repo trees (`addon.xml` + zip). Static, committed by hand, NOT zipped or indexed by the generator (`hosted` is the sole `_ADDONS_SPECIAL` entry). Includes the `script.ezmaintenanceplusplus` metadata mirror.        |
+| `addons/hosted/<id>/`   | Mirrored third-party-repo trees (`addon.xml` + zip). Static, committed by hand, NOT zipped or indexed by the generator (`hosted` is the sole `_ADDONS_SPECIAL` entry). `script.ezmaintenanceplusplus` and `plugin.video.pov` have NO directory here: the build resolves them upstream. |
 | `dropbox/repositories/` | Hand-authored third-party repository installer zips. Not in `addons.xml`; Kodi installs them manually via File Manager. Mirrored 1:1 to the served `/repositories/`.                                                                                          |
 | `dropbox/rss/`          | Hand-authored asset dir. Mirrored to the served root and recursively auto-indexed for File-Manager browsing. Git-ignored files are kept locally and never copied into the served tree. (`media/`, `iptv/`, `zips/` retired 2026-07-16.)                       |
 
@@ -327,7 +327,7 @@ Generated zips are **reproducible** so CI's staleness gate does not flag them on
 
 ### The `_tools/` inventory
 
-Release: `release.py`, `release_lib.py`, `release_detect.py`, `check_versions.py`. Build/deploy: `generate_repo.py`, `build_site.py`, `static_catalog.py` (+ manifest `catalog.json`), `verify_live_site.py`, `check_site_secrets.py`, `secret_patterns.py`, `check_hosted_release_sync.py`, `sync_hosted_mirror.py`, `mirror_closure.py`. Canvas + backup: `publish_canvas.py`, `sync_share.py`. Device tooling: `firetv.sh`, `provision-kodi.sh` (the adb provisioner; the Setup add-ons it drove are retired, but the script is retained). IPTV builder: `build_iptv.py` (+ its test suite) was **extracted to its own private repo (`moquette/iptv`) and removed here (2026-07-17)**; the mini builds IPTV centrally and serves it over the NFS share (the share model), so this repo no longer host-builds. `make_custom_m3u.py` remains.
+Release: `release.py`, `release_lib.py`, `release_detect.py`, `check_versions.py`. Build/deploy: `generate_repo.py`, `build_site.py`, `static_catalog.py` (+ manifest `catalog.json`), `verify_live_site.py`, `check_site_secrets.py`, `secret_patterns.py`, `mirror_closure.py` (`check_hosted_release_sync.py` and `sync_hosted_mirror.py` were retired 2026-09-26; `static_catalog.py` resolves release versions itself). Canvas + backup: `publish_canvas.py`, `sync_share.py`. Device tooling: `firetv.sh`, `provision-kodi.sh` (the adb provisioner; the Setup add-ons it drove are retired, but the script is retained). IPTV builder: `build_iptv.py` (+ its test suite) was **extracted to its own private repo (`moquette/iptv`) and removed here (2026-07-17)**; the mini builds IPTV centrally and serves it over the NFS share (the share model), so this repo no longer host-builds. `make_custom_m3u.py` remains.
 
 ## Adding content
 

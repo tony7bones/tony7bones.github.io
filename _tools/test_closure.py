@@ -34,14 +34,24 @@ HOSTED = os.path.join(HERE, "..", "addons", "hosted")
 REPO_JSON = os.path.join(HERE, "..", "_tools", "catalog.json")
 
 sys.path.insert(0, str(Path(__file__).parent))
+import static_catalog as sc  # noqa: E402
 from mirror_closure import OFFICIAL_LIBRARY  # noqa: E402
 
 # Roots whose FULL closure must be hosted (the fleet installs these off-grid).
 #
-# script.ezmaintenanceplusplus was added 2026-07-25. It ships to the same boxes
-# as the skin and carries its own <requires>, but only the skin's closure was
-# ever gated, so a bump to a dependency version this repo does not host would
-# 404 at install time on an off-grid Apple TV with nothing red anywhere.
+# script.ezmaintenanceplusplus was a root here from 2026-07-25 to 2026-09-26.
+# It ships to the same boxes as the skin and carries its own <requires>, but
+# only the skin's closure was ever gated, so a bump to a dependency version
+# this repo does not host would 404 at install time on an off-grid Apple TV
+# with nothing red anywhere. Since 2026-09-26 it has NO committed addon.xml:
+# its version and metadata are resolved from its latest GitHub release at
+# build time, so this offline walk cannot see its imports. Its closure is
+# gated where the metadata arrives instead, by
+# static_catalog._check_imports_hosted at every build, and
+# test_build_resolved_entries_are_gated_at_build below pins that the two
+# mechanisms together leave no entry uncovered. plugin.video.pov (resolved
+# from upstream's own addons.xml the same way) is a leaf in the skin's walk
+# for the same reason.
 #
 # skin.estuary7 (rooted from this file's creation) and skin.estuary8 (rooted
 # 2026-07-31) left on 2026-08-31, when both skins were decommissioned and
@@ -71,7 +81,6 @@ from mirror_closure import OFFICIAL_LIBRARY  # noqa: E402
 # user-installed on Apple TVs rather than pulled in by a skin, which makes it
 # exactly that case.
 ROOTS = [
-    "script.ezmaintenanceplusplus",
     "skin.estuary.pov",
     "service.tvos.pythonfix",
 ]
@@ -109,9 +118,21 @@ def _imports(xml_text):
     ]
 
 
+def _build_resolved_ids():
+    """Ids whose addon.xml exists only at build time (no committed copy)."""
+    return {e["id"] for e in sc.load_catalog() if sc.metadata_resolved_at_build(e)}
+
+
 def _hosted_xml(addon_id):
     p = os.path.join(HOSTED, addon_id, "addon.xml")
-    return open(p, encoding="utf-8").read() if os.path.isfile(p) else None
+    if os.path.isfile(p):
+        return open(p, encoding="utf-8").read()
+    if addon_id in _build_resolved_ids():
+        # Present in the catalog, metadata resolved at build time, and its own
+        # imports are checked by static_catalog._check_imports_hosted against
+        # the catalog on every build. A leaf here, not a hole.
+        return ""
+    return None
 
 
 def _repo_json_ids():
@@ -169,6 +190,38 @@ def test_hosted_closure_is_in_repository_json(root):
             not_listed.append(aid)
         stack.extend(_imports(xml))
     assert not not_listed, f"hosted but not in repository.json: {not_listed}"
+
+
+def test_build_resolved_entries_are_gated_at_build():
+    """The offline walk above and the build-time import check together cover
+    every entry this repo carries metadata for: a build-resolved id must have
+    no committed addon.xml, or two truths exist and one of them rots, and the
+    build-time half must really refuse an unhosted import."""
+    resolved = _build_resolved_ids()
+    assert resolved == {"script.ezmaintenanceplusplus", "plugin.video.pov"}
+    for aid in resolved:
+        assert not os.path.exists(os.path.join(HOSTED, aid)), (
+            f"addons/hosted/{aid}/ exists but the build resolves its metadata "
+            f"upstream: delete the directory, there must be no copy to rot"
+        )
+    # The build-time half really refuses an unhosted import.
+    with pytest.raises(sc.FetchError, match="script.module.nothosted"):
+        sc._check_imports_hosted(
+            "x",
+            b'<addon id="x" version="1"><requires>'
+            b'<import addon="xbmc.python" version="3.0.0"/>'
+            b'<import addon="script.module.nothosted"/>'
+            b"</requires></addon>",
+            {"x", "script.module.requests"},
+        )
+    sc._check_imports_hosted(
+        "x",
+        b'<addon id="x" version="1"><requires>'
+        b'<import addon="xbmc.python" version="3.0.0"/>'
+        b'<import addon="script.module.requests"/>'
+        b"</requires></addon>",
+        {"x", "script.module.requests"},
+    )
 
 
 # --------------------------------------------------------------------------- #

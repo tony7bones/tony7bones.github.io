@@ -2,7 +2,7 @@ name: Validate Kodi Repository
 
 on:
   push:
-    # Branch pushes only — tag pushes (from deploy.py's atomic main+tag push)
+    # Branch pushes only: tag pushes (from deploy.py's atomic main+tag push)
     # re-point at main's HEAD, which already ran; and on a tag checkout the
     # consistency gate can't resolve the main branch, so the tag run fails spuriously.
     # modular-setup added in Phase 6 so the setup-rewrite invariants gate that
@@ -53,22 +53,9 @@ jobs:
       - name: Lint
         run: ruff check _tools/
 
-      - name: Hosted-mirror release-freshness gate
-        # Every addons/hosted/<id> mirror whose repository.json asset template
-        # points at a GitHub Releases download URL (today only
-        # script.ezmaintenanceplusplus -> moquette/kodi-ezmpp)
-        # must resolve to a REAL, LATEST published release on the source repo —
-        # a silent mismatch here 404s a fresh install or serves a stale build
-        # forever, with no error anywhere. Talks to the live GitHub REST API;
-        # works unauthenticated too (rate-limited), but GH_TOKEN here keeps CI
-        # off the shared-runner-IP anonymous limit.
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python3 _tools/check_hosted_release_sync.py
-
       - name: Verify generated files are up to date
         # CI NEVER commits to main. It only validates. If anything is stale the
-        # author must run `python3 _tools/generate_repo.py` and commit — every
+        # author must run `python3 _tools/generate_repo.py` and commit; every
         # real change ships with its own version bump (Kodi auto-upgrade relies
         # on the version, not byte churn).
         run: |
@@ -84,7 +71,7 @@ jobs:
         # O7 fix: the per-add-on monotonic "every changed add-on bumped its
         # version" gate (check_versions.py) used to run ONLY in the pre-push
         # hook. De-pinning the version tests (release-automation Phase 1) made
-        # that the SOLE place the guarantee lived — so a --no-verify or un-hooked
+        # that the SOLE place the guarantee lived, so a --no-verify or un-hooked
         # push could ship a same-version byte change (invisible to Kodi's
         # version-only auto-upgrade). This wires the gate into CI as a backstop.
         #
@@ -102,7 +89,7 @@ jobs:
           if [ -z "$BEFORE_SHA" ] || \
              [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ] || \
              ! git rev-parse --verify --quiet "$BEFORE_SHA" >/dev/null; then
-            echo "no usable 'before' baseline ($BEFORE_SHA) — skipping version-bump gate"
+            echo "no usable 'before' baseline ($BEFORE_SHA), skipping version-bump gate"
             exit 0
           fi
           CHECK_VERSIONS_BASE_REF="$BEFORE_SHA" python3 _tools/check_versions.py

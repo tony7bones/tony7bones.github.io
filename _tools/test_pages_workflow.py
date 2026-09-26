@@ -54,8 +54,32 @@ def test_pre_deploy_gates_are_present():
     text = _text()
     assert "check_site_secrets.py" in text, "artifact secret gate"
     assert "diff -r _site _site2" in text, "determinism double-build gate"
-    assert "check_hosted_release_sync.py" in text, "release freshness gate"
+    assert "check_hosted_release_sync.py" not in text, (
+        "the freshness gate retired 2026-09-26: the build resolves the version"
+    )
     assert "generate_repo.py" in text, "transition staleness gate (drop at Phase 6)"
+
+
+def test_build_resolves_release_versions_with_the_workflow_token():
+    """Both site builds pass GH_TOKEN so static_catalog resolves the latest
+    EZM++ release through the REST API rather than the anonymous redirect,
+    and no separate freshness gate or hosted-mirror sync workflow exists to
+    fall behind (both retired 2026-09-26)."""
+    text = _text()
+    build = text[text.index("- name: Build site") : text.index("- name: Secret gate")]
+    assert "GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}" in build
+    determinism = text[
+        text.index("- name: Determinism gate") : text.index(
+            "- name: Upload build manifest"
+        )
+    ]
+    assert "GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}" in determinism
+    workflows = WORKFLOW.parent
+    assert not (workflows / "sync_hosted_mirror.yml").exists()
+    assert "sync_hosted_mirror" not in (workflows / "generate_repo.yml").read_text()
+    assert (
+        "check_hosted_release_sync" not in (workflows / "generate_repo.yml").read_text()
+    )
 
 
 def test_deploys_via_pages_from_actions():

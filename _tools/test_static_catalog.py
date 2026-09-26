@@ -24,17 +24,36 @@ import static_catalog as sc
 
 OWN = "https://raw.githubusercontent.com/{username}/{repository}/{ref}"
 BASE_URL = "https://example.test"
+LATEST_HTML = "https://github.com/moquette/src/releases/latest"
+LATEST_API = "https://api.github.com/repos/moquette/src/releases/latest"
+INDEX_URL = "https://up.example/repo/packages/addons.xml"
+RELEASE_ZIP = (
+    "https://github.com/moquette/src/releases/download/v{v}/release.addon-{v}.zip"
+)
+INDEXED_ZIP = "https://up.example/repo/indexed.addon/indexed.addon-{v}.zip"
+
+
+def _index_xml(*pairs: tuple[str, str]) -> bytes:
+    body = "".join(f'<addon id="{i}" version="{v}"/>' for i, v in pairs)
+    return f"<addons>{body}</addons>".encode()
 
 
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
 class FakeFetcher:
-    """Duck-typed sc.Fetcher backed by a dict; raises FetchError on misses."""
+    """Duck-typed sc.Fetcher backed by a dict; raises FetchError on misses.
 
-    def __init__(self, urls: dict | None = None):
+    ``fetch`` is the cached path and records into ``calls``; ``_download``,
+    ``get_json`` and ``redirect_location`` are the uncached lookups the
+    version resolution uses and record into ``download_calls``, so a test can
+    assert a lookup never went through the cache."""
+
+    def __init__(self, urls: dict | None = None, redirects: dict | None = None):
         self.urls = dict(urls or {})
+        self.redirects = dict(redirects or {})
         self.calls: list[str] = []
+        self.download_calls: list[str] = []
 
     def fetch(self, url, mutable=False, tolerate_missing=False, expect_zip=False):
         self.calls.append(url)
@@ -44,8 +63,23 @@ class FakeFetcher:
             return None
         raise sc.FetchError(f"{url}: not in fake")
 
-    def _download(self, url):
-        return self.fetch(url)
+    def _download(self, url, headers=None):
+        self.download_calls.append(url)
+        if url in self.urls:
+            v = self.urls[url]
+            if isinstance(v, Exception):
+                raise v
+            return v
+        raise sc.FetchError(f"{url}: not in fake")
+
+    def get_json(self, url, headers=None):
+        return json.loads(self._download(url, headers))
+
+    def redirect_location(self, url):
+        self.download_calls.append(url)
+        if url in self.redirects:
+            return self.redirects[url]
+        raise sc.FetchError(f"{url}: no redirect in fake")
 
 
 class SplitFetcher(FakeFetcher):
@@ -53,12 +87,16 @@ class SplitFetcher(FakeFetcher):
     _download() serves the LIVE site. The fallback path must only ever touch
     the latter."""
 
-    def __init__(self, cached: dict | None = None, live: dict | None = None):
-        super().__init__(cached)
+    def __init__(
+        self,
+        cached: dict | None = None,
+        live: dict | None = None,
+        redirects: dict | None = None,
+    ):
+        super().__init__(cached, redirects)
         self.live = dict(live or {})
-        self.download_calls: list[str] = []
 
-    def _download(self, url):
+    def _download(self, url, headers=None):
         self.download_calls.append(url)
         if url in self.live:
             return self.live[url]
@@ -117,6 +155,11 @@ def _entry(addon_id: str, kind: str) -> dict:
         e["assets"] = {
             "zip": "https://github.com/moquette/src/releases/download/v{version}/{id}-{version}.zip"
         }
+    elif kind == "indexed":
+        # hybrid + upstream_index: version from the upstream addons.xml
+        e["asset_prefix"] = OWN + "/addons/hosted/{id}/"
+        e["assets"] = {"zip": "https://up.example/repo/{id}/{id}-{version}.zip"}
+        e["upstream_index"] = "https://up.example/repo/packages/addons.xml"
     elif kind == "streamed":
         e["username"], e["repository"] = "up", "stream"
         e["asset_prefix"] = (
@@ -145,7 +188,6 @@ def fake_repo(tmp_path):
         ("hosted.addon", "hosted", "hosted.addon-2.0.0.zip"),
         ("unversioned.addon", "hosted-unversioned", "unversioned.addon.zip"),
         ("hybrid.addon", "hybrid", None),
-        ("release.addon", "release-asset", None),
     ]:
         d = root / "addons" / "hosted" / hid
         d.mkdir(parents=True)
@@ -155,6 +197,9 @@ def fake_repo(tmp_path):
             (d / zname).write_bytes(_zip_bytes(hid, "2.0.0"))
         entries.append(_entry(hid, kind))
 
+    # The two build-resolved kinds have NO addons/hosted/<id>/ at all.
+    entries.append(_entry("release.addon", "release-asset"))
+    entries.append(_entry("indexed.addon", "indexed"))
     entries.append(_entry("streamed.addon", "streamed"))
 
     manifest_path = root / "repository.json"
@@ -165,9 +210,9 @@ def fake_repo(tmp_path):
             "https://raw.githubusercontent.com/up/stream/master/hybrid.addon-2.0.0.zip": _zip_bytes(
                 "hybrid.addon", "2.0.0"
             ),
-            "https://github.com/moquette/src/releases/download/v2.0.0/release.addon-2.0.0.zip": _zip_bytes(
-                "release.addon", "2.0.0"
-            ),
+            RELEASE_ZIP.format(v="2.0.0"): _zip_bytes("release.addon", "2.0.0"),
+            INDEX_URL: _index_xml(("other.addon", "9.9"), ("indexed.addon", "2.0.0")),
+            INDEXED_ZIP.format(v="2.0.0"): _zip_bytes("indexed.addon", "2.0.0"),
             "https://raw.githubusercontent.com/up/stream/main/zips/streamed.addon/addon.xml": _addon_xml(
                 "streamed.addon", "3.0.0"
             ).encode(),
@@ -175,9 +220,18 @@ def fake_repo(tmp_path):
                 "streamed.addon", "3.0.0"
             ),
             "https://raw.githubusercontent.com/up/stream/main/zips/streamed.addon/icon.png": b"PNG-ST",
-        }
+        },
+        redirects={LATEST_HTML: "https://github.com/moquette/src/releases/tag/v2.0.0"},
     )
     return root, manifest_path, fetcher
+
+
+@pytest.fixture(autouse=True)
+def _no_token(monkeypatch):
+    """Default: no token, so release-asset resolves via the redirect. Tests
+    of the API path set GH_TOKEN themselves."""
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
 
 
 def _build(fake_repo, out, **kw):
@@ -201,7 +255,25 @@ def test_classify_all_five_kinds():
     assert sc.classify(_entry("a", "hosted-unversioned")) == sc.KIND_HOSTED
     assert sc.classify(_entry("a", "hybrid")) == sc.KIND_HYBRID
     assert sc.classify(_entry("a", "release-asset")) == sc.KIND_RELEASE_ASSET
+    assert sc.classify(_entry("a", "indexed")) == sc.KIND_HYBRID
     assert sc.classify(_entry("a", "streamed")) == sc.KIND_STREAMED
+
+
+def test_metadata_resolved_at_build_is_exactly_the_two_upstream_truths():
+    assert sc.metadata_resolved_at_build(_entry("a", "release-asset"))
+    assert sc.metadata_resolved_at_build(_entry("a", "indexed"))
+    for kind in ("first-party", "hosted", "hosted-unversioned", "hybrid", "streamed"):
+        assert not sc.metadata_resolved_at_build(_entry("a", kind)), kind
+
+
+def test_real_catalog_build_resolved_entries_have_no_committed_metadata():
+    """The owner's rule of 2026-09-26: THERE MUST BE NO MIRROR VERSION TO BE
+    WRONG. The two entries whose version rotted by hand are resolved upstream
+    at build time, and the directories that held the hand copy are gone."""
+    resolved = {e["id"] for e in sc.load_catalog() if sc.metadata_resolved_at_build(e)}
+    assert resolved == {"script.ezmaintenanceplusplus", "plugin.video.pov"}
+    for aid in resolved:
+        assert not os.path.exists(os.path.join(sc.REPO_ROOT, "addons", "hosted", aid))
 
 
 def test_classify_the_real_manifest_covers_all_entries():
@@ -269,21 +341,23 @@ def test_classify_the_real_manifest_covers_all_entries():
           streamed entry fetches <asset_prefix>/addon.xml from upstream, and
           kodiyashimaru publishes no per-addon addon.xml: /repo/<id>/addon.xml,
           /repo/packages/<id>/addon.xml and /repo/zips/<id>/addon.xml all 404,
-          and only /repo/packages/addons.xml (the index) and the zip exist. So
-          the metadata has to come from our committed copy. The cost, stated
-          rather than hidden: the version in addons/hosted/plugin.video.pov/
-          addon.xml is hand-maintained, exactly like a hosted mirror, and goes
-          stale when upstream bumps. repository.kodifitzwell is the same shape
-          against the same kind of Pages host, so this is the established
-          pattern here, not a new one.
+          and only /repo/packages/addons.xml (the index) and the zip exist.
+          Until 2026-09-26 the metadata came from a committed copy whose
+          version was typed by hand, and it rotted: 6.08.15 against an
+          upstream 6.09.06, zip 404, POV DROPPED from the build for days, the
+          skin uninstallable. Since then the entry carries "upstream_index"
+          (that packages/addons.xml), the build reads the version from it on
+          every run and takes addon.xml out of the zip, and there is no
+          committed copy at all. repository.kodifitzwell is the same kind of
+          Pages host but keeps its committed addon.xml (no upstream_index).
       +1  2026-08-27, skin.estuary.pov ADDED, hosted. Ours: stock Kodi Estuary
           4.1.0 reworked so the Movies and TV shows home tabs are driven by
           plugin.video.pov instead of the local library. Hosted rather than
           release-asset for the same reason as Estuary 8 and one stronger: its
-          source repo moquette/kodi-estuary-pov does not exist on GitHub at all
-          (measured with git ls-remote, "Repository not found"), so a
-          release-asset pointer would have nothing to resolve and
-          check_hosted_release_sync.py would hard-fail every build. At 2.4MB the
+          source repo moquette/kodi-estuary-pov did not exist on GitHub at all
+          when it was added (measured with git ls-remote, "Repository not
+          found"), so a release-asset pointer would have had no latest release
+          to resolve and the entry would have fallen back or dropped. At 2.4MB the
           committed zip is a ninth of Estuary 8's, so the cost of self-hosting
           is small and the install stays available off-grid.
       +1  2026-08-03, plugin.video.estuary8.search ADDED, hosted. It is the
@@ -306,15 +380,19 @@ def test_classify_the_real_manifest_covers_all_entries():
           engine-era setup machinery (script.tony7bones.bootstrap +
           script.module.tony7bones) and the dead modv2plus were nuked.
 
-    skin.estuary8 is HOSTED, not release-asset like skin.estuary7, and that
-    difference is deliberate rather than an oversight. A release-asset entry
-    resolves its zip from a GitHub Release on the source repo, and
-    check_hosted_release_sync.py HARD-FAILS on a broken pointer: declare one
-    before a matching release exists and every build goes red. Estuary 8 has no
-    release yet. Hosting the zip in this repo also keeps the whole Estuary 8
-    closure installable off-grid, which is exactly what the skinshortcuts purge
-    above cost Estuary 7. Switching it to release-asset later is a one-line
-    change here plus a real release; do not do it before the release exists.
+    skin.estuary8 was HOSTED, not release-asset like skin.estuary7, and that
+    difference was deliberate rather than an oversight. A release-asset entry
+    resolves its version and zip from the source repo's LATEST GitHub Release
+    at build time (since 2026-09-26; before that a hand-maintained addon.xml
+    plus a freshness gate that hard-failed on a broken pointer): declare one
+    before any release exists and the entry has nothing to resolve. Hosting the
+    zip in this repo also kept the whole Estuary 8 closure installable
+    off-grid, which is exactly what the skinshortcuts purge above cost
+    Estuary 7. The same reasoning holds for skin.estuary.pov today.
+
+    script.ezmaintenanceplusplus is the one release-asset entry, and since
+    2026-09-26 it has no addons/hosted/ directory: version from the latest
+    release of moquette/kodi-ezmpp, addon.xml and art from that release's zip.
     """
     entries = sc.load_catalog()
     kinds = {}
@@ -364,7 +442,9 @@ def test_no_catalog_entry_points_at_a_deleted_hosted_mirror():
     dangling = sorted(
         e["id"]
         for e in sc.load_catalog()
-        if "/addons/hosted/" in json.dumps(e) and e["id"] not in hosted
+        if "/addons/hosted/" in json.dumps(e)
+        and e["id"] not in hosted
+        and not sc.metadata_resolved_at_build(e)
     )
     assert not dangling, (
         f"catalog.json points at addons/hosted/ mirrors that do not exist: "
@@ -378,7 +458,7 @@ def test_no_catalog_entry_points_at_a_deleted_hosted_mirror():
 def test_build_materializes_every_class(fake_repo, tmp_path):
     out = tmp_path / "static"
     manifest = _build(fake_repo, out)
-    assert manifest["count"] == 6
+    assert manifest["count"] == 7
     ids = set(manifest["entries"])
     assert ids == {
         "first.party",
@@ -386,6 +466,7 @@ def test_build_materializes_every_class(fake_repo, tmp_path):
         "unversioned.addon",
         "hybrid.addon",
         "release.addon",
+        "indexed.addon",
         "streamed.addon",
     }
     for entry_id, info in manifest["entries"].items():
@@ -445,15 +526,15 @@ def test_one_dead_upstream_falls_back_to_last_good(fake_repo, tmp_path):
     info = manifest["entries"]["streamed.addon"]
     assert info["stale"] is True
     assert info["version"] == "2.9.0"
-    # the other five resolved fresh - fault isolation
-    assert manifest["count"] == 6
+    # the other six resolved fresh - fault isolation
+    assert manifest["count"] == 7
     assert sum(e["stale"] for e in manifest["entries"].values()) == 1
 
 
 def test_dead_upstream_without_baseline_is_dropped_with_survivors(fake_repo, tmp_path):
     _kill_streamed(fake_repo)
     manifest = _build(fake_repo, tmp_path / "static", baseline=None)
-    assert manifest["count"] == 5
+    assert manifest["count"] == 6
     assert "streamed.addon" not in manifest["entries"]
 
 
@@ -471,7 +552,7 @@ def test_shrink_is_allowed_only_explicitly(fake_repo, tmp_path):
     manifest = _build(
         fake_repo, tmp_path / "static", baseline=baseline, allow_shrink=True
     )
-    assert manifest["count"] == 5
+    assert manifest["count"] == 6
 
 
 def test_total_loss_refuses_to_publish_an_empty_catalog(tmp_path):
@@ -585,7 +666,7 @@ def test_corrupt_primary_zip_falls_back_not_crash(fake_repo, tmp_path):
     manifest = _build(fake_repo, tmp_path / "s", baseline=baseline)
     info = manifest["entries"]["hybrid.addon"]
     assert info["stale"] is True and info["version"] == "1.5.0"
-    assert manifest["count"] == 6
+    assert manifest["count"] == 7
 
 
 def test_internal_version_mismatch_is_rejected(fake_repo, tmp_path):
@@ -647,6 +728,279 @@ def test_single_writer_refuses_version_skew(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# build-time version resolution (2026-09-26): release-asset from the latest
+# GitHub release, hybrid+upstream_index from the upstream addons.xml, the
+# addon.xml taken FROM THE ZIP, nothing committed, nothing cached.
+# ---------------------------------------------------------------------------
+def _release_zip_with_art(version="2.0.0"):
+    xml = (
+        f'<addon id="release.addon" name="R" version="{version}" provider-name="t">'
+        f'<extension point="xbmc.addon.metadata"><assets><icon>icon.png</icon>'
+        f"</assets></extension></addon>"
+    )
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("release.addon/addon.xml", xml)
+        zf.writestr("release.addon/icon.png", b"PNG-FROM-RELEASE")
+    return buf.getvalue(), xml.encode()
+
+
+def test_release_asset_resolves_via_redirect_without_a_token(fake_repo, tmp_path):
+    root, manifest_path, fetcher = fake_repo
+    zip_bytes, xml = _release_zip_with_art()
+    fetcher.urls[RELEASE_ZIP.format(v="2.0.0")] = zip_bytes
+    manifest = _build(fake_repo, tmp_path / "s")
+    info = manifest["entries"]["release.addon"]
+    assert info["version"] == "2.0.0" and info["kind"] == sc.KIND_RELEASE_ASSET
+    assert info["source_url"] == RELEASE_ZIP.format(v="2.0.0")
+    assert not info["stale"]
+    # the lookup went through the uncached path, and only the redirect
+    assert LATEST_HTML in fetcher.download_calls
+    assert LATEST_API not in fetcher.download_calls
+    assert LATEST_HTML not in fetcher.calls
+    # metadata and art come FROM THE ZIP
+    assert (tmp_path / "s" / "release.addon" / "addon.xml").read_bytes() == xml
+    assert (
+        tmp_path / "s" / "release.addon" / "icon.png"
+    ).read_bytes() == b"PNG-FROM-RELEASE"
+
+
+def test_release_asset_resolves_via_api_with_a_token(fake_repo, tmp_path, monkeypatch):
+    monkeypatch.setenv("GH_TOKEN", "t0k")
+    root, manifest_path, fetcher = fake_repo
+    fetcher.urls[LATEST_API] = json.dumps({"tag_name": "v2.1.0"}).encode()
+    fetcher.urls[RELEASE_ZIP.format(v="2.1.0")] = _zip_bytes("release.addon", "2.1.0")
+    manifest = _build(fake_repo, tmp_path / "s")
+    assert manifest["entries"]["release.addon"]["version"] == "2.1.0"
+    assert LATEST_API in fetcher.download_calls
+    assert LATEST_HTML not in fetcher.download_calls, "API answered; no redirect needed"
+
+
+def test_release_asset_api_failure_falls_back_to_the_redirect(
+    fake_repo, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("GITHUB_TOKEN", "t0k")
+    root, manifest_path, fetcher = fake_repo
+    fetcher.urls[LATEST_API] = sc.FetchError(f"{LATEST_API}: HTTP 503")
+    manifest = _build(fake_repo, tmp_path / "s")
+    assert manifest["entries"]["release.addon"]["version"] == "2.0.0"
+    assert fetcher.download_calls.index(LATEST_API) < fetcher.download_calls.index(
+        LATEST_HTML
+    )
+
+
+def test_release_asset_with_no_release_falls_back_to_last_good(
+    fake_repo, tmp_path, monkeypatch
+):
+    """API 404 = no release at all: a FetchError, so the live copy is served
+    stale exactly as for any other dead upstream."""
+    monkeypatch.setenv("GH_TOKEN", "t0k")
+    root, manifest_path, fetcher = fake_repo
+    fetcher.urls[LATEST_API] = _http_404(LATEST_API)
+    del fetcher.redirects[LATEST_HTML]
+    live = f"{BASE_URL}/static/release.addon/"
+    fetcher.urls[live + "addon.xml"] = _addon_xml("release.addon", "1.9.0").encode()
+    fetcher.urls[live + "release.addon-1.9.0.zip"] = _zip_bytes(
+        "release.addon", "1.9.0"
+    )
+    baseline = {"entries": {"release.addon": {"version": "1.9.0"}}}
+    manifest = _build(fake_repo, tmp_path / "s", baseline=baseline)
+    info = manifest["entries"]["release.addon"]
+    assert info["stale"] is True and info["version"] == "1.9.0"
+    assert manifest["count"] == 7
+
+
+def test_release_asset_redirect_to_a_non_tag_is_a_fetch_error(fake_repo, tmp_path):
+    root, manifest_path, fetcher = fake_repo
+    fetcher.redirects[LATEST_HTML] = "https://github.com/moquette/src/releases"
+    manifest = _build(fake_repo, tmp_path / "s", allow_shrink=True)
+    assert "release.addon" not in manifest["entries"]
+
+
+def test_tag_vs_packaged_version_mismatch_falls_back(fake_repo, tmp_path):
+    """The tag says 2.1.0 but the zip packages addon.xml 2.0.0: publishing it
+    would loop Kodi's updater, so it is a FetchError and the last-good copy
+    is served instead."""
+    root, manifest_path, fetcher = fake_repo
+    fetcher.redirects[LATEST_HTML] = (
+        "https://github.com/moquette/src/releases/tag/v2.1.0"
+    )
+    fetcher.urls[RELEASE_ZIP.format(v="2.1.0")] = _zip_bytes("release.addon", "2.0.0")
+    live = f"{BASE_URL}/static/release.addon/"
+    fetcher.urls[live + "addon.xml"] = _addon_xml("release.addon", "2.0.0").encode()
+    fetcher.urls[live + "release.addon-2.0.0.zip"] = _zip_bytes(
+        "release.addon", "2.0.0"
+    )
+    baseline = {"entries": {"release.addon": {"version": "2.0.0"}}}
+    manifest = _build(fake_repo, tmp_path / "s", baseline=baseline)
+    info = manifest["entries"]["release.addon"]
+    assert info["stale"] is True and info["version"] == "2.0.0"
+
+
+def test_release_zip_without_its_addon_xml_is_a_fetch_error(fake_repo, tmp_path):
+    root, manifest_path, fetcher = fake_repo
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("release.addon/README", b"no manifest")
+    fetcher.urls[RELEASE_ZIP.format(v="2.0.0")] = buf.getvalue()
+    manifest = _build(fake_repo, tmp_path / "s", allow_shrink=True)
+    assert "release.addon" not in manifest["entries"]
+
+
+def test_indexed_hybrid_resolves_version_from_the_upstream_index(fake_repo, tmp_path):
+    root, manifest_path, fetcher = fake_repo
+    fetcher.urls[INDEX_URL] = _index_xml(("indexed.addon", "3.1.0"))
+    fetcher.urls[INDEXED_ZIP.format(v="3.1.0")] = _zip_bytes("indexed.addon", "3.1.0")
+    manifest = _build(fake_repo, tmp_path / "s")
+    info = manifest["entries"]["indexed.addon"]
+    assert info["version"] == "3.1.0" and info["kind"] == sc.KIND_HYBRID
+    assert info["source_url"] == INDEXED_ZIP.format(v="3.1.0")
+    # the index is read fresh, never through the cache
+    assert INDEX_URL in fetcher.download_calls and INDEX_URL not in fetcher.calls
+    served = (tmp_path / "s" / "indexed.addon" / "addon.xml").read_bytes()
+    assert ET.fromstring(served).get("version") == "3.1.0"
+
+
+def test_index_missing_the_addon_falls_back_to_last_good(fake_repo, tmp_path):
+    root, manifest_path, fetcher = fake_repo
+    fetcher.urls[INDEX_URL] = _index_xml(("other.addon", "9.9"))
+    live = f"{BASE_URL}/static/indexed.addon/"
+    fetcher.urls[live + "addon.xml"] = _addon_xml("indexed.addon", "1.0.0").encode()
+    fetcher.urls[live + "indexed.addon-1.0.0.zip"] = _zip_bytes(
+        "indexed.addon", "1.0.0"
+    )
+    baseline = {"entries": {"indexed.addon": {"version": "1.0.0"}}}
+    manifest = _build(fake_repo, tmp_path / "s", baseline=baseline)
+    info = manifest["entries"]["indexed.addon"]
+    assert info["stale"] is True and info["version"] == "1.0.0"
+
+
+def test_index_that_is_not_xml_is_a_fetch_error(fake_repo, tmp_path):
+    root, manifest_path, fetcher = fake_repo
+    fetcher.urls[INDEX_URL] = b"<html>rate limited"
+    manifest = _build(fake_repo, tmp_path / "s", allow_shrink=True)
+    assert "indexed.addon" not in manifest["entries"]
+
+
+def test_hybrid_without_upstream_index_keeps_the_committed_addon_xml(
+    fake_repo, tmp_path
+):
+    """Nothing else in the catalog changes: a plain hybrid still reads
+    addons/hosted/<id>/addon.xml for its version and metadata."""
+    root, manifest_path, fetcher = fake_repo
+    manifest = _build(fake_repo, tmp_path / "s")
+    assert manifest["entries"]["hybrid.addon"]["version"] == "2.0.0"
+    committed = (root / "addons" / "hosted" / "hybrid.addon" / "addon.xml").read_bytes()
+    assert (tmp_path / "s" / "hybrid.addon" / "addon.xml").read_bytes() == committed
+    assert INDEX_URL not in [c for c in fetcher.download_calls if "hybrid" in c]
+
+
+def test_build_resolved_entry_importing_an_unhosted_addon_falls_back(
+    fake_repo, tmp_path
+):
+    """Metadata that arrives at build time is outside test_closure.py's
+    offline walk, so its <import>s are checked against the catalog here."""
+    root, manifest_path, fetcher = fake_repo
+    xml = (
+        '<addon id="release.addon" version="2.0.0"><requires>'
+        '<import addon="xbmc.python" version="3.0.0"/>'
+        '<import addon="hosted.addon"/>'
+        '<import addon="script.module.nothosted"/>'
+        "</requires></addon>"
+    )
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("release.addon/addon.xml", xml)
+    fetcher.urls[RELEASE_ZIP.format(v="2.0.0")] = buf.getvalue()
+    manifest = _build(fake_repo, tmp_path / "s", allow_shrink=True)
+    assert "release.addon" not in manifest["entries"]
+    # the same imports minus the unhosted one pass
+    xml_ok = xml.replace('<import addon="script.module.nothosted"/>', "")
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("release.addon/addon.xml", xml_ok)
+    fetcher.urls[RELEASE_ZIP.format(v="2.0.0")] = buf.getvalue()
+    manifest = _build(fake_repo, tmp_path / "s2")
+    assert manifest["entries"]["release.addon"]["version"] == "2.0.0"
+
+
+def test_version_is_re_resolved_on_every_build_regardless_of_refresh_flag(
+    fake_repo, tmp_path
+):
+    """Owned content has a minutes staleness bound: a new release between two
+    builds is picked up by the second one with no flag and no commit."""
+    root, manifest_path, fetcher = fake_repo
+    m1 = _build(fake_repo, tmp_path / "s1")
+    assert m1["entries"]["release.addon"]["version"] == "2.0.0"
+    fetcher.redirects[LATEST_HTML] = (
+        "https://github.com/moquette/src/releases/tag/v2.2.0"
+    )
+    fetcher.urls[RELEASE_ZIP.format(v="2.2.0")] = _zip_bytes("release.addon", "2.2.0")
+    fetcher.urls[INDEX_URL] = _index_xml(("indexed.addon", "2.2.0"))
+    fetcher.urls[INDEXED_ZIP.format(v="2.2.0")] = _zip_bytes("indexed.addon", "2.2.0")
+    m2 = _build(fake_repo, tmp_path / "s2")
+    assert m2["entries"]["release.addon"]["version"] == "2.2.0"
+    assert m2["entries"]["indexed.addon"]["version"] == "2.2.0"
+
+
+def test_release_asset_regex_parses_owner_and_repo():
+    m = sc._RELEASE_ASSET_RE.match(
+        "https://github.com/moquette/kodi-ezmpp/releases/download/v{version}/{id}-{version}.zip"
+    )
+    assert m and m.group("owner") == "moquette" and m.group("repo") == "kodi-ezmpp"
+    assert m.group("asset_template") == "{id}-{version}.zip"
+    assert not sc._RELEASE_ASSET_RE.match(
+        "https://github.com/moquette/kodi-ezmpp/releases/download/1.0/{id}.zip"
+    )
+
+
+class TestRedirectLocation:
+    """Fetcher.redirect_location against a local server: no network."""
+
+    @pytest.fixture
+    def server(self):
+        import http.server
+        import threading
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def do_HEAD(self):
+                if self.path == "/moquette/src/releases/latest":
+                    self.send_response(302)
+                    self.send_header(
+                        "Location",
+                        "https://github.com/moquette/src/releases/tag/v1.2.3",
+                    )
+                    self.end_headers()
+                elif self.path == "/plain":
+                    self.send_response(200)
+                    self.end_headers()
+                else:
+                    self.send_response(404)
+                    self.end_headers()
+
+            def log_message(self, *a):
+                pass
+
+        srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+        t = threading.Thread(target=srv.serve_forever, daemon=True)
+        t.start()
+        yield f"http://127.0.0.1:{srv.server_port}"
+        srv.shutdown()
+
+    def test_returns_location_without_following(self, server, tmp_path):
+        f = sc.Fetcher(cache_dir=str(tmp_path / "c"))
+        loc = f.redirect_location(server + "/moquette/src/releases/latest")
+        assert loc.endswith("/releases/tag/v1.2.3")
+
+    def test_200_and_404_are_fetch_errors(self, server, tmp_path):
+        f = sc.Fetcher(cache_dir=str(tmp_path / "c"))
+        with pytest.raises(sc.FetchError, match="expected a redirect"):
+            f.redirect_location(server + "/plain")
+        with pytest.raises(sc.FetchError, match="404"):
+            f.redirect_location(server + "/nope")
+
+
+# ---------------------------------------------------------------------------
 # Fetcher unit tests - the exact cache semantics F1/F4 exploited
 # ---------------------------------------------------------------------------
 def _http_404(url):
@@ -665,7 +1019,7 @@ class TestFetcher:
         f = sc.Fetcher(cache_dir=str(tmp_path / "cache"), **kw)
         f.download_calls = []
 
-        def _dl(url):
+        def _dl(url, headers=None):
             f.download_calls.append(url)
             if url in downloads:
                 v = downloads[url]

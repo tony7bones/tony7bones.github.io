@@ -18,7 +18,21 @@ Entry classes (classified from URL shapes, same logic the engine applied at
 runtime): first-party (built from addons/<id>/ source), hosted mirror (zip +
 metadata committed under addons/hosted/<id>/), hybrid (hosted metadata,
 upstream zip), streamed (metadata AND zip fetched from the upstream repo),
-release-asset (hosted metadata, zip from a GitHub Release on the source repo).
+release-asset (zip from a GitHub Release on the source repo).
+
+Two of those resolve their VERSION at build time, on every build, and take
+their metadata from the zip itself, so there is no committed copy to rot:
+
+  - release-asset: the source repo's LATEST published release is the version
+    (GitHub REST API with GH_TOKEN/GITHUB_TOKEN when present, else the
+    unauthenticated redirect of github.com/<owner>/<repo>/releases/latest);
+  - hybrid with an ``upstream_index`` (a Kodi addons.xml the upstream
+    repository publishes): the version that index declares for the add-on.
+
+Both replaced a hand-maintained addons/hosted/<id>/addon.xml on 2026-09-26,
+after EZ Maintenance++ sat nine days behind its release and plugin.video.pov
+404ed and was DROPPED from the build for days. A hybrid entry WITHOUT an
+upstream_index keeps the committed addon.xml as its truth.
 
 Fault policy (parity with the hardened 2.4.9 engine, moved to build time):
   - one dead upstream -> fall back to the LAST-GOOD copy already served at the
@@ -36,8 +50,11 @@ Fault policy (parity with the hardened 2.4.9 engine, moved to build time):
 Downloads go through a content-addressed cache (T7B_FETCH_CACHE or
 ~/.cache/t7b-fetch): version-bearing URLs are immutable (fetched once per
 version); mutable URLs (upstream addon.xml of streamed entries, art) are
-re-fetched only with --refresh-third-party. Two builds in one run therefore
-produce byte-identical trees - the determinism gate depends on it.
+re-fetched only with --refresh-third-party. The version lookups above never
+touch the cache at all: owned content has a minutes staleness bound, so the
+latest release and the upstream index are read fresh on every build, on push,
+cron and repository_dispatch alike. Two builds in one run still produce
+byte-identical trees - the determinism gate depends on it.
 
 Usage:
     python3 _tools/static_catalog.py --out _site/static
@@ -53,6 +70,7 @@ import http.client
 import io
 import json
 import os
+import re
 import shutil
 import sys
 import urllib.error
@@ -62,7 +80,7 @@ from dataclasses import dataclass, field
 from xml.etree import ElementTree as ET
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from check_hosted_release_sync import _RELEASE_ASSET_RE  # noqa: E402
+from mirror_closure import BUILTINS  # noqa: E402
 
 REPO_ROOT = os.path.normpath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
@@ -72,6 +90,17 @@ OWN_RAW = "https://raw.githubusercontent.com/tony7bones/tony7bones.github.io/"
 DEFAULT_BASE_URL = "https://tony7bones.github.io"
 MAX_FILE_BYTES = 90 * 1024 * 1024
 _USER_AGENT = "t7b-static-builder/1.0"
+GITHUB_API = "https://api.github.com"
+
+# A GitHub Releases asset template pointing at a source repo: owner/repo are
+# literal in the URL (distinct from the entry's own username/repository, which
+# only shape its raw.githubusercontent asset_prefix). Matched on the RAW
+# template, so the literal ``v{version}`` tag segment is part of the shape.
+_RELEASE_ASSET_RE = re.compile(
+    r"^https://github\.com/(?P<owner>[^/{}]+)/(?P<repo>[^/{}]+)"
+    r"/releases/download/v\{version\}/(?P<asset_template>.+)$"
+)
+_LATEST_TAG_RE = re.compile(r"/releases/tag/v(?P<version>[^/?#]+)$")
 
 KIND_FIRST_PARTY = "first-party"
 KIND_HOSTED = "hosted"
@@ -80,7 +109,7 @@ KIND_STREAMED = "streamed"
 KIND_RELEASE_ASSET = "release-asset"
 
 # Hosted-dir files that are repo plumbing, not served metadata/art.
-_HOSTED_EXCLUDE = {"index.html", "release-sync-waiver.json"}
+_HOSTED_EXCLUDE = {"index.html"}
 
 
 class BuildError(Exception):
@@ -123,11 +152,55 @@ class Fetcher:
     def _cache_path(self, url: str) -> str:
         return os.path.join(self.cache_dir, hashlib.sha256(url.encode()).hexdigest())
 
-    def _download(self, url: str) -> bytes:
-        req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
+    def _download(self, url: str, headers: dict[str, str] | None = None) -> bytes:
+        """One uncached GET. Every version lookup and every last-good fallback
+        goes through here, never through ``fetch``."""
+        hdrs = {"User-Agent": _USER_AGENT, **(headers or {})}
+        req = urllib.request.Request(url, headers=hdrs)
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as resp:
                 return resp.read()
+        except (
+            urllib.error.URLError,
+            http.client.HTTPException,
+            OSError,
+            TimeoutError,
+        ) as exc:
+            raise FetchError(f"{url}: {exc}") from exc
+
+    def get_json(self, url: str, headers: dict[str, str] | None = None) -> dict:
+        """Uncached GET of a JSON document (the GitHub REST API)."""
+        data = self._download(url, headers)
+        try:
+            return json.loads(data.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError) as exc:
+            raise FetchError(f"{url}: not JSON ({exc})") from exc
+
+    def redirect_location(self, url: str) -> str:
+        """The Location header of a redirecting URL, without following it.
+
+        github.com/<owner>/<repo>/releases/latest answers 302 to
+        /releases/tag/<tag> for anyone, no token and no API rate limit, which
+        is what lets a developer machine with no token resolve the latest
+        release. A 200 (no redirect) or any other status is a FetchError."""
+
+        class _NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, req, fp, code, msg, headers, newurl):
+                return None
+
+        opener = urllib.request.build_opener(_NoRedirect)
+        req = urllib.request.Request(
+            url, method="HEAD", headers={"User-Agent": _USER_AGENT}
+        )
+        try:
+            with opener.open(req, timeout=self.timeout):
+                raise FetchError(f"{url}: expected a redirect, got 200")
+        except urllib.error.HTTPError as exc:
+            if exc.code in (301, 302, 303, 307, 308):
+                location = exc.headers.get("Location")
+                if location:
+                    return location
+            raise FetchError(f"{url}: HTTP {exc.code} without a Location") from exc
         except (
             urllib.error.URLError,
             http.client.HTTPException,
@@ -241,8 +314,9 @@ def classify(entry: dict) -> str:
 
     Shapes are matched on the SUBSTITUTED urls (templates carry literal
     {username}/{repository} placeholders), except the release-asset check,
-    which matches the raw template exactly as check_hosted_release_sync does
-    (its regex expects the literal ``v{version}`` segment).
+    which matches the raw template (its regex expects the literal
+    ``v{version}`` segment). No kind needs a committed addon.xml to be
+    decided: the two build-resolved kinds have none.
     """
     zip_tmpl = (entry.get("assets") or {}).get("zip", "")
     zip_url = _subst(zip_tmpl, entry)
@@ -376,12 +450,132 @@ def _streamed_art(
     return art
 
 
+def metadata_resolved_at_build(entry: dict) -> bool:
+    """True when the entry's version AND addon.xml come from upstream at
+    build time (release-asset, or hybrid with an ``upstream_index``), so no
+    addons/hosted/<id>/addon.xml exists for it and none may be added."""
+    kind = classify(entry)
+    if kind == KIND_RELEASE_ASSET:
+        return True
+    return kind == KIND_HYBRID and bool(entry.get("upstream_index"))
+
+
+def gh_token() -> str | None:
+    """GH_TOKEN wins, then GITHUB_TOKEN; both unset is a supported state."""
+    return os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or None
+
+
+def _latest_release_version(owner: str, repo: str, fetcher: Fetcher) -> str:
+    """The source repo's LATEST published release, as a bare version.
+
+    Authenticated: GET /repos/{owner}/{repo}/releases/latest (CI passes
+    secrets.GITHUB_TOKEN, no shared-runner rate limit). Otherwise, or when the
+    API call fails for any reason but "no release at all", the unauthenticated
+    302 of github.com/{owner}/{repo}/releases/latest, whose Location ends in
+    /releases/tag/v<version>. Never cached: this IS the freshness."""
+    token = gh_token()
+    if token:
+        url = f"{GITHUB_API}/repos/{owner}/{repo}/releases/latest"
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "Authorization": f"Bearer {token}",
+        }
+        try:
+            tag = fetcher.get_json(url, headers).get("tag_name") or ""
+        except FetchError as exc:
+            if _is_404(exc):
+                raise FetchError(f"{owner}/{repo}: no published release") from exc
+            warn(f"{owner}/{repo}: releases API failed, using the redirect: {exc}")
+        else:
+            if not tag.startswith("v") or len(tag) < 2:
+                raise FetchError(
+                    f"{owner}/{repo}: latest tag {tag!r} is not v<version>"
+                )
+            return tag[1:]
+    location = fetcher.redirect_location(
+        f"https://github.com/{owner}/{repo}/releases/latest"
+    )
+    m = _LATEST_TAG_RE.search(location)
+    if not m:
+        raise FetchError(
+            f"{owner}/{repo}: releases/latest redirected to {location!r}, "
+            f"not a /releases/tag/v<version> (no release published?)"
+        )
+    return m.group("version")
+
+
+def _version_from_index(index_url: str, entry_id: str, fetcher: Fetcher) -> str:
+    """The version an upstream Kodi addons.xml declares for ``entry_id``.
+    Fetched fresh every build, never from the cache."""
+    data = fetcher._download(index_url)
+    try:
+        root = ET.fromstring(data)
+    except ET.ParseError as exc:
+        raise FetchError(f"{index_url}: not XML ({exc})") from exc
+    for node in root.iter("addon"):
+        if node.get("id") == entry_id:
+            version = node.get("version")
+            if version:
+                return version
+            break
+    raise FetchError(f"{index_url}: does not list {entry_id} with a version")
+
+
+def _addon_xml_from_zip(entry_id: str, zip_bytes: bytes, version: str) -> bytes:
+    """``<id>/addon.xml`` out of a fetched zip, checked against the version
+    the lookup resolved: a zip that packages a different version than its
+    tag or index claims is a FetchError, so the last-good fallback applies."""
+    member = f"{entry_id}/addon.xml"
+    try:
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
+            data = zf.read(member)
+        packaged = ET.fromstring(data).get("version")
+    except (zipfile.BadZipFile, KeyError, OSError) as exc:
+        raise FetchError(f"{entry_id}: zip carries no {member} ({exc})") from exc
+    except ET.ParseError as exc:
+        raise FetchError(f"{entry_id}: packaged addon.xml unparseable ({exc})") from exc
+    if packaged != version:
+        raise FetchError(
+            f"{entry_id}: resolved version {version!r} but the zip packages "
+            f"addon.xml {packaged!r}"
+        )
+    return data
+
+
+def _check_imports_hosted(
+    entry_id: str, addon_xml: bytes, catalog_ids: set[str]
+) -> None:
+    """Every non-builtin <import> of a build-resolved addon.xml must be an id
+    this catalog serves. Kodi resolves a hard dependency only from the
+    repository the add-on is installed FROM (measured on a Kodi 22 bench), and
+    test_closure.py can only walk committed addon.xml files, so for metadata
+    that arrives at build time this is the closure gate. Per-entry FetchError:
+    the live last-good copy, whose closure was hosted, is served instead."""
+    root = ET.fromstring(addon_xml)
+    missing = sorted(
+        {
+            imp.get("addon")
+            for imp in root.iter("import")
+            if imp.get("addon")
+            and imp.get("addon") not in BUILTINS
+            and imp.get("addon") not in catalog_ids
+        }
+    )
+    if missing:
+        raise FetchError(
+            f"{entry_id}: imports {missing}, which this catalog does not serve "
+            f"(add them to catalog.json, see test_closure.py)"
+        )
+
+
 def _resolve_primary(
     entry: dict,
     kind: str,
     fetcher: Fetcher,
     warnings: list[str],
     repo_root: str = REPO_ROOT,
+    catalog_ids: set[str] | None = None,
 ) -> ResolvedEntry:
     entry_id = entry["id"]
     zip_tmpl = (entry.get("assets") or {}).get("zip", "")
@@ -407,7 +601,31 @@ def _resolve_primary(
             entry_id, kind, version, addon_xml, zip_bytes, zip_path, art=art
         )
 
-    if kind in (KIND_HOSTED, KIND_HYBRID, KIND_RELEASE_ASSET):
+    if metadata_resolved_at_build(entry):
+        # No committed metadata: the version is looked up fresh and the
+        # addon.xml is the one packaged in the zip that version names.
+        if kind == KIND_RELEASE_ASSET:
+            m = _RELEASE_ASSET_RE.match(zip_tmpl)
+            version = _latest_release_version(
+                m.group("owner"), m.group("repo"), fetcher
+            )
+        else:
+            version = _version_from_index(entry["upstream_index"], entry_id, fetcher)
+        source_url = _subst(zip_tmpl, entry, version)
+        zip_bytes = fetcher.fetch(source_url, expect_zip=True)
+        addon_xml = _addon_xml_from_zip(entry_id, zip_bytes, version)
+        _check_imports_hosted(entry_id, addon_xml, catalog_ids or set())
+        return ResolvedEntry(
+            entry_id,
+            kind,
+            version,
+            addon_xml,
+            zip_bytes,
+            source_url,
+            art={"addon.xml": addon_xml},
+        )
+
+    if kind in (KIND_HOSTED, KIND_HYBRID):
         hosted_dir = os.path.join(repo_root, "addons", "hosted", entry_id)
         version, addon_xml = _local_version(os.path.join(hosted_dir, "addon.xml"))
         art = _hosted_art(hosted_dir)
@@ -538,13 +756,16 @@ def resolve_all(
     repo_root: str = REPO_ROOT,
 ) -> list[ResolvedEntry]:
     resolved = []
+    catalog_ids = {e["id"] for e in entries}
     for entry in entries:
         kind = classify(entry)
         # Zip validation lives INSIDE the per-entry try: a corrupt primary zip
         # is a flake that must fall back, never a whole-build failure. Only
         # BuildError (size gate, first-party build bugs) escapes by design.
         try:
-            item = _resolve_primary(entry, kind, fetcher, warnings, repo_root)
+            item = _resolve_primary(
+                entry, kind, fetcher, warnings, repo_root, catalog_ids
+            )
             _validate_zip(entry["id"], item.zip_bytes, warnings, item.version)
             _fill_art_from_zip(item)
         except FetchError as exc:
