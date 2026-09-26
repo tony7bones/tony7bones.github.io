@@ -1,0 +1,100 @@
+# Releasing is not publishing: a source repo (ezmpp) tags a release, but the
+# fleet installs whatever version addons/hosted/<id>/addon.xml declares. That
+# bump used to be hand-done, and on 2026-09-26 it had been forgotten for nine
+# days (mirror 2026.09.16.3 against a released 2026.09.17.1), with the
+# freshness gate red and every box served the stale build the whole time.
+#
+# This workflow makes the bump automatic. It runs _tools/sync_hosted_mirror.py,
+# which pulls the latest release's own addon.xml into the mirror, and if that
+# changed anything it re-runs the gates, commits the bump, pushes main, and
+# asks pages.yml to rebuild so /static/ carries the new version within minutes.
+#
+# Triggers: the ezmpp-release dispatch (fired by ezmpp's CI the moment a release
+# asset is verified downloadable), a daily cron ten minutes ahead of the pages
+# cron as the backstop, and by hand.
+#
+# A push made with GITHUB_TOKEN never triggers push workflows (GitHub suppresses
+# that to stop recursion), so generate_repo.yml and pages.yml do NOT run on the
+# bump commit by themselves. That is why this job runs the same gates itself
+# before committing, and why it dispatches pages.yml explicitly afterwards
+# (workflow_dispatch is the one event GITHUB_TOKEN may still raise).
+
+name: Sync hosted mirrors to latest release
+
+on:
+  repository_dispatch:
+    types: [ezmpp-release]
+  schedule:
+    - cron: "7 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: sync-hosted-mirror
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Bump mirrors to the latest published release
+        id: sync
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python3 _tools/sync_hosted_mirror.py
+
+      - name: Install tooling deps
+        if: steps.sync.outputs.bumped != ''
+        run: pip install -r requirements-ci.txt
+
+      # The same gates generate_repo.yml would have run on a human push of this
+      # bump. They never see the bot commit otherwise (see the header).
+      - name: Gates on the bumped tree
+        if: steps.sync.outputs.bumped != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 _tools/check_hosted_release_sync.py
+          python3 -m pytest _tools/ -q
+          ruff check _tools/
+          python3 _tools/generate_repo.py
+          if [ -n "$(git status --porcelain | grep -v 'addons/hosted/')" ]; then
+            echo "::error::the sync changed more than the hosted mirrors"
+            git status --porcelain
+            exit 1
+          fi
+
+      - name: Commit and push the bump
+        if: steps.sync.outputs.bumped != ''
+        run: |
+          set -euo pipefail
+          git config user.name "tony7bones"
+          git config user.email "tony7bones@users.noreply.github.com"
+          git add addons/hosted/
+          git commit -m "Bump hosted mirror to latest release: ${{ steps.sync.outputs.bumped }}"
+          # A human may have pushed in the meantime; the bump is one file per
+          # mirror, so a rebase either applies cleanly or fails loudly here.
+          for attempt in 1 2 3; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+            echo "push attempt ${attempt} failed, retrying"
+            sleep 5
+          done
+          exit 1
+
+      - name: Rebuild and deploy the site with the bumped mirror
+        if: steps.sync.outputs.bumped != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run pages.yml --ref main
