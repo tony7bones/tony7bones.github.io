@@ -1,0 +1,42 @@
+# The hub must be served from the Pages ARTIFACT this repo's workflow builds,
+# never from the main branch: main is sources-only, so a branch build serves a
+# site with no /static/, no root index and no installer. With the Pages source
+# on "branch", GitHub also runs its own branch build on every push and the two
+# deployments race; ours won every time from at least 2026-08-16 until
+# 2026-09-26, when the branch build landed last and the whole site went 404.
+#
+# The setting is repository-level. This job reads it and, when it is not
+# "workflow", puts it back, so a wrong click or a platform reset cannot stay
+# wrong past the next run. Runs daily and on demand.
+
+name: Pages source guard
+
+on:
+  schedule:
+    - cron: "3 9 * * *"
+  workflow_dispatch:
+
+permissions:
+  pages: write
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Keep the Pages source on GitHub Actions
+        run: |
+          set -euo pipefail
+          CURRENT=$(gh api "repos/${REPO}/pages" --jq .build_type)
+          echo "pages build_type: ${CURRENT}"
+          if [ "$CURRENT" = "workflow" ]; then
+            echo "OK"
+            exit 0
+          fi
+          echo "::warning::Pages source is '${CURRENT}', switching to 'workflow'"
+          gh api -X PUT "repos/${REPO}/pages" -f build_type=workflow
+          gh api "repos/${REPO}/pages" --jq '"now: " + .build_type'
