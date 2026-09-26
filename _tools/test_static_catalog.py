@@ -319,6 +319,7 @@ def test_real_catalog_build_resolved_entries_have_no_committed_metadata():
         "script.ezmaintenanceplusplus",
         "plugin.video.pov",
         "skin.estuary.pov",
+        "service.tvos.pythonfix",
     }
     for aid in resolved:
         assert not os.path.exists(os.path.join(sc.REPO_ROOT, "addons", "hosted", aid))
@@ -458,14 +459,14 @@ def test_classify_the_real_manifest_covers_all_entries():
         kinds.setdefault(sc.classify(e), []).append(e["id"])
     assert len(entries) == 28
     assert kinds[sc.KIND_FIRST_PARTY] == ["repository.tony7bones"]
-    assert len(kinds[sc.KIND_HOSTED]) == 16
+    assert len(kinds[sc.KIND_HOSTED]) == 15
     assert len(kinds[sc.KIND_HYBRID]) == 4
     assert len(kinds[sc.KIND_STREAMED]) == 5
-    assert len(kinds[sc.KIND_RELEASE_ASSET]) == 2
+    assert len(kinds[sc.KIND_RELEASE_ASSET]) == 3
     assert "skin.estuary.pov" in kinds[sc.KIND_RELEASE_ASSET]
+    assert "service.tvos.pythonfix" in kinds[sc.KIND_RELEASE_ASSET]
     assert "script.ezmaintenanceplusplus" in kinds[sc.KIND_RELEASE_ASSET]
     assert "plugin.program.autocompletion" in kinds[sc.KIND_HOSTED]
-    assert "service.tvos.pythonfix" in kinds[sc.KIND_HOSTED]
     assert "plugin.video.pov" in kinds[sc.KIND_HYBRID]
     ids = {e["id"] for e in entries}
     for gone in (

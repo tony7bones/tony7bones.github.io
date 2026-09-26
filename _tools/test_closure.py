@@ -87,7 +87,12 @@ from mirror_closure import OFFICIAL_LIBRARY  # noqa: E402
 # user-installed on Apple TVs rather than pulled in by a skin, which makes it
 # exactly that case.
 ROOTS = [
-    "service.tvos.pythonfix",
+    # service.tvos.pythonfix is build-resolved since 2026-09-26 (release-asset
+    # from moquette/kodi-estuary-pov, like the skin) and its imports are gated
+    # by static_catalog._check_imports_hosted on every build. Its hosted
+    # subtree (script.module.requests and what requests drags in) is rooted
+    # directly here so the trap described above cannot recur.
+    "script.module.requests",
     # skin.estuary.pov's hosted subtree, rooted directly (see above): the skin
     # itself is build-resolved and walked by _check_imports_hosted instead.
     "plugin.program.autocompletion",
@@ -210,6 +215,7 @@ def test_build_resolved_entries_are_gated_at_build():
         "script.ezmaintenanceplusplus",
         "plugin.video.pov",
         "skin.estuary.pov",
+        "service.tvos.pythonfix",
     }
     for aid in resolved:
         assert aid not in ROOTS, f"{aid} is build-resolved: it cannot be walked here"
