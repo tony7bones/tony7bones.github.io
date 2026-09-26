@@ -19,7 +19,7 @@ venv/
 # Node
 node_modules/
 
-# Private IPTV settings — kept locally, never published or committed. The CI
+# Private IPTV settings - kept locally, never published or committed. The CI
 # mirror honors .gitignore (and the structural secret gate excludes the
 # basename pattern everywhere as a backstop), so the file can live in the
 # canvas for local use without ever reaching git or the served site.
@@ -27,13 +27,12 @@ dropbox/iptv/configs/instance-settings*.xml
 instance-settings*.xml
 .coverage
 
-# Secrets / local env — never commit
+# Secrets / local env - never commit
 .env
 .env.*
 # tony7bones.env (per-device) + any other *.env master file
 *.env
 !.env.example
-!.env.device.example
 # generated secret IPTV outputs (curated m3u + instance-settings)
 /iptv-build/
 # curated playlists embed provider credentials

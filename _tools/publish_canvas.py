@@ -5,8 +5,9 @@ The LIGHT publish path for hand-authored content under dropbox/ (repository
 installer zips, media, iptv, rss). The served mirror is generated in CI by
 build_site.py, so publishing a canvas edit is just: commit the dropbox/
 change, push main - WITHOUT cutting a release (no version bump, no git tag).
-Use this for canvas edits; use `release.py` only when an add-on itself
-changes.
+Use this for canvas edits. Releasing `repository.tony7bones` itself is a
+hand edit of its addon.xml version and news, then generate_repo.py, commit,
+push (the version-bump gate enforces the bump); see CLAUDE.md "Releasing".
 
 What it does:
   1. fetch + guard: on main, not behind origin
@@ -29,13 +30,33 @@ from __future__ import annotations
 
 import argparse
 import os
+import subprocess
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from release import git, run_generator  # noqa: E402
 
-# The Kodi share backup mirror - guarded exactly as in deploy.py (not in any
-# sandbox copy list; a missing module means "no share sync in this env").
+REPO = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+GENERATOR = os.path.join(REPO, "_tools", "generate_repo.py")
+
+
+def git(*args: str, check: bool = True, repo: str | None = None) -> str:
+    """Run one git command in the repo and return its stripped stdout."""
+    r = subprocess.run(
+        ["git", "-C", repo or REPO, *args], capture_output=True, text=True
+    )
+    if check and r.returncode != 0:
+        raise RuntimeError(f"git {' '.join(args)} failed:\n{r.stderr.strip()}")
+    return r.stdout.strip()
+
+
+def run_generator() -> None:
+    subprocess.run(
+        [sys.executable, GENERATOR], cwd=REPO, check=True, capture_output=True, text=True
+    )
+
+
+# The Kodi share backup mirror, imported guarded: a missing module means "no
+# share sync in this env".
 try:
     import sync_share  # noqa: E402
 except ImportError:

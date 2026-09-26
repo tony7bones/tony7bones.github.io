@@ -62,6 +62,7 @@ def copy_tracked_tree(out_dir: str, repo_root: str = REPO_ROOT) -> int:
     if os.path.isdir(out_dir):
         shutil.rmtree(out_dir)
     count = 0
+    excluded: list[str] = []
     for rel in tracked_files(repo_root):
         src = os.path.join(repo_root, rel)
         # Refuse tracked symlinks OUTRIGHT, before any other check. os.path.isfile
@@ -84,12 +85,21 @@ def copy_tracked_tree(out_dir: str, repo_root: str = REPO_ROOT) -> int:
         # arrives any other way (e.g. downloaded at build time).
         violation = check_site_secrets.publish_refusal(rel)
         if violation:
-            static_catalog.warn(f"excluded from artifact ({violation}): {rel}")
+            excluded.append(f"{rel} ({violation})")
             continue
         dst = os.path.join(out_dir, rel)
         os.makedirs(os.path.dirname(dst) or out_dir, exist_ok=True)
         shutil.copyfile(src, dst)
         count += 1
+    # An allowlist exclusion is the designed outcome for every tracked file
+    # outside the published dirs (docs/, _tools/, .github/, .claude/ and so
+    # on), not an anomaly: one ::warning:: per file was 102 per build and 204
+    # per run (measured 2026-09-26), burying the two real warnings a run can
+    # carry and any stale-catalog warning. Plain log lines, one summary.
+    if excluded:
+        print(f"site: excluded {len(excluded)} tracked files from the artifact (allowlist)")
+        for line in excluded:
+            print(f"  excluded: {line}")
     return count
 
 

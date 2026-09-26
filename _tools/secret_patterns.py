@@ -17,4 +17,4 @@ SECRET_PATTERNS = [
 ]
 
 # Placeholder-bearing templates are allowed to carry example assignments.
-ALLOW_FILES = {".env.example", ".env.device.example"}
+ALLOW_FILES = {".env.example"}

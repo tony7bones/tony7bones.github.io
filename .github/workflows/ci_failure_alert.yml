@@ -2,16 +2,17 @@
 # went red on 2026-09-17 and the daily Pages deploy failed five mornings in a
 # row; nothing told anyone, and every box served a stale build for nine days.
 #
-# This turns a failed run of either deploy-path workflow into a GitHub issue
-# assigned to the owner (assignment sends an email and a GitHub notification),
-# one issue per workflow, kept open and commented while it keeps failing, and
-# closed automatically by the next green run of the same workflow.
+# This turns a failed run of the deploy workflow into a GitHub issue assigned
+# to the owner (assignment sends an email and a GitHub notification), kept
+# open and commented while it keeps failing, and closed automatically by the
+# next green run. "Validate Kodi Repository" (generate_repo.yml) was watched
+# here until it was deleted 2026-09-26; pages.yml is the one push workflow.
 
 name: Alert on CI failure
 
 on:
   workflow_run:
-    workflows: ["Build & Deploy Pages", "Validate Kodi Repository"]
+    workflows: ["Build & Deploy Pages"]
     types: [completed]
 
 permissions:

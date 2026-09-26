@@ -30,8 +30,8 @@ diff --git a/media/index.html b/media/index.html
 """
 
 _DIFF_TEMPLATE_ONLY = """\
-diff --git a/.env.device.example b/.env.device.example
-+++ b/.env.device.example
+diff --git a/.env.example b/.env.example
++++ b/.env.example
 +WEATHERBIT_API_KEY=your_key_here
 +password=PLACEHOLDER
 """
@@ -66,7 +66,7 @@ def test_scan_passes_clean_canvas_changes(monkeypatch):
 
 def test_scan_allows_placeholder_templates(monkeypatch):
     _patch_git(monkeypatch, _DIFF_TEMPLATE_ONLY)
-    # .env.device.example is allowlisted - its placeholder assignments are fine.
+    # .env.example is allowlisted - its placeholder assignments are fine.
     assert pc.scan_for_secrets() == []
 
 

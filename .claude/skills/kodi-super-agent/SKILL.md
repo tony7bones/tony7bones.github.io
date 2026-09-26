@@ -2,8 +2,8 @@
 name: kodi-super-agent
 description: >-
   Kodi Super Agent Developer for the Tony.7.Bones repository
-  (tony7bones.github.io). Load when working anywhere in this repo: releasing an
-  add-on with release.py, editing the static catalog manifest
+  (tony7bones.github.io). Load when working anywhere in this repo: bumping
+  repository.tony7bones, editing the static catalog manifest
   (_tools/catalog.json), building/deploying the static site, adding a hosted
   third-party mirror, debugging the local Kodi 21 Omega install, or verifying
   behaviour on the real local Kodi. Triggers on Kodi add-on release / static
@@ -70,30 +70,26 @@ on a rule below - they carry the WHY and the exact code locations.
   `docs/incident-*.md` - read them for context, never as current state.
 - **Extracted:** the IPTV builder `_tools/build_iptv.py` moved to its own
   private repo `moquette/iptv` on 2026-07-17 and was removed here
-  (`make_custom_m3u.py` remains). `TASKS.md` was deleted 2026-07-21; there is no
-  tracker, `git log` is the fact. The device provisioner `_tools/provision-kodi.sh`
-  is retained but drove the retired Setup add-ons.
+  (`make_custom_m3u.py` followed it out 2026-09-26, untested and uncalled).
+  `TASKS.md` was deleted 2026-07-21; there is no tracker, `git log` is the
+  fact. The device provisioner `_tools/provision-kodi.sh` (self-declared
+  BROKEN since 2026-07-19) and the adb helper `_tools/firetv.sh` were deleted
+  2026-09-26; the meta-root `.claude/scripts/firetv-deploy.sh` is the live
+  adb helper.
 
 ## Golden rules - release
 
 -> `docs/playbooks/release-and-deploy.md`
 
-- **One command for EVERY add-on: `python3 _tools/release.py`.** The static
-  repository add-on releases the SAME way as any other; there is no separate
-  proxy path. The tool detects what changed vs `origin/main` (the shared
-  `release_detect.changed_addons`, the SAME detector the pre-push gate uses),
-  computes the bump (MINOR default), drafts + PREPENDS the `<news>`, regenerates
-  deterministically, runs the script-side consistency gate, and commits
-  `chore(release): ...` **on the branch**, then STOPS. NO hand-edited
-  `addon.xml` / news / tests.
-  - Flags: `--dry-run` / `--patch` / `--minor` / `--major` / `--version X.Y.Z` /
-    `--addon <id>` / `--news "id=line"` / `--push` (opt-in) / `check`.
-  - Idempotent (a re-run with no new source edit is a no-op, never double-bumps);
-    refuses when behind origin or at the 9.9.9 single-digit ceiling. Add-ons are
-    independent - there is no shared library, so a change to one never forces a
-    bump of another. An add-on already on a legacy date-stamped scheme (EZM++'s
-    `2026.07.x`) is compared within that scheme (loose, Kodi-comparable), never
-    forced onto single-digit `X.Y.Z`.
+- **The only add-on released here is `repository.tony7bones`.** Bump it by
+  hand: raise the `version` attribute and prepend a `<news>` line in
+  `addons/repository.tony7bones/addon.xml`, run `generate_repo.py`, commit the
+  source and the generated output together, push `main`. The bump is ENFORCED
+  by `check_versions.py` (pre-push hook, and CI against the push's `before`
+  SHA): a push whose add-on source changed without a version increase is
+  blocked. The automatic `release.py` (bump + news + commit) was deleted
+  2026-09-26 with its 30s of sandbox tests; nothing ran it. Every other served
+  add-on is resolved at build time and bumped in its own repo.
 - **On push, CI builds and deploys the static site** (`.github/workflows/pages.yml`):
   build -> deploy to Pages -> `verify_live_site.py` fetches the catalog + md5 +
   zips through the exact public URLs Kodi uses and fails loud on any mismatch.
@@ -115,12 +111,15 @@ on a rule below - they carry the WHY and the exact code locations.
   `--allow-secrets`). `--dry-run` first.
 - **Gates:** `.githooks/pre-push` (pytest, ruff, generate_repo staleness,
   `check_versions.py` per-add-on version bump, best-effort `sync_share.py` on
-  main). CI (`generate_repo.yml`) re-runs tests/lint/staleness + the version-bump
-  gate on `main` and NEVER commits back. `docs/**` + `.claude/**` are outside
-  generate_repo.yml's path filter; `pages.yml` has none and deploys on every
-  push to main. `ci_failure_alert.yml` opens an owner-assigned issue on a red
-  deploy-path run; `pages_source_guard.yml` keeps the Pages source on
-  "workflow". All four run on `ubuntu-26.04`.
+  main, which now mirrors only the share's `repositories/`). CI is ONE push
+  workflow, `pages.yml`: on push it re-runs tests/lint/staleness + the
+  version-bump gate, then builds, deploys and verifies live; on the daily cron
+  and on `repository_dispatch` it skips the source gates and runs the artifact
+  gates only. It has no path filter and NEVER commits back
+  (`generate_repo.yml`, which duplicated it, was deleted 2026-09-26).
+  `ci_failure_alert.yml` opens an owner-assigned issue on a red run;
+  `pages_source_guard.yml` keeps the Pages source on "workflow". All three run
+  on `ubuntu-26.04`.
 
 ## Golden rules - install mechanics (Kodi 21 Omega, general knowledge)
 

@@ -18,9 +18,10 @@ fake tree so the gate's own behaviour stays tested without the network.
 Two exclusion sets, and they do NOT mean the same thing. BUILTINS are Kodi
 extension points that no repository could host. OFFICIAL_LIBRARY are real
 add-ons this tree is PROHIBITED from hosting, so the closure is deliberately
-incomplete there. That second set is IMPORTED from mirror_closure.py rather
-than repeated here, so a gate and the tool it names can never disagree about
-what is in scope.
+incomplete there. Both sets are IMPORTED from static_catalog.py, where the
+build-time walk reads them, so this gate and the build can never disagree
+about what is in scope. (They lived in mirror_closure.py until 2026-09-26,
+when that retired tool was deleted.)
 """
 
 from __future__ import annotations
@@ -38,7 +39,7 @@ REPO_JSON = os.path.join(HERE, "..", "_tools", "catalog.json")
 
 sys.path.insert(0, str(Path(__file__).parent))
 import static_catalog as sc  # noqa: E402
-from mirror_closure import OFFICIAL_LIBRARY  # noqa: E402
+from static_catalog import BUILTINS, OFFICIAL_LIBRARY  # noqa: E402
 
 # The ids the fleet installs DIRECTLY. Every one of them is build-resolved
 # (no committed addon.xml, metadata out of the resolved zip) and its whole
@@ -101,26 +102,8 @@ OFFICIAL_MODULES = {
     "script.module.urllib3",
 }
 
-BUILTINS = {
-    "xbmc.python",
-    "xbmc.gui",
-    "xbmc.addon",
-    "xbmc.json",
-    "xbmc.metadata",
-    "kodi.resource",
-    "xbmc.webinterface",
-    "xbmc.audioencoder",
-    "xbmc.python.pluginsource",
-    "xbmc.python.module",
-    "xbmc.python.script",
-    "xbmc.python.library",
-    "xbmc.gui.skin",
-    "xbmc.service",
-    "kodi.context.item",
-}
-
-# OFFICIAL_LIBRARY comes from mirror_closure.py; see the import at the top and
-# that file for the history. EMPTY since 2026-08-31: its one entry ever,
+# BUILTINS and OFFICIAL_LIBRARY come from static_catalog.py; see the import at
+# the top. OFFICIAL_LIBRARY is EMPTY since 2026-08-31: its one entry ever,
 # script.skinshortcuts, existed for the decommissioned skin.estuary7 and left
 # with it. The mechanism and its four gates below stay, so a future entry
 # needs a written reason rather than a silent line.

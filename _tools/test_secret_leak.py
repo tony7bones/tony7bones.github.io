@@ -17,7 +17,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 
 # Committed config TEMPLATES - placeholder values only, never real secrets.
-_EXAMPLE_ENVS = {".env.example", ".env.device.example"}
+_EXAMPLE_ENVS = {".env.example"}
 
 
 def _git(*args):

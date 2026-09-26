@@ -2,8 +2,8 @@
 name: deploy
 description: >-
   Deploy / release / publish a Kodi add-on in the Tony.7.Bones repository
-  (tony7bones.github.io). Load whenever shipping changes: releasing any add-on
-  with release.py, adding or updating an add-on under addons/, editing the
+  (tony7bones.github.io). Load whenever shipping changes: bumping
+  repository.tony7bones, adding or updating an add-on under addons/, editing the
   static catalog (_tools/catalog.json), and making sure the release ACTUALLY
   went live on GitHub Pages so boxes can update. Triggers on: deploy, release,
   publish, ship, "push it live", Pages build, "update failed" on the repo, or a
@@ -31,10 +31,15 @@ runbook:
 # 1. (only if adding/updating an add-on) edit source + _tools/catalog.json, regen, test
 python3 _tools/generate_repo.py
 python3 -m pytest _tools/ -q && ruff check _tools/
-# 2. release the add-on (bump + news + commit on the branch)
-python3 _tools/release.py --news "repository.tony7bones=What changed"
-# 3. push (opt-in). On push, CI builds + deploys + verifies the static site.
-python3 _tools/release.py --push          # or merge the branch to main
+# 2. (only if repository.tony7bones itself changed) bump it by hand: raise the
+#    version attribute and prepend a <news> line in
+#    addons/repository.tony7bones/addon.xml, then regenerate and commit source
+#    plus generated output together. check_versions.py (pre-push hook + CI)
+#    blocks a push whose source changed without a bump. The automatic
+#    release.py was deleted 2026-09-26.
+python3 _tools/generate_repo.py && git add -A && git commit -m "repository.tony7bones 3.0.1: what changed"
+# 3. push main. On push, CI builds + deploys + verifies the static site.
+git push
 # 4. confirm the Pages "Build & Deploy Pages" run went green and the live site
 #    serves the new version (see "Confirm it went live" below)
 ```
@@ -65,7 +70,8 @@ python3 _tools/release.py --push          # or merge the branch to main
    transitively through the catalog.
 3. `python3 _tools/generate_repo.py` (builds the zip, updates `addons.xml*`).
 4. `python3 -m pytest _tools/ -q` and `ruff check _tools/`: both must pass.
-5. Release (TL;DR step 2) and push (step 3).
+5. Commit and push (TL;DR steps 2 and 3). Only `repository.tony7bones` needs
+   a version bump here; a sibling repo's add-on is bumped in that repo.
 
 ### Manifest pre-flight (or the add-on will be INVISIBLE)
 
@@ -103,10 +109,10 @@ python3 _tools/verify_live_site.py --manifest _tools/catalog.json
 ```
 
 `pages.yml` has NO path filter (measured 2026-09-26): every push to `main`
-builds and deploys, docs-only pushes included. Only `generate_repo.yml` keeps a
-path filter. If no deploy run exists after a push, the push did not land on
-`main`; if a run is red, `ci_failure_alert.yml` has already opened an issue
-assigned to the owner.
+builds and deploys, docs-only pushes included, and it is the only push
+workflow (`generate_repo.yml` was deleted 2026-09-26). If no deploy run exists
+after a push, the push did not land on `main`; if a run is red,
+`ci_failure_alert.yml` has already opened an issue assigned to the owner.
 
 ## Troubleshooting
 

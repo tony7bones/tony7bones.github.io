@@ -1,71 +1,69 @@
 # Playbook - Release & deploy
 
-**One command releases every add-on: `python3 _tools/release.py`.** The repo is a
-STATIC Kodi repository served by GitHub Pages; there is no proxy engine and no
-separate proxy release path anymore. `release.py` auto-detects which add-ons
-changed, computes the next version, drafts + prepends the news, regenerates
-deterministically, gates, and commits on the branch - no hand-editing of
-`addon.xml`, no manual `<news>`, no pinned-test edits. On push, CI builds and
-deploys the static site.
+**The only add-on released from this repo is `repository.tony7bones`, and its
+release is a hand edit of `addon.xml` plus a regenerate, gated by
+`check_versions.py`.** The repo is a STATIC Kodi repository served by GitHub
+Pages; there is no proxy engine, no separate proxy release path, and since
+2026-09-26 no automatic release tool either (`release.py` was deleted that
+day; see the dated note below). On push, CI builds and deploys the static
+site.
 
-Verified against `_tools/release.py`, `_tools/release_lib.py`,
-`_tools/release_detect.py`, `_tools/check_versions.py`, `_tools/generate_repo.py`,
-`_tools/build_site.py`, `_tools/static_catalog.py`, `_tools/verify_live_site.py`,
-`.githooks/pre-push`, `.github/workflows/generate_repo.yml`, and
-`.github/workflows/pages.yml`. Brought current 2026-09-26, the day the hub
-stopped carrying any copy of the owner's add-ons; the dated history below is
-kept for the WHY.
+Verified against `_tools/release_lib.py`, `_tools/release_detect.py`,
+`_tools/check_versions.py`, `_tools/generate_repo.py`, `_tools/build_site.py`,
+`_tools/static_catalog.py`, `_tools/verify_live_site.py`, `.githooks/pre-push`
+and `.github/workflows/pages.yml`. Brought current 2026-09-26, the day the hub
+stopped carrying any copy of the owner's add-ons and the day the release tool
+and the duplicate validation workflow left; the dated history below is kept
+for the WHY.
 
 ---
 
-## Releasing an add-on - `release.py`
+## Releasing `repository.tony7bones`
 
-`release.py` is the single release entry point for EVERY add-on, including the
-static repository add-on `repository.tony7bones` (it is a normal static-only
-add-on now, released the same way as any other).
+Four steps, all by hand:
 
-```bash
-python3 _tools/release.py                 # minor-bump every changed add-on, commit on the branch
-python3 _tools/release.py --dry-run       # show the plan (incl. WHICH files), change nothing
-python3 _tools/release.py --patch         # patch level instead of the minor default
-python3 _tools/release.py --major
-python3 _tools/release.py --version 3.1.0 --addon repository.tony7bones
-python3 _tools/release.py --news "repository.tony7bones=Add a new hosted add-on"
-python3 _tools/release.py --push          # also push the branch (default: commit only)
-python3 _tools/release.py check           # the script-side consistency gate only
-```
+1. Edit `addons/repository.tony7bones/addon.xml`: raise the `version`
+   attribute (single digits per component, monotonic; Kodi compares versions
+   numerically) and prepend a `<news>` line describing the change.
+2. `python3 _tools/generate_repo.py`: rebuilds the zip at the new version,
+   prunes the superseded zip, rewrites `addons/addons.xml` and its `.md5` and
+   `.sha256`, and the per-add-on `index.html`. Run it twice if a zip churns
+   (see Determinism below).
+3. Commit the source edit and the generated output TOGETHER. The pre-push
+   hook and CI both fail on stale generated files.
+4. `git push origin main`. CI builds the site, places the fresh
+   `repository.tony7bones-<version>.zip` at the root and under
+   `repositories/`, deploys, and verifies live.
 
-What it does, atomically (rollback to pre-release HEAD on any failure):
+**Every release MUST bump the version.** Kodi auto-upgrades by version number
+only, so a same-version byte change silently breaks upgrades. The rule is
+ENFORCED, not remembered: `check_versions.py` compares each `addons/<id>/`
+tree against a baseline (`origin/main` in the pre-push hook; the push's
+`github.event.before` SHA in CI, so a main push is judged across the pushed
+range and not against itself) and blocks the push if the add-on's source
+changed without its `addon.xml` version increasing. The generated zip and
+`index.html` are excluded from "changed"; source and `resources/` count. A
+revert lowers the version and the gate rightly blocks it: roll FORWARD with a
+new bump.
 
-1. **Detect** which add-ons changed vs `origin/main` (the shared
-   `release_detect.changed_addons` - the SAME detector the pre-push gate uses, so
-   the tool and the gate can never disagree). The generated zip + `index.html` are
-   excluded; source and `resources/` count.
-2. **Compute the next version** (MINOR by default; `--patch`/`--major`/`--version`
-   override). Single-digit-per-component with a 9.9.9 ceiling, monotonic increase
-   enforced. An add-on already on a legacy date-stamped scheme (EZ Maintenance++'s
-   real `2026.07.x` lineage) is compared and bumped WITHIN that scheme (loose,
-   Kodi-comparable), never forced onto single-digit `X.Y.Z`.
-3. **Draft + PREPEND the `<news>`** line from the add-on's commit subjects
-   (override with `--news`), keeping a rolling cap of ~6 entries. Idempotent: a
-   re-run for the same version does not stack a duplicate.
-4. **Regenerate** deterministically (`generate_repo.py`), asserting a second run
-   yields no diff.
-5. **Run the script-side consistency gate** (well-formed, single-digit, monotonic)
-   before surfacing success.
-6. **Commit on the branch** with a `chore(release): ...` subject - then **STOP**
-   (the owner keeps the branch -> merge -> main flow; `--push` is opt-in).
+The pieces the gate is built from: `_tools/release_lib.py` (version parsing
+and comparison, including the loose date-stamped scheme EZM++ once used),
+`_tools/release_detect.py` (the ONE `changed_addons` detector, so no second
+definition of "changed" can drift from the gate) and
+`_tools/check_versions.py`, pinned by `test_release_detect.py` and
+`test_check_versions.py`.
 
-Idempotent: re-running with no new source edit is a no-op ("already released"),
-never a double-bump. Refuses when the branch is behind origin, or when a 9.9.9
-add-on changed with no version room (readable message -> use `--version`).
-Add-ons are **independent**: there is no shared library and no "lockstep", so a
-change to one never forces a bump of another.
-
-> **You do NOT hand-edit `addon.xml`, the news, or any test.** The version tests
-> are relational (well-formed + single-digit / monotonic), so a release never
-> touches a `_tools/test_*.py` file. The pre-push hook's `check_versions.py` still
-> BLOCKS an un-bumped hand-edit as a fail-closed backstop.
+> **Dated note, 2026-09-26: `release.py` deleted.** From the hub's first
+> commit (`c01f6fc`, 2026-07-16) to 2026-09-26 `python3 _tools/release.py`
+> did steps 1 to 3 automatically
+> (detect what changed vs `origin/main`, compute a minor bump, draft the
+> `<news>` from commit subjects, regenerate, run a consistency gate, commit
+> `chore(release): ...`). A read-only survey that day measured that the only
+> add-on it could act on had last been bumped 2026-07-16, that no workflow,
+> hook or `bin/check-all` ran it, and that its sandbox tests were 29.5s of the
+> suite's 40s. Its two git helpers moved into `publish_canvas.py`, the tool
+> and `test_release.py` were deleted, and the suite fell from 264 tests in
+> 39.5s to 209 in 9s (measured). Nothing the gate relies on left.
 
 ## What each add-on is
 
@@ -120,8 +118,9 @@ streamed / release-asset). To add or change a served add-on:
    module) gets NO hosted directory (`static_catalog.metadata_resolved_at_build`);
    the build resolves it and walks its `<import>`s, and `test_closure.py` pins
    that no `addon.xml` is committed for it.
-2. Release (or, for a canvas-only asset, publish - see below). CI rebuilds the
-   `/static/` catalog and deploys.
+2. Commit and push (or, for a canvas-only asset, publish - see below). CI
+   rebuilds the `/static/` catalog and deploys. No version bump is needed
+   here unless `addons/repository.tony7bones/` itself changed.
 
 ## How the static site is built and served
 
@@ -176,37 +175,32 @@ unless `--allow-secrets`.
 
 ## Kodi share backup mirror (automatic, best-effort)
 
-The Mac mini share holds backup-install copies that MUST track releases:
+The Mac mini share holds ONE backup-install directory that must track
+releases: `/Volumes/Kodi/Share/repositories/`, the current
+`repository.tony7bones-<version>.zip` root installer plus the hand-authored
+third-party installer zips from `dropbox/repositories/`.
 
-- `/Volumes/Kodi/Share/repositories/` - the current
-  `repository.tony7bones-<version>.zip` root installer plus the hand-authored
-  third-party installer zips from `dropbox/repositories/`.
-- `/Volumes/Kodi/Share/apps/` - sideloadable add-on zips, **opt-in-by-presence**:
-  the owner curates WHICH add-ons belong by having any version of one in the dir;
-  the sync refreshes those to the current release and prunes superseded versions,
-  and never adds add-ons on its own. This matters most for EZ Maintenance++ - it
-  is the RESTORE tool a wiped box sideloads from this share, so a stale copy
-  resurrects exactly the backup/restore bugs later releases fixed.
-- `/Volumes/Kodi/Share/{media,rss}/` - mirrored 1:1 from the canvas
-  (`dropbox/media`, `dropbox/rss`), **strictly additive**: unversioned filenames
-  are overwritten on change but NOTHING is ever deleted, and a missing share
-  subdir is skipped, never created. NOT `iptv/`: the mini's populator daemon owns
-  the share's iptv output; the sync stays away from it.
+Until 2026-09-26 `sync_share.py` also refreshed `/Volumes/Kodi/Share/apps/`
+(sideload copies of first-party zips, opt-in by presence) and mirrored the
+canvas `media/` and `rss/` to same-named share dirs. Measured that day, the
+share holds `iptv/`, `repositories/` and `userdata/` only: none of those
+target directories exists, so both syncs were unreachable code and were
+deleted with their tests. (`iptv/` was never in scope: the mini's populator
+daemon owns it.)
 
 Two triggers cover every publish path:
 
 - `publish_canvas.py` after a canvas publish;
-- **`.githooks/pre-push` (main only)** - covers add-on releases, which publish
-  via plain `git push`.
+- **`.githooks/pre-push` (main only)** - covers installer releases, which
+  publish via plain `git push`.
 
 The contract lives in `_tools/sync_share.py` (pinned by `test_sync_share.py`):
 
-- **Only when the volume is mounted.** If a share dir does not exist the sync
+- **Only when the volume is mounted.** If the share dir does not exist the sync
   prints a skip note and does nothing - it never creates the dir, never attempts a
-  mount, and NEVER fails (or blocks) a release or push.
+  mount, and NEVER fails (or blocks) a push.
 - **Additive.** Foreign zips on the share are never touched; the only deletions
-  are superseded versions of zips we own, and an app's stale copy is only pruned
-  AFTER its fresh copy landed.
+  are superseded versions of our own installer.
 - **Sandbox-safe by construction.** `sync_share.py` must NEVER join the
   system-test copy whitelists (a test enforces this), so a sandboxed run cannot
   write test artifacts to the real share.
@@ -298,23 +292,31 @@ empty while the repo index correctly advertised the new version
 repository restamps the origin and returns the box to the normal channel. Check
 the origin column before blaming update mode.
 
-## CI - validation
+## CI - one push workflow
 
-`.github/workflows/generate_repo.yml` (the push-validation workflow):
+`.github/workflows/pages.yml` ("Build & Deploy Pages") is the ONLY workflow a
+push triggers, and it NEVER commits to `main`:
 
-- Triggers on `main` pushes touching its path filter (plus `workflow_dispatch`).
-- Runs the same gate as the pre-push hook (pytest, ruff, generator-staleness, and
-  the per-add-on version-bump gate `check_versions.py` on main) and **NEVER commits
-  to main** - it only validates. If generated files are stale the author must
-  regenerate and commit.
-- `docs/**` and `.claude/**` are NOT in its path filter, so doc/skill-only
-  commits trigger no validation run. They DO trigger `pages.yml`, which has no
-  path filter.
+- On a **push** it runs the source gates first (pytest, ruff, generator
+  staleness, and the per-add-on version-bump gate `check_versions.py` against
+  `github.event.before`, skipped cleanly on a first push or an unresolvable
+  baseline), then the artifact gates (build, secret gate, determinism double
+  build), deploy, and the consumer-seat verify.
+- On the **daily cron** and on **`repository_dispatch`** no hub source
+  changed, so the test, lint and version-bump steps are skipped
+  (`if: github.event_name == 'push'`, pinned by `test_pages_workflow.py`) and
+  the run goes straight to the artifact gates, deploy and verify.
+- It has NO path filter: doc-only and skill-only commits build and deploy too.
 
-`.github/workflows/pages.yml` is the build/deploy/verify pipeline (above).
+`.github/workflows/generate_repo.yml` ("Validate Kodi Repository") was
+deleted 2026-09-26. It re-ran the same four source gates step for step on the
+same push, and its only extra trigger was a `modular-setup` branch that does
+not exist on the remote (`git ls-remote` shows `main` only). The failure alert
+workflow's list and the workflow pins were updated with it.
+
 `.github/workflows/ci_failure_alert.yml` and
 `.github/workflows/pages_source_guard.yml` are the operational backstops
-(above). None of the four commits to `main`.
+(above). None of the three commits to `main`.
 
 ## Determinism
 

@@ -6,7 +6,9 @@ gate never disagreeing. So there is exactly ONE function, ``changed_addons``,
 imported by BOTH the pre-push gate (``check_versions.py``, post-commit) and the
 release tool (``release.py``, pre-commit). The only difference between the two
 call sites is an EXPLICIT mode flag - ``worktree`` - so the two comparisons can
-never silently diverge (QA must-fix MF-1).
+never silently diverge (QA must-fix MF-1). ``release.py`` was deleted
+2026-09-26; the gate is the one production caller left, and the ``worktree``
+mode stays because ``test_release_detect.py`` pins both modes.
 
 Definition of "changed" (must match ``check_versions.py``'s historical diff
 exactly): an add-on is changed iff its ``addons/<id>`` tree differs from the

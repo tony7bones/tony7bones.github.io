@@ -81,7 +81,7 @@ def test_tooling_is_refused_by_the_publish_allowlist(tmp_path):
 
 def test_placeholder_env_examples_are_allowed(tmp_path):
     assert (
-        _findings(tmp_path, {".env.device.example": "IPTV_1_USERNAME=changeme"}) == []
+        _findings(tmp_path, {".env.example": "IPTV_1_USERNAME=changeme"}) == []
     )
 
 

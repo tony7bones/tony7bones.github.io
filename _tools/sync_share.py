@@ -1,36 +1,33 @@
-"""Mirror the installable zips to the local Kodi share backup.
-
-Two share dirs, two contracts:
+"""Mirror the installer zips to the local Kodi share backup.
 
 `/Volumes/Kodi/Share/repositories/` holds a backup-install copy of the same
 zips the site serves: the current `repository.tony7bones-<version>.zip` root
 installer plus the hand-authored third-party installer zips from
-`dropbox/repositories/`. Without this step it goes stale on every proxy
-release (a stale `repository.tony7bones-1.0.5.zip` sat there pointing at the
-long-dead `repo/` layout - it installed on a fresh box and then silently
-served nothing).
+`dropbox/repositories/`. Without this step it goes stale on every release (a
+stale `repository.tony7bones-1.0.5.zip` sat there pointing at the long-dead
+`repo/` layout - it installed on a fresh box and then silently served
+nothing).
 
-`/Volumes/Kodi/Share/apps/` holds sideloadable copies of first-party add-on
-zips - most importantly EZ Maintenance++, the RESTORE tool: a wiped box
-sideloads it from this share to recover, so a stale copy there resurrects
-exactly the backup/restore bugs later releases fixed. Membership is
-OPT-IN-BY-PRESENCE: the owner curates WHICH add-ons belong by having any
-version of them in the dir; the sync refreshes those to the current release
-and prunes their superseded versions. It never adds add-ons on its own.
+That is the ONE share directory this module touches. `apps/` (sideload
+copies of first-party zips) and `media/`, `rss/` (canvas asset mirrors) were
+synced here until 2026-09-26; none of those directories exists on the share
+any more (measured that day: `/Volumes/Kodi/Share` holds `iptv/`,
+`repositories/` and `userdata/` only), so the two syncs were unreachable code
+and were deleted.
 
-Contract (both dirs):
+Contract:
 
   * BEST-EFFORT, NEVER BLOCKS A RELEASE. `best_effort()` catches everything
-    and only prints; a release must succeed identically whether the share is
+    and only prints; a push must succeed identically whether the share is
     mounted, unmounted, or broken.
-  * ONLY when the destination is available. If a share dir does not exist
-    (volume not mounted), that sync is skipped with a note - nothing is
+  * ONLY when the destination is available. If the share dir does not exist
+    (volume not mounted), the sync is skipped with a note - nothing is
     created, no mount is attempted.
   * ADDITIVE for foreign files. Files on the share that are not ours are
     never touched (the owner curates extras there). The ONLY deletions are
-    superseded versions of zips we own.
-  * SANDBOX-SAFE by construction. The release system tests copy an
-    explicit whitelist of _tools files into a sandbox repo; this module is
+    superseded versions of our own installer.
+  * SANDBOX-SAFE by construction. The system tests copy an explicit
+    whitelist of _tools files into a sandbox repo; this module is
     deliberately NOT on that list, and publish_canvas.py imports it inside a
     try/except ImportError. A sandboxed run therefore cannot reach the real
     share no matter what paths exist on the machine. Do not add
@@ -56,22 +53,6 @@ import xml.etree.ElementTree as ET
 REPO = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 SHARE_ROOT = "/Volumes/Kodi/Share"
 SHARE_DIR = SHARE_ROOT + "/repositories"
-APPS_DIR = SHARE_ROOT + "/apps"
-
-# Add-ons whose real source + installable release live in a SIBLING repo, kept
-# here only as a metadata mirror (addon.xml + icon). The zip generate_repo.py
-# builds for such an id is a tiny NON-INSTALLABLE stub, so sync_apps must never
-# copy it into apps/ - a wiped box sideloading it would get a broken package.
-# The real, current release zip is placed into apps/ by the kodishare-sync skill
-# (which pulls the GitHub Release asset). script.ezmaintenanceplusplus is the
-# restore tool: its source was extracted to moquette/ezmaintenanceplusplus on
-# 2026-07-14, leaving the stub behind. Keep sync_apps and the skill from fighting
-# over the same apps/ filename by owning it in exactly one place - the skill.
-_RELEASE_MANAGED = frozenset({"script.ezmaintenanceplusplus"})
-
-# Canvas asset dirs mirrored 1:1 (additive) to same-named share dirs. NOT
-# iptv/ - the mini's populator daemon owns the share's iptv output.
-CANVAS_ASSET_DIRS = ("media", "rss")
 
 _INSTALLER_RE = re.compile(r"^repository\.tony7bones-(\d+(?:\.\d+)*)\.zip$")
 
@@ -164,123 +145,10 @@ def sync(repo_root: str = REPO, share_dir: str = SHARE_DIR, dry_run: bool = Fals
     return actions
 
 
-def _first_party_versions(repo_root: str) -> dict[str, str]:
-    """{addon-id: current version} for every addons/<id>/addon.xml (not hosted)."""
-    versions: dict[str, str] = {}
-    addons = os.path.join(repo_root, "addons")
-    if not os.path.isdir(addons):
-        return versions
-    for entry in sorted(os.listdir(addons)):
-        xml = os.path.join(addons, entry, "addon.xml")
-        if not os.path.isfile(xml):
-            continue  # hosted/, packages/, loose files
-        try:
-            root = ET.parse(xml).getroot()
-            aid, ver = root.get("id"), root.get("version")
-            if aid and ver:
-                versions[aid] = ver
-        except ET.ParseError:
-            continue
-    return versions
-
-
-def sync_apps(repo_root: str = REPO, apps_dir: str = APPS_DIR, dry_run: bool = False):
-    """Refresh the sideload copies in apps_dir (opt-in-by-presence).
-
-    For every first-party add-on that already has SOME `<id>-*.zip` in
-    apps_dir, copy the current `<id>-<version>.zip` from the repo and prune
-    that add-on's superseded versions. Add-ons with no zip present are never
-    added; foreign files are never touched. Same action tuples as sync().
-    """
-    if not os.path.isdir(apps_dir):
-        return [("unavailable", apps_dir)]
-
-    actions: list[tuple[str, str]] = []
-    existing = sorted(os.listdir(apps_dir))
-
-    for aid, version in _first_party_versions(repo_root).items():
-        if aid in _RELEASE_MANAGED:
-            continue  # owned by the kodishare-sync skill; in-repo zip is a stub
-        mine = [n for n in existing if n.startswith(aid + "-") and n.endswith(".zip")]
-        if not mine:
-            continue  # not opted in
-        current = f"{aid}-{version}.zip"
-        src = os.path.join(repo_root, "addons", aid, current)
-        if not os.path.isfile(src):
-            actions.append((f"error:no built zip for {aid} {version}", current))
-            continue
-        dst = os.path.join(apps_dir, current)
-        try:
-            if os.path.isfile(dst) and _sha256(dst) == _sha256(src):
-                actions.append(("unchanged", current))
-            else:
-                if not dry_run:
-                    shutil.copyfile(src, dst)
-                actions.append(("copied", current))
-        except OSError as exc:
-            actions.append((f"error:{exc}", current))
-            continue  # do not prune if the fresh copy did not land
-        for name in mine:
-            if name != current:
-                try:
-                    if not dry_run:
-                        os.remove(os.path.join(apps_dir, name))
-                    actions.append(("pruned", name))
-                except OSError as exc:
-                    actions.append((f"error:{exc}", name))
-
-    return actions
-
-
-def sync_canvas_assets(
-    repo_root: str = REPO, share_root: str = SHARE_ROOT, dry_run: bool = False
-):
-    """Mirror the canvas asset dirs (media/, rss/) to same-named share dirs.
-
-    STRICTLY ADDITIVE: these are unversioned filenames, so a changed file is
-    overwritten but NOTHING is ever deleted (the share media/ held the old
-    canvas image under its old name - it simply stays, alongside the fresh
-    copies). A missing share subdir is skipped, never created. Same action
-    tuples as sync().
-    """
-    actions: list[tuple[str, str]] = []
-    for sub in CANVAS_ASSET_DIRS:
-        src_dir = os.path.join(repo_root, "dropbox", sub)
-        dst_dir = os.path.join(share_root, sub)
-        if not os.path.isdir(dst_dir):
-            actions.append(("unavailable", dst_dir))
-            continue
-        if not os.path.isdir(src_dir):
-            continue
-        for name in sorted(os.listdir(src_dir)):
-            src = os.path.join(src_dir, name)
-            if not os.path.isfile(src):
-                continue
-            dst = os.path.join(dst_dir, name)
-            rel = f"{sub}/{name}"
-            try:
-                if os.path.isfile(dst) and _sha256(dst) == _sha256(src):
-                    actions.append(("unchanged", rel))
-                    continue
-                if not dry_run:
-                    shutil.copyfile(src, dst)
-                actions.append(("copied", rel))
-            except OSError as exc:
-                actions.append((f"error:{exc}", rel))
-    return actions
-
-
-def best_effort(
-    repo_root: str = REPO,
-    share_dir: str = SHARE_DIR,
-    apps_dir: str = APPS_DIR,
-    share_root: str = SHARE_ROOT,
-) -> None:
-    """Run all syncs and only ever print - a release must never fail on the share."""
+def best_effort(repo_root: str = REPO, share_dir: str = SHARE_DIR) -> None:
+    """Run the sync and only ever print - a push must never fail on the share."""
     try:
         _report(sync(repo_root, share_dir), share_dir)
-        _report(sync_apps(repo_root, apps_dir), apps_dir)
-        _report(sync_canvas_assets(repo_root, share_root), share_root + "/{media,rss}")
     except Exception as exc:  # noqa: BLE001 - deliberately fail-soft
         print(f"note: share sync skipped ({exc})", file=sys.stderr)
 
@@ -303,27 +171,16 @@ def _report(actions, share_dir: str) -> None:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
-        description="Mirror installer/canvas/app zips to the Kodi share backup."
+        description="Mirror the installer zips to the Kodi share backup."
     )
     ap.add_argument(
         "--share", default=SHARE_DIR, help=f"repositories dir (default {SHARE_DIR})"
-    )
-    ap.add_argument("--apps", default=APPS_DIR, help=f"apps dir (default {APPS_DIR})")
-    ap.add_argument(
-        "--root",
-        default=SHARE_ROOT,
-        help=f"share root for media/rss (default {SHARE_ROOT})",
     )
     ap.add_argument(
         "--dry-run", action="store_true", help="report what would change, copy nothing"
     )
     args = ap.parse_args(argv)
     _report(sync(REPO, args.share, dry_run=args.dry_run), args.share)
-    _report(sync_apps(REPO, args.apps, dry_run=args.dry_run), args.apps)
-    _report(
-        sync_canvas_assets(REPO, args.root, dry_run=args.dry_run),
-        args.root + "/{media,rss}",
-    )
     if args.dry_run:
         print("--dry-run: nothing was changed.")
     return 0

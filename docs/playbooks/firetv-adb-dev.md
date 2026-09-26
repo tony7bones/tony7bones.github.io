@@ -1,5 +1,16 @@
 # Fire TV ADB Dev Pipeline - `script.tony7bones.modv2plus`
 
+> **HISTORICAL (noted 2026-09-26).** The add-on this pipeline developed,
+> `script.tony7bones.modv2plus`, and the skin it patched were retired and
+> deleted at the static conversion (2026-07-15), and the helper script that
+> grew out of it, `_tools/firetv.sh`, was deleted 2026-09-26 (its add-on
+> commands had been dead since the conversion and no gate called it). The
+> generic adb and JSON-RPC mechanics below (connect, scoped-storage paths,
+> log pull, key events) still describe Fire OS accurately; the add-on
+> specific steps do not apply to anything that exists. For current Fire TV
+> work use the meta-root `.claude/scripts/firetv-deploy.sh` and
+> `.claude/scripts/DEVICES.md`.
+
 Live development and verification of `script.tony7bones.modv2plus` against
 the real Office Fire TV (a Toshiba 4K UHD Fire TV smart TV, model AFTHA004 /
 "hazel") running Kodi 21.3 Omega.

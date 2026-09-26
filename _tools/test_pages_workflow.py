@@ -81,10 +81,57 @@ def test_build_resolves_release_versions_with_the_workflow_token():
     assert token in determinism
     workflows = WORKFLOW.parent
     assert not (workflows / "sync_hosted_mirror.yml").exists()
-    assert "sync_hosted_mirror" not in (workflows / "generate_repo.yml").read_text()
-    assert (
-        "check_hosted_release_sync" not in (workflows / "generate_repo.yml").read_text()
-    )
+    assert "sync_hosted_mirror" not in text
+    assert "check_hosted_release_sync" not in text
+
+
+def test_pages_is_the_only_push_workflow():
+    """generate_repo.yml ("Validate Kodi Repository") duplicated this
+    workflow's build job step for step, and its one extra trigger was a
+    branch that does not exist; deleted 2026-09-26. The source gates it
+    carried (tests, lint, generator staleness, version bump) live here."""
+    workflows = WORKFLOW.parent
+    assert not (workflows / "generate_repo.yml").exists()
+    names = sorted(p.name for p in workflows.glob("*.yml"))
+    assert names == ["ci_failure_alert.yml", "pages.yml", "pages_source_guard.yml"]
+    text = _text()
+    assert "python3 -m pytest _tools/ -q" in text
+    assert "ruff check _tools/" in text
+    assert "generate_repo.py" in text
+
+
+def _step(text: str, name: str) -> str:
+    start = text.index(f"- name: {name}")
+    nxt = text.find("\n      - ", start + 1)
+    return text[start : nxt if nxt != -1 else len(text)]
+
+
+def test_source_gates_run_on_push_only_and_artifact_gates_on_every_event():
+    """The suite, lint and the version-bump gate judge the pushed source and
+    run on push only; the cron and repository_dispatch runs change no source
+    and used to spend 40s re-running them. The build, secret gate, determinism
+    diff and live verify judge the artifact and stay unconditional."""
+    text = _text()
+    for name in ("Test suite", "Lint", "Version-bump gate (every changed add-on bumped)"):
+        assert "if: github.event_name == 'push'" in _step(text, name), name
+    for name in (
+        "Build site",
+        "Secret gate on the built artifact",
+        "Determinism gate (double build, byte diff)",
+        "Consumer-seat verification (the same URLs Kodi uses)",
+    ):
+        assert "if:" not in _step(text, name), name
+
+
+def test_version_bump_gate_uses_the_push_before_sha_as_baseline():
+    """On main, origin/main already equals the pushed HEAD, so the gate must
+    compare across the pushed range (github.event.before) or it judges the
+    commit against itself and passes vacuously."""
+    step = _step(_text(), "Version-bump gate (every changed add-on bumped)")
+    assert "BEFORE_SHA: ${{ github.event.before }}" in step
+    assert 'CHECK_VERSIONS_BASE_REF="$BEFORE_SHA" python3 _tools/check_versions.py' in step
+    assert "0000000000000000000000000000000000000000" in step
+    assert "git rev-parse --verify --quiet" in step
 
 
 def test_deploys_via_pages_from_actions():

@@ -407,7 +407,8 @@ def test_classify_the_real_manifest_covers_all_entries():
           through the skin was the only thing gating its subtree and that is
           exactly what 1.2.8 removed.
       +1  2026-08-29, plugin.program.autocompletion ADDED, hosted. Not ours: a
-          verbatim mirror of the official build, pulled by mirror_closure.py,
+          verbatim mirror of the official build, pulled by the since-deleted
+          mirror_closure.py (gone 2026-09-26 with the committed copies),
           version 2.1.2 on both the omega and piers mirrors. skin.estuary.pov
           1.2.4 declares a hard <import> on it so the virtual keyboard's
           suggestion panel has a content provider, and by the SAME rule already

@@ -9,9 +9,12 @@
 # push to main builds and deploys (no path filter: any tracked file can
 # shape the artifact).
 #
-# generate_repo.yml remains the push-validation workflow; the gates here
-# deliberately re-run the same suite so THIS workflow alone is sufficient
-# evidence that an artifact was fit to deploy.
+# This is the ONE push workflow (generate_repo.yml, which re-ran the same
+# gates step for step, was deleted 2026-09-26). The test suite, lint and the
+# version-bump gate judge the pushed SOURCE, so they run on push only; the
+# cron and repository_dispatch runs change no hub source, and they keep the
+# build, secret gate, determinism diff, deploy and live verify, which judge
+# the ARTIFACT.
 
 name: Build & Deploy Pages
 
@@ -73,9 +76,11 @@ jobs:
         run: pip install -r requirements-ci.txt
 
       - name: Test suite
+        if: github.event_name == 'push'
         run: python3 -m pytest _tools/ -q
 
       - name: Lint
+        if: github.event_name == 'push'
         run: ruff check _tools/
 
       # The committed add-on artifacts (per-add-on zips, addons.xml + hashes)
@@ -90,13 +95,26 @@ jobs:
             exit 1
           fi
 
-      # The same version gates the validation workflow runs: a deploy must
-      # never be possible for a commit that fails them (red validation +
-      # green deploy = fleet served a bad state).
-
+      # The per-add-on "every changed add-on bumped its version" gate
+      # (check_versions.py) also runs in the pre-push hook, but a --no-verify
+      # or un-hooked push could ship a same-version byte change, invisible to
+      # Kodi's version-only auto-upgrade; this is the backstop. The baseline is
+      # the push's "before" SHA: on main, origin/main already equals the pushed
+      # HEAD, so comparing against it would judge the commit against itself
+      # and pass vacuously. The all-zeros "before" (a first push) and a
+      # baseline this checkout cannot resolve are skipped cleanly.
       - name: Version-bump gate (every changed add-on bumped)
-        if: github.event_name == 'push' && github.event.before != '0000000000000000000000000000000000000000'
-        run: CHECK_VERSIONS_BASE_REF="${{ github.event.before }}" python3 _tools/check_versions.py
+        if: github.event_name == 'push'
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          if [ -z "$BEFORE_SHA" ] || \
+             [ "$BEFORE_SHA" = "0000000000000000000000000000000000000000" ] || \
+             ! git rev-parse --verify --quiet "$BEFORE_SHA" >/dev/null; then
+            echo "no usable 'before' baseline ($BEFORE_SHA), skipping version-bump gate"
+            exit 0
+          fi
+          CHECK_VERSIONS_BASE_REF="$BEFORE_SHA" python3 _tools/check_versions.py
 
       # Per-run key: actions/cache only SAVES on an exact-key miss, so a
       # content-hash key would discard the daily cron's refreshed snapshots

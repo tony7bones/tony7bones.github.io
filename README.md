@@ -128,28 +128,31 @@ and commit the output; CI fails on stale output.
 
 ```bash
 python3 _tools/generate_repo.py     # regenerate addons.xml, zips, index pages
-python3 -m pytest _tools/ -q        # tests (254, all green; measured 2026-09-26)
+python3 -m pytest _tools/ -q        # tests (209, all green, 9s; measured 2026-09-26)
 ruff check _tools/                  # lint
 python3 _tools/build_site.py --out _site   # build the full served site (incl. /static/)
 git config core.hooksPath .githooks # install the pre-push gate (once after clone)
 ```
 
-`python3 _tools/release.py` is THE release command for **every** add-on,
-including `repository.tony7bones`. It detects what changed vs `origin/main`,
-minor-bumps it, drafts + prepends the news, regenerates, runs the gates, and
-commits on the branch (`--push` is opt-in; `--dry-run` previews the plan). On
-push, CI builds and deploys the static site via GitHub Pages. No hand-edited
-`addon.xml`, no hand-written `<news>`. Full detail:
+The only add-on released from here is `repository.tony7bones`; everything
+else the hub serves is resolved at build time from a sibling repo's release
+or an upstream index. To release it: raise the `version` and prepend a
+`<news>` line in `addons/repository.tony7bones/addon.xml`, run
+`python3 _tools/generate_repo.py`, commit source and generated output
+together, push `main`. CI builds and deploys the static site via GitHub Pages.
+The bump is enforced by `check_versions.py` in the pre-push hook and in CI
+(the automatic `release.py` was deleted 2026-09-26). Full detail:
 `docs/playbooks/release-and-deploy.md`.
 
 The pre-push hook blocks a push unless tests pass, lint is clean, generated files
-are fresh, and every changed add-on bumped its version. Four CI workflows back
-it up and none commits to main: `generate_repo.yml` validates; `pages.yml`
-builds + deploys + verifies live (on push, daily, and on the `ezmpp-release`
-dispatch a sibling repo sends when it publishes); `ci_failure_alert.yml` opens
-an issue assigned to the owner on a red deploy-path run and closes it on the
-next green; `pages_source_guard.yml` keeps the Pages source on "workflow". All
-on `ubuntu-26.04`.
+are fresh, and every changed add-on bumped its version. One push workflow and
+two backstops, none of which commits to main: `pages.yml` runs those same
+source gates on push, then builds + deploys + verifies live (on push, daily,
+and on the `ezmpp-release` dispatch a sibling repo sends when it publishes;
+the cron and dispatch runs skip the source gates, since no hub source
+changed); `ci_failure_alert.yml` opens an issue assigned to the owner on a
+red run and closes it on the next green; `pages_source_guard.yml` keeps the
+Pages source on "workflow". All on `ubuntu-26.04`.
 
 ## Documentation
 
@@ -159,8 +162,8 @@ on `ubuntu-26.04`.
   blocking prompts (origins, optional/required deps, binaries).
 - `docs/playbooks/local-kodi-verification.md` - driving the real local Kodi; honest
   verification.
-- `docs/playbooks/firetv-adb-dev.md` - driving a Fire TV over ADB + JSON-RPC
-  (`_tools/firetv.sh`).
+- `docs/playbooks/firetv-adb-dev.md` - historical since 2026-09-26 (the retired
+  modv2plus add-on's adb loop); the generic adb mechanics still hold.
 - `docs/playbooks/firetv-stick-scoped-storage-provisioning.md` - provisioning a
   non-rooted Fire OS 11 Stick over ADB.
 - `~/Code/moquette/kodi/.claude/skills/apple-tv/SKILL.md` - the Kodi storage

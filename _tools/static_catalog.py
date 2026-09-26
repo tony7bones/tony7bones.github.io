@@ -106,7 +106,47 @@ from dataclasses import dataclass, field
 from xml.etree import ElementTree as ET
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from mirror_closure import BUILTINS  # noqa: E402
+
+# Kodi-provided extension points / built-ins that are never separate add-ons,
+# so the import walk (_check_imports_hosted) never looks for them in the
+# catalog. Lived in mirror_closure.py until 2026-09-26, when that tool (a
+# writer of committed addons/hosted/ copies, retired with the owner's rule
+# THERE MUST BE NO MIRROR VERSION TO BE WRONG) was deleted and the two
+# constants the gates imported from it moved here.
+BUILTINS = frozenset(
+    {
+        "xbmc.python",
+        "xbmc.gui",
+        "xbmc.addon",
+        "xbmc.json",
+        "xbmc.metadata",
+        "kodi.resource",
+        "xbmc.webinterface",
+        "xbmc.audioencoder",
+        "xbmc.python.pluginsource",
+        "xbmc.python.module",
+        "xbmc.python.script",
+        "xbmc.python.library",
+        "xbmc.gui.skin",
+        "xbmc.service",
+        "kodi.context.item",
+    }
+)
+
+# Dependencies this tree is FORBIDDEN to host. Unlike BUILTINS, which are Kodi
+# extension points no repository could host, these are REAL add-ons that Kodi
+# resolves from its own official library. test_closure.py gates this set.
+#
+# EMPTY since 2026-08-31, and that is a ledger entry, not an invitation. Its
+# one entry ever was `script.skinshortcuts`: mirrored here at 2.0.3 until
+# 2026-07-29 (owner order: "we do not patch it, fork it, version it, host it,
+# mirror it, or ship it"), then carried in this set because the decommissioned
+# skin.estuary7 imported it and Kodi resolves it from the official library.
+# The skin's unpublishing on 2026-08-31 removed the last importer, so the
+# entry left with it. The mechanism stays, gated by test_closure.py: anything
+# added here needs a written reason of that same kind, because a silent entry
+# turns a real gate into a rubber stamp.
+OFFICIAL_LIBRARY: frozenset[str] = frozenset()
 
 REPO_ROOT = os.path.normpath(
     os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")

@@ -54,9 +54,10 @@ These are the whole standard. There is no skill to load.
   is a normal target and the rule must not be reinstated.
 - **Always pin `adb -s <ip>:5555`.** Several boxes sit on adb at once, so an
   unpinned command lands on whichever one adb happens to pick.
-  `_tools/firetv.sh` lost its silent `192.168.7.162` default on 2026-07-21: it
-  now needs an alias or `FIRETV_IP` and echoes the target it resolved. Check
-  what it points at before running it.
+  This repo carries no adb helper any more (`_tools/firetv.sh` was deleted
+  2026-09-26: its add-on commands had been dead since the static conversion
+  and no gate called it); the meta-root `.claude/scripts/firetv-deploy.sh`
+  takes an alias or IP and echoes the target it resolved.
 - Safety core, unchanged: a backup must contain what it claims (one
   archive-contents inspection when backup/restore code changes); CI green before
   deploy; skins install from the Kodi repo, never adb/devicectl push; the
@@ -195,7 +196,8 @@ Everything lives on `main`. Main is **sources-only**: the canvas (`dropbox/`), t
 # Run this locally before committing whenever you change addon sources.
 python3 _tools/generate_repo.py            # npm run build
 
-# Run the full test suite (254 tests, all green; measured 2026-09-26)
+# Run the full test suite (209 tests, all green, 9s wall; measured 2026-09-26
+# after the release tool and its 30s of sandbox tests were deleted)
 python3 -m pytest _tools/ -q               # npm test
 
 # Lint the Python tooling. Needs the PINNED ruff: ruff.toml declares
@@ -212,36 +214,49 @@ python3 _tools/build_site.py --out _site
 python3 _tools/publish_canvas.py -m "Add foo repo zip to canvas"   # npm run publish
 python3 _tools/publish_canvas.py -m "..." --dry-run                # npm run publish:dry
 
-# Refresh the Kodi share backup mirror by hand. Runs automatically on every push
-# of main (pre-push hook); mount-guarded, best-effort, never blocks.
+# Refresh the Kodi share's repositories/ backup copy of the installer zips by
+# hand. Runs automatically on every push of main (pre-push hook);
+# mount-guarded, best-effort, never blocks.
 python3 _tools/sync_share.py --dry-run
 
-# Release ANY add-on - one command (see "Releasing" below)
-python3 _tools/release.py --dry-run        # preview the plan
-python3 _tools/release.py                  # bump + news + commit on the branch
+# The version-bump gate the pre-push hook and CI run (see "Releasing" below)
+python3 _tools/check_versions.py           # npm run check
 ```
 
 ## Releasing
 
-**`python3 _tools/release.py` is THE release command for EVERY add-on.** The static repository add-on releases the same way as any other add-on: there is no separate proxy path anymore. The tool detects what changed vs `origin/main` (via the shared `release_detect.changed_addons`, the SAME detector the pre-push gate uses, so the two can never disagree), computes the next version (MINOR by default), drafts and PREPENDS the `<news>`, regenerates deterministically, runs the script-side consistency gate, and commits `chore(release): ...` on the branch, then STOPS. No auto-push. On push, CI builds and deploys the static site.
+The ONLY add-on released from this repo is `repository.tony7bones`
+(`addons/repository.tony7bones/`); everything else the hub serves is resolved
+at build time from a sibling repo's release or an upstream index (see "Live
+add-ons under `addons/`"). Releasing it is a hand edit, four steps:
 
-```bash
-python3 _tools/release.py                          # minor-bump every changed add-on, commit, STOP
-python3 _tools/release.py --dry-run                # show the plan (incl. WHICH files), change nothing
-python3 _tools/release.py --patch                  # patch instead of the minor default (or --minor / --major)
-python3 _tools/release.py --version 3.1.0 --addon repository.tony7bones
-python3 _tools/release.py --news "repository.tony7bones=Add a hosted add-on"
-python3 _tools/release.py --push                   # also push the branch (default: commit only)
-python3 _tools/release.py check                    # the script-side consistency gate only
-```
+1. Edit `addons/repository.tony7bones/addon.xml`: raise the `version`
+   attribute and prepend a `<news>` line.
+2. `python3 _tools/generate_repo.py` (rebuilds the zip, `addons.xml` and
+   the hashes; the superseded zip is pruned).
+3. Commit the source and the generated output together.
+4. Push `main`. CI builds and deploys the static site; the root installer
+   `repository.tony7bones-<version>.zip` is placed fresh every deploy.
 
-Every release MUST bump the version (Kodi auto-upgrades by version number only, so a same-version byte change silently breaks upgrades). The tool computes the correct bump and never skips it; the rule is enforced by `check_versions.py` in both the pre-push hook and CI. The tool is idempotent: a re-run with no new source edit is a no-op, never a double-bump. It refuses when the branch is behind origin or at the 9.9.9 version ceiling. Rolls back to the pre-release HEAD on any failure. Full detail: `docs/playbooks/release-and-deploy.md`.
+Every release MUST bump the version: Kodi auto-upgrades by version number
+only, so a same-version byte change silently breaks upgrades. The bump is
+enforced, not remembered: `check_versions.py` (the pre-push hook, and CI on
+every push against the push's `before` SHA) blocks any push where the add-on's
+source changed without its version increasing. Reverting a release lowers the
+version and the gate rightly blocks it; roll FORWARD with a new bump.
 
-The release tooling is split for testability: `_tools/release_lib.py` (pure version math + file transforms), `_tools/release_detect.py` (the ONE shared `changed_addons` detector behind both the tool and the gate), and `_tools/release.py` (the unified tool + the script-side consistency gate), with `_tools/test_release.py` / `_tools/test_release_detect.py` / `_tools/test_check_versions.py`.
+`_tools/release.py`, the automatic bump-and-news tool, and its
+`test_release.py` were deleted 2026-09-26: the one add-on it could act on was
+last bumped 2026-07-16, no workflow, hook or `bin/check-all` ran it, and its
+sandbox tests were 29.5s of a 40s suite. What survives is what the gates use:
+`_tools/release_lib.py` (version parsing and comparison),
+`_tools/release_detect.py` (the ONE `changed_addons` detector) and
+`_tools/check_versions.py`, with `test_release_detect.py` and
+`test_check_versions.py`. Full detail: `docs/playbooks/release-and-deploy.md`.
 
 ## Gates (pre-push hook + CI)
 
-`.githooks/pre-push` blocks a push unless the test suite passes, lint is clean, generated files are up to date, and every changed add-on bumped its version (`check_versions.py`). It also runs the KodiShare mirror sync (`sync_share.py`, main only, best-effort). Install once after cloning:
+`.githooks/pre-push` blocks a push unless the test suite passes, lint is clean, generated files are up to date, and every changed add-on bumped its version (`check_versions.py`). It also refreshes the KodiShare `repositories/` backup copy of the installer zips (`sync_share.py`, main only, best-effort; its `apps/` and `media/`,`rss/` halves were deleted 2026-09-26 because those directories no longer exist on the share). Install once after cloning:
 
 ```bash
 git config core.hooksPath .githooks
@@ -270,17 +285,22 @@ defaults. Bump both files in one commit that also clears whatever the new
 version flags, and never bump a pin to make a red build go green.
 
 Everything above is also runnable across all four repos at once with
-`../bin/check-all` (12 gates, measured 2026-09-26), which provisions the same pinned venv this hook
+`../bin/check-all` (12 gates across the four repos, this one contributing pytest and ruff; measured 2026-09-26), which provisions the same pinned venv this hook
 uses.
 
-Four CI workflows back this up, and **none of them ever commits to main**. All run on `ubuntu-26.04` with current action majors (`checkout@v7`, `setup-python@v7`, `cache@v6`, `upload-artifact@v7`, `download-artifact@v8`, `upload-pages-artifact@v5`, `deploy-pages@v5`, `configure-pages@v6`; measured 2026-09-26):
+ONE push workflow plus two operational backstops, and **none of them ever commits to main**. All run on `ubuntu-26.04` with current action majors (`checkout@v7`, `setup-python@v7`, `cache@v6`, `upload-artifact@v7`, `download-artifact@v8`, `upload-pages-artifact@v5`, `deploy-pages@v5`, `configure-pages@v6`; measured 2026-09-26):
 
-- **`.github/workflows/generate_repo.yml`** ("Validate Kodi Repository") re-runs the tests, lint, the generator-staleness check, and the per-add-on version-bump gate (main only).
-- **`.github/workflows/pages.yml`** ("Build & Deploy Pages") runs the same gates, builds the full site with `build_site.py` (including the `/static/` catalog, with `GH_TOKEN` set to `T7B_SOURCE_READ_TOKEN` when stored, else `GITHUB_TOKEN`, so the release lookups use the REST API; both source repos are public, the secret is an optional escape hatch), runs the secret gate (`check_site_secrets.py`) and a double-build determinism diff, then **deploys via GitHub Pages** (Pages source = GitHub Actions) and verifies live from the consumer seat (`verify_live_site.py`). If a push run's live verify fails, the verify job re-dispatches the deploy ONCE (a branch-build race clobbered a deploy on 2026-09-26; a genuinely broken site cannot loop). It also runs on a daily cron to refresh mutable third-party metadata, and on `repository_dispatch` when a sibling repo (ezmpp or estuary-pov, both sending the historical type `ezmpp-release`) publishes a release. Every one of those runs re-resolves the EZM++ release, the two estuary-pov releases and the POV upstream index, so a new version needs no commit here.
-- **`.github/workflows/ci_failure_alert.yml`** ("Alert on CI failure") runs after every "Build & Deploy Pages" or "Validate Kodi Repository" run: a failure opens ONE GitHub issue assigned to moquette (or comments on the open one), and the next green run closes it. A red run nobody hears is not a gate; the freshness gate went red for nine days unheard before this existed.
+- **`.github/workflows/pages.yml`** ("Build & Deploy Pages") is the push workflow. On a push it runs the test suite, lint, the generator-staleness check and the version-bump gate (`check_versions.py` against `github.event.before`, so the bump is judged across the pushed range and not against itself); on the daily cron and on `repository_dispatch`, where no hub source changed, the test, lint and version steps are skipped (`if: github.event_name == 'push'`, pinned by `test_pages_workflow.py`) and the run goes straight to the artifact gates. Every run builds the full site with `build_site.py` (including the `/static/` catalog, with `GH_TOKEN` set to `T7B_SOURCE_READ_TOKEN` when stored, else `GITHUB_TOKEN`, so the release lookups use the REST API; both source repos are public, the secret is an optional escape hatch), runs the secret gate (`check_site_secrets.py`) and a double-build determinism diff, then **deploys via GitHub Pages** (Pages source = GitHub Actions) and verifies live from the consumer seat (`verify_live_site.py`). If a push run's live verify fails, the verify job re-dispatches the deploy ONCE (a branch-build race clobbered a deploy on 2026-09-26; a genuinely broken site cannot loop). It also runs on a daily cron to refresh mutable third-party metadata, and on `repository_dispatch` when a sibling repo (ezmpp or estuary-pov, both sending the historical type `ezmpp-release`) publishes a release. Every one of those runs re-resolves the EZM++ release, the two estuary-pov releases and the POV upstream index, so a new version needs no commit here.
+- **`.github/workflows/ci_failure_alert.yml`** ("Alert on CI failure") runs after every "Build & Deploy Pages" run: a failure opens ONE GitHub issue assigned to moquette (or comments on the open one), and the next green run closes it. A red run nobody hears is not a gate; the freshness gate went red for nine days unheard before this existed.
 - **`.github/workflows/pages_source_guard.yml`** runs daily and by hand and keeps the Pages source on "workflow". It was found on "legacy" on 2026-09-26, which made GitHub's branch build race the workflow deploy and took the site to 404 once. It writes with the repository secret `T7B_PAGES_ADMIN_TOKEN` (a tony7bones classic PAT, recorded in the owner's vault, never in this tree) and only warns when that secret is absent.
 
-Note: pages.yml has NO path filter - every push to main builds and deploys (any tracked file can shape the artifact). Only generate_repo.yml keeps a path filter.
+Note: pages.yml has NO path filter - every push to main builds and deploys (any tracked file can shape the artifact).
+
+Retired 2026-09-26, later the same day: `.github/workflows/generate_repo.yml`
+("Validate Kodi Repository"). It duplicated pages.yml's build job step for
+step, and its only extra trigger was a branch (`modular-setup`) that does not
+exist on the remote (`git ls-remote` shows `main` only). Deleted outright; the
+alert workflow's list and the workflow tests were updated with it.
 
 Retired 2026-09-26, both on the same day: the hosted release-freshness gate
 (`check_hosted_release_sync.py`, which turned a stale hand-maintained mirror
@@ -329,7 +349,9 @@ Generated zips are **reproducible** so CI's staleness gate does not flag them on
 
 ### The `_tools/` inventory
 
-Release: `release.py`, `release_lib.py`, `release_detect.py`, `check_versions.py`. Build/deploy: `generate_repo.py`, `build_site.py`, `static_catalog.py` (+ manifest `catalog.json`), `verify_live_site.py`, `check_site_secrets.py`, `secret_patterns.py`, `mirror_closure.py` (read-only since 2026-09-26, its `--apply` refuses: a committed copy is the mirror version the owner ruled out; `check_hosted_release_sync.py` and `sync_hosted_mirror.py` were retired the same day; `static_catalog.py` resolves release versions itself and walks the import closure at build time). Canvas + backup: `publish_canvas.py`, `sync_share.py`. Device tooling: `firetv.sh`, `provision-kodi.sh` (the adb provisioner; the Setup add-ons it drove are retired, but the script is retained). IPTV builder: `build_iptv.py` (+ its test suite) was **extracted to its own private repo (`moquette/iptv`) and removed here (2026-07-17)**; the mini builds IPTV centrally and serves it over the NFS share (the share model), so this repo no longer host-builds. `make_custom_m3u.py` remains.
+Version gate: `check_versions.py`, `release_detect.py`, `release_lib.py`. Build/deploy: `generate_repo.py`, `build_site.py`, `static_catalog.py` (+ manifest `catalog.json`; it also owns `BUILTINS` and `OFFICIAL_LIBRARY`, the two import-walk exclusion sets, since 2026-09-26), `verify_live_site.py`, `check_site_secrets.py`, `secret_patterns.py`. Canvas + backup: `publish_canvas.py`, `sync_share.py`. Every module has a `test_<name>.py` beside it except `secret_patterns.py` (covered through its importers) and `release_lib.py` (covered through `test_check_versions.py`).
+
+Deleted 2026-09-26, none with a caller left: `release.py` + `test_release.py` (see "Releasing"); `mirror_closure.py` (about 190 lines kept for two constants, its fetch code aimed at the Omega repo while the build uses Piers; the constants moved into `static_catalog.py`); `firetv.sh` and `provision-kodi.sh` (self-declared partly dead and "BROKEN, DO NOT RUN", no gate ran either; the meta-root `.claude/scripts/firetv-deploy.sh` is the live adb helper) with the provisioner's `.env.device.example` template; `make_custom_m3u.py` (no test, no caller; the IPTV builder it belonged to was extracted to the private `moquette/iptv` repo 2026-07-17, and the mini serves IPTV over the NFS share). Earlier: `check_hosted_release_sync.py` and `sync_hosted_mirror.py` (2026-09-26, morning), `build_iptv.py` (2026-07-17).
 
 ## Adding content
 
@@ -338,7 +360,7 @@ Release: `release.py`, `release_lib.py`, `release_detect.py`, `check_versions.py
 1. Create `addons/<addon-id>/addon.xml` following the Kodi addon.xml schema and add any source files.
 2. Run `python3 _tools/generate_repo.py` (builds the zip, updates `addons.xml`).
 3. `git add addons/<addon-id>/ addons/addons.xml addons/addons.xml.sha256 addons/addons.xml.md5`
-4. Release it with `python3 _tools/release.py` so it gets a version bump + news, then push (CI builds and deploys the static site).
+4. Make sure its `addon.xml` carries a `version` (the bump gate compares every later change against it) and add its `_tools/catalog.json` entry, commit, push (CI builds and deploys the static site). In practice `repository.tony7bones` is the only add-on built here; see "Releasing".
 
 ### Serving a new official-library dependency
 
@@ -359,7 +381,7 @@ Never commit it. Add a `_tools/catalog.json` entry shaped exactly like `script.m
 > - `docs/playbooks/kodi-settings-clobber.md` - the "Kodi clobbers direct settings writes" class and the two fix mechanisms.
 > - `docs/playbooks/kodi-vfs-cannot-read-foreign-local-files.md` - Kodi's VFS can silently return empty reads for a local file a non-VFS writer produced.
 > - `docs/playbooks/iptv-channel-customization.md` - the env-driven IPTV curation pipeline (the host `build_iptv.py` half; extracted to `moquette/iptv` 2026-07-17, kept here as historical reference).
-> - `docs/playbooks/firetv-adb-dev.md` - driving a Fire TV over ADB + JSON-RPC (`_tools/firetv.sh`).
+> - `docs/playbooks/firetv-adb-dev.md` - HISTORICAL since 2026-09-26: the retired modv2plus add-on's adb loop; its generic adb and JSON-RPC mechanics still hold, the add-on steps do not.
 > - `docs/playbooks/firetv-stick-scoped-storage-provisioning.md` - provisioning a non-rooted Fire OS 11 Stick over adb.
 > - `docs/playbooks/mac-mini-media-server.md` - the `Mini` box that serves every Kodi client over NFS/SMB.
 > - `.claude/skills/deploy/SKILL.md` - the release + deploy runbook.
