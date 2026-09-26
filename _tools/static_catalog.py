@@ -26,7 +26,12 @@ taken from the release zip, nothing committed). Since 2026-09-26 every add-on
 we own is build-resolved: THERE MUST BE NO MIRROR VERSION TO BE WRONG.
 
 Two of those resolve their VERSION at build time, on every build, and take
-their metadata from the zip itself, so there is no committed copy to rot:
+their metadata from the zip itself, so there is no committed copy to rot
+(since 2026-09-26 that is every add-on we own AND the eleven official-library
+modules their closures reach, which follow the official Kodi repository's
+Piers index, https://mirrors.kodi.tv/addons/piers/addons.xml.gz, exactly the
+way plugin.video.pov follows its upstream's; addons/hosted/ holds only the
+seven third-party repository installers):
 
   - release-asset: the source repo's LATEST published release is the version
     (GitHub REST API with GH_TOKEN/GITHUB_TOKEN when present, else the
@@ -36,12 +41,21 @@ their metadata from the zip itself, so there is no committed copy to rot:
     template spells out; the build then lists the repo's releases and takes
     the newest in that namespace, since releases/latest can only name one;
   - hybrid with an ``upstream_index`` (a Kodi addons.xml the upstream
-    repository publishes): the version that index declares for the add-on.
+    repository publishes, plain or gzipped): the version that index declares
+    for the add-on. One index is fetched and parsed ONCE per build however
+    many entries point at it (BuildContext), and a zip is accepted only if it
+    packages exactly the id and version the index named, so a mirror that
+    answers with the wrong file is refused before the download cache.
 
 Both replaced a hand-maintained addons/hosted/<id>/addon.xml on 2026-09-26,
 after EZ Maintenance++ sat nine days behind its release and plugin.video.pov
 404ed and was DROPPED from the build for days. A hybrid entry WITHOUT an
 upstream_index keeps the committed addon.xml as its truth.
+
+The import closure of every build-resolved entry is walked at build time,
+transitively through the other build-resolved entries (_check_imports_hosted
+with BuildContext.addon_xml_for), since no committed addon.xml is left for
+test_closure.py to walk offline.
 
 Fault policy (parity with the hardened 2.4.9 engine, moved to build time):
   - one dead upstream -> fall back to the LAST-GOOD copy already served at the
@@ -74,6 +88,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
 import http.client
 import io
@@ -82,9 +97,11 @@ import os
 import re
 import shutil
 import sys
+import time
 import urllib.error
 import urllib.request
 import zipfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from xml.etree import ElementTree as ET
 
@@ -100,6 +117,12 @@ DEFAULT_BASE_URL = "https://tony7bones.github.io"
 MAX_FILE_BYTES = 90 * 1024 * 1024
 _USER_AGENT = "t7b-static-builder/1.0"
 GITHUB_API = "https://api.github.com"
+# mirrors.kodi.tv answers a zip URL with a 302 to a volunteer mirror, and a
+# mirror can accept the redirect and still not deliver the file (measured
+# 2026-09-26: a certifi download came back as the requests zip's bytes). A
+# transient failure is retried this many times; a 4xx is final on first answer.
+_DOWNLOAD_ATTEMPTS = 3
+_RETRY_DELAY_S = 1.0
 
 # A GitHub Releases asset template pointing at a source repo: owner/repo are
 # literal in the URL (distinct from the entry's own username/repository, which
@@ -180,20 +203,39 @@ class Fetcher:
         return os.path.join(self.cache_dir, hashlib.sha256(url.encode()).hexdigest())
 
     def _download(self, url: str, headers: dict[str, str] | None = None) -> bytes:
-        """One uncached GET. Every version lookup and every last-good fallback
-        goes through here, never through ``fetch``."""
+        """One uncached GET, redirects followed (urllib's default opener
+        follows 301/302/303/307/308, which is how a mirrors.kodi.tv zip URL
+        resolves to a volunteer mirror). A transient failure (connection
+        reset, timeout, 5xx, a mirror that took the redirect and dropped the
+        transfer) is retried up to _DOWNLOAD_ATTEMPTS times, each attempt
+        re-running the redirect and so possibly landing on another mirror; a
+        4xx is final at the first answer. Every version lookup and every
+        last-good fallback goes through here, never through ``fetch``."""
         hdrs = {"User-Agent": _USER_AGENT, **(headers or {})}
-        req = urllib.request.Request(url, headers=hdrs)
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                return resp.read()
-        except (
-            urllib.error.URLError,
-            http.client.HTTPException,
-            OSError,
-            TimeoutError,
-        ) as exc:
-            raise FetchError(f"{url}: {exc}") from exc
+        last: Exception | None = None
+        for attempt in range(1, _DOWNLOAD_ATTEMPTS + 1):
+            req = urllib.request.Request(url, headers=hdrs)
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                    return resp.read()
+            except urllib.error.HTTPError as exc:
+                last = exc
+                if 400 <= exc.code < 500:
+                    break
+            except (
+                urllib.error.URLError,
+                http.client.HTTPException,
+                OSError,
+                TimeoutError,
+            ) as exc:
+                last = exc
+            if attempt < _DOWNLOAD_ATTEMPTS:
+                warn(
+                    f"download attempt {attempt}/{_DOWNLOAD_ATTEMPTS} failed for "
+                    f"{url}: {last} (retrying)"
+                )
+                time.sleep(_RETRY_DELAY_S * attempt)
+        raise FetchError(f"{url}: {last}") from last
 
     def get_json(self, url: str, headers: dict[str, str] | None = None) -> dict:
         """Uncached GET of a JSON document (the GitHub REST API)."""
@@ -243,6 +285,7 @@ class Fetcher:
         tolerate_missing: bool = False,
         expect_zip: bool = False,
         headers: dict[str, str] | None = None,
+        expect_addon: tuple[str, str] | None = None,
     ) -> bytes | None:
         """Fetch a URL through the cache. Returns None only when the URL 404s
         AND ``tolerate_missing`` is set (optional art). Raises FetchError
@@ -255,15 +298,24 @@ class Fetcher:
         subsequent build until someone hand-bumps the cache prefix). A cached
         entry that fails the same check self-heals: treated as a miss and
         re-downloaded.
+
+        ``expect_addon=(id, version)`` goes one step further, for zips whose
+        URL names the add-on and version: the zip must package exactly
+        ``<id>/addon.xml`` with that id and version, or it is refused before
+        the cache write. A mirror that answers one URL with another file's
+        bytes (measured 2026-09-26 on mirrors.kodi.tv: a certifi download
+        that was the requests zip) is a valid zip of the wrong add-on, which
+        ``expect_zip`` alone would have cached under certifi's URL forever.
         """
         cache_path = self._cache_path(url)
         cached = os.path.isfile(cache_path)
         if cached and not (mutable and self.refresh_mutable):
             with open(cache_path, "rb") as fh:
                 data = fh.read()
-            if not expect_zip or _is_readable_zip(data):
+            problem = _payload_problem(data, expect_zip, expect_addon)
+            if problem is None:
                 return data
-            warn(f"corrupt cached zip for {url} - re-downloading")
+            warn(f"corrupt cached zip for {url} ({problem}) - re-downloading")
             os.remove(cache_path)
             cached = False
         try:
@@ -276,8 +328,9 @@ class Fetcher:
             if tolerate_missing and _is_404(exc):
                 return None
             raise
-        if expect_zip and not _is_readable_zip(data):
-            raise FetchError(f"{url}: payload is not a readable zip (not cached)")
+        problem = _payload_problem(data, expect_zip, expect_addon)
+        if problem is not None:
+            raise FetchError(f"{url}: {problem} (not cached)")
         os.makedirs(self.cache_dir, exist_ok=True)
         tmp = cache_path + ".tmp"
         with open(tmp, "wb") as fh:
@@ -292,6 +345,36 @@ def _is_readable_zip(data: bytes) -> bool:
             return zf.testzip() is None
     except (zipfile.BadZipFile, OSError):
         return False
+
+
+def _zip_mismatch(data: bytes, addon_id: str, version: str) -> str | None:
+    """Why ``data`` is NOT the zip of ``addon_id`` at ``version``, or None
+    when it is: reads ``<id>/addon.xml`` out of the zip and compares."""
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            xml = zf.read(f"{addon_id}/addon.xml")
+        root = ET.fromstring(xml)
+    except (zipfile.BadZipFile, KeyError, OSError) as exc:
+        return f"zip carries no {addon_id}/addon.xml ({exc})"
+    except ET.ParseError as exc:
+        return f"packaged addon.xml unparseable ({exc})"
+    if root.get("id") != addon_id or root.get("version") != version:
+        return (
+            f"zip packages {root.get('id')!r} {root.get('version')!r}, "
+            f"expected {addon_id!r} {version!r}"
+        )
+    return None
+
+
+def _payload_problem(
+    data: bytes, expect_zip: bool, expect_addon: tuple[str, str] | None
+) -> str | None:
+    """The reason a fetched payload must not be served or cached, or None."""
+    if (expect_zip or expect_addon) and not _is_readable_zip(data):
+        return "payload is not a readable zip"
+    if expect_addon:
+        return _zip_mismatch(data, *expect_addon)
+    return None
 
 
 def _is_404(exc: Exception) -> bool:
@@ -606,14 +689,34 @@ def _latest_release_version(owner: str, repo: str, fetcher: Fetcher) -> str:
     return m.group("version")
 
 
-def _version_from_index(index_url: str, entry_id: str, fetcher: Fetcher) -> str:
-    """The version an upstream Kodi addons.xml declares for ``entry_id``.
-    Fetched fresh every build, never from the cache."""
-    data = fetcher._download(index_url)
+def _parse_index(index_url: str, data: bytes) -> ET.Element:
+    """An upstream Kodi addons.xml, plain or gzipped (the official
+    repository publishes addons.xml.gz; detected by the gzip magic bytes,
+    with the .gz suffix as the second opinion), parsed once."""
+    if data[:2] == b"\x1f\x8b" or index_url.endswith(".gz"):
+        try:
+            data = gzip.decompress(data)
+        except (OSError, EOFError) as exc:
+            raise FetchError(f"{index_url}: not gzip ({exc})") from exc
     try:
-        root = ET.fromstring(data)
+        return ET.fromstring(data)
     except ET.ParseError as exc:
         raise FetchError(f"{index_url}: not XML ({exc})") from exc
+
+
+def _version_from_index(
+    index_url: str,
+    entry_id: str,
+    fetcher: Fetcher,
+    ctx: BuildContext | None = None,
+) -> str:
+    """The version an upstream Kodi addons.xml declares for ``entry_id``.
+    Fetched fresh every build, never from the cache; within one build the
+    document is fetched and parsed once per URL (``BuildContext.index``)."""
+    if ctx is not None:
+        root = ctx.index(index_url)
+    else:
+        root = _parse_index(index_url, fetcher._download(index_url))
     for node in root.iter("addon"):
         if node.get("id") == entry_id:
             version = node.get("version")
@@ -621,6 +724,115 @@ def _version_from_index(index_url: str, entry_id: str, fetcher: Fetcher) -> str:
                 return version
             break
     raise FetchError(f"{index_url}: does not list {entry_id} with a version")
+
+
+class BuildContext:
+    """Per-build memo for everything resolved upstream.
+
+    Eleven official-library modules point at ONE index
+    (mirrors.kodi.tv/addons/piers/addons.xml.gz: 13MB unpacked, 340 add-ons,
+    measured 2026-09-26); without this each entry would fetch and parse it
+    again. A build-resolved entry's (version, zip, addon.xml) is likewise
+    resolved once, whether it is first met as its own catalog entry or as
+    another entry's <import> (the closure walk reaches script.module.requests
+    from service.tvos.pythonfix before requests' own turn). A failure is
+    memoized too, so the entry falls back the same way whichever path met it
+    first. Scoped to ONE build, never to the Fetcher: the determinism gate's
+    second build, and every test that builds twice, must re-read the index."""
+
+    def __init__(
+        self,
+        entries: list[dict],
+        fetcher: Fetcher,
+        warnings: list[str],
+        repo_root: str = REPO_ROOT,
+    ):
+        self.entries = {e["id"]: e for e in entries}
+        self.fetcher = fetcher
+        self.warnings = warnings
+        self.repo_root = repo_root
+        self.indexes: dict[str, ET.Element] = {}
+        self.index_fetches = 0
+        self.upstream: dict[str, tuple[str, bytes, bytes, str] | FetchError] = {}
+
+    def index(self, index_url: str) -> ET.Element:
+        if index_url not in self.indexes:
+            self.index_fetches += 1
+            self.indexes[index_url] = _parse_index(
+                index_url, self.fetcher._download(index_url)
+            )
+        return self.indexes[index_url]
+
+    def resolve_upstream(self, entry: dict) -> tuple[str, bytes, bytes, str]:
+        """(version, zip_bytes, addon_xml, source_url) of a build-resolved
+        entry, memoized for the build; a memoized FetchError is re-raised."""
+        aid = entry["id"]
+        if aid not in self.upstream:
+            try:
+                self.upstream[aid] = _resolve_upstream(entry, self.fetcher, self)
+            except FetchError as exc:
+                self.upstream[aid] = exc
+        got = self.upstream[aid]
+        if isinstance(got, FetchError):
+            raise got
+        return got
+
+    def addon_xml_for(self, aid: str) -> bytes | None:
+        """The addon.xml of a build-resolved catalog id, resolving it now if
+        this build has not met it yet; None for any other id."""
+        entry = self.entries.get(aid)
+        if entry is None or not metadata_resolved_at_build(entry):
+            return None
+        return self.resolve_upstream(entry)[2]
+
+
+def _resolve_upstream(
+    entry: dict, fetcher: Fetcher, ctx: BuildContext | None = None
+) -> tuple[str, bytes, bytes, str]:
+    """Version lookup + zip + packaged addon.xml for a build-resolved entry
+    (release-asset, or hybrid with an ``upstream_index``). No committed
+    metadata is read: the version is looked up fresh and the addon.xml is
+    the one packaged in the zip that version names. Call through
+    ``BuildContext.resolve_upstream`` so a build does it once per id."""
+    entry_id = entry["id"]
+    zip_tmpl = (entry.get("assets") or {}).get("zip", "")
+    fetch_url, fetch_headers = None, None
+    if classify(entry) == KIND_RELEASE_ASSET:
+        m = _RELEASE_ASSET_RE.match(zip_tmpl)
+        tag_prefix = _subst(m.group("tag_prefix"), entry)
+        if tag_prefix:
+            version, fetch_url = _latest_namespaced_release(
+                m.group("owner"),
+                m.group("repo"),
+                tag_prefix,
+                _subst(m.group("asset_template").rsplit("/", 1)[-1], entry),
+                fetcher,
+            )
+            fetch_headers = {
+                **_github_headers(),
+                "Accept": "application/octet-stream",
+            }
+        else:
+            version = _latest_release_version(
+                m.group("owner"), m.group("repo"), fetcher
+            )
+    else:
+        version = _version_from_index(entry["upstream_index"], entry_id, fetcher, ctx)
+    # source_url is the asset's canonical (browser) location, which the
+    # manifest publishes; a namespaced release is DOWNLOADED through its
+    # API asset URL instead (see _latest_namespaced_release). The zip is
+    # accepted only if it packages exactly this id at this version, so a
+    # mirror serving the wrong file is a FetchError (fallback applies) and
+    # never reaches the cache.
+    source_url = _subst(zip_tmpl, entry, version)
+    zip_bytes = fetcher.fetch(
+        fetch_url or source_url,
+        expect_zip=True,
+        headers=fetch_headers,
+        expect_addon=(entry_id, version),
+    )
+    addon_xml = _addon_xml_from_zip(entry_id, zip_bytes, version)
+    return version, zip_bytes, addon_xml, source_url
 
 
 def _addon_xml_from_zip(entry_id: str, zip_bytes: bytes, version: str) -> bytes:
@@ -658,17 +870,26 @@ def _check_imports_hosted(
     addon_xml: bytes,
     catalog_ids: set[str],
     repo_root: str = REPO_ROOT,
+    resolver: Callable[[str], bytes | None] | None = None,
 ) -> None:
     """Every non-builtin <import> in the TRANSITIVE closure of a build-resolved
     addon.xml must be an id this catalog serves. Kodi resolves a hard
     dependency only from the repository the add-on is installed FROM
-    (measured on a Kodi 22 bench), and test_closure.py can only walk committed
-    addon.xml files, so for metadata that arrives at build time this is the
-    closure gate. The walk continues through every import that has a
-    committed addons/hosted/<id>/addon.xml (the skin's autocompletion subtree,
-    for one); an import that is itself build-resolved is a leaf here and is
-    walked when its own metadata arrives. Per-entry FetchError: the live
-    last-good copy, whose closure was hosted, is served instead."""
+    (measured on a Kodi 22 bench), so for metadata that arrives at build time
+    this is THE closure gate: since 2026-09-26 no add-on of ours and none of
+    their dependencies has a committed addon.xml, so test_closure.py has
+    nothing to walk offline and this walk carries the whole closure
+    (skin -> autocompletion plugin -> autocompletion module -> requests ->
+    urllib3/certifi/chardet/idna; service.tvos.pythonfix -> requests -> ...).
+
+    The walk continues through an import that has a committed
+    addons/hosted/<id>/addon.xml (the third-party repository installers) and,
+    through ``resolver`` (``BuildContext.addon_xml_for``), through every
+    build-resolved import, whose addon.xml is read out of its resolved zip
+    right here, before its own turn if need be. A catalog id that is neither
+    (first-party, streamed) is a leaf. An import that is not a catalog entry,
+    or a build-resolved import that cannot be resolved, is a per-entry
+    FetchError: the live last-good copy is served instead."""
     seen: set[str] = set()
     missing: set[str] = set()
     stack = _imports_of(addon_xml)
@@ -687,6 +908,18 @@ def _check_imports_hosted(
                     stack.extend(_imports_of(fh.read()))
                 except ET.ParseError as exc:
                     raise FetchError(f"{entry_id}: {hosted_xml} unparseable ({exc})")
+        elif resolver is not None:
+            try:
+                xml = resolver(aid)
+            except FetchError as exc:
+                raise FetchError(
+                    f"{entry_id}: import {aid} could not be resolved ({exc})"
+                ) from exc
+            if xml is not None:
+                try:
+                    stack.extend(_imports_of(xml))
+                except ET.ParseError as exc:
+                    raise FetchError(f"{entry_id}: {aid} addon.xml unparseable ({exc})")
     if missing:
         raise FetchError(
             f"{entry_id}: imports {sorted(missing)}, which this catalog does not "
@@ -701,9 +934,12 @@ def _resolve_primary(
     warnings: list[str],
     repo_root: str = REPO_ROOT,
     catalog_ids: set[str] | None = None,
+    ctx: BuildContext | None = None,
 ) -> ResolvedEntry:
     entry_id = entry["id"]
     zip_tmpl = (entry.get("assets") or {}).get("zip", "")
+    if ctx is None:
+        ctx = BuildContext([entry], fetcher, warnings, repo_root)
 
     if kind == KIND_FIRST_PARTY:
         addon_dir = os.path.join(repo_root, "addons", entry_id)
@@ -728,38 +964,18 @@ def _resolve_primary(
 
     if metadata_resolved_at_build(entry):
         # No committed metadata: the version is looked up fresh and the
-        # addon.xml is the one packaged in the zip that version names.
-        fetch_url, fetch_headers = None, None
-        if kind == KIND_RELEASE_ASSET:
-            m = _RELEASE_ASSET_RE.match(zip_tmpl)
-            tag_prefix = _subst(m.group("tag_prefix"), entry)
-            if tag_prefix:
-                version, fetch_url = _latest_namespaced_release(
-                    m.group("owner"),
-                    m.group("repo"),
-                    tag_prefix,
-                    _subst(m.group("asset_template").rsplit("/", 1)[-1], entry),
-                    fetcher,
-                )
-                fetch_headers = {
-                    **_github_headers(),
-                    "Accept": "application/octet-stream",
-                }
-            else:
-                version = _latest_release_version(
-                    m.group("owner"), m.group("repo"), fetcher
-                )
-        else:
-            version = _version_from_index(entry["upstream_index"], entry_id, fetcher)
-        # source_url is the asset's canonical (browser) location, which the
-        # manifest publishes; a namespaced release is DOWNLOADED through its
-        # API asset URL instead (see _latest_namespaced_release).
-        source_url = _subst(zip_tmpl, entry, version)
-        zip_bytes = fetcher.fetch(
-            fetch_url or source_url, expect_zip=True, headers=fetch_headers
+        # addon.xml is the one packaged in the zip that version names, once
+        # per build (the closure walk of another entry may have resolved this
+        # one already). Its whole import closure is then walked through the
+        # catalog, resolving build-resolved imports on the way.
+        version, zip_bytes, addon_xml, source_url = ctx.resolve_upstream(entry)
+        _check_imports_hosted(
+            entry_id,
+            addon_xml,
+            set(ctx.entries) if catalog_ids is None else catalog_ids,
+            repo_root,
+            ctx.addon_xml_for,
         )
-        addon_xml = _addon_xml_from_zip(entry_id, zip_bytes, version)
-        _check_imports_hosted(entry_id, addon_xml, catalog_ids or set(), repo_root)
         return ResolvedEntry(
             entry_id,
             kind,
@@ -899,9 +1115,12 @@ def resolve_all(
     base_url: str,
     warnings: list[str],
     repo_root: str = REPO_ROOT,
+    ctx: BuildContext | None = None,
 ) -> list[ResolvedEntry]:
     resolved = []
     catalog_ids = {e["id"] for e in entries}
+    if ctx is None:
+        ctx = BuildContext(entries, fetcher, warnings, repo_root)
     for entry in entries:
         kind = classify(entry)
         # Zip validation lives INSIDE the per-entry try: a corrupt primary zip
@@ -909,7 +1128,7 @@ def resolve_all(
         # BuildError (size gate, first-party build bugs) escapes by design.
         try:
             item = _resolve_primary(
-                entry, kind, fetcher, warnings, repo_root, catalog_ids
+                entry, kind, fetcher, warnings, repo_root, catalog_ids, ctx
             )
             _validate_zip(entry["id"], item.zip_bytes, warnings, item.version)
             _fill_art_from_zip(item)
@@ -1050,7 +1269,10 @@ def build(
     if baseline is None and baseline_url:
         baseline = load_baseline(baseline_url, fetcher, warnings)
 
-    resolved = resolve_all(entries, fetcher, baseline, base_url, warnings, repo_root)
+    ctx = BuildContext(entries, fetcher, warnings, repo_root)
+    resolved = resolve_all(
+        entries, fetcher, baseline, base_url, warnings, repo_root, ctx
+    )
     if not resolved:
         raise BuildError("0 resolvable entries - refusing to publish an empty catalog")
 
@@ -1071,6 +1293,7 @@ def build(
         f"static catalog: {manifest['count']} entries"
         + (f" ({len(stale)} stale last-good: {stale})" if stale else "")
         + (f", {len(warnings)} warning(s)" if warnings else "")
+        + f", {ctx.index_fetches} upstream index fetch(es)"
     )
     return manifest
 

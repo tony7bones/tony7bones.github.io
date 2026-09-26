@@ -7,6 +7,7 @@ fallback, never-empty catalog, plus the new build-time gates (shrink guard,
 90MB ceiling, determinism). No network: all fetches go through a fake.
 """
 
+import gzip
 import hashlib
 import io
 import json
@@ -37,6 +38,35 @@ NS_ZIP = "https://github.com/moquette/multi/releases/download/ns.addon-v{v}/ns.a
 NS_ASSET_API = "https://api.github.com/repos/moquette/multi/releases/assets/{v}"
 
 
+# The four entries resolved from OUR sources of truth (three GitHub release
+# namespaces and POV's upstream index) ...
+OWNED_BUILD_RESOLVED = {
+    "script.ezmaintenanceplusplus",
+    "plugin.video.pov",
+    "skin.estuary.pov",
+    "service.tvos.pythonfix",
+}
+# ... and the eleven official-library modules resolved from the official Kodi
+# repository's own index since 2026-09-26 (hybrid + upstream_index, no
+# committed copy). Not ours: served only because Kodi resolves a hard
+# dependency solely from the repository the add-on is installed FROM.
+OFFICIAL_INDEX = "https://mirrors.kodi.tv/addons/piers/addons.xml.gz"
+OFFICIAL_ZIP = "https://mirrors.kodi.tv/addons/piers/{id}/{id}-{version}.zip"
+OFFICIAL_MODULES = {
+    "plugin.program.autocompletion",
+    "script.image.resource.select",
+    "script.module.autocompletion",
+    "script.module.certifi",
+    "script.module.chardet",
+    "script.module.idna",
+    "script.module.requests",
+    "script.module.simplecache",
+    "script.module.simpleeval",
+    "script.module.unidecode",
+    "script.module.urllib3",
+}
+
+
 def _index_xml(*pairs: tuple[str, str]) -> bytes:
     body = "".join(f'<addon id="{i}" version="{v}"/>' for i, v in pairs)
     return f"<addons>{body}</addons>".encode()
@@ -59,12 +89,20 @@ class FakeFetcher:
         self.calls: list[str] = []
         self.download_calls: list[str] = []
         self.fetch_headers: dict[str, dict | None] = {}
+        self.fetch_expectations: dict[str, tuple | None] = {}
 
     def fetch(
-        self, url, mutable=False, tolerate_missing=False, expect_zip=False, headers=None
+        self,
+        url,
+        mutable=False,
+        tolerate_missing=False,
+        expect_zip=False,
+        headers=None,
+        expect_addon=None,
     ):
         self.calls.append(url)
         self.fetch_headers[url] = headers
+        self.fetch_expectations[url] = expect_addon
         if url in self.urls:
             return self.urls[url]
         if tolerate_missing:
@@ -315,12 +353,7 @@ def test_real_catalog_build_resolved_entries_have_no_committed_metadata():
     ``skin.estuary.pov-v<version>`` tag namespace of moquette/kodi-estuary-pov
     and nothing of it is committed here."""
     resolved = {e["id"] for e in sc.load_catalog() if sc.metadata_resolved_at_build(e)}
-    assert resolved == {
-        "script.ezmaintenanceplusplus",
-        "plugin.video.pov",
-        "skin.estuary.pov",
-        "service.tvos.pythonfix",
-    }
+    assert resolved == OWNED_BUILD_RESOLVED | OFFICIAL_MODULES
     for aid in resolved:
         assert not os.path.exists(os.path.join(sc.REPO_ROOT, "addons", "hosted", aid))
 
@@ -331,6 +364,18 @@ def test_classify_the_real_manifest_covers_all_entries():
 
     28 entries, and the arithmetic behind that number, newest first:
 
+      +0  2026-09-26, the ELEVEN official-library modules (autocompletion
+          plugin and module, image.resource.select, certifi, chardet, idna,
+          requests, simplecache, simpleeval, unidecode, urllib3) switched
+          from hosted to HYBRID with upstream_index: version from the
+          official Kodi repository's Piers index (addons.xml.gz, 13MB
+          unpacked, fetched once per build), zip from mirrors.kodi.tv, and
+          their addons/hosted/<id>/ directories are DELETED. The committed
+          copies were NOT stale (all eleven matched the official versions
+          when measured that day); the switch is so they cannot rot. The
+          official zips' bytes differ from the old committed copies at the
+          same version (packaging), which changes nothing for a box already
+          at that version, since Kodi installs by id and version.
       -4  2026-08-31, the Estuary 7/8 DECOMMISSION, owner order ("we're only
           supporting EPOV"). skin.estuary7 (release-asset; its zips stay on the
           archived moquette/kodi-estuary7 Releases), skin.estuary8,
@@ -459,15 +504,29 @@ def test_classify_the_real_manifest_covers_all_entries():
         kinds.setdefault(sc.classify(e), []).append(e["id"])
     assert len(entries) == 28
     assert kinds[sc.KIND_FIRST_PARTY] == ["repository.tony7bones"]
-    assert len(kinds[sc.KIND_HOSTED]) == 15
-    assert len(kinds[sc.KIND_HYBRID]) == 4
+    # hosted 15 -> 4 on 2026-09-26: the eleven official modules left for the
+    # official index. What remains hosted is third-party repository installers
+    # only (unversioned zips with no index of their own).
+    assert sorted(kinds[sc.KIND_HOSTED]) == [
+        "repository.Magnetic",
+        "repository.kodinerds",
+        "repository.loop",
+        "repository.redwizard",
+    ]
+    assert len(kinds[sc.KIND_HYBRID]) == 15
     assert len(kinds[sc.KIND_STREAMED]) == 5
     assert len(kinds[sc.KIND_RELEASE_ASSET]) == 3
     assert "skin.estuary.pov" in kinds[sc.KIND_RELEASE_ASSET]
     assert "service.tvos.pythonfix" in kinds[sc.KIND_RELEASE_ASSET]
     assert "script.ezmaintenanceplusplus" in kinds[sc.KIND_RELEASE_ASSET]
-    assert "plugin.program.autocompletion" in kinds[sc.KIND_HOSTED]
     assert "plugin.video.pov" in kinds[sc.KIND_HYBRID]
+    by_id = {e["id"]: e for e in entries}
+    for aid in OFFICIAL_MODULES:
+        e = by_id[aid]
+        assert sc.classify(e) == sc.KIND_HYBRID, aid
+        assert e["upstream_index"] == OFFICIAL_INDEX, aid
+        assert e["assets"]["zip"] == OFFICIAL_ZIP, aid
+        assert "/addons/hosted/" in e["asset_prefix"], aid
     ids = {e["id"] for e in entries}
     for gone in (
         "script.module.pvr.artwork",
@@ -1336,3 +1395,294 @@ class TestFetcher:
             fh.write(b"POISON")
         assert f.fetch("u://z", expect_zip=True) == good
         assert f.download_calls == ["u://z"]
+
+
+# ---------------------------------------------------------------------------
+# the official Kodi repository as an upstream_index (2026-09-26): gzipped
+# index, fetched once per build, the closure walked through build-resolved
+# imports, and a mirror's wrong-file answer refused before the cache
+# ---------------------------------------------------------------------------
+GZ_INDEX = "https://mirror.example/addons/piers/addons.xml.gz"
+GZ_ZIP = "https://mirror.example/addons/piers/{id}/{id}-{v}.zip"
+
+
+def _official(addon_id: str, imports: tuple[str, ...] = ()) -> dict:
+    """An entry shaped like the eleven official modules in catalog.json."""
+    e = _entry(addon_id, "indexed")
+    e["assets"] = {"zip": "https://mirror.example/addons/piers/{id}/{id}-{version}.zip"}
+    e["upstream_index"] = GZ_INDEX
+    return e
+
+
+def _zip_with_imports(addon_id: str, version: str, imports: tuple[str, ...]) -> bytes:
+    reqs = "".join(f'<import addon="{i}"/>' for i in ("xbmc.python", *imports))
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr(
+            f"{addon_id}/addon.xml",
+            f'<addon id="{addon_id}" version="{version}"><requires>{reqs}'
+            f"</requires></addon>",
+        )
+        zf.writestr(f"{addon_id}/icon.png", b"PNG")
+    return buf.getvalue()
+
+
+def _official_repo(tmp_path, graph: dict[str, tuple[str, ...]], version="1.0"):
+    """A catalog of official-shaped entries whose imports follow ``graph``,
+    all at ``version`` in ONE gzipped index."""
+    root = tmp_path / "repo"
+    (root / "addons" / "hosted").mkdir(parents=True)
+    entries = [_official(aid) for aid in graph]
+    manifest_path = root / "repository.json"
+    manifest_path.write_text(json.dumps(entries))
+    urls = {GZ_INDEX: gzip.compress(_index_xml(*((a, version) for a in graph)))}
+    for aid, imports in graph.items():
+        urls[GZ_ZIP.format(id=aid, v=version)] = _zip_with_imports(
+            aid, version, imports
+        )
+    return root, manifest_path, FakeFetcher(urls)
+
+
+def test_gzipped_index_is_decompressed_by_magic_bytes_or_suffix():
+    plain = _index_xml(("a", "1.2"))
+    assert sc._parse_index("u://x.xml", plain).find("addon").get("version") == "1.2"
+    packed = gzip.compress(plain)
+    assert sc._parse_index("u://x.xml", packed).find("addon").get("version") == "1.2"
+    assert sc._parse_index("u://x.gz", packed).find("addon").get("version") == "1.2"
+    with pytest.raises(sc.FetchError, match="not gzip"):
+        sc._parse_index("u://x.gz", b"<addons/>")
+    with pytest.raises(sc.FetchError, match="not XML"):
+        sc._parse_index("u://x.xml", gzip.compress(b"<html>rate limited"))
+
+
+def test_shared_index_is_fetched_once_per_build_and_again_next_build(tmp_path):
+    graph = {"script.module.a": (), "script.module.b": (), "script.module.c": ()}
+    root, manifest_path, fetcher = _official_repo(tmp_path, graph)
+    m1 = sc.build(
+        str(tmp_path / "s1"),
+        fetcher=fetcher,
+        repo_json=str(manifest_path),
+        repo_root=str(root),
+        base_url=BASE_URL,
+    )
+    assert set(m1["entries"]) == set(graph)
+    assert all(e["kind"] == sc.KIND_HYBRID for e in m1["entries"].values())
+    assert fetcher.download_calls.count(GZ_INDEX) == 1
+    assert GZ_INDEX not in fetcher.calls  # never through the cache
+    # a second build (the determinism gate, the next CI run) re-reads it
+    sc.build(
+        str(tmp_path / "s2"),
+        fetcher=fetcher,
+        repo_json=str(manifest_path),
+        repo_root=str(root),
+        base_url=BASE_URL,
+    )
+    assert fetcher.download_calls.count(GZ_INDEX) == 2
+
+
+def test_import_closure_is_walked_transitively_through_build_resolved_entries(
+    tmp_path, capsys
+):
+    """skin -> plugin -> module -> requests -> urllib3: every hop's addon.xml
+    is read out of its resolved zip, on the importing entry's turn, and each
+    zip is fetched ONCE for the build however many walks cross it."""
+    graph = {
+        "skin.x": ("plugin.program.autocompletion",),
+        "plugin.program.autocompletion": ("script.module.autocompletion",),
+        "script.module.autocompletion": ("script.module.requests",),
+        "script.module.requests": ("script.module.urllib3", "script.module.certifi"),
+        "script.module.urllib3": (),
+        "script.module.certifi": (),
+        "service.tvos.pythonfix": ("script.module.requests",),
+    }
+    root, manifest_path, fetcher = _official_repo(tmp_path, graph)
+    m = sc.build(
+        str(tmp_path / "s"),
+        fetcher=fetcher,
+        repo_json=str(manifest_path),
+        repo_root=str(root),
+        base_url=BASE_URL,
+    )
+    assert set(m["entries"]) == set(graph)
+    assert not any(e["stale"] for e in m["entries"].values())
+    for aid in graph:
+        assert fetcher.calls.count(GZ_ZIP.format(id=aid, v="1.0")) == 1, aid
+        assert fetcher.fetch_expectations[GZ_ZIP.format(id=aid, v="1.0")] == (aid, "1.0")
+    assert "1 upstream index fetch(es)" in capsys.readouterr().out
+    # art declared by the packaged addon.xml is materialized out of the zip
+    assert (tmp_path / "s" / "script.module.urllib3" / "icon.png").read_bytes() == b"PNG"
+
+
+def test_a_leaf_missing_from_the_catalog_fails_every_entry_that_reaches_it(tmp_path):
+    graph = {
+        "skin.x": ("plugin.mid",),
+        "plugin.mid": ("script.module.leaf",),  # leaf is NOT a catalog entry
+        "script.module.alone": (),
+    }
+    root, manifest_path, fetcher = _official_repo(tmp_path, graph)
+    m = sc.build(
+        str(tmp_path / "s"),
+        fetcher=fetcher,
+        repo_json=str(manifest_path),
+        repo_root=str(root),
+        base_url=BASE_URL,
+        allow_shrink=True,
+    )
+    assert set(m["entries"]) == {"script.module.alone"}
+
+
+def test_an_unresolvable_build_resolved_import_fails_the_importer_once(tmp_path):
+    """The dependency's zip is gone from the mirror: the importer falls back
+    (here: is dropped, no baseline), the dependency itself too, and the
+    failed lookup is memoized rather than retried on the dependency's turn."""
+    graph = {
+        "skin.x": ("script.module.dep",),
+        "script.module.dep": (),
+        "script.module.alone": (),
+    }
+    root, manifest_path, fetcher = _official_repo(tmp_path, graph)
+    dep_zip = GZ_ZIP.format(id="script.module.dep", v="1.0")
+    del fetcher.urls[dep_zip]
+    m = sc.build(
+        str(tmp_path / "s"),
+        fetcher=fetcher,
+        repo_json=str(manifest_path),
+        repo_root=str(root),
+        base_url=BASE_URL,
+        allow_shrink=True,
+    )
+    assert set(m["entries"]) == {"script.module.alone"}
+    assert fetcher.calls.count(dep_zip) == 1
+
+
+def test_check_imports_walks_through_a_resolver_and_names_the_failure():
+    xml = (
+        b'<addon id="x" version="1"><requires>'
+        b'<import addon="script.module.dep"/></requires></addon>'
+    )
+    dep_xml = (
+        b'<addon id="script.module.dep" version="1"><requires>'
+        b'<import addon="script.module.leaf"/></requires></addon>'
+    )
+
+    def resolver(aid):
+        if aid == "script.module.dep":
+            return dep_xml
+        if aid == "script.module.broken":
+            raise sc.FetchError("zip 404")
+        return None
+
+    ids = {"x", "script.module.dep", "script.module.leaf", "script.module.broken"}
+    sc._check_imports_hosted("x", xml, ids, resolver=resolver)
+    with pytest.raises(sc.FetchError, match="script.module.leaf"):
+        sc._check_imports_hosted("x", xml, ids - {"script.module.leaf"}, resolver=resolver)
+    with pytest.raises(sc.FetchError, match="script.module.broken could not be resolved"):
+        sc._check_imports_hosted(
+            "x",
+            b'<addon id="x" version="1"><requires>'
+            b'<import addon="script.module.broken"/></requires></addon>',
+            ids,
+            resolver=resolver,
+        )
+
+
+def test_wrong_addon_bytes_from_a_mirror_are_refused_and_never_cached(tmp_path):
+    """MEASURED 2026-09-26: a certifi download from mirrors.kodi.tv came back
+    as the requests zip's bytes. A readable zip of the wrong add-on must be
+    a FetchError (fallback applies) and must not land in the cache under
+    certifi's URL, where an immutable key would serve it on every build."""
+    requests_zip = _zip_bytes("script.module.requests", "2.31.0")
+    certifi_zip = _zip_bytes("script.module.certifi", "2023.5.7")
+    f = TestFetcher()._fetcher(tmp_path, {"u://certifi": requests_zip})
+    with pytest.raises(sc.FetchError, match="no script.module.certifi/addon.xml"):
+        f.fetch(
+            "u://certifi",
+            expect_zip=True,
+            expect_addon=("script.module.certifi", "2023.5.7"),
+        )
+    assert not os.path.exists(f._cache_path("u://certifi"))
+    # a wrong version at the right id is refused the same way
+    f2 = TestFetcher()._fetcher(
+        tmp_path, {"u://certifi": _zip_bytes("script.module.certifi", "2023.5.6")}
+    )
+    with pytest.raises(sc.FetchError, match="'2023.5.6', expected"):
+        f2.fetch("u://certifi", expect_addon=("script.module.certifi", "2023.5.7"))
+    # the right bytes are accepted and cached; a poisoned cache self-heals
+    f3 = TestFetcher()._fetcher(tmp_path, {"u://certifi": certifi_zip})
+    assert (
+        f3.fetch("u://certifi", expect_addon=("script.module.certifi", "2023.5.7"))
+        == certifi_zip
+    )
+    with open(f3._cache_path("u://certifi"), "wb") as fh:
+        fh.write(requests_zip)
+    f4 = TestFetcher()._fetcher(tmp_path, {"u://certifi": certifi_zip})
+    assert (
+        f4.fetch("u://certifi", expect_addon=("script.module.certifi", "2023.5.7"))
+        == certifi_zip
+    )
+    assert f4.download_calls == ["u://certifi"]
+
+
+class TestDownloadRetry:
+    """_download retries a transient failure a bounded number of times and
+    never retries a 4xx. urlopen is faked; sleep is silenced."""
+
+    def _run(self, monkeypatch, answers: list, url="u://z"):
+        calls = []
+
+        class _Resp:
+            def __init__(self, data):
+                self.data = data
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self):
+                return self.data
+
+        def fake_urlopen(req, timeout=None):
+            calls.append(req.full_url)
+            answer = answers.pop(0)
+            if isinstance(answer, Exception):
+                raise answer
+            return _Resp(answer)
+
+        monkeypatch.setattr(sc.urllib.request, "urlopen", fake_urlopen)
+        monkeypatch.setattr(sc.time, "sleep", lambda s: None)
+        return calls, sc.Fetcher(cache_dir=str("/nonexistent"))
+
+    def test_transient_failures_are_retried_then_succeed(self, monkeypatch):
+        calls, f = self._run(
+            monkeypatch,
+            [urllib.error.URLError("reset"), TimeoutError("slow"), b"OK"],
+        )
+        assert f._download("u://z") == b"OK"
+        assert calls == ["u://z"] * 3
+
+    def test_gives_up_after_the_bounded_attempts(self, monkeypatch):
+        calls, f = self._run(
+            monkeypatch, [urllib.error.URLError("down")] * sc._DOWNLOAD_ATTEMPTS
+        )
+        with pytest.raises(sc.FetchError, match="down"):
+            f._download("u://z")
+        assert len(calls) == sc._DOWNLOAD_ATTEMPTS
+
+    def test_a_404_is_final_on_the_first_answer(self, monkeypatch):
+        calls, f = self._run(
+            monkeypatch, [urllib.error.HTTPError("u://z", 404, "nope", None, None)]
+        )
+        with pytest.raises(sc.FetchError) as exc:
+            f._download("u://z")
+        assert sc._is_404(exc.value)
+        assert len(calls) == 1
+
+    def test_a_5xx_is_retried(self, monkeypatch):
+        calls, f = self._run(
+            monkeypatch,
+            [urllib.error.HTTPError("u://z", 503, "busy", None, None), b"OK"],
+        )
+        assert f._download("u://z") == b"OK"
+        assert len(calls) == 2

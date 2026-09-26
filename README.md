@@ -41,10 +41,12 @@ read live from `addons/repository.tony7bones/addon.xml`.
 
 The served catalog (`/static/`) currently lists 28 entries (four Estuary 7/8
 entries were removed 2026-08-31 when both skins were decommissioned): the
-repository add-on, the mirrored third-party repos under `addons/hosted/<id>/`,
-and OUR own add-ons, which have NO copy in this repo at all. Since 2026-09-26
-the build resolves each of them from its source of truth on every run and takes
-`addon.xml` and art out of the zip (`_tools/static_catalog.py`):
+repository add-on, the seven third-party repository installers under
+`addons/hosted/<id>/`, OUR own add-ons and the eleven official-library modules
+their dependency closures reach. Neither ours nor the modules have a copy in
+this repo at all. Since 2026-09-26 the build resolves each of them from its
+source of truth on every run and takes `addon.xml` and art out of the zip
+(`_tools/static_catalog.py`):
 
 - **`script.ezmaintenanceplusplus`** ("EZ Maintenance++") - a VFS-safe fork of EZ
   Maintenance+ (backup/restore over NFS/SMB/Dropbox), source at
@@ -57,6 +59,13 @@ the build resolves each of them from its source of truth on every run and takes
   each add-on's tag namespace, `<id>-v<version>`.
 - **`plugin.video.pov`** (not ours) - version read from upstream's own
   `packages/addons.xml`, zip republished from the upstream Pages host.
+- **The eleven official-library modules** (not ours: `plugin.program.autocompletion`,
+  `script.image.resource.select`, `script.module.autocompletion`, `certifi`,
+  `chardet`, `idna`, `requests`, `simplecache`, `simpleeval`, `unidecode`,
+  `urllib3`) - version read from the official Kodi repository's Piers index
+  (`mirrors.kodi.tv/addons/piers/addons.xml.gz`, fetched once per build), zip
+  republished from the official mirror. Served here because Kodi resolves a hard
+  dependency only from the repository the add-on is installed FROM.
 
 Fix bugs and add tests in the sibling repos. A version bump pushed to their
 `main` is the release: their CI publishes the GitHub release and dispatches
@@ -70,8 +79,9 @@ Everything lives on `main`, served by GitHub Pages: the generated root
 `index.html`, the served canvas (`repositories/ media/ iptv/ rss/`, mirrored 1:1
 from `dropbox/`), the add-on tree under `addons/` (add-on source, built per-addon
 zips, `addons.xml`, and the mirrored third-party-repo trees under
-`addons/hosted/<id>/`), and all of `_tools/`. None of our own add-ons has a
-directory under `addons/hosted/` (since 2026-09-26; see "The add-ons").
+`addons/hosted/<id>/`), and all of `_tools/`. Neither our own add-ons nor their
+dependencies have a directory under `addons/hosted/` (since 2026-09-26; see
+"The add-ons"); only the seven third-party repository installers do.
 
 ### The `dropbox/` canvas and the bare URL
 
@@ -92,15 +102,17 @@ The served `/static/` tree is the Kodi repository the add-on points at:
 `/static/addons.xml` + `.md5` + per-add-on zips + materialized art. It is built
 in CI by `_tools/build_site.py` -> `_tools/static_catalog.py` from the manifest
 `_tools/catalog.json`, then deployed via GitHub Pages. To change what the repo
-serves, edit `_tools/catalog.json` (and, for a mirrored third-party repo, drop
-its `addon.xml`/zip under `addons/hosted/<id>/`).
+serves, edit `_tools/catalog.json` (and, for a mirrored third-party repository
+installer only, drop its `addon.xml`/zip under `addons/hosted/<id>/`; an add-on
+of ours or an official-library module is never committed, the build resolves
+it from its release or from the official index).
 
 ### Source areas
 
 | Path                    | Purpose                                                                                                                                                                                                                           |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `addons/<addon-id>/`    | Any dir with an `addon.xml` is built into a zip and listed in `addons.xml`.                                                                                                                                                       |
-| `addons/hosted/<id>/`   | Mirrored third-party-repo trees (not auto-indexed/zipped). No entry for our own add-ons: the build resolves those from their releases.                                                                                |
+| `addons/hosted/<id>/`   | The seven third-party repository installers (not auto-indexed/zipped). No entry for our own add-ons or their dependencies: the build resolves those from their releases and from the official Kodi index.                    |
 | `dropbox/repositories/` | Third-party repository installer zips (Kodi installs them manually). Mirrored to the served `/repositories/`.                                                                                                                     |
 | `dropbox/rss/`          | Hand-authored assets. Mirrored to the served root and auto-indexed for file-manager browsing. (`dropbox/media/` and `dropbox/iptv/` retired 2026-07-16; private/generated content lives only on the KodiShare via LAN/Tailscale.) |
 

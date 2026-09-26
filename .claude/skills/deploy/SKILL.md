@@ -48,15 +48,21 @@ python3 _tools/release.py --push          # or merge the branch to main
    fine to commit; a client_secret is not (use PKCE).
 2. If the repo should **serve** it, add its entry to the static catalog manifest
    `_tools/catalog.json`, mirroring an existing entry. For a mirrored third-party
-   repo, also drop its `addon.xml` (and zip if self-hosted) under
-   `addons/hosted/<id>/`. Two shapes need NO hosted directory, and must not get
+   repository INSTALLER, also drop its `addon.xml` (and zip if self-hosted) under
+   `addons/hosted/<id>/`; that is the only thing that directory holds since
+   2026-09-26. Two shapes need NO hosted directory, and must not get
    one: a `release-asset` entry (zip template on `github.com/<owner>/<repo>/
    releases/download/v{version}/...` for a repo that ships one add-on, the
    build resolves its latest release; or `.../releases/download/{id}-v{version}/...`
    for a repo that ships several, the build lists its releases and takes the
    newest in that add-on's tag namespace, as for `skin.estuary.pov`) and a
    `hybrid` entry with `upstream_index` (the build reads the version from that
-   upstream `addons.xml`). All take `addon.xml` from the zip.
+   upstream `addons.xml`, plain or gzipped; the eleven official-library modules
+   point at `https://mirrors.kodi.tv/addons/piers/addons.xml.gz` and their zips
+   at `https://mirrors.kodi.tv/addons/piers/{id}/{id}-{version}.zip`, so a new
+   official dependency is one catalog entry, never a committed zip). All take
+   `addon.xml` from the zip, and the build walks each one's `<import>`s
+   transitively through the catalog.
 3. `python3 _tools/generate_repo.py` (builds the zip, updates `addons.xml*`).
 4. `python3 -m pytest _tools/ -q` and `ruff check _tools/`: both must pass.
 5. Release (TL;DR step 2) and push (step 3).
@@ -108,9 +114,9 @@ assigned to the owner.
 | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
 | Release "succeeded" but the box does not see the new version | The Pages deploy has not completed, or (for a sibling-repo release) the `ezmpp-release` dispatch never arrived, so the live `/static/` tree is still the old build.                                          | Check the "Build & Deploy Pages" run; re-run it (`workflow_dispatch`) if it did not fire; then re-check the box.      |
 | New add-on is not listed under Install from repository       | Kodi cached the OLD add-on list. The catalog is fetched only when Kodi decides to refresh.                                                                                                                   | On the box: **Check for updates** (Add-ons context menu), or restart Kodi.                                            |
-| Add-on is in `_tools/catalog.json` but not served            | A build-time fallback kept the last-good entry, or the entry failed materialization (bad zip/metadata).                                                                                                      | Read the build log for the per-entry warning; fix the source/catalog entry and rebuild.                               |
+| Add-on is in `_tools/catalog.json` but not served            | A build-time fallback kept the last-good entry, or the entry failed materialization (bad zip/metadata, an `<import>` the catalog does not serve, or for an official-library module the mirror answered the wrong file, which the build refuses and retries three times). Nothing is served from a committed zip any more except the seven repository installers. | Read the build log for the per-entry warning (`primary resolution failed`, `download attempt n/3`); fix the catalog entry, or rerun `pages.yml` if it was the mirror; never commit a copy.                               |
 | `git status` shows commits "to push" but the deploy worked   | You are looking at a **source-of-truth** repo (`moquette/kodi-ezmpp` or `moquette/kodi-estuary-pov`), not this one. They are independent repos; this one resolves their latest release at build time and points a zip URL AT it. | Confirm with `git -C <repo> ls-remote origin main` vs local HEAD; a deploy here never touches those repos' git state. |
-| A build-resolved entry (`script.ezmaintenanceplusplus`, `skin.estuary.pov`, `service.tvos.pythonfix`, `plugin.video.pov`) is `stale` in `/static/catalog.json` with a `::warning::` in the build log | The lookup failed on that run: GitHub API or upstream index unreachable, release asset 404, the packaged `addon.xml` version not matching the tag, or an `<import>` the catalog does not serve. Both source repos are public, so a token is not the cause (`T7B_SOURCE_READ_TOKEN` is an optional escape hatch). | Read the warning, fix the release or the upstream (never commit a copy here), rerun `pages.yml`. |
+| A build-resolved entry (`script.ezmaintenanceplusplus`, `skin.estuary.pov`, `service.tvos.pythonfix`, `plugin.video.pov`, or one of the eleven official-library modules) is `stale` in `/static/catalog.json` with a `::warning::` in the build log | The lookup failed on that run: GitHub API, upstream index or `mirrors.kodi.tv` unreachable after three attempts, release asset 404, the packaged `addon.xml` id or version not matching what the tag or index named, or an `<import>` the catalog does not serve. Both source repos are public, so a token is not the cause (`T7B_SOURCE_READ_TOKEN` is an optional escape hatch). | Read the warning, fix the release or the upstream (never commit a copy here), rerun `pages.yml`. |
 | A released **icon** change does not show on the box          | Kodi caches add-on ICONS (texture cache): same path, old render kept in `userdata/Thumbnails/` + `Textures13.db`.                                                                                            | Clear the thumbnail cache (EZ Maintenance++ -> Delete Thumbnails) and restart; or reinstall. Do NOT delete `Textures13.db` by hand while Kodi is running: Kodi holds it open, and the next texture write fails SQLITE_READONLY_DBMOVED and then aborts the process. That killed a Fire TV on 2026-07-21. |
 
 ## Why a released update lags on the box (caches)

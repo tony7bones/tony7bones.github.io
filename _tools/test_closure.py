@@ -1,23 +1,26 @@
-"""Gate: the hosted dependency closure must be COMPLETE and self-contained.
+"""Gate: the dependency closure this repo serves must be COMPLETE.
 
 A box that cannot reach the Kodi mirror (some fleet ATVs) can only install an
-add-on if EVERY transitive dependency is hosted here. This test walks the
-<import> graph offline (hosted addon.xml files only) from each first-party
-add-on and fails if any non-built-in dependency is not itself hosted AND not
-listed in repository.json. It is why "skin -> autocompletion -> requests ->
-urllib3" can never again die on a missing piece on-device.
+add-on if EVERY transitive dependency is served here, and Kodi resolves a hard
+dependency only from the repository the add-on is installed FROM (measured on
+a Kodi 22 bench). Until 2026-09-26 this file walked the <import> graph OFFLINE
+through committed addons/hosted/<id>/addon.xml files. Since that day NOTHING
+of ours and none of our dependencies has a committed addon.xml: the four
+add-ons the fleet installs and the eleven official-library modules they drag
+in are all resolved at build time (releases, POV's index, the official Kodi
+repository's index). So the offline walk has nothing to walk, and the closure
+gate is static_catalog._check_imports_hosted, which walks every build-resolved
+entry's imports TRANSITIVELY through the other build-resolved entries, reading
+each addon.xml out of its resolved zip, on every build. This file pins that
+the two halves leave no entry uncovered, and exercises the walk against a
+fake tree so the gate's own behaviour stays tested without the network.
 
 Two exclusion sets, and they do NOT mean the same thing. BUILTINS are Kodi
 extension points that no repository could host. OFFICIAL_LIBRARY are real
 add-ons this tree is PROHIBITED from hosting, so the closure is deliberately
-incomplete there.
-
-That second set is IMPORTED from mirror_closure.py rather than repeated here,
-for the same reason release_detect.changed_addons is shared between the release
-tool and the pre-push gate: a gate and the tool its own error message tells you
-to run must never be able to disagree about what is in scope.
-
-Regenerate the closure with:  python3 _tools/mirror_closure.py <id> --apply
+incomplete there. That second set is IMPORTED from mirror_closure.py rather
+than repeated here, so a gate and the tool it names can never disagree about
+what is in scope.
 """
 
 from __future__ import annotations
@@ -37,66 +40,66 @@ sys.path.insert(0, str(Path(__file__).parent))
 import static_catalog as sc  # noqa: E402
 from mirror_closure import OFFICIAL_LIBRARY  # noqa: E402
 
-# Roots whose FULL closure must be hosted (the fleet installs these off-grid).
+# The ids the fleet installs DIRECTLY. Every one of them is build-resolved
+# (no committed addon.xml, metadata out of the resolved zip) and its whole
+# closure is walked by static_catalog._check_imports_hosted at build time.
 #
-# script.ezmaintenanceplusplus was a root here from 2026-07-25 to 2026-09-26.
-# It ships to the same boxes as the skin and carries its own <requires>, but
-# only the skin's closure was ever gated, so a bump to a dependency version
-# this repo does not host would 404 at install time on an off-grid Apple TV
-# with nothing red anywhere. Since 2026-09-26 it has NO committed addon.xml:
-# its version and metadata are resolved from its latest GitHub release at
-# build time, so this offline walk cannot see its imports. Its closure is
-# gated where the metadata arrives instead, by
-# static_catalog._check_imports_hosted at every build, and
-# test_build_resolved_entries_are_gated_at_build below pins that the two
-# mechanisms together leave no entry uncovered. plugin.video.pov (resolved
-# from upstream's own addons.xml the same way) is a leaf in the skin's walk
-# for the same reason.
+# History of this list, because each entry taught something:
+#
+# script.ezmaintenanceplusplus was an offline root from 2026-07-25 to
+# 2026-09-26. It ships to the same boxes as the skin and carries its own
+# <requires>, but only the skin's closure was ever gated, so a bump to a
+# dependency version this repo did not serve would have 404ed at install time
+# on an off-grid Apple TV with nothing red anywhere.
 #
 # skin.estuary7 (rooted from this file's creation) and skin.estuary8 (rooted
 # 2026-07-31) left on 2026-08-31, when both skins were decommissioned and
-# unpublished on the owner's order; their closures left with their catalog
-# entries.
+# unpublished on the owner's order; their closures left with their entries.
 #
-# skin.estuary.pov was a root here from 2026-08-27, the day it was first hosted,
-# to 2026-09-26, when it became a release-asset entry like EZM++: its version
-# and addon.xml now come from the newest skin.estuary.pov-v<version> release of
-# moquette/kodi-estuary-pov at build time, nothing of it is committed here, and
-# this offline walk cannot see its imports. Its closure is gated where the
-# metadata arrives, by static_catalog._check_imports_hosted, which since the
-# same day walks TRANSITIVELY through committed hosted addon.xml files, so the
-# skin's autocompletion subtree is checked on every build. The subtree is ALSO
-# rooted below on its own, so the offline suite goes red before a push rather
-# than the build going stale after one: as of 1.3.0 the skin imports xbmc.gui,
-# plugin.program.autocompletion and plugin.video.pov, and the first of those two
-# drags a real subtree behind it (autocompletion -> script.module.autocompletion
-# -> requests -> urllib3 ...). plugin.video.pov is a build-resolved leaf.
+# skin.estuary.pov was rooted from 2026-08-27, the day it was first hosted, to
+# 2026-09-26, when it became a release-asset entry: as of 1.3.0 it imports
+# xbmc.gui, plugin.program.autocompletion and plugin.video.pov, and the first
+# of those drags a real subtree (autocompletion -> script.module.autocompletion
+# -> requests -> urllib3/certifi/chardet/idna).
 #
-# service.tvos.pythonfix is a ROOT OF ITS OWN, added 2026-08-29, and the reason
-# is the trap that produced it. It was reachable here for exactly two days, as a
-# child of skin.estuary.pov 1.2.7's <import>. Removing that import in 1.2.8 is
-# correct (it is a tvOS-only add-on and had no business on Fire TV), but it also
-# silently dropped this add-on out of every closure walk in this file: no test
-# fails, no gate turns red, and the first symptom would be an off-grid Apple TV
-# unable to install it because script.module.requests stopped being hosted.
+# service.tvos.pythonfix is listed ON ITS OWN, since 2026-08-29, and the reason
+# is the trap that produced it. It was reachable for exactly two days as a
+# child of skin.estuary.pov 1.2.7's <import>. Removing that import in 1.2.8 was
+# correct (a tvOS-only add-on had no business on Fire TV), but it also silently
+# dropped this add-on out of every closure walk: no test failed, no gate went
+# red, and the first symptom would have been an off-grid Apple TV unable to
+# install it. A root reachable only THROUGH another root is not gated, it is
+# coincidentally covered, and the cover disappears with an ordinary edit to
+# somebody else's addon.xml. Anything the fleet installs DIRECTLY is listed
+# here directly.
 #
-# The general lesson, worth more than this entry: a root that is reachable only
-# THROUGH another root is not gated, it is coincidentally covered, and the cover
-# disappears with an ordinary edit to somebody else's addon.xml. Anything the
-# fleet installs DIRECTLY belongs in this list directly. This add-on is now
-# user-installed on Apple TVs rather than pulled in by a skin, which makes it
-# exactly that case.
-ROOTS = [
-    # service.tvos.pythonfix is build-resolved since 2026-09-26 (release-asset
-    # from moquette/kodi-estuary-pov, like the skin) and its imports are gated
-    # by static_catalog._check_imports_hosted on every build. Its hosted
-    # subtree (script.module.requests and what requests drags in) is rooted
-    # directly here so the trap described above cannot recur.
-    "script.module.requests",
-    # skin.estuary.pov's hosted subtree, rooted directly (see above): the skin
-    # itself is build-resolved and walked by _check_imports_hosted instead.
+# The hosted subtrees those roots stood on (script.module.requests and
+# plugin.program.autocompletion were rooted here from 2026-09-26 morning until
+# the afternoon) left when the eleven official modules became build-resolved
+# from the official Kodi repository's index: there is no committed addon.xml
+# left to walk, and the build-time walk now carries every hop.
+FLEET_INSTALLS = {
+    "skin.estuary.pov",
+    "service.tvos.pythonfix",
+    "script.ezmaintenanceplusplus",
+    "plugin.video.pov",  # the skin's hard import; not ours, served for it
+}
+
+# The official-library modules the closures above reach, all build-resolved
+# from https://mirrors.kodi.tv/addons/piers/addons.xml.gz since 2026-09-26.
+OFFICIAL_MODULES = {
     "plugin.program.autocompletion",
-]
+    "script.image.resource.select",
+    "script.module.autocompletion",
+    "script.module.certifi",
+    "script.module.chardet",
+    "script.module.idna",
+    "script.module.requests",
+    "script.module.simplecache",
+    "script.module.simpleeval",
+    "script.module.unidecode",
+    "script.module.urllib3",
+}
 
 BUILTINS = {
     "xbmc.python",
@@ -175,86 +178,137 @@ def closure_missing(root, lookup=_hosted_xml):
     return [m for m in missing if m != root]
 
 
-@pytest.mark.parametrize("root", ROOTS)
-def test_dependency_closure_is_hosted(root):
-    missing = closure_missing(root)
-    assert not missing, (
-        f"{root} closure is INCOMPLETE - not hosted: {missing}. "
-        f"Run: python3 _tools/mirror_closure.py {root} --apply"
-    )
-
-
-@pytest.mark.parametrize("root", ROOTS)
-def test_hosted_closure_is_in_repository_json(root):
-    """Every hosted piece of the closure must also be advertised by the proxy."""
-    ids = _repo_json_ids()
-    seen = set()
-    stack = [root]
-    not_listed = []
-    while stack:
-        aid = stack.pop()
-        if aid in seen:
-            continue
-        seen.add(aid)
-        xml = _hosted_xml(aid)
-        if xml is None:
-            continue
-        if aid not in ids:
-            not_listed.append(aid)
-        stack.extend(_imports(xml))
-    assert not not_listed, f"hosted but not in repository.json: {not_listed}"
-
-
-def test_build_resolved_entries_are_gated_at_build():
-    """The offline walk above and the build-time import check together cover
-    every entry this repo carries metadata for: a build-resolved id must have
-    no committed addon.xml, or two truths exist and one of them rots, and the
-    build-time half must really refuse an unhosted import."""
+def test_every_fleet_installed_id_is_build_resolved_with_no_committed_copy():
+    """A build-resolved id must have no committed addon.xml, or two truths
+    exist and one of them rots (the owner's rule of 2026-09-26: THERE MUST BE
+    NO MIRROR VERSION TO BE WRONG). The set is pinned exactly so a new entry
+    of ours cannot arrive as a hand copy unnoticed."""
     resolved = _build_resolved_ids()
-    assert resolved == {
-        "script.ezmaintenanceplusplus",
-        "plugin.video.pov",
-        "skin.estuary.pov",
-        "service.tvos.pythonfix",
-    }
+    assert resolved == FLEET_INSTALLS | OFFICIAL_MODULES
     for aid in resolved:
-        assert aid not in ROOTS, f"{aid} is build-resolved: it cannot be walked here"
         assert not os.path.exists(os.path.join(HOSTED, aid)), (
             f"addons/hosted/{aid}/ exists but the build resolves its metadata "
             f"upstream: delete the directory, there must be no copy to rot"
         )
-    # The build-time half really refuses an unhosted import, and walks the
-    # REAL hosted tree transitively: script.module.requests is hosted here and
-    # its own imports are in the catalog, so the closure through it is clean.
-    catalog_ids = _repo_json_ids()
-    with pytest.raises(sc.FetchError, match="script.module.nothosted"):
-        sc._check_imports_hosted(
-            "x",
-            b'<addon id="x" version="1"><requires>'
-            b'<import addon="xbmc.python" version="3.0.0"/>'
-            b'<import addon="script.module.nothosted"/>'
-            b"</requires></addon>",
-            catalog_ids | {"x"},
+    # what is left under addons/hosted/ is third-party repository installers
+    hosted = {d for d in os.listdir(HOSTED) if os.path.isdir(os.path.join(HOSTED, d))}
+    assert hosted and all(d.startswith("repository.") for d in hosted), hosted
+
+
+def test_official_modules_follow_the_official_index_not_a_committed_copy():
+    by_id = {e["id"]: e for e in sc.load_catalog()}
+    for aid in OFFICIAL_MODULES:
+        e = by_id[aid]
+        assert sc.classify(e) == sc.KIND_HYBRID, aid
+        assert e["upstream_index"] == "https://mirrors.kodi.tv/addons/piers/addons.xml.gz"
+        assert e["assets"]["zip"] == (
+            "https://mirrors.kodi.tv/addons/piers/{id}/{id}-{version}.zip"
         )
-    sc._check_imports_hosted(
-        "x",
-        b'<addon id="x" version="1"><requires>'
-        b'<import addon="xbmc.python" version="3.0.0"/>'
-        b'<import addon="script.module.requests"/>'
-        b"</requires></addon>",
-        catalog_ids | {"x"},
-    )
-    # The skin's REAL closure, as its hosted subtree stands today: its
-    # direct imports must resolve through the catalog with nothing missing.
-    sc._check_imports_hosted(
-        "skin.estuary.pov",
+
+
+def _fake_resolver(tree: dict[str, str]):
+    """addon.xml lookup for build-resolved ids, shaped like
+    BuildContext.addon_xml_for: bytes for a known id, None otherwise."""
+
+    def resolver(aid):
+        xml = tree.get(aid)
+        if xml is None:
+            return None
+        return (
+            f'<addon id="{aid}" version="1"><requires>{xml}</requires></addon>'
+        ).encode()
+
+    return resolver
+
+
+def test_build_time_walk_carries_the_whole_closure():
+    """The build-time half really walks TRANSITIVELY through build-resolved
+    entries and refuses an import that is neither a catalog entry nor a Kodi
+    builtin. The tree is the fleet's real shape: skin -> autocompletion plugin
+    -> autocompletion module -> requests -> urllib3/certifi/chardet/idna, and
+    service.tvos.pythonfix -> requests -> the same leaves."""
+    tree = {
+        "plugin.program.autocompletion": (
+            '<import addon="xbmc.python" version="3.0.0"/>'
+            '<import addon="script.module.autocompletion" version="2.0.5"/>'
+        ),
+        "script.module.autocompletion": (
+            '<import addon="script.module.requests" version="2.9.1"/>'
+        ),
+        "script.module.requests": (
+            '<import addon="script.module.certifi"/>'
+            '<import addon="script.module.chardet"/>'
+            '<import addon="script.module.idna"/>'
+            '<import addon="script.module.urllib3"/>'
+        ),
+        "script.module.urllib3": "",
+        "script.module.certifi": "",
+        "script.module.chardet": "",
+        "script.module.idna": "",
+        "plugin.video.pov": '<import addon="script.module.requests"/>',
+    }
+    catalog_ids = set(tree) | FLEET_INSTALLS
+    skin = (
         b'<addon id="skin.estuary.pov" version="1"><requires>'
         b'<import addon="xbmc.gui" version="5.18.0"/>'
         b'<import addon="plugin.program.autocompletion" version="2.1.2"/>'
         b'<import addon="plugin.video.pov" version="6.08.15"/>'
-        b"</requires></addon>",
-        catalog_ids,
+        b"</requires></addon>"
     )
+    fixes = (
+        b'<addon id="service.tvos.pythonfix" version="1"><requires>'
+        b'<import addon="xbmc.python" version="3.0.0"/>'
+        b'<import addon="script.module.requests" version="2.31.0"/>'
+        b"</requires></addon>"
+    )
+    sc._check_imports_hosted(
+        "skin.estuary.pov", skin, catalog_ids, resolver=_fake_resolver(tree)
+    )
+    sc._check_imports_hosted(
+        "service.tvos.pythonfix", fixes, catalog_ids, resolver=_fake_resolver(tree)
+    )
+    # a leaf four hops down that the catalog does not serve fails the ROOT
+    for leaf in ("script.module.urllib3", "script.module.idna"):
+        with pytest.raises(sc.FetchError, match=leaf):
+            sc._check_imports_hosted(
+                "skin.estuary.pov",
+                skin,
+                catalog_ids - {leaf},
+                resolver=_fake_resolver(tree),
+            )
+        with pytest.raises(sc.FetchError, match=leaf):
+            sc._check_imports_hosted(
+                "service.tvos.pythonfix",
+                fixes,
+                catalog_ids - {leaf},
+                resolver=_fake_resolver(tree),
+            )
+    # a hop whose own zip cannot be resolved fails the root, named
+    def broken(aid):
+        if aid == "script.module.requests":
+            raise sc.FetchError("zip 404")
+        return _fake_resolver(tree)(aid)
+
+    with pytest.raises(sc.FetchError, match="script.module.requests could not"):
+        sc._check_imports_hosted("skin.estuary.pov", skin, catalog_ids, resolver=broken)
+    # and without a resolver nothing is walked past the first hop: the walk
+    # is only a gate when the build supplies BuildContext.addon_xml_for
+    sc._check_imports_hosted(
+        "skin.estuary.pov", skin, catalog_ids - {"script.module.urllib3"}
+    )
+
+
+def test_real_catalog_resolver_covers_every_official_module():
+    """BuildContext.addon_xml_for answers for exactly the build-resolved ids
+    of the REAL catalog (resolving is not attempted here: no network), so the
+    build-time walk cannot skip one of the eleven as a leaf."""
+    entries = sc.load_catalog()
+    ctx = sc.BuildContext(entries, fetcher=None, warnings=[])
+    for aid in FLEET_INSTALLS | OFFICIAL_MODULES:
+        assert sc.metadata_resolved_at_build(ctx.entries[aid]), aid
+    for aid in ("repository.tony7bones", "repository.loop", "repository.709"):
+        assert ctx.addon_xml_for(aid) is None, aid
+    assert ctx.addon_xml_for("not.in.catalog") is None
 
 
 # --------------------------------------------------------------------------- #
@@ -267,15 +321,17 @@ def test_build_resolved_entries_are_gated_at_build():
 def test_official_library_holds_nothing_of_ours():
     """It may only ever name add-ons Kodi ships, never one this repo delivers.
 
-    Three independent proofs that an id is not ours: it is not a gated root, we
-    carry no hosted mirror of it, and our catalog does not advertise it. Any of
+    Three independent proofs that an id is not ours: it is not a build-resolved
+    id, we carry no hosted mirror of it, and our catalog does not advertise it. Any of
     the three failing means this repo still ships the thing, and whether this
     repo ships a dependency is precisely what the closure gate measures.
     """
     hosted = {d for d in os.listdir(HOSTED) if os.path.isdir(os.path.join(HOSTED, d))}
     advertised = _repo_json_ids()
     for aid in OFFICIAL_LIBRARY:
-        assert aid not in ROOTS, f"{aid} is a first-party root, not Kodi's"
+        assert aid not in FLEET_INSTALLS | OFFICIAL_MODULES, (
+            f"{aid} is served by this repo, not Kodi's library"
+        )
         assert aid not in hosted, (
             f"addons/hosted/{aid}/ exists, so the exemption is both wrong and "
             f"dead weight - delete one of the two"

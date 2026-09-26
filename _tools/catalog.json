@@ -126,8 +126,9 @@
     "branch": "main",
     "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
     "assets": {
-      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/{id}-{version}.zip"
-    }
+      "zip": "https://mirrors.kodi.tv/addons/piers/{id}/{id}-{version}.zip"
+    },
+    "upstream_index": "https://mirrors.kodi.tv/addons/piers/addons.xml.gz"
   },
   {
     "id": "script.module.autocompletion",
@@ -136,8 +137,9 @@
     "branch": "main",
     "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
     "assets": {
-      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/{id}-{version}.zip"
-    }
+      "zip": "https://mirrors.kodi.tv/addons/piers/{id}/{id}-{version}.zip"
+    },
+    "upstream_index": "https://mirrors.kodi.tv/addons/piers/addons.xml.gz"
   },
   {
     "id": "plugin.program.autocompletion",
@@ -146,8 +148,9 @@
     "branch": "main",
     "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
     "assets": {
-      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/{id}-{version}.zip"
-    }
+      "zip": "https://mirrors.kodi.tv/addons/piers/{id}/{id}-{version}.zip"
+    },
+    "upstream_index": "https://mirrors.kodi.tv/addons/piers/addons.xml.gz"
   },
   {
     "id": "script.module.requests",
@@ -156,8 +159,9 @@
     "branch": "main",
     "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
     "assets": {
-      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/{id}-{version}.zip"
-    }
+      "zip": "https://mirrors.kodi.tv/addons/piers/{id}/{id}-{version}.zip"
+    },
+    "upstream_index": "https://mirrors.kodi.tv/addons/piers/addons.xml.gz"
   },
   {
     "id": "script.module.urllib3",
@@ -166,8 +170,9 @@
     "branch": "main",
     "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
     "assets": {
-      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/{id}-{version}.zip"
-    }
+      "zip": "https://mirrors.kodi.tv/addons/piers/{id}/{id}-{version}.zip"
+    },
+    "upstream_index": "https://mirrors.kodi.tv/addons/piers/addons.xml.gz"
   },
   {
     "id": "script.module.idna",
@@ -176,8 +181,9 @@
     "branch": "main",
     "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
     "assets": {
-      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/{id}-{version}.zip"
-    }
+      "zip": "https://mirrors.kodi.tv/addons/piers/{id}/{id}-{version}.zip"
+    },
+    "upstream_index": "https://mirrors.kodi.tv/addons/piers/addons.xml.gz"
   },
   {
     "id": "script.module.chardet",
@@ -186,8 +192,9 @@
     "branch": "main",
     "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
     "assets": {
-      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/{id}-{version}.zip"
-    }
+      "zip": "https://mirrors.kodi.tv/addons/piers/{id}/{id}-{version}.zip"
+    },
+    "upstream_index": "https://mirrors.kodi.tv/addons/piers/addons.xml.gz"
   },
   {
     "id": "script.module.certifi",
@@ -196,8 +203,9 @@
     "branch": "main",
     "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
     "assets": {
-      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/{id}-{version}.zip"
-    }
+      "zip": "https://mirrors.kodi.tv/addons/piers/{id}/{id}-{version}.zip"
+    },
+    "upstream_index": "https://mirrors.kodi.tv/addons/piers/addons.xml.gz"
   },
   {
     "id": "script.module.simplecache",
@@ -206,8 +214,9 @@
     "branch": "main",
     "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
     "assets": {
-      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/{id}-{version}.zip"
-    }
+      "zip": "https://mirrors.kodi.tv/addons/piers/{id}/{id}-{version}.zip"
+    },
+    "upstream_index": "https://mirrors.kodi.tv/addons/piers/addons.xml.gz"
   },
   {
     "id": "script.module.simpleeval",
@@ -216,8 +225,9 @@
     "branch": "main",
     "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
     "assets": {
-      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/{id}-{version}.zip"
-    }
+      "zip": "https://mirrors.kodi.tv/addons/piers/{id}/{id}-{version}.zip"
+    },
+    "upstream_index": "https://mirrors.kodi.tv/addons/piers/addons.xml.gz"
   },
   {
     "id": "script.module.unidecode",
@@ -226,8 +236,9 @@
     "branch": "main",
     "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
     "assets": {
-      "zip": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/{id}-{version}.zip"
-    }
+      "zip": "https://mirrors.kodi.tv/addons/piers/{id}/{id}-{version}.zip"
+    },
+    "upstream_index": "https://mirrors.kodi.tv/addons/piers/addons.xml.gz"
   },
   {
     "id": "plugin.video.pov",

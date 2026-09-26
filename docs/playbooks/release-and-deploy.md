@@ -87,6 +87,14 @@ change to one never forces a bump of another.
 - `plugin.video.pov` - NOT ours; a `hybrid` entry with `upstream_index`. The
   build reads upstream's `packages/addons.xml` for the version and republishes
   the upstream zip. Served only because the skin hard-imports it.
+- the eleven official-library modules (`plugin.program.autocompletion`,
+  `script.image.resource.select`, `script.module.autocompletion`, `certifi`,
+  `chardet`, `idna`, `requests`, `simplecache`, `simpleeval`, `unidecode`,
+  `urllib3`) - NOT ours; `hybrid` entries with `upstream_index` on the official
+  Kodi repository's Piers index (`mirrors.kodi.tv/addons/piers/addons.xml.gz`,
+  since the afternoon of 2026-09-26). Their committed zips left the same day.
+  Served because Kodi resolves a hard dependency only from the repository the
+  add-on is installed FROM, and the build walks the whole closure through them.
 
   History, dated: until 2026-09-26 this repo carried a hand-maintained
   metadata mirror under `addons/hosted/<id>/` for each of these, and a release
@@ -105,12 +113,13 @@ The static catalog manifest is **`_tools/catalog.json`** (a list of entries;
 `static_catalog.py` classifies each: first-party build / hosted mirror / hybrid /
 streamed / release-asset). To add or change a served add-on:
 
-1. Add/edit its entry in `_tools/catalog.json`. For a mirrored third-party repo,
-   also drop its `addon.xml` (and zip if self-hosted) under `addons/hosted/<id>/`.
-   A `release-asset` entry or a `hybrid` entry with `upstream_index` gets NO
-   hosted directory (`static_catalog.metadata_resolved_at_build`); the build
-   resolves it, and `test_closure.py` pins that no `addon.xml` is committed
-   for it.
+1. Add/edit its entry in `_tools/catalog.json`. For a mirrored third-party
+   repository INSTALLER, also drop its `addon.xml` (and zip if self-hosted) under
+   `addons/hosted/<id>/`; nothing else lives there. A `release-asset` entry or a
+   `hybrid` entry with `upstream_index` (ours, POV, every official-library
+   module) gets NO hosted directory (`static_catalog.metadata_resolved_at_build`);
+   the build resolves it and walks its `<import>`s, and `test_closure.py` pins
+   that no `addon.xml` is committed for it.
 2. Release (or, for a canvas-only asset, publish - see below). CI rebuilds the
    `/static/` catalog and deploys.
 

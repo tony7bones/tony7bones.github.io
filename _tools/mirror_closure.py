@@ -9,8 +9,18 @@ the closure is incomplete, an install dies on a missing transitive dep
 closure from the mirror and mirrors every not-yet-hosted piece, so the closure
 is self-contained. Run it, review the diff, then generate_repo + deploy.
 
-Usage: python3 _tools/mirror_closure.py <root_addon_id> [--apply]
-       (without --apply it only reports what is missing)
+Usage: python3 _tools/mirror_closure.py <root_addon_id>
+       (reports what the Omega mirror's closure of the root would need)
+
+RETIRED AS A WRITER 2026-09-26. Nothing of ours and none of our dependencies
+is committed under addons/hosted/ any more: the eleven official-library
+modules are hybrid entries with ``upstream_index`` pointing at the official
+Kodi repository's Piers index, resolved by static_catalog.py on every build,
+and their closure is walked there (_check_imports_hosted). ``--apply`` would
+recreate exactly the committed copy the owner ruled out (THERE MUST BE NO
+MIRROR VERSION TO BE WRONG) and now refuses. To serve a new official-library
+dependency, add a catalog.json entry shaped like script.module.requests's.
+BUILTINS and OFFICIAL_LIBRARY stay here because the gates import them.
 """
 
 from __future__ import annotations
@@ -163,6 +173,14 @@ def main() -> None:
         raise SystemExit(__doc__)
     root = sys.argv[1]
     apply = "--apply" in sys.argv[2:]
+    if apply:
+        raise SystemExit(
+            "--apply is retired (2026-09-26): a committed copy under "
+            "addons/hosted/ is the mirror version the owner ruled out. Add a "
+            "catalog.json entry with upstream_index "
+            "https://mirrors.kodi.tv/addons/piers/addons.xml.gz instead; the "
+            "build resolves it and walks its closure."
+        )
     if root in OFFICIAL_LIBRARY:
         # Without this the walk skips the root and prints "closure complete",
         # which reads as success for a run that mirrored nothing and never
