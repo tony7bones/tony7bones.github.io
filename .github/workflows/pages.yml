@@ -194,6 +194,9 @@ jobs:
     needs: deploy
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: write
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -210,3 +213,18 @@ jobs:
             FLAGS="$FLAGS --expect-count $EXPECTED"
           fi
           python3 _tools/verify_live_site.py --manifest catalog.json $FLAGS
+
+      # The hub also runs GitHub's own branch build ("pages-build-deployment")
+      # on every push, and the two deployments race. Ours has won on every push
+      # since at least 2026-08-16, and lost once on 2026-09-26: the branch build
+      # landed last and the live site went 404 everywhere, /static/ included,
+      # even though build and deploy here were green. A redeploy with no push
+      # behind it has nothing to race, so on a failed verify of a PUSH run this
+      # dispatches the workflow once more. Only push runs re-dispatch, so a
+      # genuinely broken site cannot loop: the re-run is a workflow_dispatch
+      # and its own failure stops here.
+      - name: Redeploy once if the branch build clobbered this deploy
+        if: failure() && github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run pages.yml --ref main

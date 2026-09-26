@@ -69,3 +69,11 @@ def test_concurrency_never_cancels_a_deploy_mid_flight():
     text = _text()
     assert "concurrency:" in text
     assert "cancel-in-progress: false" in text
+
+
+def test_verify_redeploys_once_when_the_branch_build_wins_the_race():
+    text = _text()
+    assert "Redeploy once if the branch build clobbered this deploy" in text
+    assert "if: failure() && github.event_name == 'push'" in text
+    assert "gh workflow run pages.yml --ref main" in text
+    assert "actions: write" in text
