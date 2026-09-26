@@ -1,4 +1,4 @@
-"""Tests for publish_canvas.py — the canvas-only publish path.
+"""Tests for publish_canvas.py - the canvas-only publish path.
 
 Covers the secret guard (the safety-critical part) and the staged-diff parser
 by monkeypatching the `git` helper, so no real repo or network is touched.
@@ -66,7 +66,7 @@ def test_scan_passes_clean_canvas_changes(monkeypatch):
 
 def test_scan_allows_placeholder_templates(monkeypatch):
     _patch_git(monkeypatch, _DIFF_TEMPLATE_ONLY)
-    # .env.device.example is allowlisted — its placeholder assignments are fine.
+    # .env.device.example is allowlisted - its placeholder assignments are fine.
     assert pc.scan_for_secrets() == []
 
 

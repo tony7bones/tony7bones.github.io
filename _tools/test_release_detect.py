@@ -5,7 +5,7 @@ tool, with an explicit ``worktree`` mode flag (QA must-fix MF-1). These tests
 build throwaway git repos with a simulated ``origin/main`` and prove:
 
   * gate mode (committed ``base_ref..HEAD``) and tool mode (working tree vs
-    ``base_ref``) return the SAME set on a committed tree — the MF-1 regression
+    ``base_ref``) return the SAME set on a committed tree - the MF-1 regression
     guard, the test that makes "tool and gate cannot disagree" real, not a
     comment;
   * a source change is detected; a zip-only / index-only change is NOT (the
@@ -71,7 +71,7 @@ def _edit_and_commit(repo, aid, text="# changed\n", msg="edit"):
 
 
 # --------------------------------------------------------------------------- #
-# MF-1 — tool mode and gate mode agree on a committed tree.
+# MF-1 - tool mode and gate mode agree on a committed tree.
 # --------------------------------------------------------------------------- #
 def test_tool_and_gate_modes_agree_on_committed_tree(tmp_path):
     repo = _scaffold(tmp_path)
@@ -106,7 +106,7 @@ def test_worktree_mode_sees_uncommitted_edit_gate_does_not(tmp_path):
     # uncommitted working-tree edit
     (repo / "addons" / "plugin.alpha" / "default.py").write_text("# dirty\n")
 
-    # gate (committed) sees nothing — HEAD still == origin/main
+    # gate (committed) sees nothing - HEAD still == origin/main
     assert rd.changed_addons(str(repo), "origin/main", worktree=False) == []
     # tool (working tree) sees the pending change it is about to commit
     assert rd.changed_addons(str(repo), "origin/main", worktree=True) == [
@@ -122,7 +122,7 @@ def test_worktree_mode_sees_staged_edit(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
-# Generated artifacts (zip + index) are excluded — same definition as the gate.
+# Generated artifacts (zip + index) are excluded - same definition as the gate.
 # --------------------------------------------------------------------------- #
 def test_zip_and_index_only_change_is_not_detected(tmp_path):
     repo = _scaffold(tmp_path)
@@ -154,7 +154,7 @@ def test_addon_xml_version_line_counts_as_changed(tmp_path):
     )
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "bump only")
-    # the bump commit IS its release — it reads as changed (matches the gate).
+    # the bump commit IS its release - it reads as changed (matches the gate).
     assert rd.changed_addons(str(repo), "origin/main", worktree=False) == [
         "plugin.alpha"
     ]

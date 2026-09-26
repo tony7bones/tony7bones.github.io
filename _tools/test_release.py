@@ -192,7 +192,7 @@ def _commit(repo, msg):
 
 
 # --------------------------------------------------------------------------- #
-# Happy path — a single changed add-on (modv2plus is independent)
+# Happy path - a single changed add-on (modv2plus is independent)
 # --------------------------------------------------------------------------- #
 def test_happy_path_minor_bump_independent_addon(sandbox):
     repo, _ = sandbox
@@ -257,7 +257,7 @@ def test_changing_one_addon_leaves_the_other_untouched(sandbox):
 
 
 # --------------------------------------------------------------------------- #
-# MF-6 / MF-9 — idempotency
+# MF-6 / MF-9 - idempotency
 # --------------------------------------------------------------------------- #
 def test_idempotent_rerun_is_noop(sandbox):
     repo, _ = sandbox
@@ -267,7 +267,7 @@ def test_idempotent_rerun_is_noop(sandbox):
     tree_after_first = _git(repo, "rev-parse", "HEAD").stdout.strip()
     news_after_first = _news_lines(repo, MODV2_ID)
 
-    # re-run with no intervening source edit — must be a no-op
+    # re-run with no intervening source edit - must be a no-op
     r = _release(repo, "--news", f"{MODV2_ID}=The change")
     assert "no-op" in r.stdout or "no changed add-ons" in r.stdout
     assert _git(repo, "rev-parse", "HEAD").stdout.strip() == tree_after_first
@@ -288,7 +288,7 @@ def test_news_capped_across_releases(sandbox):
 
 
 # --------------------------------------------------------------------------- #
-# MF-4 — dry-run shows WHICH files, changes nothing
+# MF-4 - dry-run shows WHICH files, changes nothing
 # --------------------------------------------------------------------------- #
 def test_dry_run_shows_files_and_changes_nothing(sandbox):
     repo, _ = sandbox
@@ -305,7 +305,7 @@ def test_dry_run_shows_files_and_changes_nothing(sandbox):
 
 
 # --------------------------------------------------------------------------- #
-# MF-5 / MF-8 — guardrails
+# MF-5 / MF-8 - guardrails
 # --------------------------------------------------------------------------- #
 def test_behind_origin_refused(sandbox):
     repo, bare = sandbox
@@ -442,7 +442,7 @@ def test_no_changed_addons_is_clean_noop(sandbox):
 
 
 # ============================================================================ #
-# In-process tests — import release.py and drive its functions DIRECTLY against
+# In-process tests - import release.py and drive its functions DIRECTLY against
 # a sandbox (release.REPO monkeypatched). This measures
 # the pure logic, and it gives real line coverage of release.py (the subprocess
 # e2e tests above prove the wiring; these prove the logic + raise coverage).

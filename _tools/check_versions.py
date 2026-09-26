@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Versioning gate — every push that changes an add-on must bump its version.
+"""Versioning gate - every push that changes an add-on must bump its version.
 
 For each add-on directory under addons/, compares local HEAD against origin/main
 (ignoring the generated zip + index.html). If the add-on's SOURCE changed but
@@ -25,7 +25,7 @@ import release_lib as rl  # noqa: E402
 REPO_ROOT = rd.REPO_ROOT
 # Baseline = the last released state. Defaults to origin/main (the pre-push hook
 # case). CI overrides it with CHECK_VERSIONS_BASE_REF=<github.event.before> so a
-# main push validates the bump across the pushed RANGE — on main, origin/main
+# main push validates the bump across the pushed RANGE - on main, origin/main
 # already equals the pushed HEAD, so without this the gate would compare a commit
 # against itself and pass vacuously. An empty/whitespace override is ignored.
 BASE_REF = (os.environ.get("CHECK_VERSIONS_BASE_REF") or "").strip() or rd.BASE_REF
@@ -42,11 +42,11 @@ def check(base_ref: str = BASE_REF):
 
     Uses the SHARED detector (release_detect.changed_addons, gate mode =
     committed `base_ref..HEAD`) so the per-add-on "did the source change?"
-    decision is byte-for-byte the same one the release tool makes — the detector
+    decision is byte-for-byte the same one the release tool makes - the detector
     and the gate can never disagree (MF-1).
     """
     if not rd.base_ref_exists(REPO_ROOT, base_ref):
-        return True, [f"no {base_ref} to compare against — skipping"], []
+        return True, [f"no {base_ref} to compare against - skipping"], []
 
     changed = set(rd.changed_addons(REPO_ROOT, base_ref, worktree=False))
     info, problems = [], []
@@ -107,7 +107,7 @@ def main() -> int:
     for line in info:
         print(f"  {line}")
     if ok:
-        print("OK — every changed add-on bumped its version")
+        print("OK - every changed add-on bumped its version")
         return 0
     print("FAIL:")
     for p in problems:

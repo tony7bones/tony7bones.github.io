@@ -2,7 +2,7 @@
 (git-tracked) tree.
 
 The forbidden secret VALUES are sourced at runtime from the gitignored local
-`.env` — never hardcoded here. Where no local `.env` exists (CI), the value-scan
+`.env` - never hardcoded here. Where no local `.env` exists (CI), the value-scan
 is skipped and only the structural artifact check runs. All scans look at
 git-tracked files ONLY (a developer's own gitignored `.env` is never flagged).
 
@@ -16,7 +16,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 
-# Committed config TEMPLATES — placeholder values only, never real secrets.
+# Committed config TEMPLATES - placeholder values only, never real secrets.
 _EXAMPLE_ENVS = {".env.example", ".env.device.example"}
 
 
@@ -32,8 +32,8 @@ def test_secret_artifacts_not_tracked():
     """The gitignored config artifacts must never be tracked: any *.env (incl.
     the per-device tony7bones.env), the iptv-build/ staging dir, and ANY *.m3u
     playlist (host-built curated playlists carry provider creds in every
-    channel URL — they live only in gitignored staging / the box profile).
-    (.env.example is allowed — it does not end in `.env`.)"""
+    channel URL - they live only in gitignored staging / the box profile).
+    (.env.example is allowed - it does not end in `.env`.)"""
     offenders = [
         f
         for f in _tracked()
@@ -99,7 +99,7 @@ def test_no_env_secret_value_in_tracked_files():
     appears in any git-tracked file."""
     env_files = [p for p in REPO.glob(".env*") if p.name not in _EXAMPLE_ENVS]
     if not env_files:
-        return  # CI / no local env — value-scan not applicable
+        return  # CI / no local env - value-scan not applicable
     tokens = set()
     for ef in env_files:
         tokens |= _secret_tokens(_read_env(ef))

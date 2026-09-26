@@ -4,7 +4,7 @@
 The LIGHT publish path for hand-authored content under dropbox/ (repository
 installer zips, media, iptv, rss). The served mirror is generated in CI by
 build_site.py, so publishing a canvas edit is just: commit the dropbox/
-change, push main — WITHOUT cutting a release (no version bump, no git tag).
+change, push main - WITHOUT cutting a release (no version bump, no git tag).
 Use this for canvas edits; use `release.py` only when an add-on itself
 changes.
 
@@ -120,7 +120,7 @@ def main(argv: list[str] | None = None) -> int:
     git("add", "-A")
     staged = git("diff", "--cached", "--name-only")
     if not staged:
-        print("Nothing to publish — no canvas changes to commit.")
+        print("Nothing to publish - no canvas changes to commit.")
         return 0
 
     print("\nChanges to publish:")

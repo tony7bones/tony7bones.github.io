@@ -49,8 +49,8 @@ _CONVENTIONAL_RE = re.compile(r"^[a-z]+(\([^)]*\))?!?:\s*")
 # --------------------------------------------------------------------------- #
 def git(*args: str, check: bool = True, repo: str | None = None) -> str:
     # Resolve REPO at CALL time (not as a default arg, which binds at import) so a
-    # test monkeypatching release.REPO to a sandbox makes EVERY git call — incl.
-    # the rollback `git reset --hard` — follow the sandbox, never the real repo.
+    # test monkeypatching release.REPO to a sandbox makes EVERY git call - incl.
+    # the rollback `git reset --hard` - follow the sandbox, never the real repo.
     r = subprocess.run(
         ["git", "-C", repo or REPO, *args], capture_output=True, text=True
     )
@@ -121,7 +121,7 @@ def draft_news(addon_id: str, base_ref: str) -> str:
     Uses `git log base_ref..HEAD` scoped to the add-on dir (the generated zip +
     index excluded), strips conventional-commit prefixes, and joins the unique
     subjects. Falls back to a generic line when there are no scoped commits yet
-    (the source edit is uncommitted — the tool runs pre-commit).
+    (the source edit is uncommitted - the tool runs pre-commit).
     """
     rel = f"addons/{addon_id}"
     out = git(
@@ -217,7 +217,7 @@ def _news_for(addon_id: str, base_ref: str, args) -> str:
 def _last_version_change_commit(addon_id: str) -> str | None:
     """The newest commit whose diff TOUCHED this add-on's addon.xml, or None.
 
-    That commit is where the current version was introduced — the add-on's last
+    That commit is where the current version was introduced - the add-on's last
     release point. We use it to ask "did any SOURCE change after the bump?".
     """
     rel = f"addons/{addon_id}/addon.xml"
@@ -230,7 +230,7 @@ def _source_changed_since(addon_id: str, ref: str) -> bool:
     changed between `ref` and the working tree.
 
     Excluding addon.xml means a pure version/news bump does NOT count as a source
-    change — only real code/resource edits do. This is the signal that a NEW
+    change - only real code/resource edits do. This is the signal that a NEW
     release is warranted after the last bump (vs an idempotent re-run).
     """
     rel = f"addons/{addon_id}"
@@ -256,7 +256,7 @@ def _source_changed_since(addon_id: str, ref: str) -> bool:
 
 def _already_released(addon_id: str, base_ref: str) -> bool:
     """MF-6 idempotency: the add-on is already bumped (vs base_ref) and NO source
-    changed since that bump — a re-run must NOT double-bump.
+    changed since that bump - a re-run must NOT double-bump.
 
     Detects the re-run footgun: the tool committed a bump but it has not been
     pushed, so the add-on still 'differs' from origin/main. The clean signal is:
@@ -267,7 +267,7 @@ def _already_released(addon_id: str, base_ref: str) -> bool:
     """
     base_v = baseline_version(addon_id, base_ref)
     if base_v is None:
-        return False  # new add-on — not already released
+        return False  # new add-on - not already released
     cur_v = current_version(addon_id)
     # An add-on whose BASELINE predates the single-digit scheme (EZ
     # Maintenance++'s date-stamped 2026.07.02.0, modv2plus's 1.4.10) must be
@@ -281,9 +281,9 @@ def _already_released(addon_id: str, base_ref: str) -> bool:
             else rl.is_greater(cur_v, base_v)
         )
     except ValueError:
-        return False  # not a valid version either way — a real pending change
+        return False  # not a valid version either way - a real pending change
     if not is_bumped:
-        return False  # not yet bumped — a real pending change
+        return False  # not yet bumped - a real pending change
     bump_commit = _last_version_change_commit(addon_id)
     if bump_commit is None:
         return False
@@ -352,7 +352,7 @@ def _behind_origin(base_ref: str) -> list[str]:
         behind = git("rev-list", "--count", f"{branch}..{remote}", check=False)
         if behind not in ("", "0"):
             problems.append(
-                f"{branch} is behind {remote} by {behind} commit(s) — pull first"
+                f"{branch} is behind {remote} by {behind} commit(s) - pull first"
             )
     return problems
 
@@ -442,7 +442,7 @@ def apply_release(args, bumps: list[AddonBump], base_ref: str) -> int:
                 f"\nCommitted {subject} on {branch}. "
                 "Not pushed (merge to main per the release flow, or re-run with --push)."
             )
-    except Exception as exc:  # noqa: BLE001 — re-raise after rollback
+    except Exception as exc:  # noqa: BLE001 - re-raise after rollback
         print(
             f"\nRELEASE FAILED: {exc}\nRolling back to pre-release state...",
             file=sys.stderr,
@@ -474,7 +474,7 @@ def script_consistency(
         # An add-on whose BASELINE already predates the single-digit scheme (a
         # real, pre-existing, Kodi-facing version lineage such as EZ
         # Maintenance++'s date-stamped 2026.07.02.0 or modv2plus's 1.4.10) must
-        # keep comparing within that same scheme — mirrors check_versions.py's
+        # keep comparing within that same scheme - mirrors check_versions.py's
         # gate exactly. Kodi's own AddonVersion comparison is component-wise
         # unbounded, so a legacy version already outranks any legal
         # single-digit X.Y.Z (max 9.9.9); forcing "compliance" here would look
@@ -521,13 +521,13 @@ def _print_plan(bumps: list[AddonBump], already: list[str], base_ref: str) -> No
             print(f"      changed: {f}")
         print(f"      news:    v{b.nxt}: {b.news}")
     for aid in already:
-        print(f"  {aid}: already released (greater than {base_ref}, bump-only) — no-op")
+        print(f"  {aid}: already released (greater than {base_ref}, bump-only) - no-op")
 
 
 def run(args) -> int:
     base_ref = rd.BASE_REF
     if not rd.base_ref_exists(REPO, base_ref):
-        print(f"no {base_ref} to compare against — nothing to release.")
+        print(f"no {base_ref} to compare against - nothing to release.")
         return 0
 
     bumps, already = build_plan(args, base_ref)
@@ -549,7 +549,7 @@ def run(args) -> int:
 
     # The tool runs PRE-COMMIT: the add-on source edit it is releasing is normally
     # still in the working tree (that is what `worktree=True` detection is for), so
-    # a "dirty" tree is expected here — `git add -A` in apply_release stages exactly
+    # a "dirty" tree is expected here - `git add -A` in apply_release stages exactly
     # the release. It then commits on the branch and STOPS (no push unless --push).
     return apply_release(args, bumps, base_ref)
 

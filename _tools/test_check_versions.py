@@ -232,7 +232,7 @@ def test_skips_when_no_origin(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
-# O7 — the CI baseline override (CHECK_VERSIONS_BASE_REF). On a main push,
+# O7 - the CI baseline override (CHECK_VERSIONS_BASE_REF). On a main push,
 # origin/main == HEAD, so CI must compare against the push's "before" SHA
 # instead. These prove the env override makes the gate validate the pushed
 # RANGE, catching an unbumped change CI would otherwise miss.

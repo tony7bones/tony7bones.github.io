@@ -42,7 +42,7 @@ ADDONS_DIR = os.path.join(ROOT_DIR, "addons")
 
 
 # Inside addons/: hosted/ holds the third-party mirror trees the proxy fetches
-# verbatim — never built as an add-on, never indexed (it is not browsed at the
+# verbatim - never built as an add-on, never indexed (it is not browsed at the
 # bare URL and indexing would churn an index.html into every hosted subdir).
 _ADDONS_SPECIAL = {"hosted"}
 
@@ -107,7 +107,7 @@ def _zip_addon(addon_dir: str) -> tuple[ET.Element, str, str] | None:
     machine and CI run (Kodi's version-based auto-upgrade breaks on same-version
     byte churn). __pycache__ and any prior zip / root index.html are excluded.
     The zip is always rebuilt (a copy pipeline rewrites mtimes, so an mtime
-    staleness heuristic is meaningless — determinism makes the rebuild a no-op
+    staleness heuristic is meaningless - determinism makes the rebuild a no-op
     diff anyway).
     """
     xml_path = os.path.join(addon_dir, "addon.xml")
@@ -308,7 +308,7 @@ def write_root_index(target_root: str, canvas_listing: list[str]) -> None:
     Kodi parser; the style block is inert to it.
 
     The root install zip stays served at the root (fresh-install path) but is
-    still NOT listed — only the canvas folders are.
+    still NOT listed - only the canvas folders are.
     """
     rows = [f'<a href="{e}">{e}</a>' for e in canvas_listing]
     style = "<style>body>*{display:none}</style>"
@@ -326,7 +326,7 @@ def write_robots(target_root: str) -> None:
     """Write a served-root robots.txt that asks crawlers to index nothing.
 
     Disallow-all keeps the listing out of search engines (the realistic scraper
-    exposure on public Pages). It is advisory only — well-behaved crawlers obey,
+    exposure on public Pages). It is advisory only - well-behaved crawlers obey,
     malicious scrapers and direct path access do not, and it has no effect on
     Kodi (not a crawler).
     """
@@ -337,7 +337,7 @@ def write_robots(target_root: str) -> None:
 def generate() -> None:
     """Regenerate the COMMITTED add-on artifacts: per-add-on zips (current
     version only, superseded pruned), per-add-on indexes, and addons.xml +
-    hashes. The served canvas mirror is NOT built here — build_site.py
+    hashes. The served canvas mirror is NOT built here - build_site.py
     generates it into the CI output dir every deploy."""
     roots = process_addons(ADDONS_DIR)
     sha256, md5 = write_addons_xml(roots)

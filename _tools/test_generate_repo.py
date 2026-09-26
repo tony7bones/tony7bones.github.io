@@ -1,4 +1,4 @@
-"""Tests for generate_repo.py — the dropbox/->root + addons/->zips build."""
+"""Tests for generate_repo.py - the dropbox/->root + addons/->zips build."""
 
 import hashlib
 import sys
@@ -64,7 +64,7 @@ def test_fmt_size(n, expected):
 
 
 # ---------------------------------------------------------------------------
-# _make_index  (HTML 3.2 — Kodi-parseable)
+# _make_index  (HTML 3.2 - Kodi-parseable)
 # ---------------------------------------------------------------------------
 def test_make_index_creates_file(tmp_path):
     rows = ['<a href="../">Parent Directory</a>', '<a href="addon.zip">addon.zip</a>']
@@ -123,8 +123,8 @@ def test_process_addons_zip_excludes_zip_and_root_index(tmp_path, monkeypatch):
 
 
 def test_process_addons_zip_members_location_independent(tmp_path, monkeypatch):
-    """Zip member arcnames are rooted at the add-on id — no addons/ or dropbox/
-    prefix — so moving the scan root never perturbs the published zip."""
+    """Zip member arcnames are rooted at the add-on id - no addons/ or dropbox/
+    prefix - so moving the scan root never perturbs the published zip."""
     _patch_dirs(monkeypatch, tmp_path)
     addons = tmp_path / "addons"
     _make_addon(addons, "plugin.test", "1.0.0")
@@ -148,7 +148,7 @@ def test_process_addons_zip_is_reproducible(tmp_path, monkeypatch):
 
 
 def test_process_addons_skips_hosted(tmp_path, monkeypatch):
-    """hosted/ is a pass-through mirror — never built or listed as an add-on."""
+    """hosted/ is a pass-through mirror - never built or listed as an add-on."""
     _patch_dirs(monkeypatch, tmp_path)
     addons = tmp_path / "addons"
     hosted = addons / "hosted" / "repository.x"
@@ -446,7 +446,7 @@ def test_zip_addon_prunes_superseded_versions(tmp_path, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# generate — full integration + determinism
+# generate - full integration + determinism
 # ---------------------------------------------------------------------------
 def _scaffold_full(root: Path):
     addons = root / "addons"

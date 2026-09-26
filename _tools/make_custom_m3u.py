@@ -104,7 +104,7 @@ LOWERCASE = {
     "of",
 }
 
-SEPARATORS = {"|", "-", "–"}
+SEPARATORS = {"|", "-", "-"}
 
 
 def _title_token(token, is_first):
