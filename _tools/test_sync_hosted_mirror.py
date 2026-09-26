@@ -167,6 +167,7 @@ def test_github_output_carries_the_bump_list(tmp_path, monkeypatch):
 
 def test_main_exit_codes(sandbox, monkeypatch, capsys):
     monkeypatch.setattr(sync.gate, "hosted_release_entries", lambda root=None: _entries(sandbox))
+    monkeypatch.setattr(sync, "upstream_indexed_entries", lambda root=None: [])
     monkeypatch.setattr(sync, "_fetch_bytes", lambda u, t: _zip_with_addon_xml(_addon_xml("1.1.0")))
     _stub_latest(monkeypatch, _release("1.1.0"))
     assert sync.main(["--dry-run"]) == 0
@@ -188,3 +189,92 @@ def _entries(root: Path) -> list:
             "waiver_path": str(root / "addons" / "hosted" / ADDON / "release-sync-waiver.json"),
         }
     ]
+
+
+# --------------------------------------------------------------------------- #
+# upstream-indexed mirrors (plugin.video.pov shape): the version comes from the
+# upstream repository's own addons.xml, never from a hand-typed number here.
+# --------------------------------------------------------------------------- #
+POV = "plugin.video.test"
+INDEX = "https://upstream.example/repo/packages/addons.xml"
+POV_ZIP = "https://upstream.example/repo/{id}/{id}-{version}.zip"
+
+
+def _index_xml(version: str) -> bytes:
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?><addons>'
+        f'<addon id="other.addon" version="9.9.9"/><addon id="{POV}" version="{version}"/>'
+        "</addons>"
+    ).encode()
+
+
+def _pov_xml(version: str) -> str:
+    return _addon_xml(version).replace(ADDON, POV)
+
+
+@pytest.fixture
+def indexed_sandbox(sandbox: Path) -> Path:
+    entries = json.loads((sandbox / "_tools" / "catalog.json").read_text())
+    entries.append({"id": POV, "assets": {"zip": POV_ZIP}, "upstream_index": INDEX})
+    (sandbox / "_tools" / "catalog.json").write_text(json.dumps(entries))
+    mirror = sandbox / "addons" / "hosted" / POV / "addon.xml"
+    mirror.parent.mkdir(parents=True)
+    mirror.write_text(_pov_xml("6.08.15"))
+    return sandbox
+
+
+def test_indexed_entries_are_discovered_only_when_the_catalog_names_an_index(indexed_sandbox):
+    found = sync.upstream_indexed_entries(str(indexed_sandbox))
+    assert [e["id"] for e in found] == [POV]
+    assert found[0]["index"] == INDEX
+
+
+def test_indexed_mirror_follows_the_upstream_index_version(indexed_sandbox, monkeypatch):
+    _stub_latest(monkeypatch, _release("1.0.0"))
+    fetched = []
+
+    def fetch(url, token):
+        fetched.append(url)
+        if url == INDEX:
+            return _index_xml("6.09.06")
+        return _zip_with_addon_xml(_pov_xml("6.09.06"), member_dir=POV)
+
+    bumped, messages = sync.sync(str(indexed_sandbox), None, fetch=fetch)
+
+    assert bumped == [(POV, "6.09.06")]
+    assert fetched == [INDEX, POV_ZIP.format(id=POV, version="6.09.06")]
+    mirror = (indexed_sandbox / "addons" / "hosted" / POV / "addon.xml").read_text()
+    assert 'version="6.09.06"' in mirror
+
+
+def test_indexed_mirror_current_is_left_alone(indexed_sandbox, monkeypatch):
+    _stub_latest(monkeypatch, _release("1.0.0"))
+
+    def fetch(url, token):
+        assert url == INDEX, "only the index is read when nothing changed"
+        return _index_xml("6.08.15")
+
+    bumped, messages = sync.sync(str(indexed_sandbox), None, fetch=fetch)
+    assert bumped == []
+    assert any("already matches upstream index" in m for m in messages)
+
+
+def test_indexed_mirror_never_downgrades(indexed_sandbox, monkeypatch):
+    _stub_latest(monkeypatch, _release("1.0.0"))
+    bumped, messages = sync.sync(
+        str(indexed_sandbox), None, fetch=lambda u, t: _index_xml("6.00.00")
+    )
+    assert bumped == []
+    assert any("not downgrading" in m for m in messages)
+
+
+def test_index_without_the_addon_fails_loudly(indexed_sandbox, monkeypatch):
+    _stub_latest(monkeypatch, _release("1.0.0"))
+    with pytest.raises(sync.SyncError, match="does not list"):
+        sync.sync(str(indexed_sandbox), None, fetch=lambda u, t: b"<addons/>")
+
+
+def test_index_that_is_not_xml_fails_loudly(indexed_sandbox, monkeypatch):
+    _stub_latest(monkeypatch, _release("1.0.0"))
+    with pytest.raises(sync.SyncError, match="not XML"):
+        sync.sync(str(indexed_sandbox), None, fetch=lambda u, t: b"<html>404")

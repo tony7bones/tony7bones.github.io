@@ -9,9 +9,23 @@ stale build forever with no error anywhere; ``check_hosted_release_sync.py``
 turns that into a red build after a 2h grace window, but red is still not
 fixed. On 2026-09-26 the mirror had been nine days behind 2026.09.17.1.
 
-WHAT IT DOES, per mirror ``check_hosted_release_sync.hosted_release_entries``
-discovers (same discovery as the gate, so a future third add-on is covered
-with no code change):
+TWO KINDS of mirror are followed, and both are discovered from
+``_tools/catalog.json`` so a future add-on of either shape is covered with no
+code change:
+
+  * GitHub-Releases mirrors (``check_hosted_release_sync.hosted_release_entries``,
+    the same discovery as the gate): the source repo's LATEST release is the
+    truth. Today ``script.ezmaintenanceplusplus`` -> ``moquette/kodi-ezmpp``.
+  * Upstream-indexed mirrors: any hosted entry carrying an ``upstream_index``
+    URL, a Kodi ``addons.xml`` published by the upstream repository. The
+    version that index declares for the add-on is the truth. Today
+    ``plugin.video.pov`` -> ``kodiyashimaru.github.io/repo/packages/addons.xml``.
+    Before this, the mirror's version was typed by hand and rotted the moment
+    upstream moved: on 2026-09-26 it said 6.08.15 against an upstream 6.09.06,
+    the zip 404ed, the build DROPPED POV from the catalog, and the skin that
+    hard-depends on it could not install. Hard-coded versions are the bug.
+
+WHAT IT DOES, per mirror:
 
   1. Ask the source repo for its latest release.
   2. If the mirror already declares that version, do nothing.
@@ -39,10 +53,12 @@ from __future__ import annotations
 
 import argparse
 import io
+import json
 import os
 import sys
 import urllib.error
 import urllib.request
+import xml.etree.ElementTree as ET
 import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -87,6 +103,79 @@ def latest_version(owner: str, repo: str, token: str | None) -> tuple[str, dict]
         raise SyncError(f"{owner}/{repo} has no published releases")
     tag = latest.get("tag_name") or ""
     return (tag[1:] if tag.startswith("v") else tag), latest
+
+
+def upstream_indexed_entries(repo_root: str = gate.REPO_ROOT) -> list[dict]:
+    """Every ``addons/hosted/<id>`` mirror whose catalog entry names an
+    ``upstream_index`` (a Kodi addons.xml published by the upstream repo)."""
+    with open(os.path.join(repo_root, "_tools", "catalog.json"), encoding="utf-8") as fh:
+        data = json.load(fh)
+    out = []
+    for entry in data:
+        addon_id, index = entry.get("id"), entry.get("upstream_index")
+        if not addon_id or not index:
+            continue
+        addon_xml = os.path.join(repo_root, "addons", "hosted", addon_id, "addon.xml")
+        if not os.path.isfile(addon_xml):
+            continue
+        out.append(
+            {
+                "id": addon_id,
+                "index": index,
+                "zip_template": (entry.get("assets") or {}).get("zip", ""),
+                "addon_xml": addon_xml,
+            }
+        )
+    return sorted(out, key=lambda e: e["id"])
+
+
+def version_in_index(index_xml: bytes, addon_id: str) -> str:
+    try:
+        root = ET.fromstring(index_xml)
+    except ET.ParseError as e:
+        raise SyncError(f"upstream index is not XML: {e}") from e
+    for node in root.iter("addon"):
+        if node.get("id") == addon_id:
+            version = node.get("version")
+            if version:
+                return version
+    raise SyncError(f"upstream index does not list {addon_id}")
+
+
+def sync_indexed_entry(
+    entry: dict,
+    token: str | None,
+    *,
+    dry_run: bool = False,
+    fetch=None,
+) -> tuple[str | None, str]:
+    """Sync one upstream-indexed mirror. Returns (new_version_or_None, message)."""
+    fetch = fetch or _fetch_bytes
+    addon_id = entry["id"]
+    with open(entry["addon_xml"], encoding="utf-8") as fh:
+        current = rl.read_addon_version(fh.read())
+
+    newest = version_in_index(fetch(entry["index"], None), addon_id)
+    if newest == current:
+        return None, f"{addon_id}: mirror {current} already matches upstream index"
+    if _version_tuple(newest) < _version_tuple(current):
+        return None, (
+            f"{addon_id}: mirror declares {current} but upstream index says {newest}; "
+            f"not downgrading"
+        )
+
+    url = entry["zip_template"].format(id=addon_id, version=newest)
+    xml = addon_xml_from_zip(fetch(url, None), addon_id)
+    packaged = rl.read_addon_version(xml)
+    if packaged != newest:
+        raise SyncError(
+            f"{addon_id}: upstream zip for {newest} ships an addon.xml declaring {packaged}"
+        )
+    if not dry_run:
+        with open(entry["addon_xml"], "w", encoding="utf-8") as fh:
+            fh.write(xml)
+    verb = "would bump" if dry_run else "bumped"
+    return newest, f"{addon_id}: {verb} mirror {current} -> {newest} from {url}"
 
 
 def _version_tuple(v: str) -> tuple[int, ...]:
@@ -155,6 +244,11 @@ def sync(
         messages.append(msg)
         if new:
             bumped.append((entry["id"], new))
+    for entry in upstream_indexed_entries(repo_root):
+        new, msg = sync_indexed_entry(entry, token, dry_run=dry_run, fetch=fetch)
+        messages.append(msg)
+        if new:
+            bumped.append((entry["id"], new))
     return bumped, messages
 
 
@@ -183,7 +277,9 @@ def main(argv: list[str] | None = None) -> int:
     if not args.dry_run:
         write_github_output(bumped)
     print(
-        f"{len(bumped)} mirror(s) bumped" if bumped else "nothing to do, every mirror is current"
+        (f"{len(bumped)} mirror(s) " + ("to bump" if args.dry_run else "bumped"))
+        if bumped
+        else "nothing to do, every mirror is current"
     )
     return 0
 
