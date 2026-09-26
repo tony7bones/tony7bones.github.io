@@ -17,8 +17,13 @@ no on-box engine:
 Entry classes (classified from URL shapes, same logic the engine applied at
 runtime): first-party (built from addons/<id>/ source), hosted mirror (zip +
 metadata committed under addons/hosted/<id>/), hybrid (hosted metadata,
-upstream zip), streamed (metadata AND zip fetched from the upstream repo),
-release-asset (zip from a GitHub Release on the source repo).
+upstream zip; with ``upstream_index`` the version and metadata come from the
+upstream repo's addons.xml and zip instead, nothing committed), streamed
+(metadata AND zip fetched from the upstream repo), release-asset (version
+resolved from the source repo's GitHub Releases at build time, plain
+``v{version}`` tags or the namespaced ``{id}-v{version}`` shape, metadata
+taken from the release zip, nothing committed). Since 2026-09-26 every add-on
+we own is build-resolved: THERE MUST BE NO MIRROR VERSION TO BE WRONG.
 
 Two of those resolve their VERSION at build time, on every build, and take
 their metadata from the zip itself, so there is no committed copy to rot:

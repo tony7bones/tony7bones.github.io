@@ -116,11 +116,11 @@ jobs:
       # the skin). For a PUBLIC source repo the build resolves without any
       # token (redirect, anonymous API), which is what a developer machine
       # does; the token only keeps CI off the shared-runner anonymous limit.
-      # moquette/kodi-estuary-pov is PRIVATE (measured 2026-09-26), and the
-      # workflow token cannot read another owner's private repo, so the skin
-      # resolves here only through T7B_SOURCE_READ_TOKEN: a token that can
-      # read that repo, stored as a repository secret. Until it is stored or
-      # the repo is made public, the skin serves its last-good copy, stale,
+      # Both source repos (moquette/kodi-ezmpp, moquette/kodi-estuary-pov) are
+      # PUBLIC (the skin repo since 2026-09-26), so T7B_SOURCE_READ_TOKEN is an
+      # optional escape hatch, not a requirement: if a source repo ever goes
+      # private again, store a token that can read it under that name and the
+      # build keeps resolving; without one it serves the last-good copy, stale,
       # with a ::warning:: in this log.
       - name: Build site
         env:
