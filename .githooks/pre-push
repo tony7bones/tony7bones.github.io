@@ -1,5 +1,5 @@
 #!/bin/sh
-# Release safety gate — runs before every push.
+# Release safety gate - runs before every push.
 #
 # Blocks the push unless: the test suite passes, the tooling lints clean, the
 # generated files are byte-reproducible (no stale output), and every changed
@@ -54,7 +54,7 @@ fi
 echo "[pre-push] validating every changed add-on bumped its version..."
 python3 _tools/check_versions.py
 
-echo "[pre-push] OK — push allowed."
+echo "[pre-push] OK - push allowed."
 
 # Best-effort: refresh the Kodi share backup mirror (installer + canvas +
 # sideload app zips). This covers add-on releases, which publish via plain
