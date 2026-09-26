@@ -8,6 +8,16 @@
 # The setting is repository-level. This job reads it and, when it is not
 # "workflow", puts it back, so a wrong click or a platform reset cannot stay
 # wrong past the next run. Runs daily and on demand.
+#
+# MEASURED 2026-09-26 (run 36250208404): the workflow's own GITHUB_TOKEN can
+# READ the setting but the update returns 403 "Resource not accessible by
+# integration"; changing it needs the repository owner's authority. So the
+# write uses the T7B_PAGES_ADMIN_TOKEN secret when the owner has stored one
+# (a classic PAT with repo scope, or a fine-grained token with Pages: write
+# and Administration: write on this repo, created by the tony7bones account),
+# and otherwise reports the drift as a warning without failing, because a red
+# run nobody can act on is noise. Until that secret exists, pages.yml's
+# "Redeploy once" step is what recovers a lost race.
 
 name: Pages source guard
 
@@ -26,6 +36,7 @@ jobs:
     timeout-minutes: 5
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      ADMIN_TOKEN: ${{ secrets.T7B_PAGES_ADMIN_TOKEN }}
       REPO: ${{ github.repository }}
     steps:
       - name: Keep the Pages source on GitHub Actions
@@ -37,6 +48,10 @@ jobs:
             echo "OK"
             exit 0
           fi
-          echo "::warning::Pages source is '${CURRENT}', switching to 'workflow'"
-          gh api -X PUT "repos/${REPO}/pages" -f build_type=workflow
+          if [ -z "$ADMIN_TOKEN" ]; then
+            echo "::warning::Pages source is '${CURRENT}', not 'workflow'. The workflow token cannot change it (403, measured 2026-09-26). Store a T7B_PAGES_ADMIN_TOKEN secret from the tony7bones account, or set Settings > Pages > Source to GitHub Actions by hand."
+            exit 0
+          fi
+          echo "::warning::Pages source is '${CURRENT}', switching to 'workflow' with T7B_PAGES_ADMIN_TOKEN"
+          GH_TOKEN="$ADMIN_TOKEN" gh api -X PUT "repos/${REPO}/pages" -f build_type=workflow
           gh api "repos/${REPO}/pages" --jq '"now: " + .build_type'
