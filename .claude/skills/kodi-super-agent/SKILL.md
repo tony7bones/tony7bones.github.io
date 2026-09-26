@@ -27,7 +27,7 @@ on a rule below - they carry the WHY and the exact code locations.
   datadir). Kodi reads metadata and zips from that static tree as plain files.
   NO `xbmc.service`, NO `127.0.0.1` proxy, NO `repository.github` engine.
 - **The static catalog** (`/static/`): `addons.xml` + `addons.xml.md5` + per
-  add-on zips and materialized art under `/static/<id>/`. Currently 26 entries
+  add-on zips and materialized art under `/static/<id>/`. Currently 28 entries
   (verify: `python3 -c "import json;print(len(json.load(open('_tools/catalog.json'))))"`).
   Built in CI by `_tools/build_site.py` -> `_tools/static_catalog.py` from the
   manifest `_tools/catalog.json`, then deployed via GitHub Pages.
@@ -43,20 +43,21 @@ on a rule below - they carry the WHY and the exact code locations.
     the bare URL.
 - **Live add-ons:**
   - `addons/repository.tony7bones/` - the static-only repository add-on (3.0.0).
-  - `addons/script.ezmaintenanceplusplus/` - a LEGACY-COMPAT stub (`addon.xml` +
-    a built zip, listed in the legacy `addons/addons.xml`), kept so an old engine
-    bundle that referenced this path still resolves. The real source is in the
-    sibling repo `~/Code/moquette/kodi/ezmpp`; the actual served
-    metadata mirror is `addons/hosted/script.ezmaintenanceplusplus/` (below). Do
-    not resurrect the deleted full-source copy here.
-  - **One `addons/hosted/<id>/` entry is a metadata-only mirror of OUR OWN
-    add-on**, with source in a sibling repo: `script.ezmaintenanceplusplus`
-    (`~/Code/moquette/kodi/ezmpp`). The catalog points its `assets.zip`
-    at that repo's GitHub Release asset. Fix bugs and add tests in the
-    sibling repo; only bump the hosted metadata + re-release here. A
-    `git status` / "commits to push" question about the skin or EZM++ almost
-    always resolves in the OTHER repo. EZM++ triage:
-    `~/Code/moquette/kodi/.claude/skills/apple-tv/SKILL.md`.
+  - `addons/script.ezmaintenanceplusplus/` was DELETED 2026-07-20 (`08d9a3d`).
+    Do not recreate it and do not resurrect the deleted full-source copy.
+  - **Our own add-ons have NO copy in this repo at all** (since 2026-09-26):
+    `script.ezmaintenanceplusplus` (source `~/Code/moquette/kodi/ezmpp`,
+    `moquette/kodi-ezmpp`), `skin.estuary.pov` and `service.tvos.pythonfix`
+    (source `~/Code/moquette/kodi/estuary-pov`, `moquette/kodi-estuary-pov`).
+    `_tools/static_catalog.py` resolves each from its latest GitHub release at
+    build time (`v{version}` for ezmpp; the namespaced `{id}-v{version}` for
+    the estuary-pov pair) and takes `addon.xml` and art from the zip.
+    `plugin.video.pov` (not ours) is resolved the same way from upstream's
+    `packages/addons.xml` (`upstream_index`). Fix bugs and add tests in the
+    sibling repo; a version bump pushed there IS the release, its CI dispatches
+    this hub, nothing is bumped here. A `git status` / "commits to push"
+    question about the skin or EZM++ almost always resolves in the OTHER repo.
+    EZM++ triage: `~/Code/moquette/kodi/.claude/skills/apple-tv/SKILL.md`.
 - **Single branch - `main` only**, served by GitHub Pages.
 - **Retired - do NOT describe as live** (all deleted): the virtual proxy engine
   (`127.0.0.1:61234`, `repository.github`); the whole Setup add-on family
@@ -67,11 +68,11 @@ on a rule below - they carry the WHY and the exact code locations.
   (`deploy.py`, `check_consistency.py`, `release.py --proxy`, the shared-library
   "lockstep"). Historical records live under `docs/plans/` and
   `docs/incident-*.md` - read them for context, never as current state.
-- **Still present, pending extraction (active P1, see `TASKS.md`):** the IPTV
-  builder `_tools/build_iptv.py` (+ `make_custom_m3u.py`) and the device
-  provisioner `_tools/provision-kodi.sh` predate the static conversion and are
-  scheduled to move to a private repo. They are not part of the static release
-  path; leave them alone unless working the extraction task.
+- **Extracted:** the IPTV builder `_tools/build_iptv.py` moved to its own
+  private repo `moquette/iptv` on 2026-07-17 and was removed here
+  (`make_custom_m3u.py` remains). `TASKS.md` was deleted 2026-07-21; there is no
+  tracker, `git log` is the fact. The device provisioner `_tools/provision-kodi.sh`
+  is retained but drove the retired Setup add-ons.
 
 ## Golden rules - release
 
@@ -101,7 +102,9 @@ on a rule below - they carry the WHY and the exact code locations.
   For a mirrored third-party repo, drop its `addon.xml`/zip under
   `addons/hosted/<id>/` and add its `catalog.json` entry (`static_catalog.py`
   classifies each entry: first-party build / hosted mirror / hybrid / streamed /
-  release-asset). Then release.
+  release-asset). A `release-asset` entry and a `hybrid` entry with
+  `upstream_index` get NO hosted directory: the build resolves them
+  (`metadata_resolved_at_build`). Then release.
 - **Determinism:** every zip is byte-reproducible (sorted members, 1980
   timestamps); `generate_repo.py` excludes `__pycache__`/`.ruff_cache`/etc. If a
   zip churns, regenerate -> commit -> confirm a second regenerate is clean. A
@@ -114,7 +117,10 @@ on a rule below - they carry the WHY and the exact code locations.
   `check_versions.py` per-add-on version bump, best-effort `sync_share.py` on
   main). CI (`generate_repo.yml`) re-runs tests/lint/staleness + the version-bump
   gate on `main` and NEVER commits back. `docs/**` + `.claude/**` are outside
-  the CI path filter.
+  generate_repo.yml's path filter; `pages.yml` has none and deploys on every
+  push to main. `ci_failure_alert.yml` opens an owner-assigned issue on a red
+  deploy-path run; `pages_source_guard.yml` keeps the Pages source on
+  "workflow". All four run on `ubuntu-26.04`.
 
 ## Golden rules - install mechanics (Kodi 21 Omega, general knowledge)
 

@@ -96,19 +96,21 @@ curl -sI https://tony7bones.github.io/repository.tony7bones-<ver>.zip   # the ro
 python3 _tools/verify_live_site.py --manifest _tools/catalog.json
 ```
 
-If the deploy job did not run, check the push touched the `pages.yml` path filter
-(`addons/**`, `dropbox/**`, `_tools/**`, `index.html`, `style.css`,
-`.github/workflows/**`). A docs-only or `.claude/**`-only push does not trigger it.
+`pages.yml` has NO path filter (measured 2026-09-26): every push to `main`
+builds and deploys, docs-only pushes included. Only `generate_repo.yml` keeps a
+path filter. If no deploy run exists after a push, the push did not land on
+`main`; if a run is red, `ci_failure_alert.yml` has already opened an issue
+assigned to the owner.
 
 ## Troubleshooting
 
 | Symptom                                                      | Cause                                                                                                                                                                                                        | Fix                                                                                                                   |
 | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| Release "succeeded" but the box does not see the new version | The Pages deploy has not completed, or the push missed the `pages.yml` path filter, so the live `/static/` tree is still the old build.                                                                      | Check the "Build & Deploy Pages" run; re-run it (`workflow_dispatch`) if it did not fire; then re-check the box.      |
+| Release "succeeded" but the box does not see the new version | The Pages deploy has not completed, or (for a sibling-repo release) the `ezmpp-release` dispatch never arrived, so the live `/static/` tree is still the old build.                                          | Check the "Build & Deploy Pages" run; re-run it (`workflow_dispatch`) if it did not fire; then re-check the box.      |
 | New add-on is not listed under Install from repository       | Kodi cached the OLD add-on list. The catalog is fetched only when Kodi decides to refresh.                                                                                                                   | On the box: **Check for updates** (Add-ons context menu), or restart Kodi.                                            |
 | Add-on is in `_tools/catalog.json` but not served            | A build-time fallback kept the last-good entry, or the entry failed materialization (bad zip/metadata).                                                                                                      | Read the build log for the per-entry warning; fix the source/catalog entry and rebuild.                               |
 | `git status` shows commits "to push" but the deploy worked   | You are looking at a **source-of-truth** repo (`moquette/kodi-ezmpp` or `moquette/kodi-estuary-pov`), not this one. They are independent repos; this one resolves their latest release at build time and points a zip URL AT it. | Confirm with `git -C <repo> ls-remote origin main` vs local HEAD; a deploy here never touches those repos' git state. |
-| `skin.estuary.pov` is `stale` in `/static/catalog.json` with a `::warning::` naming `api.github.com/.../kodi-estuary-pov/releases` | The source repo is private and the hub built without a token that can read it (`T7B_SOURCE_READ_TOKEN` not stored, or expired). | Store that repository secret on the hub (a token with read access to `moquette/kodi-estuary-pov`), or make the repo public; rerun `pages.yml`. |
+| A build-resolved entry (`script.ezmaintenanceplusplus`, `skin.estuary.pov`, `service.tvos.pythonfix`, `plugin.video.pov`) is `stale` in `/static/catalog.json` with a `::warning::` in the build log | The lookup failed on that run: GitHub API or upstream index unreachable, release asset 404, the packaged `addon.xml` version not matching the tag, or an `<import>` the catalog does not serve. Both source repos are public, so a token is not the cause (`T7B_SOURCE_READ_TOKEN` is an optional escape hatch). | Read the warning, fix the release or the upstream (never commit a copy here), rerun `pages.yml`. |
 | A released **icon** change does not show on the box          | Kodi caches add-on ICONS (texture cache): same path, old render kept in `userdata/Thumbnails/` + `Textures13.db`.                                                                                            | Clear the thumbnail cache (EZ Maintenance++ -> Delete Thumbnails) and restart; or reinstall. Do NOT delete `Textures13.db` by hand while Kodi is running: Kodi holds it open, and the next texture write fails SQLITE_READONLY_DBMOVED and then aborts the process. That killed a Fire TV on 2026-07-21. |
 
 ## Why a released update lags on the box (caches)

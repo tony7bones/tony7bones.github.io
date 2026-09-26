@@ -195,7 +195,7 @@ Everything lives on `main`. Main is **sources-only**: the canvas (`dropbox/`), t
 # Run this locally before committing whenever you change addon sources.
 python3 _tools/generate_repo.py            # npm run build
 
-# Run the full test suite (244 tests, all green; verified 2026-09-26)
+# Run the full test suite (254 tests, all green; measured 2026-09-26)
 python3 -m pytest _tools/ -q               # npm test
 
 # Lint the Python tooling. Needs the PINNED ruff: ruff.toml declares
@@ -270,13 +270,15 @@ defaults. Bump both files in one commit that also clears whatever the new
 version flags, and never bump a pin to make a red build go green.
 
 Everything above is also runnable across all four repos at once with
-`../bin/check-all` (11 gates), which provisions the same pinned venv this hook
+`../bin/check-all` (12 gates, measured 2026-09-26), which provisions the same pinned venv this hook
 uses.
 
-Two CI workflows back this up, and **neither ever commits to main**:
+Four CI workflows back this up, and **none of them ever commits to main**. All run on `ubuntu-26.04` with current action majors (`checkout@v7`, `setup-python@v7`, `cache@v6`, `upload-artifact@v7`, `download-artifact@v8`, `upload-pages-artifact@v5`, `deploy-pages@v5`, `configure-pages@v6`; measured 2026-09-26):
 
 - **`.github/workflows/generate_repo.yml`** ("Validate Kodi Repository") re-runs the tests, lint, the generator-staleness check, and the per-add-on version-bump gate (main only).
-- **`.github/workflows/pages.yml`** ("Build & Deploy Pages") runs the same gates, builds the full site with `build_site.py` (including the `/static/` catalog, with `GH_TOKEN` set to `T7B_SOURCE_READ_TOKEN` when stored, else `GITHUB_TOKEN`, so the release lookups use the REST API; both source repos are public, the secret is an optional escape hatch), runs the secret gate (`check_site_secrets.py`) and a double-build determinism diff, then **deploys via GitHub Pages** (Pages source = GitHub Actions) and verifies live from the consumer seat (`verify_live_site.py`). It also runs on a daily cron to refresh mutable third-party metadata, and on `repository_dispatch` when a sibling repo (ezmpp or estuary-pov, both sending the historical type `ezmpp-release`) publishes a release. Every one of those runs re-resolves the EZM++ release, the skin release and the POV upstream index, so a new version needs no commit here.
+- **`.github/workflows/pages.yml`** ("Build & Deploy Pages") runs the same gates, builds the full site with `build_site.py` (including the `/static/` catalog, with `GH_TOKEN` set to `T7B_SOURCE_READ_TOKEN` when stored, else `GITHUB_TOKEN`, so the release lookups use the REST API; both source repos are public, the secret is an optional escape hatch), runs the secret gate (`check_site_secrets.py`) and a double-build determinism diff, then **deploys via GitHub Pages** (Pages source = GitHub Actions) and verifies live from the consumer seat (`verify_live_site.py`). If a push run's live verify fails, the verify job re-dispatches the deploy ONCE (a branch-build race clobbered a deploy on 2026-09-26; a genuinely broken site cannot loop). It also runs on a daily cron to refresh mutable third-party metadata, and on `repository_dispatch` when a sibling repo (ezmpp or estuary-pov, both sending the historical type `ezmpp-release`) publishes a release. Every one of those runs re-resolves the EZM++ release, the two estuary-pov releases and the POV upstream index, so a new version needs no commit here.
+- **`.github/workflows/ci_failure_alert.yml`** ("Alert on CI failure") runs after every "Build & Deploy Pages" or "Validate Kodi Repository" run: a failure opens ONE GitHub issue assigned to moquette (or comments on the open one), and the next green run closes it. A red run nobody hears is not a gate; the freshness gate went red for nine days unheard before this existed.
+- **`.github/workflows/pages_source_guard.yml`** runs daily and by hand and keeps the Pages source on "workflow". It was found on "legacy" on 2026-09-26, which made GitHub's branch build race the workflow deploy and took the site to 404 once. It writes with the repository secret `T7B_PAGES_ADMIN_TOKEN` (a tony7bones classic PAT, recorded in the owner's vault, never in this tree) and only warns when that secret is absent.
 
 Note: pages.yml has NO path filter - every push to main builds and deploys (any tracked file can shape the artifact). Only generate_repo.yml keeps a path filter.
 
@@ -298,7 +300,7 @@ entry, and do not add a gate that compares one.
 | Path                    | Purpose                                                                                                                                                                                                                                                       |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `addons/<addon-id>/`    | Any dir with an `addon.xml` is built into a zip and listed in `addons/addons.xml`. Currently `repository.tony7bones` ONLY, since the `script.ezmaintenanceplusplus` shim was deleted 2026-07-20.                                                              |
-| `addons/hosted/<id>/`   | Mirrored third-party-repo trees (`addon.xml` + zip). Static, committed by hand, NOT zipped or indexed by the generator (`hosted` is the sole `_ADDONS_SPECIAL` entry). `script.ezmaintenanceplusplus`, `skin.estuary.pov` and `plugin.video.pov` have NO directory here: the build resolves them upstream. |
+| `addons/hosted/<id>/`   | Mirrored third-party-repo trees (`addon.xml` + zip). Static, committed by hand, NOT zipped or indexed by the generator (`hosted` is the sole `_ADDONS_SPECIAL` entry). `script.ezmaintenanceplusplus`, `skin.estuary.pov`, `service.tvos.pythonfix` and `plugin.video.pov` have NO directory here: the build resolves them upstream (since 2026-09-26). |
 | `dropbox/repositories/` | Hand-authored third-party repository installer zips. Not in `addons.xml`; Kodi installs them manually via File Manager. Mirrored 1:1 to the served `/repositories/`.                                                                                          |
 | `dropbox/rss/`          | Hand-authored asset dir. Mirrored to the served root and recursively auto-indexed for File-Manager browsing. Git-ignored files are kept locally and never copied into the served tree. (`media/`, `iptv/`, `zips/` retired 2026-07-16.)                       |
 
@@ -347,7 +349,7 @@ Release: `release.py`, `release_lib.py`, `release_detect.py`, `check_versions.py
 
 > These carry the WHY and exact code locations. Read the matching one before acting.
 >
-> - `docs/playbooks/release-and-deploy.md` - the release flow + the static-CI-deploy pipeline + determinism.
+> - `docs/playbooks/release-and-deploy.md` - the release flow + the static-CI-deploy pipeline + determinism, and how the sibling repos' releases reach `/static/` (build-time resolution since 2026-09-26).
 > - `docs/playbooks/local-kodi-verification.md` - drive the real local Kodi; honest verification (prove non-empty `GetDirectory` + rendered menu, not just "no ImportError").
 > - `docs/playbooks/kodi-install-mechanics.md` - install on Omega without blocking prompts (direct-extract + `SetAddonEnabled`, origin stamping, deps, platform binaries).
 > - `docs/playbooks/kodi-settings-clobber.md` - the "Kodi clobbers direct settings writes" class and the two fix mechanisms.

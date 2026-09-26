@@ -34,26 +34,33 @@ The install URL is the site **root** and never changes:
 
 ## The add-ons
 
-Current shipped versions are read live from the manifests (`grep version=
-addons/<id>/addon.xml`). The two add-on dirs under `addons/` are:
-
-| Add-on                         | Name in Kodi            | What it is                                                                                                              |
-| ------------------------------ | ----------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `repository.tony7bones`        | Tony.7.Bones repository | The static-only repository add-on (3.0.0). Points Kodi at `https://tony7bones.github.io/static/`. No service, no proxy. |
-| `script.ezmaintenanceplusplus` | EZ Maintenance++        | A **hosted metadata mirror** (`addon.xml` + icon/fanart only). Real source lives in `moquette/ezmaintenanceplusplus`.   |
+The one add-on dir under `addons/` is `repository.tony7bones` (Tony.7.Bones
+repository, 3.0.0): the static-only repository add-on that points Kodi at
+`https://tony7bones.github.io/static/`. No service, no proxy. Its version is
+read live from `addons/repository.tony7bones/addon.xml`.
 
 The served catalog (`/static/`) currently lists 28 entries (four Estuary 7/8
-entries were removed 2026-08-31 when both skins were decommissioned): the two
-above, the mirrored third-party repos under `addons/hosted/<id>/`, and OUR own
-add-ons hosted there with their source in a sibling repo, among them:
+entries were removed 2026-08-31 when both skins were decommissioned): the
+repository add-on, the mirrored third-party repos under `addons/hosted/<id>/`,
+and OUR own add-ons, which have NO copy in this repo at all. Since 2026-09-26
+the build resolves each of them from its source of truth on every run and takes
+`addon.xml` and art out of the zip (`_tools/static_catalog.py`):
 
 - **`script.ezmaintenanceplusplus`** ("EZ Maintenance++") - a VFS-safe fork of EZ
-  Maintenance+ (backup/restore over NFS/SMB/Dropbox), built at
-  `~/Code/moquette/kodi/ezmpp` (public, its own repo since 2026-07-14).
-  See `~/Code/moquette/kodi/.claude/skills/ezm-backup-doctor/SKILL.md`.
+  Maintenance+ (backup/restore over NFS/SMB/Dropbox), source at
+  `~/Code/moquette/kodi/ezmpp` (`moquette/kodi-ezmpp`, public). Resolved from
+  that repo's latest GitHub release `v<version>`. Backup/restore triage on
+  tvOS: `~/Code/moquette/kodi/.claude/skills/apple-tv/SKILL.md`.
+- **`skin.estuary.pov`** ("Estuary POV") and **`service.tvos.pythonfix`**
+  ("Apple TV Fixes") - source at `~/Code/moquette/kodi/estuary-pov`
+  (`moquette/kodi-estuary-pov`, public). Resolved from the newest release in
+  each add-on's tag namespace, `<id>-v<version>`.
+- **`plugin.video.pov`** (not ours) - version read from upstream's own
+  `packages/addons.xml`, zip republished from the upstream Pages host.
 
-Fix bugs and add tests in those sibling repos; only bump the hosted metadata +
-release here.
+Fix bugs and add tests in the sibling repos. A version bump pushed to their
+`main` is the release: their CI publishes the GitHub release and dispatches
+this hub, whose Pages build resolves the new version. Nothing is bumped here.
 
 ## Architecture (developers)
 
@@ -63,7 +70,8 @@ Everything lives on `main`, served by GitHub Pages: the generated root
 `index.html`, the served canvas (`repositories/ media/ iptv/ rss/`, mirrored 1:1
 from `dropbox/`), the add-on tree under `addons/` (add-on source, built per-addon
 zips, `addons.xml`, and the mirrored third-party-repo trees under
-`addons/hosted/<id>/`), and all of `_tools/`.
+`addons/hosted/<id>/`), and all of `_tools/`. None of our own add-ons has a
+directory under `addons/hosted/` (since 2026-09-26; see "The add-ons").
 
 ### The `dropbox/` canvas and the bare URL
 
@@ -92,7 +100,7 @@ its `addon.xml`/zip under `addons/hosted/<id>/`).
 | Path                    | Purpose                                                                                                                                                                                                                           |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `addons/<addon-id>/`    | Any dir with an `addon.xml` is built into a zip and listed in `addons.xml`.                                                                                                                                                       |
-| `addons/hosted/<id>/`   | Mirrored third-party-repo trees (not auto-indexed/zipped); includes the EZM++ metadata mirror.                                                                                                                        |
+| `addons/hosted/<id>/`   | Mirrored third-party-repo trees (not auto-indexed/zipped). No entry for our own add-ons: the build resolves those from their releases.                                                                                |
 | `dropbox/repositories/` | Third-party repository installer zips (Kodi installs them manually). Mirrored to the served `/repositories/`.                                                                                                                     |
 | `dropbox/rss/`          | Hand-authored assets. Mirrored to the served root and auto-indexed for file-manager browsing. (`dropbox/media/` and `dropbox/iptv/` retired 2026-07-16; private/generated content lives only on the KodiShare via LAN/Tailscale.) |
 
@@ -108,7 +116,7 @@ and commit the output; CI fails on stale output.
 
 ```bash
 python3 _tools/generate_repo.py     # regenerate addons.xml, zips, index pages
-python3 -m pytest _tools/ -q        # tests (237, all green; verified 2026-07-19)
+python3 -m pytest _tools/ -q        # tests (254, all green; measured 2026-09-26)
 ruff check _tools/                  # lint
 python3 _tools/build_site.py --out _site   # build the full served site (incl. /static/)
 git config core.hooksPath .githooks # install the pre-push gate (once after clone)
@@ -123,9 +131,13 @@ push, CI builds and deploys the static site via GitHub Pages. No hand-edited
 `docs/playbooks/release-and-deploy.md`.
 
 The pre-push hook blocks a push unless tests pass, lint is clean, generated files
-are fresh, and every changed add-on bumped its version. Two CI workflows
-(`generate_repo.yml` validates; `pages.yml` builds + deploys + verifies live)
-back it up and never commit to main.
+are fresh, and every changed add-on bumped its version. Four CI workflows back
+it up and none commits to main: `generate_repo.yml` validates; `pages.yml`
+builds + deploys + verifies live (on push, daily, and on the `ezmpp-release`
+dispatch a sibling repo sends when it publishes); `ci_failure_alert.yml` opens
+an issue assigned to the owner on a red deploy-path run and closes it on the
+next green; `pages_source_guard.yml` keeps the Pages source on "workflow". All
+on `ubuntu-26.04`.
 
 ## Documentation
 
@@ -139,10 +151,10 @@ back it up and never commit to main.
   (`_tools/firetv.sh`).
 - `docs/playbooks/firetv-stick-scoped-storage-provisioning.md` - provisioning a
   non-rooted Fire OS 11 Stick over ADB.
-- `~/Code/moquette/kodi/.claude/skills/kodi-storage-map/SKILL.md` - the
-  authoritative Kodi storage model per OS.
-- `~/Code/moquette/kodi/.claude/skills/ezm-backup-doctor/SKILL.md` - triage guide
-  for EZ Maintenance++ (source in `moquette/ezmaintenanceplusplus`, not here).
+- `~/Code/moquette/kodi/.claude/skills/apple-tv/SKILL.md` - the Kodi storage
+  model on tvOS and the EZ Maintenance++ backup/restore triage that lives with
+  it (the `kodi-storage-map` and `ezm-backup-doctor` skills were deleted
+  2026-07-21; EZM++ source is in `moquette/kodi-ezmpp`, not here).
 - `.claude/skills/deploy/SKILL.md` - the release + deploy runbook.
 - `.claude/skills/kodi-super-agent/SKILL.md` - agent operating guide.
 - `docs/plans/` and the `docs/incident-*` writeups - historical records (the
