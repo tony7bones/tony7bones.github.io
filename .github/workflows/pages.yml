@@ -21,9 +21,10 @@ on:
   schedule:
     # Daily third-party snapshot (see the refresh-third-party flag below).
     # Kodi-side staleness bound: <=24h for third-party listings, minutes for
-    # owned content: the build resolves the latest EZM++ release and the POV
-    # upstream index fresh on EVERY run, so a push, this cron and the
-    # ezmpp-release dispatch all pick up a new version with no commit here.
+    # owned content: the build resolves the latest EZM++ release, the newest
+    # skin.estuary.pov release and the POV upstream index fresh on EVERY run,
+    # so a push, this cron and the ezmpp-release dispatch all pick up a new
+    # version with no commit here.
     - cron: "17 9 * * *"
   workflow_dispatch:
     inputs:
@@ -36,6 +37,8 @@ on:
         type: boolean
         default: false
   repository_dispatch:
+    # The type name is historical (ezmpp was the first sibling repo to
+    # dispatch here); estuary-pov's CI sends the same type for the skin.
     types: [ezmpp-release]
 
 # Deploy credentials (pages/id-token) are scoped to the deploy job only -
@@ -52,7 +55,7 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
@@ -101,21 +104,27 @@ jobs:
       # back to the stale cache. A run-id key saves every run; prefix
       # restore picks the newest; GitHub's 10GB LRU evicts old ones.
       - name: Restore download cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: /home/runner/.cache/t7b-fetch
           key: t7b-fetch-v1-${{ github.run_id }}
           restore-keys: |
             t7b-fetch-v1-
 
-      # GH_TOKEN authenticates the releases/latest lookup for release-asset
-      # entries (static_catalog._latest_release_version). Without it the build
-      # still resolves via github.com's unauthenticated redirect, which is what
-      # a developer machine does; the token only keeps CI off the shared-runner
-      # anonymous API limit.
+      # GH_TOKEN authenticates the release lookups for release-asset entries
+      # (static_catalog: releases/latest for ezmpp, the namespaced listing for
+      # the skin). For a PUBLIC source repo the build resolves without any
+      # token (redirect, anonymous API), which is what a developer machine
+      # does; the token only keeps CI off the shared-runner anonymous limit.
+      # moquette/kodi-estuary-pov is PRIVATE (measured 2026-09-26), and the
+      # workflow token cannot read another owner's private repo, so the skin
+      # resolves here only through T7B_SOURCE_READ_TOKEN: a token that can
+      # read that repo, stored as a repository secret. Until it is stored or
+      # the repo is made public, the skin serves its last-good copy, stale,
+      # with a ::warning:: in this log.
       - name: Build site
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.T7B_SOURCE_READ_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           FLAGS=""
           if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.refresh_third_party }}" = "true" ] || [ "${{ github.event_name }}" = "repository_dispatch" ]; then
@@ -134,7 +143,7 @@ jobs:
       # flag), so byte-inequality here means real nondeterminism, not drift.
       - name: Determinism gate (double build, byte diff)
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.T7B_SOURCE_READ_TOKEN || secrets.GITHUB_TOKEN }}
         run: |
           FLAGS=""
           if [ "${{ inputs.allow_catalog_shrink }}" = "true" ]; then
@@ -144,13 +153,13 @@ jobs:
           diff -r _site _site2
 
       - name: Upload build manifest (for the verify job + audit trail)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: catalog
           path: _site/static/catalog.json
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: _site
 
@@ -159,7 +168,7 @@ jobs:
     # the Pages source to GitHub Actions using the workflow token (the
     # moquette account has push-not-admin, so the REST flip was unavailable).
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       pages: write
@@ -169,16 +178,16 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Configure Pages (source = GitHub Actions)
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
         with:
           enablement: true
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
 
   verify:
     # PHASE 1: ENABLED 2026-07-15 (owner "proceed").
     needs: deploy
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     permissions:
       contents: read
@@ -188,7 +197,7 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: catalog
       - name: Consumer-seat verification (the same URLs Kodi uses)

@@ -25,7 +25,11 @@ their metadata from the zip itself, so there is no committed copy to rot:
 
   - release-asset: the source repo's LATEST published release is the version
     (GitHub REST API with GH_TOKEN/GITHUB_TOKEN when present, else the
-    unauthenticated redirect of github.com/<owner>/<repo>/releases/latest);
+    unauthenticated redirect of github.com/<owner>/<repo>/releases/latest).
+    A source repo that ships SEVERAL add-ons (estuary-pov since 2026-09-26)
+    tags each in its own namespace, ``<id>-v<version>``, which the zip
+    template spells out; the build then lists the repo's releases and takes
+    the newest in that namespace, since releases/latest can only name one;
   - hybrid with an ``upstream_index`` (a Kodi addons.xml the upstream
     repository publishes): the version that index declares for the add-on.
 
@@ -95,10 +99,28 @@ GITHUB_API = "https://api.github.com"
 # A GitHub Releases asset template pointing at a source repo: owner/repo are
 # literal in the URL (distinct from the entry's own username/repository, which
 # only shape its raw.githubusercontent asset_prefix). Matched on the RAW
-# template, so the literal ``v{version}`` tag segment is part of the shape.
+# template, so the literal tag segment is part of the shape, and the tag
+# segment names the release namespace:
+#
+#   .../releases/download/v{version}/...        one add-on per source repo
+#                                               (ezmpp): the repo's LATEST
+#                                               release IS the add-on's.
+#   .../releases/download/{id}-v{version}/...   several add-ons per source repo
+#                                               (estuary-pov ships the skin AND
+#                                               service.tvos.pythonfix): a
+#                                               repo has ONE releases/latest,
+#                                               so each add-on tags its own
+#                                               namespace and the build lists
+#                                               the releases and takes the
+#                                               newest whose tag starts with
+#                                               ``<id>-v``.
+#
+# ``tag_prefix`` is the literal text before ``v{version}`` in the tag
+# (``""`` or ``"{id}-"``), substituted per entry before use.
 _RELEASE_ASSET_RE = re.compile(
     r"^https://github\.com/(?P<owner>[^/{}]+)/(?P<repo>[^/{}]+)"
-    r"/releases/download/v\{version\}/(?P<asset_template>.+)$"
+    r"/releases/download/(?P<tag_prefix>(?:\{id\}-)?)v\{version\}/"
+    r"(?P<asset_template>.+)$"
 )
 _LATEST_TAG_RE = re.compile(r"/releases/tag/v(?P<version>[^/?#]+)$")
 
@@ -215,10 +237,12 @@ class Fetcher:
         mutable: bool = False,
         tolerate_missing: bool = False,
         expect_zip: bool = False,
+        headers: dict[str, str] | None = None,
     ) -> bytes | None:
         """Fetch a URL through the cache. Returns None only when the URL 404s
         AND ``tolerate_missing`` is set (optional art). Raises FetchError
-        otherwise on failure.
+        otherwise on failure. ``headers`` ride along on the download only;
+        the cache key is the URL.
 
         ``expect_zip=True`` validates the payload is a readable zip BEFORE the
         cache write - a truncated/HTML-error download must never poison the
@@ -238,7 +262,7 @@ class Fetcher:
             os.remove(cache_path)
             cached = False
         try:
-            data = self._download(url)
+            data = self._download(url, headers)
         except FetchError as exc:
             if cached:
                 warn(f"refresh failed, using cached copy: {exc}")
@@ -465,13 +489,85 @@ def gh_token() -> str | None:
     return os.environ.get("GH_TOKEN") or os.environ.get("GITHUB_TOKEN") or None
 
 
+def _version_key(version: str) -> tuple:
+    """Sort key for dotted add-on versions: numeric components compare as
+    numbers (2026.09.17.1 > 2026.09.2.0, 1.10.0 > 1.9.0), anything else as
+    text after every numeric one."""
+    return tuple(
+        (0, int(part), "") if part.isdigit() else (1, 0, part)
+        for part in version.split(".")
+    )
+
+
+def _github_headers() -> dict[str, str]:
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    token = gh_token()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
+def _latest_namespaced_release(
+    owner: str, repo: str, tag_prefix: str, asset_name: str, fetcher: Fetcher
+) -> tuple[str, str]:
+    """The newest published release of ``owner/repo`` whose tag is
+    ``<tag_prefix>v<version>``: (bare version, API URL of its ``asset_name``).
+
+    A repository has exactly one ``releases/latest``, so a repo that ships
+    several add-ons (estuary-pov: the skin and service.tvos.pythonfix) cannot
+    use it for any of them. GET /repos/{owner}/{repo}/releases lists them
+    all; drafts, prereleases and every other namespace are skipped and the
+    highest version wins (by component, not by list position, so a re-cut of
+    an older version can never outrank a newer one). Works without a token
+    (anonymous, rate-limited) on a public repo; with a token that can read
+    the repo it works on a private one too, and the asset is then fetched
+    through its API URL (``Accept: application/octet-stream``), which is the
+    one download path GitHub honours for both visibilities. Never cached:
+    this IS the freshness. No release in the namespace, or a release without
+    its zip attached, is a FetchError, so the live last-good copy is served
+    exactly as for any dead upstream."""
+    url = f"{GITHUB_API}/repos/{owner}/{repo}/releases?per_page=100"
+    releases = fetcher.get_json(url, _github_headers())
+    if not isinstance(releases, list):
+        raise FetchError(f"{url}: expected a JSON list of releases")
+    want = f"{tag_prefix}v"
+    candidates = {
+        rel["tag_name"][len(want) :]: rel
+        for rel in releases
+        if isinstance(rel, dict)
+        and isinstance(rel.get("tag_name"), str)
+        and rel["tag_name"].startswith(want)
+        and len(rel["tag_name"]) > len(want)
+        and not rel.get("draft")
+        and not rel.get("prerelease")
+    }
+    if not candidates:
+        raise FetchError(f"{owner}/{repo}: no published release tagged {want}<version>")
+    version = max(candidates, key=_version_key)
+    name = asset_name.replace("{version}", version)
+    for asset in candidates[version].get("assets") or []:
+        if isinstance(asset, dict) and asset.get("name") == name and asset.get("url"):
+            return version, asset["url"]
+    raise FetchError(
+        f"{owner}/{repo}: release {want}{version} carries no asset named {name}"
+    )
+
+
 def _latest_release_version(owner: str, repo: str, fetcher: Fetcher) -> str:
     """The source repo's LATEST published release, as a bare version.
 
-    Authenticated: GET /repos/{owner}/{repo}/releases/latest (CI passes
-    secrets.GITHUB_TOKEN, no shared-runner rate limit). Otherwise, or when the
-    API call fails for any reason but "no release at all", the unauthenticated
-    302 of github.com/{owner}/{repo}/releases/latest, whose Location ends in
+    One add-on per repo (ezmpp, plain ``v<version>`` tags); a repo that
+    ships several add-ons resolves through _latest_namespaced_release
+    instead, since releases/latest would name whichever released last.
+
+    Authenticated: GET
+    /repos/{owner}/{repo}/releases/latest (CI passes secrets.GITHUB_TOKEN, no
+    shared-runner rate limit). Otherwise, or when the API call fails for any
+    reason but "no release at all", the unauthenticated 302 of
+    github.com/{owner}/{repo}/releases/latest, whose Location ends in
     /releases/tag/v<version>. Never cached: this IS the freshness."""
     token = gh_token()
     if token:
@@ -543,29 +639,53 @@ def _addon_xml_from_zip(entry_id: str, zip_bytes: bytes, version: str) -> bytes:
     return data
 
 
-def _check_imports_hosted(
-    entry_id: str, addon_xml: bytes, catalog_ids: set[str]
-) -> None:
-    """Every non-builtin <import> of a build-resolved addon.xml must be an id
-    this catalog serves. Kodi resolves a hard dependency only from the
-    repository the add-on is installed FROM (measured on a Kodi 22 bench), and
-    test_closure.py can only walk committed addon.xml files, so for metadata
-    that arrives at build time this is the closure gate. Per-entry FetchError:
-    the live last-good copy, whose closure was hosted, is served instead."""
+def _imports_of(addon_xml: bytes) -> list[str]:
     root = ET.fromstring(addon_xml)
-    missing = sorted(
-        {
-            imp.get("addon")
-            for imp in root.iter("import")
-            if imp.get("addon")
-            and imp.get("addon") not in BUILTINS
-            and imp.get("addon") not in catalog_ids
-        }
-    )
+    return [
+        imp.get("addon")
+        for imp in root.iter("import")
+        if imp.get("addon") and imp.get("addon") not in BUILTINS
+    ]
+
+
+def _check_imports_hosted(
+    entry_id: str,
+    addon_xml: bytes,
+    catalog_ids: set[str],
+    repo_root: str = REPO_ROOT,
+) -> None:
+    """Every non-builtin <import> in the TRANSITIVE closure of a build-resolved
+    addon.xml must be an id this catalog serves. Kodi resolves a hard
+    dependency only from the repository the add-on is installed FROM
+    (measured on a Kodi 22 bench), and test_closure.py can only walk committed
+    addon.xml files, so for metadata that arrives at build time this is the
+    closure gate. The walk continues through every import that has a
+    committed addons/hosted/<id>/addon.xml (the skin's autocompletion subtree,
+    for one); an import that is itself build-resolved is a leaf here and is
+    walked when its own metadata arrives. Per-entry FetchError: the live
+    last-good copy, whose closure was hosted, is served instead."""
+    seen: set[str] = set()
+    missing: set[str] = set()
+    stack = _imports_of(addon_xml)
+    while stack:
+        aid = stack.pop()
+        if aid in seen:
+            continue
+        seen.add(aid)
+        if aid not in catalog_ids:
+            missing.add(aid)
+            continue
+        hosted_xml = os.path.join(repo_root, "addons", "hosted", aid, "addon.xml")
+        if os.path.isfile(hosted_xml):
+            with open(hosted_xml, "rb") as fh:
+                try:
+                    stack.extend(_imports_of(fh.read()))
+                except ET.ParseError as exc:
+                    raise FetchError(f"{entry_id}: {hosted_xml} unparseable ({exc})")
     if missing:
         raise FetchError(
-            f"{entry_id}: imports {missing}, which this catalog does not serve "
-            f"(add them to catalog.json, see test_closure.py)"
+            f"{entry_id}: imports {sorted(missing)}, which this catalog does not "
+            f"serve (add them to catalog.json, see test_closure.py)"
         )
 
 
@@ -604,17 +724,37 @@ def _resolve_primary(
     if metadata_resolved_at_build(entry):
         # No committed metadata: the version is looked up fresh and the
         # addon.xml is the one packaged in the zip that version names.
+        fetch_url, fetch_headers = None, None
         if kind == KIND_RELEASE_ASSET:
             m = _RELEASE_ASSET_RE.match(zip_tmpl)
-            version = _latest_release_version(
-                m.group("owner"), m.group("repo"), fetcher
-            )
+            tag_prefix = _subst(m.group("tag_prefix"), entry)
+            if tag_prefix:
+                version, fetch_url = _latest_namespaced_release(
+                    m.group("owner"),
+                    m.group("repo"),
+                    tag_prefix,
+                    _subst(m.group("asset_template").rsplit("/", 1)[-1], entry),
+                    fetcher,
+                )
+                fetch_headers = {
+                    **_github_headers(),
+                    "Accept": "application/octet-stream",
+                }
+            else:
+                version = _latest_release_version(
+                    m.group("owner"), m.group("repo"), fetcher
+                )
         else:
             version = _version_from_index(entry["upstream_index"], entry_id, fetcher)
+        # source_url is the asset's canonical (browser) location, which the
+        # manifest publishes; a namespaced release is DOWNLOADED through its
+        # API asset URL instead (see _latest_namespaced_release).
         source_url = _subst(zip_tmpl, entry, version)
-        zip_bytes = fetcher.fetch(source_url, expect_zip=True)
+        zip_bytes = fetcher.fetch(
+            fetch_url or source_url, expect_zip=True, headers=fetch_headers
+        )
         addon_xml = _addon_xml_from_zip(entry_id, zip_bytes, version)
-        _check_imports_hosted(entry_id, addon_xml, catalog_ids or set())
+        _check_imports_hosted(entry_id, addon_xml, catalog_ids or set(), repo_root)
         return ResolvedEntry(
             entry_id,
             kind,

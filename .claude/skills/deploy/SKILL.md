@@ -51,9 +51,12 @@ python3 _tools/release.py --push          # or merge the branch to main
    repo, also drop its `addon.xml` (and zip if self-hosted) under
    `addons/hosted/<id>/`. Two shapes need NO hosted directory, and must not get
    one: a `release-asset` entry (zip template on `github.com/<owner>/<repo>/
-   releases/download/v{version}/...`, the build resolves the latest release)
-   and a `hybrid` entry with `upstream_index` (the build reads the version from
-   that upstream `addons.xml`). Both take `addon.xml` from the zip.
+   releases/download/v{version}/...` for a repo that ships one add-on, the
+   build resolves its latest release; or `.../releases/download/{id}-v{version}/...`
+   for a repo that ships several, the build lists its releases and takes the
+   newest in that add-on's tag namespace, as for `skin.estuary.pov`) and a
+   `hybrid` entry with `upstream_index` (the build reads the version from that
+   upstream `addons.xml`). All take `addon.xml` from the zip.
 3. `python3 _tools/generate_repo.py` (builds the zip, updates `addons.xml*`).
 4. `python3 -m pytest _tools/ -q` and `ruff check _tools/`: both must pass.
 5. Release (TL;DR step 2) and push (step 3).
@@ -104,7 +107,8 @@ If the deploy job did not run, check the push touched the `pages.yml` path filte
 | Release "succeeded" but the box does not see the new version | The Pages deploy has not completed, or the push missed the `pages.yml` path filter, so the live `/static/` tree is still the old build.                                                                      | Check the "Build & Deploy Pages" run; re-run it (`workflow_dispatch`) if it did not fire; then re-check the box.      |
 | New add-on is not listed under Install from repository       | Kodi cached the OLD add-on list. The catalog is fetched only when Kodi decides to refresh.                                                                                                                   | On the box: **Check for updates** (Add-ons context menu), or restart Kodi.                                            |
 | Add-on is in `_tools/catalog.json` but not served            | A build-time fallback kept the last-good entry, or the entry failed materialization (bad zip/metadata).                                                                                                      | Read the build log for the per-entry warning; fix the source/catalog entry and rebuild.                               |
-| `git status` shows commits "to push" but the deploy worked   | You are looking at a **source-of-truth** repo (`moquette/kodi-ezmpp`), not this one. They are independent repos; this one resolves EZM++'s latest release at build time and points a zip URL AT it. | Confirm with `git -C <repo> ls-remote origin main` vs local HEAD; a deploy here never touches those repos' git state. |
+| `git status` shows commits "to push" but the deploy worked   | You are looking at a **source-of-truth** repo (`moquette/kodi-ezmpp` or `moquette/kodi-estuary-pov`), not this one. They are independent repos; this one resolves their latest release at build time and points a zip URL AT it. | Confirm with `git -C <repo> ls-remote origin main` vs local HEAD; a deploy here never touches those repos' git state. |
+| `skin.estuary.pov` is `stale` in `/static/catalog.json` with a `::warning::` naming `api.github.com/.../kodi-estuary-pov/releases` | The source repo is private and the hub built without a token that can read it (`T7B_SOURCE_READ_TOKEN` not stored, or expired). | Store that repository secret on the hub (a token with read access to `moquette/kodi-estuary-pov`), or make the repo public; rerun `pages.yml`. |
 | A released **icon** change does not show on the box          | Kodi caches add-on ICONS (texture cache): same path, old render kept in `userdata/Thumbnails/` + `Textures13.db`.                                                                                            | Clear the thumbnail cache (EZ Maintenance++ -> Delete Thumbnails) and restart; or reinstall. Do NOT delete `Textures13.db` by hand while Kodi is running: Kodi holds it open, and the next texture write fails SQLITE_READONLY_DBMOVED and then aborts the process. That killed a Fire TV on 2026-07-21. |
 
 ## Why a released update lags on the box (caches)

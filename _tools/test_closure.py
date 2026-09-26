@@ -58,13 +58,19 @@ from mirror_closure import OFFICIAL_LIBRARY  # noqa: E402
 # unpublished on the owner's order; their closures left with their catalog
 # entries.
 #
-# skin.estuary.pov was added 2026-08-27, the day it was first hosted here, for
-# that same "cheap on day one" reason. It was trivial then, when its only
-# <import> was xbmc.gui: it is not now. As of 1.3.0 it imports xbmc.gui,
-# plugin.program.autocompletion and plugin.video.pov, and the last two drag real
-# subtrees behind them. 1.3.0 also DROPPED xbmc.python, which it had declared
-# only to support a boot service it no longer has: the skin ships no Python at
-# all now, and every tvOS repair lives in service.tvos.pythonfix below.
+# skin.estuary.pov was a root here from 2026-08-27, the day it was first hosted,
+# to 2026-09-26, when it became a release-asset entry like EZM++: its version
+# and addon.xml now come from the newest skin.estuary.pov-v<version> release of
+# moquette/kodi-estuary-pov at build time, nothing of it is committed here, and
+# this offline walk cannot see its imports. Its closure is gated where the
+# metadata arrives, by static_catalog._check_imports_hosted, which since the
+# same day walks TRANSITIVELY through committed hosted addon.xml files, so the
+# skin's autocompletion subtree is checked on every build. The subtree is ALSO
+# rooted below on its own, so the offline suite goes red before a push rather
+# than the build going stale after one: as of 1.3.0 the skin imports xbmc.gui,
+# plugin.program.autocompletion and plugin.video.pov, and the first of those two
+# drags a real subtree behind it (autocompletion -> script.module.autocompletion
+# -> requests -> urllib3 ...). plugin.video.pov is a build-resolved leaf.
 #
 # service.tvos.pythonfix is a ROOT OF ITS OWN, added 2026-08-29, and the reason
 # is the trap that produced it. It was reachable here for exactly two days, as a
@@ -81,8 +87,10 @@ from mirror_closure import OFFICIAL_LIBRARY  # noqa: E402
 # user-installed on Apple TVs rather than pulled in by a skin, which makes it
 # exactly that case.
 ROOTS = [
-    "skin.estuary.pov",
     "service.tvos.pythonfix",
+    # skin.estuary.pov's hosted subtree, rooted directly (see above): the skin
+    # itself is build-resolved and walked by _check_imports_hosted instead.
+    "plugin.program.autocompletion",
 ]
 
 BUILTINS = {
@@ -198,13 +206,21 @@ def test_build_resolved_entries_are_gated_at_build():
     no committed addon.xml, or two truths exist and one of them rots, and the
     build-time half must really refuse an unhosted import."""
     resolved = _build_resolved_ids()
-    assert resolved == {"script.ezmaintenanceplusplus", "plugin.video.pov"}
+    assert resolved == {
+        "script.ezmaintenanceplusplus",
+        "plugin.video.pov",
+        "skin.estuary.pov",
+    }
     for aid in resolved:
+        assert aid not in ROOTS, f"{aid} is build-resolved: it cannot be walked here"
         assert not os.path.exists(os.path.join(HOSTED, aid)), (
             f"addons/hosted/{aid}/ exists but the build resolves its metadata "
             f"upstream: delete the directory, there must be no copy to rot"
         )
-    # The build-time half really refuses an unhosted import.
+    # The build-time half really refuses an unhosted import, and walks the
+    # REAL hosted tree transitively: script.module.requests is hosted here and
+    # its own imports are in the catalog, so the closure through it is clean.
+    catalog_ids = _repo_json_ids()
     with pytest.raises(sc.FetchError, match="script.module.nothosted"):
         sc._check_imports_hosted(
             "x",
@@ -212,7 +228,7 @@ def test_build_resolved_entries_are_gated_at_build():
             b'<import addon="xbmc.python" version="3.0.0"/>'
             b'<import addon="script.module.nothosted"/>'
             b"</requires></addon>",
-            {"x", "script.module.requests"},
+            catalog_ids | {"x"},
         )
     sc._check_imports_hosted(
         "x",
@@ -220,7 +236,18 @@ def test_build_resolved_entries_are_gated_at_build():
         b'<import addon="xbmc.python" version="3.0.0"/>'
         b'<import addon="script.module.requests"/>'
         b"</requires></addon>",
-        {"x", "script.module.requests"},
+        catalog_ids | {"x"},
+    )
+    # The skin's REAL closure, as its hosted subtree stands today: its
+    # direct imports must resolve through the catalog with nothing missing.
+    sc._check_imports_hosted(
+        "skin.estuary.pov",
+        b'<addon id="skin.estuary.pov" version="1"><requires>'
+        b'<import addon="xbmc.gui" version="5.18.0"/>'
+        b'<import addon="plugin.program.autocompletion" version="2.1.2"/>'
+        b'<import addon="plugin.video.pov" version="6.08.15"/>'
+        b"</requires></addon>",
+        catalog_ids,
     )
 
 

@@ -64,16 +64,21 @@ def test_build_resolves_release_versions_with_the_workflow_token():
     """Both site builds pass GH_TOKEN so static_catalog resolves the latest
     EZM++ release through the REST API rather than the anonymous redirect,
     and no separate freshness gate or hosted-mirror sync workflow exists to
-    fall behind (both retired 2026-09-26)."""
+    fall behind (both retired 2026-09-26). The token is the stored
+    T7B_SOURCE_READ_TOKEN when present, because moquette/kodi-estuary-pov is
+    private and the workflow token cannot read it, else GITHUB_TOKEN; the
+    SAME expression in both steps, or the determinism diff compares a
+    resolved skin against a stale one."""
     text = _text()
+    token = "GH_TOKEN: ${{ secrets.T7B_SOURCE_READ_TOKEN || secrets.GITHUB_TOKEN }}"
     build = text[text.index("- name: Build site") : text.index("- name: Secret gate")]
-    assert "GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}" in build
+    assert token in build
     determinism = text[
         text.index("- name: Determinism gate") : text.index(
             "- name: Upload build manifest"
         )
     ]
-    assert "GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}" in determinism
+    assert token in determinism
     workflows = WORKFLOW.parent
     assert not (workflows / "sync_hosted_mirror.yml").exists()
     assert "sync_hosted_mirror" not in (workflows / "generate_repo.yml").read_text()

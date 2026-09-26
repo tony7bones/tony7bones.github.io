@@ -31,6 +31,10 @@ RELEASE_ZIP = (
     "https://github.com/moquette/src/releases/download/v{v}/release.addon-{v}.zip"
 )
 INDEXED_ZIP = "https://up.example/repo/indexed.addon/indexed.addon-{v}.zip"
+# A source repo that ships SEVERAL add-ons: per-add-on tag namespace.
+RELEASES_LIST = "https://api.github.com/repos/moquette/multi/releases?per_page=100"
+NS_ZIP = "https://github.com/moquette/multi/releases/download/ns.addon-v{v}/ns.addon-{v}.zip"
+NS_ASSET_API = "https://api.github.com/repos/moquette/multi/releases/assets/{v}"
 
 
 def _index_xml(*pairs: tuple[str, str]) -> bytes:
@@ -54,9 +58,13 @@ class FakeFetcher:
         self.redirects = dict(redirects or {})
         self.calls: list[str] = []
         self.download_calls: list[str] = []
+        self.fetch_headers: dict[str, dict | None] = {}
 
-    def fetch(self, url, mutable=False, tolerate_missing=False, expect_zip=False):
+    def fetch(
+        self, url, mutable=False, tolerate_missing=False, expect_zip=False, headers=None
+    ):
         self.calls.append(url)
+        self.fetch_headers[url] = headers
         if url in self.urls:
             return self.urls[url]
         if tolerate_missing:
@@ -154,6 +162,11 @@ def _entry(addon_id: str, kind: str) -> dict:
         e["asset_prefix"] = OWN + "/addons/hosted/{id}/"
         e["assets"] = {
             "zip": "https://github.com/moquette/src/releases/download/v{version}/{id}-{version}.zip"
+        }
+    elif kind == "release-asset-namespaced":
+        e["asset_prefix"] = OWN + "/addons/hosted/{id}/"
+        e["assets"] = {
+            "zip": "https://github.com/moquette/multi/releases/download/{id}-v{version}/{id}-{version}.zip"
         }
     elif kind == "indexed":
         # hybrid + upstream_index: version from the upstream addons.xml
@@ -255,12 +268,40 @@ def test_classify_all_five_kinds():
     assert sc.classify(_entry("a", "hosted-unversioned")) == sc.KIND_HOSTED
     assert sc.classify(_entry("a", "hybrid")) == sc.KIND_HYBRID
     assert sc.classify(_entry("a", "release-asset")) == sc.KIND_RELEASE_ASSET
+    assert (
+        sc.classify(_entry("a", "release-asset-namespaced")) == sc.KIND_RELEASE_ASSET
+    )
     assert sc.classify(_entry("a", "indexed")) == sc.KIND_HYBRID
     assert sc.classify(_entry("a", "streamed")) == sc.KIND_STREAMED
 
 
+def test_release_asset_shape_parses_owner_repo_and_tag_namespace():
+    """Both tag shapes are release-asset; the tag prefix is what tells the
+    resolver whether releases/latest is the answer (one add-on per repo) or
+    the namespace listing is (several add-ons per repo)."""
+    plain = sc._RELEASE_ASSET_RE.match(_entry("a", "release-asset")["assets"]["zip"])
+    assert (plain.group("owner"), plain.group("repo")) == ("moquette", "src")
+    assert plain.group("tag_prefix") == ""
+    ns = sc._RELEASE_ASSET_RE.match(
+        _entry("a", "release-asset-namespaced")["assets"]["zip"]
+    )
+    assert (ns.group("owner"), ns.group("repo")) == ("moquette", "multi")
+    assert ns.group("tag_prefix") == "{id}-"
+    assert sc._subst(ns.group("tag_prefix"), _entry("skin.x", "release-asset")) == (
+        "skin.x-"
+    )
+    # a tag segment that is neither shape is not a release asset
+    other = dict(_entry("a", "release-asset"))
+    other["assets"] = {
+        "zip": "https://github.com/o/r/releases/download/release-{version}/{id}.zip"
+    }
+    assert sc._RELEASE_ASSET_RE.match(other["assets"]["zip"]) is None
+    assert sc.classify(other) != sc.KIND_RELEASE_ASSET
+
+
 def test_metadata_resolved_at_build_is_exactly_the_two_upstream_truths():
     assert sc.metadata_resolved_at_build(_entry("a", "release-asset"))
+    assert sc.metadata_resolved_at_build(_entry("a", "release-asset-namespaced"))
     assert sc.metadata_resolved_at_build(_entry("a", "indexed"))
     for kind in ("first-party", "hosted", "hosted-unversioned", "hybrid", "streamed"):
         assert not sc.metadata_resolved_at_build(_entry("a", kind)), kind
@@ -269,9 +310,16 @@ def test_metadata_resolved_at_build_is_exactly_the_two_upstream_truths():
 def test_real_catalog_build_resolved_entries_have_no_committed_metadata():
     """The owner's rule of 2026-09-26: THERE MUST BE NO MIRROR VERSION TO BE
     WRONG. The two entries whose version rotted by hand are resolved upstream
-    at build time, and the directories that held the hand copy are gone."""
+    at build time, and the directories that held the hand copy are gone. The
+    skin joined them the same day: it releases from estuary-pov CI into the
+    ``skin.estuary.pov-v<version>`` tag namespace of moquette/kodi-estuary-pov
+    and nothing of it is committed here."""
     resolved = {e["id"] for e in sc.load_catalog() if sc.metadata_resolved_at_build(e)}
-    assert resolved == {"script.ezmaintenanceplusplus", "plugin.video.pov"}
+    assert resolved == {
+        "script.ezmaintenanceplusplus",
+        "plugin.video.pov",
+        "skin.estuary.pov",
+    }
     for aid in resolved:
         assert not os.path.exists(os.path.join(sc.REPO_ROOT, "addons", "hosted", aid))
 
@@ -360,6 +408,14 @@ def test_classify_the_real_manifest_covers_all_entries():
           to resolve and the entry would have fallen back or dropped. At 2.4MB the
           committed zip is a ninth of Estuary 8's, so the cost of self-hosting
           is small and the install stays available off-grid.
+          SWITCHED to release-asset 2026-09-26 (hosted 16, release-asset 2
+          from then on): estuary-pov CI now publishes every version bump as
+          the GitHub release skin.estuary.pov-v<version> with the zip attached
+          and dispatches this hub, and addons/hosted/skin.estuary.pov/ is gone.
+          The tag is NAMESPACED because that repo also ships
+          service.tvos.pythonfix and a repo has one releases/latest; the build
+          lists the releases and takes the newest skin.estuary.pov-v tag.
+          service.tvos.pythonfix stays hosted here until its own switch.
       +1  2026-08-03, plugin.video.estuary8.search ADDED, hosted. It is the
           Estuary 8 streaming-search result filter and a declared dependency of
           skin.estuary8, so hosting it here is what lets Kodi install it from
@@ -390,9 +446,11 @@ def test_classify_the_real_manifest_covers_all_entries():
     off-grid, which is exactly what the skinshortcuts purge above cost
     Estuary 7. The same reasoning holds for skin.estuary.pov today.
 
-    script.ezmaintenanceplusplus is the one release-asset entry, and since
-    2026-09-26 it has no addons/hosted/ directory: version from the latest
-    release of moquette/kodi-ezmpp, addon.xml and art from that release's zip.
+    script.ezmaintenanceplusplus and skin.estuary.pov are the two release-asset
+    entries, and since 2026-09-26 neither has an addons/hosted/ directory:
+    version from the latest release of moquette/kodi-ezmpp (releases/latest)
+    and of moquette/kodi-estuary-pov (newest skin.estuary.pov-v tag), addon.xml
+    and art from that release's zip.
     """
     entries = sc.load_catalog()
     kinds = {}
@@ -400,11 +458,12 @@ def test_classify_the_real_manifest_covers_all_entries():
         kinds.setdefault(sc.classify(e), []).append(e["id"])
     assert len(entries) == 28
     assert kinds[sc.KIND_FIRST_PARTY] == ["repository.tony7bones"]
-    assert len(kinds[sc.KIND_HOSTED]) == 17
+    assert len(kinds[sc.KIND_HOSTED]) == 16
     assert len(kinds[sc.KIND_HYBRID]) == 4
     assert len(kinds[sc.KIND_STREAMED]) == 5
-    assert len(kinds[sc.KIND_RELEASE_ASSET]) == 1
-    assert "skin.estuary.pov" in kinds[sc.KIND_HOSTED]
+    assert len(kinds[sc.KIND_RELEASE_ASSET]) == 2
+    assert "skin.estuary.pov" in kinds[sc.KIND_RELEASE_ASSET]
+    assert "script.ezmaintenanceplusplus" in kinds[sc.KIND_RELEASE_ASSET]
     assert "plugin.program.autocompletion" in kinds[sc.KIND_HOSTED]
     assert "service.tvos.pythonfix" in kinds[sc.KIND_HOSTED]
     assert "plugin.video.pov" in kinds[sc.KIND_HYBRID]
@@ -845,6 +904,204 @@ def test_release_zip_without_its_addon_xml_is_a_fetch_error(fake_repo, tmp_path)
     fetcher.urls[RELEASE_ZIP.format(v="2.0.0")] = buf.getvalue()
     manifest = _build(fake_repo, tmp_path / "s", allow_shrink=True)
     assert "release.addon" not in manifest["entries"]
+
+
+# ---------------------------------------------------------------------------
+# per-add-on tag namespace (2026-09-26): a source repo shipping several add-ons
+# (estuary-pov: the skin and service.tvos.pythonfix) has ONE releases/latest, so
+# the zip template names the tag as {id}-v{version} and the build lists the
+# repo's releases and takes the newest in that namespace.
+# ---------------------------------------------------------------------------
+def _release(tag, assets=True, **flags):
+    """A release as the listing shows it. ``assets`` True attaches the
+    ns.addon zip for the tag's version at its API asset URL."""
+    rel = {"tag_name": tag, "draft": False, "prerelease": False, "assets": [], **flags}
+    if assets and tag.startswith("ns.addon-v"):
+        v = tag[len("ns.addon-v") :]
+        rel["assets"] = [
+            {"name": "other.bin", "url": NS_ASSET_API.format(v="x" + v)},
+            {
+                "name": f"ns.addon-{v}.zip",
+                "url": NS_ASSET_API.format(v=v),
+                "browser_download_url": NS_ZIP.format(v=v),
+            },
+        ]
+    return rel
+
+
+def _add_namespaced(fake_repo, releases, zips=("2.0.0",)):
+    """Append the namespaced entry to the fixture manifest and stock the
+    fetcher with the releases listing and the named zips (at their API
+    asset URLs, which is where a namespaced release is downloaded from)."""
+    root, manifest_path, fetcher = fake_repo
+    entries = json.loads(manifest_path.read_text())
+    entries.append(_entry("ns.addon", "release-asset-namespaced"))
+    manifest_path.write_text(json.dumps(entries))
+    if releases is not None:
+        fetcher.urls[RELEASES_LIST] = json.dumps(releases).encode()
+    for v in zips:
+        fetcher.urls[NS_ASSET_API.format(v=v)] = _zip_bytes("ns.addon", v)
+
+
+def test_namespaced_release_asset_lists_releases_and_takes_its_own_newest(
+    fake_repo, tmp_path
+):
+    """Other namespaces, drafts and prereleases are skipped; the highest
+    version wins regardless of list order; releases/latest is never asked."""
+    root, manifest_path, fetcher = fake_repo
+    _add_namespaced(
+        fake_repo,
+        [
+            _release("other.addon-v9.9.9"),
+            _release("ns.addon-v2.0.0"),
+            _release("ns.addon-v2.10.0"),
+            _release("ns.addon-v3.0.0", draft=True),
+            _release("ns.addon-v4.0.0", prerelease=True),
+            _release("v5.0.0"),
+        ],
+        zips=("2.0.0", "2.10.0"),
+    )
+    manifest = _build(fake_repo, tmp_path / "s")
+    info = manifest["entries"]["ns.addon"]
+    assert info["version"] == "2.10.0" and info["kind"] == sc.KIND_RELEASE_ASSET
+    assert info["source_url"] == NS_ZIP.format(v="2.10.0")
+    assert not info["stale"]
+    assert RELEASES_LIST in fetcher.download_calls
+    assert RELEASES_LIST not in fetcher.calls, "never through the cache"
+    assert not any("moquette/multi/releases/latest" in c for c in fetcher.download_calls)
+    # downloaded through the API asset URL, as an octet stream, via the cache
+    asset = NS_ASSET_API.format(v="2.10.0")
+    assert asset in fetcher.calls
+    assert fetcher.fetch_headers[asset]["Accept"] == "application/octet-stream"
+    assert NS_ZIP.format(v="2.10.0") not in fetcher.calls
+    served = (tmp_path / "s" / "ns.addon" / "addon.xml").read_bytes()
+    assert ET.fromstring(served).get("version") == "2.10.0"
+
+
+def test_namespaced_release_asset_works_without_a_token_and_with_one(
+    fake_repo, tmp_path, monkeypatch
+):
+    _add_namespaced(fake_repo, [_release("ns.addon-v2.0.0")])
+    assert _build(fake_repo, tmp_path / "a")["entries"]["ns.addon"]["version"] == (
+        "2.0.0"
+    )
+    root, manifest_path, fetcher = fake_repo
+    assert "Authorization" not in fetcher.fetch_headers[NS_ASSET_API.format(v="2.0.0")]
+    monkeypatch.setenv("GH_TOKEN", "t0k")
+    assert _build(fake_repo, tmp_path / "b")["entries"]["ns.addon"]["version"] == (
+        "2.0.0"
+    )
+    # a private source repo: the token rides on the asset download too
+    assert fetcher.fetch_headers[NS_ASSET_API.format(v="2.0.0")]["Authorization"] == (
+        "Bearer t0k"
+    )
+    assert "Authorization" in sc._github_headers()
+    monkeypatch.delenv("GH_TOKEN")
+    assert "Authorization" not in sc._github_headers()
+
+
+def test_namespaced_release_asset_without_a_release_falls_back_to_last_good(
+    fake_repo, tmp_path
+):
+    """Nothing tagged in the namespace yet (or the listing failed): the live
+    copy is served stale, exactly as for any dead upstream."""
+    root, manifest_path, fetcher = fake_repo
+    _add_namespaced(fake_repo, [_release("other.addon-v1.0.0"), _release("v1.0.0")])
+    live = f"{BASE_URL}/static/ns.addon/"
+    fetcher.urls[live + "addon.xml"] = _addon_xml("ns.addon", "1.9.0").encode()
+    fetcher.urls[live + "ns.addon-1.9.0.zip"] = _zip_bytes("ns.addon", "1.9.0")
+    baseline = {"entries": {"ns.addon": {"version": "1.9.0"}}}
+    manifest = _build(fake_repo, tmp_path / "s", baseline=baseline)
+    info = manifest["entries"]["ns.addon"]
+    assert info["stale"] is True and info["version"] == "1.9.0"
+    fetcher.urls[RELEASES_LIST] = sc.FetchError(f"{RELEASES_LIST}: HTTP 403")
+    manifest = _build(fake_repo, tmp_path / "s2", baseline=baseline)
+    assert manifest["entries"]["ns.addon"]["stale"] is True
+
+
+def test_namespaced_release_asset_with_no_release_and_no_baseline_is_dropped(
+    fake_repo, tmp_path
+):
+    _add_namespaced(fake_repo, [])
+    manifest = _build(fake_repo, tmp_path / "s", allow_shrink=True)
+    assert "ns.addon" not in manifest["entries"]
+
+
+def test_namespaced_release_without_its_zip_attached_falls_back(fake_repo, tmp_path):
+    """A tag without the asset is not a release: the last-good copy serves."""
+    root, manifest_path, fetcher = fake_repo
+    _add_namespaced(fake_repo, [_release("ns.addon-v2.1.0", assets=False)], zips=())
+    live = f"{BASE_URL}/static/ns.addon/"
+    fetcher.urls[live + "addon.xml"] = _addon_xml("ns.addon", "2.0.0").encode()
+    fetcher.urls[live + "ns.addon-2.0.0.zip"] = _zip_bytes("ns.addon", "2.0.0")
+    baseline = {"entries": {"ns.addon": {"version": "2.0.0"}}}
+    manifest = _build(fake_repo, tmp_path / "s", baseline=baseline)
+    info = manifest["entries"]["ns.addon"]
+    assert info["stale"] is True and info["version"] == "2.0.0"
+
+
+def test_namespaced_tag_vs_packaged_version_mismatch_falls_back(fake_repo, tmp_path):
+    root, manifest_path, fetcher = fake_repo
+    _add_namespaced(fake_repo, [_release("ns.addon-v2.1.0")], zips=())
+    fetcher.urls[NS_ASSET_API.format(v="2.1.0")] = _zip_bytes("ns.addon", "2.0.0")
+    live = f"{BASE_URL}/static/ns.addon/"
+    fetcher.urls[live + "addon.xml"] = _addon_xml("ns.addon", "2.0.0").encode()
+    fetcher.urls[live + "ns.addon-2.0.0.zip"] = _zip_bytes("ns.addon", "2.0.0")
+    baseline = {"entries": {"ns.addon": {"version": "2.0.0"}}}
+    manifest = _build(fake_repo, tmp_path / "s", baseline=baseline)
+    info = manifest["entries"]["ns.addon"]
+    assert info["stale"] is True and info["version"] == "2.0.0"
+
+
+def test_plain_release_asset_still_uses_releases_latest_not_the_listing(
+    fake_repo, tmp_path, monkeypatch
+):
+    """The ezmpp shape is untouched by the namespace work: with a token it
+    asks releases/latest, without one the redirect, and never the list."""
+    root, manifest_path, fetcher = fake_repo
+    _build(fake_repo, tmp_path / "a")
+    monkeypatch.setenv("GH_TOKEN", "t0k")
+    fetcher.urls[LATEST_API] = json.dumps({"tag_name": "v2.0.0"}).encode()
+    _build(fake_repo, tmp_path / "b")
+    assert not any("/releases?per_page" in c for c in fetcher.download_calls)
+
+
+def test_version_key_orders_dotted_versions_numerically():
+    key = sc._version_key
+    assert key("1.10.0") > key("1.9.0")
+    assert key("2026.09.17.1") > key("2026.09.2.0")
+    assert key("1.4.3") > key("1.4.2")
+    assert max(["1.4.2", "1.4.10", "1.4.3"], key=key) == "1.4.10"
+
+
+def test_build_time_import_check_walks_the_hosted_closure(tmp_path):
+    """A build-resolved addon.xml's imports are walked THROUGH committed
+    hosted addon.xml files, so a hosted subtree missing a leaf fails the
+    entry the way test_closure.py would for a committed root."""
+    hosted = tmp_path / "addons" / "hosted"
+    (hosted / "plugin.mid").mkdir(parents=True)
+    (hosted / "plugin.mid" / "addon.xml").write_text(
+        '<addon id="plugin.mid" version="1"><requires>'
+        '<import addon="script.module.leaf"/></requires></addon>'
+    )
+    xml = (
+        b'<addon id="x" version="1"><requires>'
+        b'<import addon="xbmc.python" version="3.0.0"/>'
+        b'<import addon="plugin.mid"/></requires></addon>'
+    )
+    with pytest.raises(sc.FetchError, match="script.module.leaf"):
+        sc._check_imports_hosted("x", xml, {"x", "plugin.mid"}, str(tmp_path))
+    sc._check_imports_hosted(
+        "x", xml, {"x", "plugin.mid", "script.module.leaf"}, str(tmp_path)
+    )
+    # an import that is itself build-resolved (no hosted addon.xml) is a leaf
+    sc._check_imports_hosted(
+        "x",
+        b'<addon id="x" version="1"><requires><import addon="resolved.later"/>'
+        b"</requires></addon>",
+        {"x", "resolved.later"},
+        str(tmp_path),
+    )
 
 
 def test_indexed_hybrid_resolves_version_from_the_upstream_index(fake_repo, tmp_path):
