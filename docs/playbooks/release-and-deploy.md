@@ -69,15 +69,17 @@ definition of "changed" can drift from the gate) and
 
 - `repository.tony7bones` (static-only, 3.0.0) - built from
   `addons/repository.tony7bones/` and released like any add-on.
-- `script.ezmaintenanceplusplus`, `skin.estuary.pov` and
+- `script.ezmaintenanceplusplus`, `skin.estuary.plusplus` (Estuary++) and
   `service.tvos.pythonfix` - OUR add-ons whose source lives in sibling repos
-  (`~/Code/moquette/kodi/ezmpp` = `moquette/kodi-ezmpp`;
-  `~/Code/moquette/kodi/estuary-pov` = `moquette/kodi-estuary-pov`; both
-  public). This repo carries NO copy of them, not even `addon.xml`: their
+  (`~/Code/kodi/ezmpp` = `moquette/kodi-ezmpp`;
+  `~/Code/kodi/estuary-plusplus` = `moquette/kodi-estuary-plusplus`; both
+  public). `skin.estuary.pov` is the skin's OLD id, served from the same repo
+  only while the boxes migrate to the new one (since 2026-09-26) and retired
+  in stage E of the rename plan. This repo carries NO copy of them, not even `addon.xml`: their
   `_tools/catalog.json` entries are `release-asset` templates and
   `static_catalog.py` resolves the latest release at build time
   (`releases/latest` for ezmpp's `v<version>` tags; the newest in the
-  `<id>-v<version>` namespace for the estuary-pov pair, because two add-ons
+  `<id>-v<version>` namespace for the estuary-plusplus add-ons, because several add-ons
   share that repo and a repo has one `releases/latest`), then takes `addon.xml`
   and art out of the zip. Fix bugs and bump the version in the sibling repo; a
   bump pushed to its `main` is the release (its CI publishes and dispatches this
@@ -137,7 +139,7 @@ CI and never committed:
 CI (`.github/workflows/pages.yml`) builds the ENTIRE site (canvas + `/static/`
 catalog) on every push to `main` (no path filter), on a daily cron, on manual
 dispatch, and on the `repository_dispatch` type `ezmpp-release` that ezmpp CI
-and estuary-pov CI send when they publish a release (the name is historical),
+and estuary-plusplus CI send when they publish a release (the name is historical),
 then deploys to Pages and runs the consumer-seat verify. Every one of those
 runs re-resolves the release-asset and `upstream_index` entries, so a sibling
 release needs no commit here. If a push run's verify fails, the verify job
@@ -210,7 +212,7 @@ Run it by hand anytime: `python3 _tools/sync_share.py [--dry-run]`.
 ## Never hand-create a release (2026-07-19 incident)
 
 Dated record, 2026-07-19, on the since-decommissioned `estuary7` repo; the
-lesson stands for ezmpp and estuary-pov, whose CI publishes on a version bump.
+lesson stands for ezmpp and estuary-plusplus, whose CI publishes on a version bump.
 
 `ci.yml` gates publishing on the test job (`publish: needs: [test, anchored-build-check]`)
 and that gate WORKS - on a red run, `publish` is skipped. It was not bypassed by
@@ -350,6 +352,7 @@ rollback target for the current static repo.
 | ------------------------------ | ------------------------------------------------------------- | ---------------------------------------------------------- |
 | `repository.tony7bones`        | `addons/repository.tony7bones/` (this repo)                   | the committed `addon.xml`                                  |
 | `script.ezmaintenanceplusplus` | `~/Code/moquette/kodi/ezmpp` (`moquette/kodi-ezmpp`)          | latest GitHub release `v<version>`, resolved at build time |
-| `skin.estuary.pov`             | `~/Code/moquette/kodi/estuary-pov` (`moquette/kodi-estuary-pov`) | newest release `skin.estuary.pov-v<version>`            |
+| `skin.estuary.plusplus`        | `~/Code/kodi/estuary-plusplus` (`moquette/kodi-estuary-plusplus`) | newest release `skin.estuary.plusplus-v<version>`      |
+| `skin.estuary.pov`             | same repo, old id; served only during the migration, retired in stage E | newest release `skin.estuary.pov-v<version>`      |
 | `service.tvos.pythonfix`       | same repo as the skin                                         | newest release `service.tvos.pythonfix-v<version>`         |
 | `plugin.video.pov`             | upstream (not ours)                                           | upstream's `packages/addons.xml`                           |

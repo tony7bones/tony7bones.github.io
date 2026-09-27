@@ -65,8 +65,8 @@ def test_build_resolves_release_versions_with_the_workflow_token():
     EZM++ release through the REST API rather than the anonymous redirect,
     and no separate freshness gate or hosted-mirror sync workflow exists to
     fall behind (both retired 2026-09-26). The token is the stored
-    T7B_SOURCE_READ_TOKEN when present, because moquette/kodi-estuary-pov is
-    private and the workflow token cannot read it, else GITHUB_TOKEN; the
+    T7B_SOURCE_READ_TOKEN when present, kept from when the skin repo (now
+    moquette/kodi-estuary-plusplus) was private, else GITHUB_TOKEN; the
     SAME expression in both steps, or the determinism diff compares a
     resolved skin against a stale one."""
     text = _text()

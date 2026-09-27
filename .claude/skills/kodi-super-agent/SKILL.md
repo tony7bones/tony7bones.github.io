@@ -47,11 +47,14 @@ on a rule below - they carry the WHY and the exact code locations.
     Do not recreate it and do not resurrect the deleted full-source copy.
   - **Our own add-ons have NO copy in this repo at all** (since 2026-09-26):
     `script.ezmaintenanceplusplus` (source `~/Code/moquette/kodi/ezmpp`,
-    `moquette/kodi-ezmpp`), `skin.estuary.pov` and `service.tvos.pythonfix`
-    (source `~/Code/moquette/kodi/estuary-pov`, `moquette/kodi-estuary-pov`).
+    `moquette/kodi-ezmpp`), `skin.estuary.plusplus` (Estuary++) and
+    `service.tvos.pythonfix` (source `~/Code/kodi/estuary-plusplus`,
+    `moquette/kodi-estuary-plusplus`). The skin's old id `skin.estuary.pov`
+    is served from the same repo only while the boxes migrate (2026-09-26
+    rename) and is retired in stage E of the rename plan.
     `_tools/static_catalog.py` resolves each from its latest GitHub release at
     build time (`v{version}` for ezmpp; the namespaced `{id}-v{version}` for
-    the estuary-pov pair) and takes `addon.xml` and art from the zip.
+    the estuary-plusplus add-ons) and takes `addon.xml` and art from the zip.
     `plugin.video.pov` (not ours) is resolved the same way from upstream's
     `packages/addons.xml` (`upstream_index`). Fix bugs and add tests in the
     sibling repo; a version bump pushed there IS the release, its CI dispatches

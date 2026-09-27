@@ -79,7 +79,12 @@ from static_catalog import BUILTINS, OFFICIAL_LIBRARY  # noqa: E402
 # the afternoon) left when the eleven official modules became build-resolved
 # from the official Kodi repository's index: there is no committed addon.xml
 # left to walk, and the build-time walk now carries every hop.
+# skin.estuary.plusplus is the same skin under its new id since 2026-09-26
+# (Estuary++, 1.5.0, repo moquette/kodi-estuary-plusplus); its imports are the
+# old id's. skin.estuary.pov stays rooted while the boxes migrate and leaves
+# with its catalog entry in stage E of the rename plan.
 FLEET_INSTALLS = {
+    "skin.estuary.plusplus",
     "skin.estuary.pov",
     "service.tvos.pythonfix",
     "script.ezmaintenanceplusplus",
@@ -231,13 +236,16 @@ def test_build_time_walk_carries_the_whole_closure():
         "plugin.video.pov": '<import addon="script.module.requests"/>',
     }
     catalog_ids = set(tree) | FLEET_INSTALLS
-    skin = (
-        b'<addon id="skin.estuary.pov" version="1"><requires>'
-        b'<import addon="xbmc.gui" version="5.18.0"/>'
-        b'<import addon="plugin.program.autocompletion" version="2.1.2"/>'
-        b'<import addon="plugin.video.pov" version="6.08.15"/>'
-        b"</requires></addon>"
-    )
+    def skin_xml(aid):
+        return (
+            b'<addon id="' + aid.encode() + b'" version="1"><requires>'
+            b'<import addon="xbmc.gui" version="5.18.0"/>'
+            b'<import addon="plugin.program.autocompletion" version="2.1.2"/>'
+            b'<import addon="plugin.video.pov" version="6.08.15"/>'
+            b"</requires></addon>"
+        )
+
+    skin = skin_xml("skin.estuary.pov")
     fixes = (
         b'<addon id="service.tvos.pythonfix" version="1"><requires>'
         b'<import addon="xbmc.python" version="3.0.0"/>'
@@ -247,18 +255,27 @@ def test_build_time_walk_carries_the_whole_closure():
     sc._check_imports_hosted(
         "skin.estuary.pov", skin, catalog_ids, resolver=_fake_resolver(tree)
     )
+    # the renamed skin declares the same imports and must resolve them the
+    # same way from its own release zip
+    sc._check_imports_hosted(
+        "skin.estuary.plusplus",
+        skin_xml("skin.estuary.plusplus"),
+        catalog_ids,
+        resolver=_fake_resolver(tree),
+    )
     sc._check_imports_hosted(
         "service.tvos.pythonfix", fixes, catalog_ids, resolver=_fake_resolver(tree)
     )
     # a leaf four hops down that the catalog does not serve fails the ROOT
     for leaf in ("script.module.urllib3", "script.module.idna"):
-        with pytest.raises(sc.FetchError, match=leaf):
-            sc._check_imports_hosted(
-                "skin.estuary.pov",
-                skin,
-                catalog_ids - {leaf},
-                resolver=_fake_resolver(tree),
-            )
+        for aid in ("skin.estuary.pov", "skin.estuary.plusplus"):
+            with pytest.raises(sc.FetchError, match=leaf):
+                sc._check_imports_hosted(
+                    aid,
+                    skin_xml(aid),
+                    catalog_ids - {leaf},
+                    resolver=_fake_resolver(tree),
+                )
         with pytest.raises(sc.FetchError, match=leaf):
             sc._check_imports_hosted(
                 "service.tvos.pythonfix",

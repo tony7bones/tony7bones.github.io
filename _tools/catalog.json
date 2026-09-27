@@ -258,7 +258,7 @@
     "branch": "main",
     "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
     "assets": {
-      "zip": "https://github.com/moquette/kodi-estuary-pov/releases/download/{id}-v{version}/{id}-{version}.zip"
+      "zip": "https://github.com/moquette/kodi-estuary-plusplus/releases/download/{id}-v{version}/{id}-{version}.zip"
     }
   },
   {
@@ -268,7 +268,17 @@
     "branch": "main",
     "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
     "assets": {
-      "zip": "https://github.com/moquette/kodi-estuary-pov/releases/download/{id}-v{version}/{id}-{version}.zip"
+      "zip": "https://github.com/moquette/kodi-estuary-plusplus/releases/download/{id}-v{version}/{id}-{version}.zip"
+    }
+  },
+  {
+    "id": "skin.estuary.plusplus",
+    "username": "tony7bones",
+    "repository": "tony7bones.github.io",
+    "branch": "main",
+    "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
+    "assets": {
+      "zip": "https://github.com/moquette/kodi-estuary-plusplus/releases/download/{id}-v{version}/{id}-{version}.zip"
     }
   },
   {

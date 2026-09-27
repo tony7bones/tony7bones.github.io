@@ -38,12 +38,13 @@ NS_ZIP = "https://github.com/moquette/multi/releases/download/ns.addon-v{v}/ns.a
 NS_ASSET_API = "https://api.github.com/repos/moquette/multi/releases/assets/{v}"
 
 
-# The four entries resolved from OUR sources of truth (three GitHub release
+# The five entries resolved from OUR sources of truth (four GitHub release
 # namespaces and POV's upstream index) ...
 OWNED_BUILD_RESOLVED = {
     "script.ezmaintenanceplusplus",
     "plugin.video.pov",
-    "skin.estuary.pov",
+    "skin.estuary.plusplus",
+    "skin.estuary.pov",  # served only during the rename migration, retired in stage E
     "service.tvos.pythonfix",
 }
 # ... and the eleven official-library modules resolved from the official Kodi
@@ -349,9 +350,10 @@ def test_real_catalog_build_resolved_entries_have_no_committed_metadata():
     """The owner's rule of 2026-09-26: THERE MUST BE NO MIRROR VERSION TO BE
     WRONG. The two entries whose version rotted by hand are resolved upstream
     at build time, and the directories that held the hand copy are gone. The
-    skin joined them the same day: it releases from estuary-pov CI into the
-    ``skin.estuary.pov-v<version>`` tag namespace of moquette/kodi-estuary-pov
-    and nothing of it is committed here."""
+    skin joined them the same day: it releases from the skin repo's CI into
+    the ``<id>-v<version>`` tag namespace of moquette/kodi-estuary-plusplus
+    (``skin.estuary.plusplus-v`` since the rename, ``skin.estuary.pov-v`` for
+    the old id while boxes migrate) and nothing of it is committed here."""
     resolved = {e["id"] for e in sc.load_catalog() if sc.metadata_resolved_at_build(e)}
     assert resolved == OWNED_BUILD_RESOLVED | OFFICIAL_MODULES
     for aid in resolved:
@@ -445,6 +447,18 @@ def test_classify_the_real_manifest_covers_all_entries():
           every run and takes addon.xml out of the zip, and there is no
           committed copy at all. repository.kodifitzwell is the same kind of
           Pages host but keeps its committed addon.xml (no upstream_index).
+      +1  2026-09-26, skin.estuary.plusplus ADDED, release-asset (29 entries,
+          release-asset 4). The skin renamed to Estuary++ under a NEW id
+          (owner decision: whatever we touch keeps its name with ++ appended),
+          first version 1.5.0, source repo renamed to
+          moquette/kodi-estuary-plusplus with the same {id}-v{version} tag
+          namespace. skin.estuary.pov STAYS for the transition: a new id is a
+          new add-on to Kodi, so EZM++ migrates each box (install the new id,
+          carry settings, switch, drop the old) and needs both served until
+          every box is over; the old entry is retired in stage E of the rename
+          plan with allow_catalog_shrink. Both templates (and
+          service.tvos.pythonfix's) name the new repo: GitHub redirects the
+          old name, but nothing here relies on that.
       +1  2026-08-27, skin.estuary.pov ADDED, hosted. Ours: stock Kodi Estuary
           4.1.0 reworked so the Movies and TV shows home tabs are driven by
           plugin.video.pov instead of the local library. Hosted rather than
@@ -493,17 +507,18 @@ def test_classify_the_real_manifest_covers_all_entries():
     off-grid, which is exactly what the skinshortcuts purge above cost
     Estuary 7. The same reasoning holds for skin.estuary.pov today.
 
-    script.ezmaintenanceplusplus and skin.estuary.pov are the two release-asset
-    entries, and since 2026-09-26 neither has an addons/hosted/ directory:
-    version from the latest release of moquette/kodi-ezmpp (releases/latest)
-    and of moquette/kodi-estuary-pov (newest skin.estuary.pov-v tag), addon.xml
-    and art from that release's zip.
+    script.ezmaintenanceplusplus, skin.estuary.plusplus, skin.estuary.pov and
+    service.tvos.pythonfix are the four release-asset entries, and since
+    2026-09-26 none has an addons/hosted/ directory: version from the latest
+    release of moquette/kodi-ezmpp (releases/latest) and from the newest
+    ``<id>-v`` tag of moquette/kodi-estuary-plusplus, addon.xml and art from
+    that release's zip.
     """
     entries = sc.load_catalog()
     kinds = {}
     for e in entries:
         kinds.setdefault(sc.classify(e), []).append(e["id"])
-    assert len(entries) == 28
+    assert len(entries) == 29
     assert kinds[sc.KIND_FIRST_PARTY] == ["repository.tony7bones"]
     # hosted 15 -> 4 on 2026-09-26: the eleven official modules left for the
     # official index. What remains hosted is third-party repository installers
@@ -516,7 +531,8 @@ def test_classify_the_real_manifest_covers_all_entries():
     ]
     assert len(kinds[sc.KIND_HYBRID]) == 15
     assert len(kinds[sc.KIND_STREAMED]) == 5
-    assert len(kinds[sc.KIND_RELEASE_ASSET]) == 3
+    assert len(kinds[sc.KIND_RELEASE_ASSET]) == 4
+    assert "skin.estuary.plusplus" in kinds[sc.KIND_RELEASE_ASSET]
     assert "skin.estuary.pov" in kinds[sc.KIND_RELEASE_ASSET]
     assert "service.tvos.pythonfix" in kinds[sc.KIND_RELEASE_ASSET]
     assert "script.ezmaintenanceplusplus" in kinds[sc.KIND_RELEASE_ASSET]
@@ -969,7 +985,7 @@ def test_release_zip_without_its_addon_xml_is_a_fetch_error(fake_repo, tmp_path)
 
 # ---------------------------------------------------------------------------
 # per-add-on tag namespace (2026-09-26): a source repo shipping several add-ons
-# (estuary-pov: the skin and service.tvos.pythonfix) has ONE releases/latest, so
+# (estuary-plusplus: the skin and service.tvos.pythonfix) has ONE releases/latest, so
 # the zip template names the tag as {id}-v{version} and the build lists the
 # repo's releases and takes the newest in that namespace.
 # ---------------------------------------------------------------------------

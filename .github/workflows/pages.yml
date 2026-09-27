@@ -25,7 +25,7 @@ on:
     # Daily third-party snapshot (see the refresh-third-party flag below).
     # Kodi-side staleness bound: <=24h for third-party listings, minutes for
     # owned content: the build resolves the latest EZM++ release, the newest
-    # skin.estuary.pov release and the POV upstream index fresh on EVERY run,
+    # skin.estuary.plusplus release and the POV upstream index fresh on EVERY run,
     # so a push, this cron and the ezmpp-release dispatch all pick up a new
     # version with no commit here.
     - cron: "17 9 * * *"
@@ -41,7 +41,7 @@ on:
         default: false
   repository_dispatch:
     # The type name is historical (ezmpp was the first sibling repo to
-    # dispatch here); estuary-pov's CI sends the same type for the skin.
+    # dispatch here); estuary-plusplus's CI sends the same type for the skin.
     types: [ezmpp-release]
 
 # Deploy credentials (pages/id-token) are scoped to the deploy job only -
@@ -134,7 +134,7 @@ jobs:
       # the skin). For a PUBLIC source repo the build resolves without any
       # token (redirect, anonymous API), which is what a developer machine
       # does; the token only keeps CI off the shared-runner anonymous limit.
-      # Both source repos (moquette/kodi-ezmpp, moquette/kodi-estuary-pov) are
+      # Both source repos (moquette/kodi-ezmpp, moquette/kodi-estuary-plusplus) are
       # PUBLIC (the skin repo since 2026-09-26), so T7B_SOURCE_READ_TOKEN is an
       # optional escape hatch, not a requirement: if a source repo ever goes
       # private again, store a token that can read it under that name and the
