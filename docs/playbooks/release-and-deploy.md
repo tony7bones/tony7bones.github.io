@@ -73,9 +73,8 @@ definition of "changed" can drift from the gate) and
   `service.tvos.pythonfix` - OUR add-ons whose source lives in sibling repos
   (`~/Code/kodi/ezmpp` = `moquette/kodi-ezmpp`;
   `~/Code/kodi/estuary-plusplus` = `moquette/kodi-estuary-plusplus`; both
-  public). `skin.estuary.pov` is the skin's OLD id, served from the same repo
-  only while the boxes migrate to the new one (since 2026-09-26) and retired
-  in stage E of the rename plan. This repo carries NO copy of them, not even `addon.xml`: their
+  public). `skin.estuary.pov`, the skin's OLD id, left the catalog on 2026-09-26
+  (`_tools/retired.json`); boxes migrate from their installed copy. This repo carries NO copy of them, not even `addon.xml`: their
   `_tools/catalog.json` entries are `release-asset` templates and
   `static_catalog.py` resolves the latest release at build time
   (`releases/latest` for ezmpp's `v<version>` tags; the newest in the
