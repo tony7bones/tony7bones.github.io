@@ -36,7 +36,7 @@ seven third-party repository installers):
   - release-asset: the source repo's LATEST published release is the version
     (GitHub REST API with GH_TOKEN/GITHUB_TOKEN when present, else the
     unauthenticated redirect of github.com/<owner>/<repo>/releases/latest).
-    A source repo that ships SEVERAL add-ons (estuary-plusplus since 2026-09-26)
+    A source repo that ships SEVERAL add-ons (estuarypp since 2026-09-26)
     tags each in its own namespace, ``<id>-v<version>``, which the zip
     template spells out; the build then lists the repo's releases and takes
     the newest in that namespace, since releases/latest can only name one;
@@ -174,7 +174,7 @@ _RETRY_DELAY_S = 1.0
 #                                               (ezmpp): the repo's LATEST
 #                                               release IS the add-on's.
 #   .../releases/download/{id}-v{version}/...   several add-ons per source repo
-#                                               (estuary-plusplus ships the skin AND
+#                                               (estuarypp ships the skin AND
 #                                               service.tvos.pythonfix): a
 #                                               repo has ONE releases/latest,
 #                                               so each add-on tags its own
@@ -645,7 +645,7 @@ def _latest_namespaced_release(
     ``<tag_prefix>v<version>``: (bare version, API URL of its ``asset_name``).
 
     A repository has exactly one ``releases/latest``, so a repo that ships
-    several add-ons (estuary-plusplus: the skin and service.tvos.pythonfix) cannot
+    several add-ons (estuarypp: the skin and service.tvos.pythonfix) cannot
     use it for any of them. GET /repos/{owner}/{repo}/releases lists them
     all; drafts, prereleases and every other namespace are skipped and the
     highest version wins (by component, not by list position, so a re-cut of

@@ -350,7 +350,7 @@ def test_real_catalog_build_resolved_entries_have_no_committed_metadata():
     WRONG. The two entries whose version rotted by hand are resolved upstream
     at build time, and the directories that held the hand copy are gone. The
     skin joined them the same day: it releases from the skin repo's CI into
-    the ``<id>-v<version>`` tag namespace of moquette/kodi-estuary-plusplus
+    the ``<id>-v<version>`` tag namespace of moquette/kodi-estuarypp
     (``skin.estuary.plusplus-v`` since the rename, ``skin.estuary.pov-v`` for
     the old id while boxes migrate) and nothing of it is committed here."""
     resolved = {e["id"] for e in sc.load_catalog() if sc.metadata_resolved_at_build(e)}
@@ -450,7 +450,7 @@ def test_classify_the_real_manifest_covers_all_entries():
           release-asset 4). The skin renamed to Estuary++ under a NEW id
           (owner decision: whatever we touch keeps its name with ++ appended),
           first version 1.5.0, source repo renamed to
-          moquette/kodi-estuary-plusplus with the same {id}-v{version} tag
+          moquette/kodi-estuarypp with the same {id}-v{version} tag
           namespace. skin.estuary.pov STAYS for the transition: a new id is a
           new add-on to Kodi, so EZM++ migrates each box (install the new id,
           carry settings, switch, drop the old) and needs both served until
@@ -510,7 +510,7 @@ def test_classify_the_real_manifest_covers_all_entries():
     service.tvos.pythonfix are the four release-asset entries, and since
     2026-09-26 none has an addons/hosted/ directory: version from the latest
     release of moquette/kodi-ezmpp (releases/latest) and from the newest
-    ``<id>-v`` tag of moquette/kodi-estuary-plusplus, addon.xml and art from
+    ``<id>-v`` tag of moquette/kodi-estuarypp, addon.xml and art from
     that release's zip.
     """
     entries = sc.load_catalog()
@@ -997,7 +997,7 @@ def test_release_zip_without_its_addon_xml_is_a_fetch_error(fake_repo, tmp_path)
 
 # ---------------------------------------------------------------------------
 # per-add-on tag namespace (2026-09-26): a source repo shipping several add-ons
-# (estuary-plusplus: the skin and service.tvos.pythonfix) has ONE releases/latest, so
+# (estuarypp: the skin and service.tvos.pythonfix) has ONE releases/latest, so
 # the zip template names the tag as {id}-v{version} and the build lists the
 # repo's releases and takes the newest in that namespace.
 # ---------------------------------------------------------------------------

@@ -54,8 +54,8 @@ source of truth on every run and takes `addon.xml` and art out of the zip
   that repo's latest GitHub release `v<version>`. Backup/restore triage on
   tvOS: `~/Code/kodi/.claude/skills/apple-tv/SKILL.md`.
 - **`skin.estuary.plusplus`** ("Estuary++") and **`service.tvos.pythonfix`**
-  ("Apple TV Fixes") - source at `~/Code/kodi/estuary-plusplus`
-  (`moquette/kodi-estuary-plusplus`, public). Resolved from the newest release
+  ("Apple TV Fixes") - source at `~/Code/kodi/estuarypp`
+  (`moquette/kodi-estuarypp`, public). Resolved from the newest release
   in each add-on's tag namespace, `<id>-v<version>`. The skin's old id
   `skin.estuary.pov` left the catalog on 2026-09-26 (recorded in
   `_tools/retired.json`); Estuary++ is the one and only skin served, and a

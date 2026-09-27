@@ -258,7 +258,7 @@
     "branch": "main",
     "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
     "assets": {
-      "zip": "https://github.com/moquette/kodi-estuary-plusplus/releases/download/{id}-v{version}/{id}-{version}.zip"
+      "zip": "https://github.com/moquette/kodi-estuarypp/releases/download/{id}-v{version}/{id}-{version}.zip"
     }
   },
   {
@@ -268,7 +268,7 @@
     "branch": "main",
     "asset_prefix": "https://raw.githubusercontent.com/{username}/{repository}/{ref}/addons/hosted/{id}/",
     "assets": {
-      "zip": "https://github.com/moquette/kodi-estuary-plusplus/releases/download/{id}-v{version}/{id}-{version}.zip"
+      "zip": "https://github.com/moquette/kodi-estuarypp/releases/download/{id}-v{version}/{id}-{version}.zip"
     }
   },
   {

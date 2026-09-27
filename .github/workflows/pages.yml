@@ -41,7 +41,7 @@ on:
         default: false
   repository_dispatch:
     # The type name is historical (ezmpp was the first sibling repo to
-    # dispatch here); estuary-plusplus's CI sends the same type for the skin.
+    # dispatch here); estuarypp's CI sends the same type for the skin.
     types: [ezmpp-release]
 
 # Deploy credentials (pages/id-token) are scoped to the deploy job only -
@@ -134,7 +134,7 @@ jobs:
       # the skin). For a PUBLIC source repo the build resolves without any
       # token (redirect, anonymous API), which is what a developer machine
       # does; the token only keeps CI off the shared-runner anonymous limit.
-      # Both source repos (moquette/kodi-ezmpp, moquette/kodi-estuary-plusplus) are
+      # Both source repos (moquette/kodi-ezmpp, moquette/kodi-estuarypp) are
       # PUBLIC (the skin repo since 2026-09-26), so T7B_SOURCE_READ_TOKEN is an
       # optional escape hatch, not a requirement: if a source repo ever goes
       # private again, store a token that can read it under that name and the
