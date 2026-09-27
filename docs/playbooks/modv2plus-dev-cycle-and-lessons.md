@@ -1,5 +1,7 @@
 # Estuary MOD V2+ - Development Cycle & Lessons Learned
 
+> **HISTORICAL (noted 2026-09-26).** `script.tony7bones.modv2plus` and `_tools/firetv.sh` are retired (the helper was deleted 2026-09-26; the meta-root `.claude/scripts/firetv-deploy.sh` is the live adb loop); the Kodi lessons stand. Kept for the WHY; do not act on a deleted path as current.
+
 The big picture of how we build, verify, and ship **`script.tony7bones.modv2plus`** (the patch add-on
 that customizes the Estuary MOD V2 skin), plus the hard-won knowledge behind it. If you read one doc
 before touching this add-on, read this - then the command-level runbook in

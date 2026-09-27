@@ -1,5 +1,7 @@
 # Install & Bootstrap a Kodi Box From Your Notebook (ADB)
 
+> **HISTORICAL (noted 2026-09-26).** the Setup add-on family it drives and `_tools/provision-kodi.sh` (deleted 2026-09-26) are gone; the live bootstrap is the meta-root `bootstrap-light/bootstrap.sh`. Kept for the WHY; do not act on a deleted path as current.
+
 A repeatable runbook to provision a fresh Tony.7.Bones Kodi box on a Fire TV /
 Android device **entirely from your laptop** over ADB-on-network - wipe, install
 the repo, run the one-tap Setup, restart, and verify. This is the

@@ -1,5 +1,10 @@
 # Optimization & Refactoring Backlog (main)
 
+> **HISTORICAL (noted 2026-09-26).** A July record. Its targets have moved on:
+> A1's `_git_date()` no longer exists in `generate_repo.py`, A3's
+> `generate_repo.yml` was deleted 2026-09-26, and the canvas dirs it names
+> (`media/`, `iptv/`) retired 2026-07-16. Kept for the WHY, not as a to-do list.
+
 > Salvaged from the superseded `hybrid-repo` review (closed **PR #1**), trimmed to
 > only the items that apply to the **current `main`** tree. None are implemented yet.
 >

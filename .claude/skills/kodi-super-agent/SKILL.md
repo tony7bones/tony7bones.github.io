@@ -5,7 +5,7 @@ description: >-
   (tony7bones.github.io). Load when working anywhere in this repo: bumping
   repository.tony7bones, editing the static catalog manifest
   (_tools/catalog.json), building/deploying the static site, adding a hosted
-  third-party mirror, debugging the local Kodi 21 Omega install, or verifying
+  third-party mirror, debugging the local Kodi 22 Piers bench, or verifying
   behaviour on the real local Kodi. Triggers on Kodi add-on release / static
   catalog / GitHub Pages / verification work in this project.
 ---
@@ -46,12 +46,12 @@ on a rule below - they carry the WHY and the exact code locations.
   - `addons/script.ezmaintenanceplusplus/` was DELETED 2026-07-20 (`08d9a3d`).
     Do not recreate it and do not resurrect the deleted full-source copy.
   - **Our own add-ons have NO copy in this repo at all** (since 2026-09-26):
-    `script.ezmaintenanceplusplus` (source `~/Code/moquette/kodi/ezmpp`,
+    `script.ezmaintenanceplusplus` (source `~/Code/kodi/ezmpp`,
     `moquette/kodi-ezmpp`), `skin.estuary.plusplus` (Estuary++) and
     `service.tvos.pythonfix` (source `~/Code/kodi/estuary-plusplus`,
     `moquette/kodi-estuary-plusplus`). The skin's old id `skin.estuary.pov`
-    is served from the same repo only while the boxes migrate (2026-09-26
-    rename) and is retired in stage E of the rename plan.
+    was retired from the catalog on 2026-09-26 (`_tools/retired.json`); a box
+    still on it migrates from its installed copy through EZM++.
     `_tools/static_catalog.py` resolves each from its latest GitHub release at
     build time (`v{version}` for ezmpp; the namespaced `{id}-v{version}` for
     the estuary-plusplus add-ons) and takes `addon.xml` and art from the zip.
@@ -60,7 +60,7 @@ on a rule below - they carry the WHY and the exact code locations.
     sibling repo; a version bump pushed there IS the release, its CI dispatches
     this hub, nothing is bumped here. A `git status` / "commits to push"
     question about the skin or EZM++ almost always resolves in the OTHER repo.
-    EZM++ triage: `~/Code/moquette/kodi/.claude/skills/apple-tv/SKILL.md`.
+    EZM++ triage: `~/Code/kodi/.claude/skills/apple-tv/SKILL.md`.
 - **Single branch - `main` only**, served by GitHub Pages.
 - **Retired - do NOT describe as live** (all deleted): the virtual proxy engine
   (`127.0.0.1:61234`, `repository.github`); the whole Setup add-on family
@@ -124,7 +124,7 @@ on a rule below - they carry the WHY and the exact code locations.
   `pages_source_guard.yml` keeps the Pages source on "workflow". All three run
   on `ubuntu-26.04`.
 
-## Golden rules - install mechanics (Kodi 21 Omega, general knowledge)
+## Golden rules - install mechanics (Kodi 21 Omega and 22 Piers, general knowledge)
 
 -> `docs/playbooks/kodi-install-mechanics.md`
 
@@ -175,8 +175,10 @@ box, even though the Setup add-on that used to encode them is retired:
   the box invalidates the whole verify.
 - **Device runs are SYNCHRONOUS.** Drive a real box step-by-step in the current
   session and watch each step land; don't fire-and-forget.
-- **Independent review before "done".** Any phase is declared done only after an
-  independent QA + architecture review; self-verification is never sufficient.
+- **Independent review before "done"** was RETIRED 2026-07-21 with the rest
+  of the fleet process (the two-agent QA + architecture mandate is gone; see
+  the meta-root `CLAUDE.md`). What stands: "fixed" means verified on the
+  affected device class, never self-declared from code.
 
 ## Restore points
 

@@ -350,7 +350,7 @@ rollback target for the current static repo.
 | Add-on                         | Where its source lives                                        | Served version comes from                                  |
 | ------------------------------ | ------------------------------------------------------------- | ---------------------------------------------------------- |
 | `repository.tony7bones`        | `addons/repository.tony7bones/` (this repo)                   | the committed `addon.xml`                                  |
-| `script.ezmaintenanceplusplus` | `~/Code/moquette/kodi/ezmpp` (`moquette/kodi-ezmpp`)          | latest GitHub release `v<version>`, resolved at build time |
+| `script.ezmaintenanceplusplus` | `~/Code/kodi/ezmpp` (`moquette/kodi-ezmpp`)          | latest GitHub release `v<version>`, resolved at build time |
 | `skin.estuary.plusplus`        | `~/Code/kodi/estuary-plusplus` (`moquette/kodi-estuary-plusplus`) | newest release `skin.estuary.plusplus-v<version>`      |
 | `skin.estuary.pov`             | RETIRED 2026-09-26 (`_tools/retired.json`); boxes migrate from the installed copy, the hub no longer serves it | old releases `skin.estuary.pov-v<version>` stay on GitHub |
 | `service.tvos.pythonfix`       | same repo as the skin                                         | newest release `service.tvos.pythonfix-v<version>`         |

@@ -1,5 +1,7 @@
 # Provisioning a non-rooted Fire OS 8 / Android 11 Stick over ADB (scoped-storage relocation)
 
+> **HISTORICAL (noted 2026-09-26).** `_tools/provision-kodi.sh` was deleted 2026-09-26; the scoped-storage relocation it describes (`/sdcard/xbmc_env.properties` plus the MANAGE_EXTERNAL_STORAGE appop) is implemented in the meta-root `bootstrap-light/bootstrap.sh` and documented in its README. Kept for the WHY; do not act on a deleted path as current.
+
 How the fleet provisioner (`_tools/provision-kodi.sh`) brings a **non-rooted Fire OS 8
 (Android 11) Stick** (e.g. `AFTKRT` - Fire TV Stick 4K Max) to full parity with the
 other boxes - wipe → install → Setup → MOD V2 + patch - entirely over adb, with no

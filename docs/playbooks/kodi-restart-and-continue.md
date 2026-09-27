@@ -1,5 +1,7 @@
 # Kodi: Restart-and-Continue - Research + Findings
 
+> **HISTORICAL (noted 2026-09-26).** research for the retired one-shot Setup add-on; the platform facts (desktop self-restarts, Android and tvOS only close) still hold and are restated in the `kodi-super-agent` skill. Kept for the WHY; do not act on a deleted path as current.
+
 How a Kodi one-shot installer should restart Kodi and reliably continue afterward
 (applying a patch / finishing config), across desktop and Android/Fire TV.
 

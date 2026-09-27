@@ -1,5 +1,7 @@
 # Playbook - Local Kodi verification
 
+> **NOTE (noted 2026-09-26).** LIVING for the verification method; `_tools/provision-kodi.sh` and the per-device `.env` it cites were deleted 2026-09-26, and the bench recipe is now the meta-root `clean-bench` skill and `bin/reset-kodi`. Kept for the WHY; do not act on a deleted path as current.
+
 The biggest lesson in this project: **honest verification.** "No ImportError /
 script ran" is NOT proof - an add-on can "run" and still produce an empty menu.
 This playbook is how to drive the real local Kodi and prove actual behaviour.

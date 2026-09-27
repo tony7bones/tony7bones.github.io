@@ -1,5 +1,7 @@
 # Playbook - fast pristine-to-backup-ready Kodi box (skip the full Setup)
 
+> **HISTORICAL (noted 2026-09-26).** it plans around `_tools/provision-kodi.sh`, deleted 2026-09-26; the live wipe-and-rebuild is the meta-root `bootstrap-light/bootstrap.sh`, and the bench recipe is the meta-root `clean-bench` skill. Kept for the WHY; do not act on a deleted path as current.
+
 Purpose: get a freshly wiped Kodi box to the point where
 `script.ezmaintenanceplusplus` (or any single repo add-on) can be installed
 and run - for a backup/restore test - without the manual friction of Fire

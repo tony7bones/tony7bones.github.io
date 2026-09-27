@@ -1,5 +1,7 @@
 # EZ Maintenance++ restore hardening (2026.07.07)
 
+> **HISTORICAL (noted 2026-09-26).** a 2026.07.07 record; EZM++ source and its current restore contract live in `moquette/kodi-ezmpp` (`ezmpp/CLAUDE.md`), and the `kodi-storage-map` skill named below was folded into the meta-root `apple-tv` skill 2026-07-21. Kept for the WHY; do not act on a deleted path as current.
+
 > **CORRECTION (2026-07-14, from Kodi Omega source).** The claim that Kodi "rewrites the on-disk userdata files from the mirror on boot/launch" is **FALSE**. `MigrateUserdataXMLToNSUserDefaults` (PreflightHandler.mm:81-93) returns early forever once `UserdataMigrated` is set, and nothing ever copies a key back to disk. What actually happens: `CTVOSFile::Exists`/`Open` (TVOSFile.cpp:70-122) check the NSUserDefaults **key FIRST** and only fall back to POSIX - so a key **SHADOWS** the disk file. A file-only restore "reverts" because the stale key wins, not because disk was rewritten. Consequence: **dropping the POSIX copy has ZERO fallback** - nothing re-materializes it. See the `kodi-storage-map` skill.
 
 The restore path of `script.ezmaintenanceplusplus` was hardened end to end in the

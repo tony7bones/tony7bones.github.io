@@ -1,5 +1,7 @@
 # Playbook - IPTV stream troubleshooting (Streamvision / Cloudflare / connection limits)
 
+> **HISTORICAL (noted 2026-09-26).** the IPTV builder moved to the private `moquette/iptv` repo 2026-07-17 and its playbooks live there; the probe recipes here still work. Kept for the WHY; do not act on a deleted path as current.
+
 > How to diagnose "a channel is not working on the TV" for the Xtream-Codes providers
 > (Streamvision, Network 24) without guessing and without making it worse. Captures the
 > real failure modes we hit on the **Office TV** (Cloudflare ToS restriction page, dead

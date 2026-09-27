@@ -1,5 +1,7 @@
 # Playbook - Kodi add-on install mechanics (Omega)
 
+> **NOTE (noted 2026-09-26).** LIVING for the Kodi mechanics; the Setup add-ons and `_tools/provision-kodi.sh` it cites as the implementers were deleted (the provisioner 2026-09-26), so read the mechanisms, not the file references. Kept for the WHY; do not act on a deleted path as current.
+
 How the Tony.7.Bones Setup add-ons install third-party add-ons on Kodi 21
 "Omega" **without** a single blocking prompt, and why each non-obvious choice is
 the way it is. Every claim here is implemented in `script.module.tony7bones`

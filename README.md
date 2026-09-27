@@ -50,9 +50,9 @@ source of truth on every run and takes `addon.xml` and art out of the zip
 
 - **`script.ezmaintenanceplusplus`** ("EZ Maintenance++") - a VFS-safe fork of EZ
   Maintenance+ (backup/restore over NFS/SMB/Dropbox), source at
-  `~/Code/moquette/kodi/ezmpp` (`moquette/kodi-ezmpp`, public). Resolved from
+  `~/Code/kodi/ezmpp` (`moquette/kodi-ezmpp`, public). Resolved from
   that repo's latest GitHub release `v<version>`. Backup/restore triage on
-  tvOS: `~/Code/moquette/kodi/.claude/skills/apple-tv/SKILL.md`.
+  tvOS: `~/Code/kodi/.claude/skills/apple-tv/SKILL.md`.
 - **`skin.estuary.plusplus`** ("Estuary++") and **`service.tvos.pythonfix`**
   ("Apple TV Fixes") - source at `~/Code/kodi/estuary-plusplus`
   (`moquette/kodi-estuary-plusplus`, public). Resolved from the newest release
@@ -131,7 +131,7 @@ and commit the output; CI fails on stale output.
 
 ```bash
 python3 _tools/generate_repo.py     # regenerate addons.xml, zips, index pages
-python3 -m pytest _tools/ -q        # tests (209, all green, 9s; measured 2026-09-26)
+python3 -m pytest _tools/ -q        # tests (210, all green, about 10s; measured 2026-09-26 evening)
 ruff check _tools/                  # lint
 python3 _tools/build_site.py --out _site   # build the full served site (incl. /static/)
 git config core.hooksPath .githooks # install the pre-push gate (once after clone)
@@ -169,7 +169,7 @@ Pages source on "workflow". All on `ubuntu-26.04`.
   modv2plus add-on's adb loop); the generic adb mechanics still hold.
 - `docs/playbooks/firetv-stick-scoped-storage-provisioning.md` - provisioning a
   non-rooted Fire OS 11 Stick over ADB.
-- `~/Code/moquette/kodi/.claude/skills/apple-tv/SKILL.md` - the Kodi storage
+- `~/Code/kodi/.claude/skills/apple-tv/SKILL.md` - the Kodi storage
   model on tvOS and the EZ Maintenance++ backup/restore triage that lives with
   it (the `kodi-storage-map` and `ezm-backup-doctor` skills were deleted
   2026-07-21; EZM++ source is in `moquette/kodi-ezmpp`, not here).
