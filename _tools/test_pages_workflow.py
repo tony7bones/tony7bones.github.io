@@ -112,7 +112,12 @@ def test_source_gates_run_on_push_only_and_artifact_gates_on_every_event():
     and used to spend 40s re-running them. The build, secret gate, determinism
     diff and live verify judge the artifact and stay unconditional."""
     text = _text()
-    for name in ("Test suite", "Lint", "Version-bump gate (every changed add-on bumped)"):
+    for name in (
+        "Test suite",
+        "Lint",
+        "Documentation drift (doccheck)",
+        "Version-bump gate (every changed add-on bumped)",
+    ):
         assert "if: github.event_name == 'push'" in _step(text, name), name
     for name in (
         "Build site",

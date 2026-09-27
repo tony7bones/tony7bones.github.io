@@ -1,5 +1,7 @@
 # Plan - Modular "0-1-2" Setup (Foundation / IPTV / Add-ons)
 
+> **HISTORICAL (noted 2026-09-26).** A closed plan from before the static conversion and the 2026-09-26 cleanup, kept for the WHY and not as instructions: its tools, add-ons and paths may no longer exist. The current state is this repo's `CLAUDE.md`.
+
 > Status: **MERGED TO `main` - SHIPPED PRODUCTION (2026-06-10, merge commit `cedab3d`,
 > owner-decided). Phases 0-6 DONE incl. the Fire TV matrix; all three layers are
 > INDEPENDENTLY RUNNABLE (`run_foundation` / `run_iptv` / `run_addons`), the **Guided

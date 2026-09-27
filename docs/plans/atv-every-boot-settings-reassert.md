@@ -1,5 +1,7 @@
 # Design: every-boot settings re-assert (Apple TV restore durability)
 
+> **HISTORICAL (noted 2026-09-26).** A closed plan from before the static conversion and the 2026-09-26 cleanup, kept for the WHY and not as instructions: its tools, add-ons and paths may no longer exist. The current state is this repo's `CLAUDE.md`.
+
 > **CORRECTION (2026-07-14, from Kodi Omega source).** The claim that Kodi "rewrites the on-disk userdata files from the mirror on boot/launch" is **FALSE**. `MigrateUserdataXMLToNSUserDefaults` (PreflightHandler.mm:81-93) returns early forever once `UserdataMigrated` is set, and nothing ever copies a key back to disk. What actually happens: `CTVOSFile::Exists`/`Open` (TVOSFile.cpp:70-122) check the NSUserDefaults **key FIRST** and only fall back to POSIX - so a key **SHADOWS** the disk file. A file-only restore "reverts" because the stale key wins, not because disk was rewritten. Consequence: **dropping the POSIX copy has ZERO fallback** - nothing re-materializes it. See the `kodi-storage-map` skill.
 
 **Status: REJECTED (2026-07-08) by unanimous adversarial review - DO NOT IMPLEMENT.**

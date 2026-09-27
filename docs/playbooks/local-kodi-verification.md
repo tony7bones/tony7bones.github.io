@@ -44,7 +44,7 @@ services.webserverauthentication = false
 > a pre-seeded files source. If the `.tony7.bones` source vanishes, re-add it and
 > restart once.
 
-> **On a real device the canonical reset+seed is `_tools/provision-kodi.sh
+> **On a real device the canonical reset+seed was `_tools/provision-kodi.sh
 <device>`.** It reads `.env.<device>` (per-box weather / IPTV / RSS / device
 > config; `.env.device.example` is the committed template), wipes the box, and
 > seeds guisettings **before Kodi starts** - web server, device name, settings

@@ -1,5 +1,7 @@
 # Plan - Automate IPTV setup from `.env`
 
+> **HISTORICAL (noted 2026-09-26).** A closed plan from before the static conversion and the 2026-09-26 cleanup, kept for the WHY and not as instructions: its tools, add-ons and paths may no longer exist. The current state is this repo's `CLAUDE.md`.
+
 > Status: **PROPOSED - for review, nothing built.** Decisions in the "Open
 > decisions" section must be confirmed before any code. No repo changes yet.
 

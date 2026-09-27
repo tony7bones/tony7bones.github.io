@@ -1,5 +1,7 @@
 # Plan - No-Computer Setup (repository-direct, remote-only provisioning)
 
+> **HISTORICAL (noted 2026-09-26).** A closed plan from before the static conversion and the 2026-09-26 cleanup, kept for the WHY and not as instructions: its tools, add-ons and paths may no longer exist. The current state is this repo's `CLAUDE.md`.
+
 > **⛔ TRACK CLOSED at N1.2 - N2-N5 CANCELLED (owner decision 2026-06-10: "nuke N2…
 > our .env method is working fine").** The shipped N1/N1.1/N1.2 are the chosen, working
 > solution: a box reads its own device-resident `.env.<device>` from

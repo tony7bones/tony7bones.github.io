@@ -1,5 +1,7 @@
 # Plan: phased bootstrap/setup refactor + automate mini shares/backup
 
+> **HISTORICAL (noted 2026-09-26).** A closed plan from before the static conversion and the 2026-09-26 cleanup, kept for the WHY and not as instructions: its tools, add-ons and paths may no longer exist. The current state is this repo's `CLAUDE.md`.
+
 Status: DRAFT v7 - a small, targeted correction (not a full rewrite) closing round
 five's residual findings. Both reviewers signaled strong convergence in round five
 (architect: "not a structural regression... a one-paragraph addition resolves it";

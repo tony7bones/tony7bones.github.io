@@ -42,6 +42,12 @@ These are the whole standard. There is no skill to load.
 - Never let an inline code span cross a line break. It strips the
   list-continuation indent and leaves the next agent editing a stale copy.
 - Markdown is deliberately NOT auto-formatted here. Do not add it back.
+- Living docs are gated by `.github/doccheck.py` in CI (a byte-identical copy
+  of the meta root's `bin/doccheck`, also run by `../bin/check-all`): retired
+  names, dead links and paths, unresolved section signs, dashes, stale add-on
+  versions. The rules, and the rule that a rename adds the old name to the
+  retired list in the same commit: the meta-root `CLAUDE.md`, "Doc drift is a
+  gate".
 
 ## House rules
 
@@ -285,7 +291,7 @@ defaults. Bump both files in one commit that also clears whatever the new
 version flags, and never bump a pin to make a red build go green.
 
 Everything above is also runnable across all four repos at once with
-`../bin/check-all` (14 gates across the four repos plus the meta tree, this one contributing pytest and ruff; measured 2026-09-26 evening), which provisions the same pinned venv this hook
+`../bin/check-all` (20 gates across the four repos plus the meta tree, this one contributing pytest, ruff and doccheck; measured 2026-09-26 evening), which provisions the same pinned venv this hook
 uses.
 
 ONE push workflow plus two operational backstops, and **none of them ever commits to main**. All run on `ubuntu-26.04` with current action majors (`checkout@v7`, `setup-python@v7`, `cache@v6`, `upload-artifact@v7`, `download-artifact@v8`, `upload-pages-artifact@v5`, `deploy-pages@v5`, `configure-pages@v6`; measured 2026-09-26):

@@ -1,5 +1,7 @@
 # Plan - Eliminate manual version bumping for the first-party add-ons
 
+> **HISTORICAL (noted 2026-09-26).** A closed plan from before the static conversion and the 2026-09-26 cleanup, kept for the WHY and not as instructions: its tools, add-ons and paths may no longer exist. The current state is this repo's `CLAUDE.md`.
+
 > Status: **✅ TRACK COMPLETE (2026-06-10) - ALL phases (0-5) + O7 SHIPPED,
 > committed locally on `no-computer-setup`, not pushed.** The owner's calls on
 > O1-O10 are all recorded/resolved below. **Phase 0** generalized `release_lib`

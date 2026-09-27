@@ -44,8 +44,9 @@ source (`nfs://`, `smb://`) still has to go through `xbmcvfs` - plain Python
 can't open a VFS URL - and there's no evidence that direction has the same bug.
 
 Code: `_open_reader()` / `_LocalReader` / `_stream_copy()` in
-`addons/script.ezmaintenanceplusplus/resources/lib/modules/ui.py`. Tests:
-`_tools/test_ezmaintenanceplusplus_ui.py` -
+`script.ezmaintenanceplusplus/resources/lib/modules/ui.py` of `moquette/kodi-ezmpp`
+(this repo's old copy under addons/ was removed when EZM++ moved out). Tests:
+`tests/test_ezmaintenanceplusplus_ui.py` in the same repo -
 `test_copy_once_reads_a_local_source_without_going_through_vfs` proves it by
 deliberately poisoning what the fake `xbmcvfs.File` would return for the exact
 source path and confirming the real fix never calls it.

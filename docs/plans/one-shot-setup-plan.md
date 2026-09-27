@@ -1,5 +1,7 @@
 # One-Shot Setup - Plan: chaining "Video Add-ons Setup" from the base "Tony.7.Bones Setup"
 
+> **HISTORICAL (noted 2026-09-26).** A closed plan from before the static conversion and the 2026-09-26 cleanup, kept for the WHY and not as instructions: its tools, add-ons and paths may no longer exist. The current state is this repo's `CLAUDE.md`.
+
 > **STATUS: DONE / IMPLEMENTED (historical).** This was the options-discussion
 > draft. The path actually built is the one in `one-shot-option-b-plan.md`
 > (Option B: shared library module + front-loaded prompts + inline video step).

@@ -1,5 +1,7 @@
 # Design: durable Apple TV restore via post-extract `xbmcvfs` re-write
 
+> **HISTORICAL (noted 2026-09-26).** A closed plan from before the static conversion and the 2026-09-26 cleanup, kept for the WHY and not as instructions: its tools, add-ons and paths may no longer exist. The current state is this repo's `CLAUDE.md`.
+
 **Status: SURVIVES ADVERSARIAL REVIEW #2 - WITH REQUIRED CHANGES (2026-07-08). No code
 written; not yet shippable.** Supersedes the REJECTED every-boot re-assert
 (`atv-every-boot-settings-reassert.md`). Three reviewers (QA + two architects) attacked it.

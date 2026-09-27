@@ -74,15 +74,18 @@ writes, not the install).
 4. **Will the box reach a clean shutdown after my write?** If not guaranteed,
    never rely on an in-memory set alone.
 
-## Where the code lives
+## Where the code lived
 
-- Mechanism A, instance 1: `_trim_home_menu*` in
+Every instance below was in a Setup add-on that was deleted at the static
+conversion (2026-07-15); the pattern outlives them.
+
+- Mechanism A, instance 1: `_trim_home_menu*` in the deleted
   `addons/script.tony7bones.bootstrap/default.py`; background in
   `kodi-install-mechanics.md` §11.
 - Mechanism A, instance 2: `script.tony7bones.modv2plus` (Apply writes
   `settings.xml`; `service.py` reconciles) - `modv2plus-dev-cycle-and-lessons.md`.
 - Mechanism B, instance 3: `_pause_pvr_for_config` / `_resume_pvr_after_config`
-  in `addons/script.module.tony7bones/lib/tony7bones/setup/iptv.py`
+  in the deleted `addons/script.module.tony7bones/lib/tony7bones/setup/iptv.py`
   (every `apply_iptv` file write - device-copy AND instance-settings enforce -
   runs inside the window); full IPTV context in
   `iptv-channel-customization.md`.

@@ -1,5 +1,7 @@
 # One-Shot Setup - Option B implementation plan (shared module + inline, front-loaded)
 
+> **HISTORICAL (noted 2026-09-26).** A closed plan from before the static conversion and the 2026-09-26 cleanup, kept for the WHY and not as instructions: its tools, add-ons and paths may no longer exist. The current state is this repo's `CLAUDE.md`.
+
 > **STATUS: DONE / IMPLEMENTED.** Shipped in `repository.tony7bones` 1.0.11
 > (`script.module.tony7bones` 1.0.0, `script.tony7bones.bootstrap` 1.1.0,
 > `script.tony7bones.video` 1.1.0). The code matches this plan - the shared

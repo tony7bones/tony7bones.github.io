@@ -59,7 +59,7 @@ direct-extract doesn't need it, and a live toggle would only add a prompt (see t
 docstring in `script.tony7bones.bootstrap/default.py`).
 
 What changed: the value is now handled **before Kodi boots**, not at runtime. The
-**provisioner** (`_tools/provision-kodi.sh <device>`) pre-seeds
+**provisioner** (`_tools/provision-kodi.sh <device>`, deleted 2026-09-26) pre-seeded
 `addons.unknownsources=true` + `addons.updatemode=1` into `guisettings.xml` while
 Kodi is **DOWN** - a pre-boot file seed, not a runtime toggle, so there is still
 zero prompt. For non-rooted Fire OS 11 Sticks the same provisioner relocates the

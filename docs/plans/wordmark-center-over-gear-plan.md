@@ -1,5 +1,7 @@
 # Plan - Center the KODI wordmark over the Settings gear (MOD V2+ home)
 
+> **HISTORICAL (noted 2026-09-26).** A closed plan from before the static conversion and the 2026-09-26 cleanup, kept for the WHY and not as instructions: its tools, add-ons and paths may no longer exist. The current state is this repo's `CLAUDE.md`.
+
 > Status: **PROPOSED - feasibility done, not executed.** No repo changes yet.
 > Scope: cosmetic position change to the home-screen branding in
 > `script.tony7bones.modv2plus`. One file (`Home.xml`), no Python, no new art.

@@ -1,11 +1,12 @@
 # Playbook - One-shot setup & the add-on architecture
 
+> **HISTORICAL (noted 2026-09-26).** The whole Setup add-on family this describes was deleted with the static conversion; `_tools/provision-kodi.sh` followed 2026-09-26. Kept for the WHY.
+
 The shipped first-party add-on architecture, the shared-library pattern, and the
 one-shot flow. Design source: `../plans/one-shot-option-b-plan.md` (implemented).
 Code: `addons/script.module.tony7bones/`, `addons/script.tony7bones.bootstrap/`,
 `addons/script.tony7bones.modv2plus/`.
 
-> **HISTORICAL (noted 2026-09-26).** The whole Setup add-on family this describes was deleted with the static conversion; `_tools/provision-kodi.sh` followed 2026-09-26. Kept for the WHY.
 >
 > **Partially historical.** This describes the pre-modular one-shot flow; the
 > shipped Setup is now the **modular** one (bootstrap 1.6.0 / library 1.3.0 -

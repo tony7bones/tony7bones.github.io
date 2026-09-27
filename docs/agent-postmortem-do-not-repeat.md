@@ -73,7 +73,7 @@ solutions. That felt like being conned. It was avoidable.
   migration). Then design _that_, get approval, and execute in order - no detours, no live
   changes for unstated goals, no band-aids.
 - The correct end-state and migration are written up in
-  [`docs/plans/dropbox-bare-url-handoff.md`](plans/dropbox-bare-url-handoff.md).
+  [`docs/plans/1. dropbox-bare-url-handoff.md`](plans/1.%20dropbox-bare-url-handoff.md).
 
 ## Current state left behind (so the next agent isn't misled again)
 

@@ -1,5 +1,7 @@
 # Model B - One Source of Truth (`dropbox/` → `repo/`)
 
+> **HISTORICAL (noted 2026-09-26).** A closed plan from before the static conversion and the 2026-09-26 cleanup, kept for the WHY and not as instructions: its tools, add-ons and paths may no longer exist. The current state is this repo's `CLAUDE.md`.
+
 > Status: **APPROVED IN DIRECTION - blocking amendments pending (do not execute
 > as written).** Decided spec, hardened by a three-lens review (Kodi /
 > architecture / QA) and the owner's decisions, then re-reviewed by a second
