@@ -1291,6 +1291,27 @@ def load_baseline(
     )
 
 
+RETIRED_JSON = "retired.json"
+
+
+def load_retired(repo_root: str = REPO_ROOT) -> dict:
+    """Ids deliberately removed from the catalog, with a dated reason, so the
+    shrink guard lets them go on an ordinary push instead of needing a
+    one-off --allow-catalog-shrink dispatch (which raced the push run and
+    left a red run behind). A retirement is a commit that says why; an
+    accidental loss still fails the build."""
+    path = os.path.join(repo_root, "_tools", RETIRED_JSON)
+    if not os.path.isfile(path):
+        return {}
+    with open(path, encoding="utf-8") as fh:
+        data = json.load(fh)
+    if not isinstance(data, dict) or not all(
+        isinstance(k, str) and isinstance(v, str) for k, v in data.items()
+    ):
+        raise BuildError(f"{path} must map addon id -> dated reason")
+    return data
+
+
 def build(
     out_dir: str,
     fetcher: Fetcher | None = None,
@@ -1319,13 +1340,19 @@ def build(
     produced = {r.id for r in resolved}
     if baseline:
         missing = sorted(set(baseline.get("entries") or {}) - produced)
-        if missing and not allow_shrink:
+        retired = load_retired(repo_root)
+        unexplained = [i for i in missing if i not in retired]
+        if unexplained and not allow_shrink:
             raise BuildError(
-                f"catalog would LOSE entries vs the live baseline: {missing} "
-                f"(pass --allow-catalog-shrink if this is intentional)"
+                f"catalog would LOSE entries vs the live baseline: {unexplained} "
+                f"(record the retirement in _tools/retired.json, or pass "
+                f"--allow-catalog-shrink for a one-off)"
             )
-        if missing:
-            warn(f"catalog shrink explicitly allowed; losing: {missing}", warnings)
+        for i in missing:
+            if i in retired:
+                warn(f"catalog shrink recorded as a retirement: {i} ({retired[i]})", warnings)
+            else:
+                warn(f"catalog shrink explicitly allowed; losing: {i}", warnings)
 
     manifest = write_static_tree(resolved, out_dir)
     stale = sorted(i for i, e in manifest["entries"].items() if e["stale"])

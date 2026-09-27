@@ -57,8 +57,9 @@ source of truth on every run and takes `addon.xml` and art out of the zip
   ("Apple TV Fixes") - source at `~/Code/kodi/estuary-plusplus`
   (`moquette/kodi-estuary-plusplus`, public). Resolved from the newest release
   in each add-on's tag namespace, `<id>-v<version>`. The skin's old id
-  `skin.estuary.pov` (1.4.4, same repo) is served only while the boxes
-  migrate to the new id (rename plan, 2026-09-26) and is retired in stage E.
+  `skin.estuary.pov` left the catalog on 2026-09-26 (recorded in
+  `_tools/retired.json`); Estuary++ is the one and only skin served, and a
+  box still on the old id migrates from what it has installed.
 - **`plugin.video.pov`** (not ours) - version read from upstream's own
   `packages/addons.xml`, zip republished from the upstream Pages host.
 - **The eleven official-library modules** (not ours: `plugin.program.autocompletion`,

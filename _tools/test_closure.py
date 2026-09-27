@@ -81,11 +81,11 @@ from static_catalog import BUILTINS, OFFICIAL_LIBRARY  # noqa: E402
 # left to walk, and the build-time walk now carries every hop.
 # skin.estuary.plusplus is the same skin under its new id since 2026-09-26
 # (Estuary++, 1.5.0, repo moquette/kodi-estuary-plusplus); its imports are the
-# old id's. skin.estuary.pov stays rooted while the boxes migrate and leaves
-# with its catalog entry in stage E of the rename plan.
+# old id's. skin.estuary.pov left the catalog on 2026-09-26 (stage E of the
+# rename plan, recorded in _tools/retired.json); boxes still on it migrate
+# from what they have installed, they do not need the hub to serve it.
 FLEET_INSTALLS = {
     "skin.estuary.plusplus",
-    "skin.estuary.pov",
     "service.tvos.pythonfix",
     "script.ezmaintenanceplusplus",
     "plugin.video.pov",  # the skin's hard import; not ours, served for it

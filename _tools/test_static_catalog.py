@@ -44,7 +44,6 @@ OWNED_BUILD_RESOLVED = {
     "script.ezmaintenanceplusplus",
     "plugin.video.pov",
     "skin.estuary.plusplus",
-    "skin.estuary.pov",  # served only during the rename migration, retired in stage E
     "service.tvos.pythonfix",
 }
 # ... and the eleven official-library modules resolved from the official Kodi
@@ -518,7 +517,7 @@ def test_classify_the_real_manifest_covers_all_entries():
     kinds = {}
     for e in entries:
         kinds.setdefault(sc.classify(e), []).append(e["id"])
-    assert len(entries) == 29
+    assert len(entries) == 28
     assert kinds[sc.KIND_FIRST_PARTY] == ["repository.tony7bones"]
     # hosted 15 -> 4 on 2026-09-26: the eleven official modules left for the
     # official index. What remains hosted is third-party repository installers
@@ -531,9 +530,8 @@ def test_classify_the_real_manifest_covers_all_entries():
     ]
     assert len(kinds[sc.KIND_HYBRID]) == 15
     assert len(kinds[sc.KIND_STREAMED]) == 5
-    assert len(kinds[sc.KIND_RELEASE_ASSET]) == 4
+    assert len(kinds[sc.KIND_RELEASE_ASSET]) == 3
     assert "skin.estuary.plusplus" in kinds[sc.KIND_RELEASE_ASSET]
-    assert "skin.estuary.pov" in kinds[sc.KIND_RELEASE_ASSET]
     assert "service.tvos.pythonfix" in kinds[sc.KIND_RELEASE_ASSET]
     assert "script.ezmaintenanceplusplus" in kinds[sc.KIND_RELEASE_ASSET]
     assert "plugin.video.pov" in kinds[sc.KIND_HYBRID]
@@ -680,6 +678,20 @@ def test_shrink_vs_baseline_fails_without_the_flag(fake_repo, tmp_path):
     # baseline knows the entry but the live fallback copies are gone too
     with pytest.raises(sc.BuildError, match="LOSE entries"):
         _build(fake_repo, tmp_path / "static", baseline=baseline)
+
+
+def test_shrink_is_allowed_by_a_recorded_retirement(fake_repo, tmp_path):
+    """A retirement recorded in _tools/retired.json lets an id leave on an
+    ordinary push; an id missing without a record still fails."""
+    _kill_streamed(fake_repo)
+    baseline = {"entries": {"streamed.addon": {"version": "2.9.0"}}}
+    root = Path(fake_repo[0])
+    (root / "_tools").mkdir(exist_ok=True)
+    (root / "_tools" / "retired.json").write_text(
+        json.dumps({"streamed.addon": "2026-09-26 test retirement"})
+    )
+    manifest = _build(fake_repo, tmp_path / "static", baseline=baseline)
+    assert manifest["count"] == 6
 
 
 def test_shrink_is_allowed_only_explicitly(fake_repo, tmp_path):
