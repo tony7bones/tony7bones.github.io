@@ -149,7 +149,7 @@ jobs:
       # optional escape hatch, not a requirement: if a source repo ever goes
       # private again, store a token that can read it under that name and the
       # build keeps resolving; without one it serves the last-good copy, stale,
-      # with a ::warning:: in this log.
+      # with a ::warning:: in this log, and the freshness job turns the run red.
       - name: Build site
         env:
           GH_TOKEN: ${{ secrets.T7B_SOURCE_READ_TOKEN || secrets.GITHUB_TOKEN }}
@@ -211,6 +211,27 @@ jobs:
           enablement: true
       - id: deployment
         uses: actions/deploy-pages@v5
+
+  # A stale entry is served last-good, which is right, but it must not be
+  # silent: POV's upstream index went empty 2026-10-01 and the skin sat stale
+  # for two weeks behind a green run. This job runs AFTER the deploy, so the
+  # last-good site still goes live, and fails the run, so ci_failure_alert.yml
+  # opens its issue; the next run with nothing stale closes it. It is its own
+  # job so a stale run never fires verify's redeploy-once step.
+  freshness:
+    needs: deploy
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - uses: actions/download-artifact@v8
+        with:
+          name: catalog
+      - name: No catalog entry served stale
+        run: python3 _tools/check_catalog_fresh.py catalog.json
 
   verify:
     # PHASE 1: ENABLED 2026-07-15 (owner "proceed").

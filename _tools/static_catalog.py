@@ -739,9 +739,15 @@ def _parse_index(index_url: str, data: bytes) -> ET.Element:
         except (OSError, EOFError) as exc:
             raise FetchError(f"{index_url}: not gzip ({exc})") from exc
     try:
-        return ET.fromstring(data)
+        root = ET.fromstring(data)
     except ET.ParseError as exc:
         raise FetchError(f"{index_url}: not XML ({exc})") from exc
+    # An index that parses to zero add-ons is a lookup failure in its own
+    # words: kodiyashimaru's answered an empty <addons /> from 2026-10-01 to
+    # 2026-10-15, reported only as "does not list plugin.video.pov".
+    if next(root.iter("addon"), None) is None:
+        raise FetchError(f"{index_url}: upstream index empty (0 add-ons)")
+    return root
 
 
 def _version_from_index(
