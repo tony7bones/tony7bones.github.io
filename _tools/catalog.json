@@ -242,14 +242,14 @@
   },
   {
     "id": "plugin.video.pov",
-    "username": "kodiyashimaru",
-    "repository": "kodiyashimaru.github.io",
+    "username": "kodifitzwell",
+    "repository": "kodifitzwell.github.io",
     "branch": "main",
     "asset_prefix": "https://raw.githubusercontent.com/tony7bones/tony7bones.github.io/{ref}/addons/hosted/{id}/",
     "assets": {
-      "zip": "https://kodiyashimaru.github.io/repo/{id}/{id}-{version}.zip"
+      "zip": "https://kodifitzwell.github.io/repo/{id}/{id}-{version}.zip"
     },
-    "upstream_index": "https://kodiyashimaru.github.io/repo/packages/addons.xml"
+    "upstream_index": "https://kodifitzwell.github.io/repo/packages/addons.xml"
   },
   {
     "id": "service.tvos.pythonfix",
